@@ -4196,6 +4196,43 @@ export default function Sidebar() {
                       />,
                     );
                   }
+                  // A project section owns exactly one project, so its
+                  // header can start a thread there. Read off the first
+                  // thread rather than parsing the group key, so the ids stay
+                  // branded and the key format stays an implementation detail.
+                  const groupNewThreadTarget = (
+                    group: (typeof activeThreadGroups)[number],
+                  ): ReactNode => {
+                    if (group.axis !== "project") {
+                      return null;
+                    }
+                    const thread = group.threads[0] ?? group.children[0]?.threads[0] ?? null;
+                    if (thread === null) {
+                      return null;
+                    }
+                    const projectRef = scopeProjectRef(thread.environmentId, thread.projectId);
+                    return (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon-xs"
+                              variant="ghost-muted"
+                              aria-label={`New thread in ${group.label}`}
+                              className="size-5 shrink-0 text-icon-muted opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar-group-header:opacity-100"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleNewThreadRef.current(projectRef);
+                              }}
+                            />
+                          }
+                        >
+                          <SquarePenIcon className="size-3" />
+                        </TooltipTrigger>
+                        <TooltipPopup side="right">New thread in {group.label}</TooltipPopup>
+                      </Tooltip>
+                    );
+                  };
                   // Ungrouped is the default and stays a plain run of rows.
                   // Grouped mode walks the pre-flattened rows so collapse
                   // state is resolved once, in pure code, instead of being
@@ -4225,7 +4262,14 @@ export default function Sidebar() {
                         <li
                           key={`group-header:${group.key}`}
                           data-thread-selection-safe
-                          className="relative list-none"
+                          className={cn(
+                            "group/sidebar-group-header relative flex list-none items-center gap-1 pe-1",
+                            // Top level carries the weight of a shelf header;
+                            // the nested level reads as a caption inside it,
+                            // so two grouping axes never look like one flat
+                            // run of identical headers.
+                            isTopLevel ? "mb-1.5 mt-4 first:mt-1" : "mb-1 mt-2",
+                          )}
                           style={groupIndentStyle(row.depth)}
                         >
                           <GroupIndentGuides depth={row.depth} />
@@ -4234,14 +4278,7 @@ export default function Sidebar() {
                             onClick={() => toggleThreadGroupCollapsed(group.key)}
                             aria-expanded={!isCollapsed}
                             data-testid={`sidebar-thread-group-toggle:${group.key}`}
-                            className={cn(
-                              "flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
-                              // Top level carries the weight of a shelf header;
-                              // the nested level reads as a caption inside it,
-                              // so two grouping axes never look like one flat
-                              // run of identical headers.
-                              isTopLevel ? "mb-1.5 mt-4 first:mt-1" : "mb-1 mt-2",
-                            )}
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-left"
                           >
                             <span
                               className={cn(
@@ -4286,6 +4323,13 @@ export default function Sidebar() {
                               )}
                             />
                           </button>
+                          {/* Project sections are the only ones with an
+                              unambiguous target for a new thread; an
+                              environment or provider section spans several
+                              projects, so it gets no button rather than a
+                              guess. Sibling of the toggle, not a child: a
+                              button inside a button is invalid. */}
+                          {groupNewThreadTarget(group)}
                         </li>,
                       );
                     }

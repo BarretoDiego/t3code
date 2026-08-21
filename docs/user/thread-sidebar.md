@@ -33,6 +33,10 @@ snoozed, and settled ones. The menu only lists providers that currently have thr
 The last menu sorts threads by **Last activity** or **Date created**. Sorting and grouping are
 independent: changing one never reshuffles the other.
 
+Project sections carry a **New thread** button next to their collapse arrow, so you can start work
+in that project without changing the project selector first. Environment and provider sections span
+several projects, so they do not offer one.
+
 A collapsed section shows what is waiting inside it as colored dots with counts, in order of
 urgency: amber for approvals, indigo for input requests, red for failures, green for finished
 threads you have not opened yet, and blue for threads still working. Open sections leave that to
