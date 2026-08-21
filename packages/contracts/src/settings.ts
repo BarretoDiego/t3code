@@ -45,6 +45,23 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+
+/**
+ * Axis the sidebar inbox groups threads along. `none` keeps the list flat
+ * ("leave it open"); the rest split the inbox into collapsible sections.
+ *
+ * Two independent axes are stored (primary + secondary) so a section can nest
+ * one level, e.g. environment sections containing per-project subsections.
+ */
+export const SidebarThreadGroupingAxis = Schema.Literals([
+  "none",
+  "environment",
+  "project",
+  "provider",
+]);
+export type SidebarThreadGroupingAxis = typeof SidebarThreadGroupingAxis.Type;
+export const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "none";
+export const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "none";
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -238,6 +255,24 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
+  ),
+  sidebarThreadPrimaryGrouping: SidebarThreadGroupingAxis.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING)),
+  ),
+  sidebarThreadSecondaryGrouping: SidebarThreadGroupingAxis.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING)),
+  ),
+  // Driver kind ("claude", "codex", …) the inbox is narrowed to, or null for
+  // every provider. Stored as the driver kind rather than an instance id so
+  // the filter survives instance renames and applies across environments.
+  sidebarThreadProviderFilter: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  // Collapsed sections, keyed by the stable group key from
+  // `buildSidebarThreadGroups`. Only collapsed sections are stored, so
+  // switching axes never resurrects stale expansion state.
+  sidebarThreadCollapsedGroups: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -911,6 +946,10 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarThreadPrimaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
+  sidebarThreadSecondaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
+  sidebarThreadProviderFilter: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
+  sidebarThreadCollapsedGroups: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
