@@ -32,6 +32,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type {
   EnvironmentId,
+  ScopedProjectRef,
   ScopedThreadRef,
   SidebarProjectGroupingMode,
   SidebarThreadGroupingAxis,
@@ -97,6 +98,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
+import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
@@ -117,6 +119,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments"
 import { useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
+import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -1957,6 +1960,9 @@ export default function Sidebar() {
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const deleteProject = useAtomCommand(projectEnvironment.delete, {
+    reportFailure: false,
+  });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -2202,10 +2208,93 @@ export default function Sidebar() {
     }
     return count;
   });
-  const handleProjectSettings = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
-      event.preventDefault();
-      event.stopPropagation();
+  // Removing a project is the one destructive thing a section header can do,
+  // so it never sits next to New thread as a click target: it lives in the
+  // header's context menu, the same gesture threads already use for Delete.
+  //
+  // Ported from LegacySidebar, which is where this action lived while the new
+  // sidebar had no project rows to hang it on.
+  const handleRemoveProject = useCallback(
+    async (projectGroup: SidebarProjectSnapshot, projectRef: ScopedProjectRef, label: string) => {
+      const api = readLocalApi();
+      if (!api) return;
+      const member =
+        projectGroup.memberProjects.find(
+          (candidate) =>
+            candidate.environmentId === projectRef.environmentId &&
+            candidate.id === projectRef.projectId,
+        ) ?? null;
+      if (member === null) return;
+
+      const projectThreads = threads.filter(
+        (thread) =>
+          thread.environmentId === projectRef.environmentId &&
+          thread.projectId === projectRef.projectId,
+      );
+      const details = [
+        `Path: ${member.workspaceRoot}`,
+        ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
+      ];
+      // A project with threads costs its history, so the prompt says how much
+      // and the removal has to be forced. An empty one only loses the entry.
+      const message =
+        projectThreads.length > 0
+          ? [
+              `Remove project "${label}" and delete its ${projectThreads.length} thread${
+                projectThreads.length === 1 ? "" : "s"
+              }?`,
+              ...details,
+              "This permanently clears conversation history for those threads.",
+              "This removes only this project entry.",
+              "This action cannot be undone.",
+            ].join("\n")
+          : [
+              `Remove project "${label}"?`,
+              ...details,
+              "This removes only this project entry.",
+            ].join("\n");
+      const confirmed = await settlePromise(() =>
+        api.dialogs.confirm(message, { variant: "destructive" }),
+      );
+      if (confirmed._tag === "Failure" || !confirmed.value) return;
+
+      const result = await deleteProject({
+        environmentId: projectRef.environmentId,
+        input: {
+          projectId: projectRef.projectId,
+          ...(projectThreads.length > 0 ? { force: true } : {}),
+        },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        console.error("Failed to remove project", {
+          projectId: projectRef.projectId,
+          environmentId: projectRef.environmentId,
+          ...safeErrorLogAttributes(error),
+        });
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Failed to remove "${label}"`,
+            description: error instanceof Error ? error.message : "Unknown error removing project.",
+          }),
+        );
+        return;
+      }
+      // The draft parked in a project that no longer exists would otherwise
+      // keep a row in the sidebar pointing at nothing.
+      const draftStore = useComposerDraftStore.getState();
+      const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
+      if (projectDraftThread) {
+        draftStore.clearDraftThread(projectDraftThread.draftId);
+      }
+      draftStore.clearProjectDraftThreadId(projectRef);
+    },
+    [deleteProject, threads],
+  );
+
+  const handleProjectSettingsGroup = useCallback(
+    (projectGroup: SidebarProjectSnapshot) => {
       if (isMobile) {
         setOpenMobile(false);
       }
@@ -2215,6 +2304,14 @@ export default function Sidebar() {
       });
     },
     [isMobile, router, setOpenMobile],
+  );
+  const handleProjectSettings = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleProjectSettingsGroup(projectGroup);
+    },
+    [handleProjectSettingsGroup],
   );
 
   // Settled threads stay in the live shell stream (settled ≠ archived), so
@@ -4157,6 +4254,75 @@ export default function Sidebar() {
                       />,
                     );
                   }
+                  /**
+                   * Right-click on a section header. Same gesture threads use
+                   * for their own destructive actions, which is why Remove
+                   * project lives here instead of as a third icon one slip
+                   * away from New thread.
+                   */
+                  const handleGroupContextMenu = async (
+                    group: (typeof activeThreadGroups)[number],
+                    position: { readonly x: number; readonly y: number },
+                  ) => {
+                    const api = readLocalApi();
+                    if (!api) return;
+                    const { environmentId, projectId } = group.target;
+                    if (group.axis === "environment" && environmentId !== null) {
+                      const clicked = await settlePromise(() =>
+                        api.contextMenu.show(
+                          [{ id: "new-project", label: `New project in ${group.label}` }],
+                          position,
+                        ),
+                      );
+                      if (clicked._tag === "Failure" || clicked.value !== "new-project") {
+                        return;
+                      }
+                      openAddProjectCommandPalette(environmentId);
+                      return;
+                    }
+                    if (group.axis !== "project" || environmentId === null || projectId === null) {
+                      return;
+                    }
+                    const projectRef = scopeProjectRef(environmentId, projectId);
+                    const projectGroup =
+                      projectGroupByProjectKey.get(`${environmentId}:${projectId}`) ?? null;
+                    const clicked = await settlePromise(() =>
+                      api.contextMenu.show(
+                        [
+                          { id: "new-thread", label: "New thread" },
+                          ...(projectGroup === null
+                            ? []
+                            : [{ id: "settings" as const, label: "Project settings" }]),
+                          ...(projectGroup === null
+                            ? []
+                            : [
+                                {
+                                  id: "remove" as const,
+                                  label: "Remove project",
+                                  destructive: true,
+                                },
+                              ]),
+                        ],
+                        position,
+                      ),
+                    );
+                    if (clicked._tag === "Failure" || !clicked.value) return;
+                    switch (clicked.value) {
+                      case "new-thread":
+                        void handleNewThreadRef.current(projectRef);
+                        return;
+                      case "settings":
+                        if (projectGroup) {
+                          void handleProjectSettingsGroup(projectGroup);
+                        }
+                        return;
+                      case "remove":
+                        if (projectGroup) {
+                          void handleRemoveProject(projectGroup, projectRef, group.label);
+                        }
+                        return;
+                    }
+                  };
                   // Always visible, not hover-only: these are the way into a
                   // project now that the selector is gone, and an action you
                   // have to hunt for by hovering is an action most people
@@ -4360,6 +4526,13 @@ export default function Sidebar() {
                         <li
                           key={`group-header:${group.key}`}
                           data-thread-selection-safe
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            void handleGroupContextMenu(group, {
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
                           className={cn(
                             "relative flex list-none items-center gap-1 pe-1",
                             // Top level carries the weight of a shelf header;

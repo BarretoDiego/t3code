@@ -48,6 +48,11 @@ environment.
 
 Provider sections span several projects and environments, so they carry no actions.
 
+Right-clicking a section header opens the same actions as a menu, plus **Remove project**.
+Removing is destructive, so it stays out of the row: it tells you the path, the environment and
+how many threads go with the project, and asks before doing anything. Threads keep their own
+right-click menu with **Archive thread** and **Delete**.
+
 A collapsed section shows what is waiting inside it as colored dots with counts, in order of
 urgency: amber for approvals, indigo for input requests, red for failures, green for finished
 threads you have not opened yet, and blue for threads still working. Open sections leave that to
