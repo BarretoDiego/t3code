@@ -93,6 +93,24 @@ describe("reduceCommandPaletteUiState", () => {
     });
   });
 
+  it("carries the environment a project should be added to", () => {
+    expect(
+      reduceCommandPaletteUiState(closedState, {
+        _tag: "OpenAddProject",
+        environmentId: "remote",
+      }),
+    ).toEqual({
+      open: true,
+      mode: "command",
+      openIntent: { kind: "add-project", environmentId: "remote" },
+    });
+    // No environment means "ask", and the key has to be absent rather than
+    // undefined for the flow to tell the two apart.
+    expect(
+      reduceCommandPaletteUiState(closedState, { _tag: "OpenAddProject" }).openIntent,
+    ).not.toHaveProperty("environmentId");
+  });
+
   it("preserves the mode on close and resets it on open", () => {
     const filesOpen = reduceCommandPaletteUiState(closedState, {
       _tag: "ToggleMode",
