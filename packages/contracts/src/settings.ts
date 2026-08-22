@@ -60,8 +60,12 @@ export const SidebarThreadGroupingAxis = Schema.Literals([
   "provider",
 ]);
 export type SidebarThreadGroupingAxis = typeof SidebarThreadGroupingAxis.Type;
-export const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "none";
-export const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "none";
+// The sidebar ships segmented by environment and then project. Every project
+// keeps a row whether or not it has threads, and that row is where its New
+// thread and settings buttons live — so the default has to be a layout that
+// actually has project rows in it.
+export const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
+export const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(

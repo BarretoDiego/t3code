@@ -8,12 +8,30 @@ import {
   deriveSidebarProviderOptions,
   flattenSidebarThreadGroups,
   resolveThreadProviderIdentity,
+  settledShelfKey,
   type GroupableThread,
   type SidebarThreadGroupContext,
+  type SidebarThreadGroupRow,
 } from "./sidebarThreadGrouping";
 
 interface TestThread extends GroupableThread {
   readonly id: string;
+}
+
+/** One rendering of every row kind, so a test reads as the list the user sees. */
+function formatRow(row: SidebarThreadGroupRow<TestThread>): string {
+  switch (row.kind) {
+    case "header":
+      return `H:${row.group.label}`;
+    case "thread":
+      return `T:${row.thread.id}`;
+    case "settled-header":
+      return `S:${row.group.label}(${row.group.settledThreads.length})${row.expanded ? "+" : "-"}`;
+    case "settled-thread":
+      return `s:${row.thread.id}`;
+    case "settled-more":
+      return `S+${row.hiddenCount}`;
+  }
 }
 
 function providerEntry(input: {
@@ -313,13 +331,7 @@ describe("flattenSidebarThreadGroups", () => {
 
   it("emits headers and threads depth-first when nothing is collapsed", () => {
     const rows = flattenSidebarThreadGroups(groups, new Set());
-    expect(
-      rows.map((row) =>
-        row.kind === "header"
-          ? `H:${row.group.label}@${row.depth}`
-          : `T:${row.thread.id}@${row.depth}`,
-      ),
-    ).toEqual([
+    expect(rows.map((row) => `${formatRow(row)}@${row.depth}`)).toEqual([
       "H:This computer@0",
       "H:local/app@1",
       "T:a@2",
@@ -333,9 +345,7 @@ describe("flattenSidebarThreadGroups", () => {
 
   it("collapses a parent to a single row, hiding nested headers too", () => {
     const rows = flattenSidebarThreadGroups(groups, new Set(["environment:local"]));
-    expect(
-      rows.map((row) => (row.kind === "header" ? `H:${row.group.label}` : `T:${row.thread.id}`)),
-    ).toEqual(["H:This computer", "H:Remote box", "H:remote/app", "T:c"]);
+    expect(rows.map(formatRow)).toEqual(["H:This computer", "H:Remote box", "H:remote/app", "T:c"]);
   });
 
   it("collapses a child without touching its siblings", () => {
@@ -343,9 +353,7 @@ describe("flattenSidebarThreadGroups", () => {
       groups,
       new Set(["environment:local/project:local:app"]),
     );
-    expect(
-      rows.map((row) => (row.kind === "header" ? `H:${row.group.label}` : `T:${row.thread.id}`)),
-    ).toEqual([
+    expect(rows.map(formatRow)).toEqual([
       "H:This computer",
       "H:local/app",
       "H:local/api",
@@ -354,5 +362,175 @@ describe("flattenSidebarThreadGroups", () => {
       "H:remote/app",
       "T:c",
     ]);
+  });
+});
+
+describe("sections that outlive their threads", () => {
+  const seeds = [
+    { environmentId: environmentId("local"), projectId: projectId("app") },
+    { environmentId: environmentId("local"), projectId: projectId("quiet") },
+    { environmentId: environmentId("remote"), projectId: projectId("app") },
+  ];
+
+  it("keeps a row for a project with no threads at all", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", environmentId: "local", projectId: "app" })],
+      seeds,
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    expect(groups.map((group) => group.label)).toEqual(["local/app", "local/quiet", "remote/app"]);
+    const quiet = groups.find((group) => group.label === "local/quiet");
+    expect(quiet?.threadCount).toBe(0);
+    // Without this the header could not offer New thread: there is no thread
+    // to read the project off of.
+    expect(quiet?.target).toEqual({
+      environmentId: environmentId("local"),
+      projectId: projectId("quiet"),
+    });
+  });
+
+  it("sorts sections with live work above history-only above empty", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", environmentId: "remote", projectId: "app" })],
+      settledThreads: [thread({ id: "old", environmentId: "local", projectId: "app" })],
+      seeds,
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    expect(groups.map((group) => group.label)).toEqual(["remote/app", "local/app", "local/quiet"]);
+  });
+
+  it("builds sections from seeds alone when nothing has run yet", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [],
+      seeds,
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    expect(groups).toHaveLength(3);
+  });
+
+  it("seeds nested project sections under the environment they belong to", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", environmentId: "local", projectId: "app" })],
+      seeds,
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    expect(
+      groups.map((group) => [group.label, group.children.map((child) => child.label)]),
+    ).toEqual([
+      ["This computer", ["local/app", "local/quiet"]],
+      ["Remote box", ["remote/app"]],
+    ]);
+  });
+
+  it("never seeds a provider section: a project has no provider until it runs", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", instanceId: "claude" })],
+      seeds,
+      primaryAxis: "provider",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    expect(groups.map((group) => group.label)).toEqual(["Claude"]);
+  });
+});
+
+describe("history inside a section", () => {
+  const build = (settledIds: ReadonlyArray<string>) =>
+    buildSidebarThreadGroups({
+      threads: [thread({ id: "live", environmentId: "local", projectId: "app" })],
+      settledThreads: settledIds.map((id) =>
+        thread({ id, environmentId: "local", projectId: "app" }),
+      ),
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+
+  it("counts history apart from live work", () => {
+    const [group] = build(["old1", "old2"]);
+    expect(group?.threadCount).toBe(1);
+    expect(group?.settledCount).toBe(2);
+  });
+
+  it("starts closed and opens only the shelf that was asked for", () => {
+    const groups = build(["old1", "old2"]);
+    expect(flattenSidebarThreadGroups(groups, new Set()).map(formatRow)).toEqual([
+      "H:local/app",
+      "T:live",
+      "S:local/app(2)-",
+    ]);
+    const shelfKey = settledShelfKey("project:local:app");
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(), {
+        expandedSettledKeys: new Set([shelfKey]),
+      }).map(formatRow),
+    ).toEqual(["H:local/app", "T:live", "S:local/app(2)+", "s:old1", "s:old2"]);
+  });
+
+  it("keeps history behind the section's own collapse", () => {
+    const groups = build(["old1"]);
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(["project:local:app"]), {
+        expandedSettledKeys: new Set([settledShelfKey("project:local:app")]),
+      }).map(formatRow),
+    ).toEqual(["H:local/app"]);
+  });
+
+  it("pages a long history and offers the rest in one go", () => {
+    const groups = build(["o1", "o2", "o3", "o4"]);
+    const shelfKey = settledShelfKey("project:local:app");
+    const expandedSettledKeys = new Set([shelfKey]);
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(), {
+        expandedSettledKeys,
+        settledPageSize: 2,
+      }).map(formatRow),
+    ).toEqual(["H:local/app", "T:live", "S:local/app(4)+", "s:o1", "s:o2", "S+2"]);
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(), {
+        expandedSettledKeys,
+        settledPageSize: 2,
+        fullSettledKeys: new Set([shelfKey]),
+      }).map(formatRow),
+    ).toEqual(["H:local/app", "T:live", "S:local/app(4)+", "s:o1", "s:o2", "s:o3", "s:o4"]);
+  });
+
+  it("pushes history down to the leaf section when nesting", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "live", environmentId: "local", projectId: "app" })],
+      settledThreads: [thread({ id: "old", environmentId: "local", projectId: "app" })],
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    // The environment header rolls the count up but owns no rows of its own,
+    // or the same thread would render under both headers.
+    expect(groups[0]?.settledCount).toBe(1);
+    expect(groups[0]?.settledThreads).toEqual([]);
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(), {
+        expandedSettledKeys: new Set([settledShelfKey("environment:local/project:local:app")]),
+      }).map(formatRow),
+    ).toEqual(["H:This computer", "H:local/app", "T:live", "S:local/app(1)+", "s:old"]);
+  });
+
+  it("gives a project that only has history a section of its own", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [],
+      settledThreads: [thread({ id: "old", environmentId: "local", projectId: "archived" })],
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    expect(groups.map((group) => group.label)).toEqual(["local/archived"]);
+    expect(groups[0]?.threadCount).toBe(0);
   });
 });
