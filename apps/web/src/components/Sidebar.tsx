@@ -1313,8 +1313,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     return (
       <li
         data-thread-item
-        className="list-none [content-visibility:auto] [contain-intrinsic-size:auto_34px]"
+        // Slim rows indent like every other row: a settled thread sitting
+        // inside a project section has to line up under it, not flush against
+        // the sidebar edge as if it belonged to no one.
+        style={groupIndentStyle(indentDepth)}
+        className="relative list-none [content-visibility:auto] [contain-intrinsic-size:auto_34px]"
       >
+        <GroupIndentGuides depth={indentDepth} />
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4152,8 +4157,12 @@ export default function Sidebar() {
                       />,
                     );
                   }
+                  // Always visible, not hover-only: these are the way into a
+                  // project now that the selector is gone, and an action you
+                  // have to hunt for by hovering is an action most people
+                  // never find.
                   const headerActionClass =
-                    "size-5 shrink-0 text-icon-muted opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar-group-header:opacity-100";
+                    "size-5 shrink-0 text-icon-muted transition-colors hover:text-foreground";
                   /**
                    * What a section header can do, read off `group.target`
                    * rather than off its first thread: a section now exists
@@ -4352,7 +4361,7 @@ export default function Sidebar() {
                           key={`group-header:${group.key}`}
                           data-thread-selection-safe
                           className={cn(
-                            "group/sidebar-group-header relative flex list-none items-center gap-1 pe-1",
+                            "relative flex list-none items-center gap-1 pe-1",
                             // Top level carries the weight of a shelf header;
                             // the nested level reads as a caption inside it,
                             // so two grouping axes never look like one flat
