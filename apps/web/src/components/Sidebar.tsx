@@ -31,6 +31,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import type {
+  EnvironmentId,
   ScopedThreadRef,
   SidebarProjectGroupingMode,
   SidebarThreadGroupingAxis,
@@ -41,13 +42,13 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  ArchiveIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
   ClockIcon,
-  FolderIcon,
   FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
@@ -174,6 +175,7 @@ import {
   buildSidebarThreadGroups,
   deriveSidebarProviderOptions,
   flattenSidebarThreadGroups,
+  settledShelfKey,
   resolveThreadProviderIdentity,
   SIDEBAR_ATTENTION_CLASSES,
   type SidebarAttentionClass,
@@ -191,7 +193,6 @@ import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
@@ -208,6 +209,10 @@ import {
 // stays behind an explicit Show more.
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
+// A section's own history is a glance, not a browse: it opens showing the last
+// handful and offers the rest in one go rather than paging inside a section
+// that is itself one row of a list.
+const SETTLED_SECTION_INITIAL_COUNT = 6;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
@@ -596,7 +601,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   projectCwdByKey: ReadonlyMap<string, string>;
   projectFaviconPathByKey: ReadonlyMap<string, string | null | undefined>;
-  scopedProjectKeys: ReadonlySet<string> | null;
   routeDraftId: string | null;
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
@@ -636,12 +640,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       if (session.promotedTo != null) {
         continue;
       }
-      if (
-        props.scopedProjectKeys !== null &&
-        !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
-      ) {
-        continue;
-      }
       if (draftKey === props.routeDraftId) {
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
@@ -659,13 +657,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     }
     rows.sort((left, right) => right.session.createdAt.localeCompare(left.session.createdAt));
     return rows;
-  }, [
-    draftThreadsByThreadKey,
-    draftsByThreadKey,
-    frozenActive,
-    props.routeDraftId,
-    props.scopedProjectKeys,
-  ]);
+  }, [draftThreadsByThreadKey, draftsByThreadKey, frozenActive, props.routeDraftId]);
   const handleDiscard = useCallback(
     (draftId: DraftId) => {
       // The /draft/$draftId route redirects home on its own when the draft
@@ -2018,10 +2010,16 @@ export default function Sidebar() {
       );
     },
   });
-  const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
   const newThreadContext = useHandleNewThread();
+  // An environment section knows exactly where the project should land, so it
+  // passes that along and the palette skips its environment step.
   const openAddProjectCommandPalette = useCallback(
-    () => openCommandPalette({ open: "add-project" }),
+    (environmentId?: EnvironmentId) =>
+      openCommandPalette(
+        environmentId === undefined
+          ? { open: "add-project" }
+          : { open: "add-project", environmentId },
+      ),
     [],
   );
   const { environments } = useEnvironments();
@@ -2141,6 +2139,30 @@ export default function Sidebar() {
     [projectGroups],
   );
 
+  const projectGroupByProjectKey = useMemo(
+    () =>
+      new Map(
+        projectGroups.flatMap((group) =>
+          group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}`, group] as const,
+          ),
+        ),
+      ),
+    [projectGroups],
+  );
+  // Every known project seeds a section, so a project with no threads at all
+  // still gets a row — and with it the New thread and settings buttons. The
+  // seeds are physical project refs because that is what threads bucket by;
+  // seeding logical groups would create sections no thread could ever land in.
+  const projectSectionSeeds = useMemo(
+    () =>
+      projects.map((project) => ({
+        environmentId: project.environmentId,
+        projectId: project.id,
+      })),
+    [projects],
+  );
+
   // now is quantized to the minute so effectiveSettled memoization doesn't
   // churn on every render; auto-settle thresholds are day-granular anyway.
   const nowMinute = useNowMinute();
@@ -2155,30 +2177,6 @@ export default function Sidebar() {
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
-  const scopedProjectGroup = useMemo(
-    () =>
-      projectScopeKey === null
-        ? null
-        : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
-    [projectGroups, projectScopeKey],
-  );
-  const scopedProjectKeys = useMemo(
-    () =>
-      scopedProjectGroup === null
-        ? null
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-            ),
-          ),
-    [scopedProjectGroup],
-  );
-  useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
-      setProjectScopeKey(null);
-    }
-  }, [projectScopeKey, scopedProjectGroup]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -2195,27 +2193,14 @@ export default function Sidebar() {
       if (!composerDraftHasUserContent(store.draftsByThreadKey[draftKey])) {
         continue;
       }
-      if (
-        scopedProjectKeys !== null &&
-        !scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
-      ) {
-        continue;
-      }
       count += 1;
     }
     return count;
   });
-  // Scope flips drop the selection: rows selected under the old scope may be
-  // hidden now, and bulk actions must never count or touch invisible rows.
-  useEffect(() => {
-    clearSelection();
-  }, [clearSelection, projectScopeKey]);
-
   const handleProjectSettings = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
       event.preventDefault();
       event.stopPropagation();
-      setProjectScopeMenuOpen(false);
       if (isMobile) {
         setOpenMobile(false);
       }
@@ -2252,8 +2237,6 @@ export default function Sidebar() {
     const visible = threads.filter(
       (thread) =>
         thread.archivedAt === null &&
-        (scopedProjectKeys === null ||
-          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)) &&
         (threadProviderFilter === null ||
           resolveThreadProviderIdentity(thread, providerEntriesByEnvironment).driverKind ===
             threadProviderFilter),
@@ -2337,28 +2320,22 @@ export default function Sidebar() {
     changeRequestSnapshotByKey,
     nowMinute,
     providerEntriesByEnvironment,
-    scopedProjectKeys,
     serverConfigs,
     snoozeWakeTick,
     threadProviderFilter,
     threads,
   ]);
 
-  // Provider options come from the unfiltered (but project-scoped) thread set:
-  // deriving them from the filtered list would erase every option except the
-  // active one, leaving no way back to "All providers" from the menu.
+  // Provider options come from the unfiltered thread set: deriving them from
+  // the filtered list would erase every option except the active one, leaving
+  // no way back to "All providers" from the menu.
   const providerOptions = useMemo(
     () =>
       deriveSidebarProviderOptions(
-        threads.filter(
-          (thread) =>
-            thread.archivedAt === null &&
-            (scopedProjectKeys === null ||
-              scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-        ),
+        threads.filter((thread) => thread.archivedAt === null),
         providerEntriesByEnvironment,
       ),
-    [providerEntriesByEnvironment, scopedProjectKeys, threads],
+    [providerEntriesByEnvironment, threads],
   );
   const collapsedGroupKeys = useMemo(() => new Set(collapsedGroupKeyList), [collapsedGroupKeyList]);
   const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
@@ -2393,19 +2370,63 @@ export default function Sidebar() {
   // Only the inbox is grouped. Pinned keeps its manual order, and the snoozed
   // and settled shelves are already sections with their own meaning — nesting
   // grouping inside them would stack two competing hierarchies.
+  // A project axis means every project is already a section, so history
+  // belongs inside those sections rather than in one shelf at the bottom that
+  // mixes every project's past together.
+  const sectionsOwnSettled =
+    threadPrimaryGrouping === "project" || threadSecondaryGrouping === "project";
+  const hasEnvironmentSections =
+    (threadPrimaryGrouping === "environment" || threadSecondaryGrouping === "environment") &&
+    projects.length > 0;
   const activeThreadGroups = useMemo(
     () =>
       buildSidebarThreadGroups({
         threads: activeThreads,
+        settledThreads: sectionsOwnSettled ? settledThreads : [],
+        seeds: projectSectionSeeds,
         primaryAxis: threadPrimaryGrouping,
         secondaryAxis: threadSecondaryGrouping,
         context: threadGroupContext,
       }),
-    [activeThreads, threadGroupContext, threadPrimaryGrouping, threadSecondaryGrouping],
+    [
+      activeThreads,
+      projectSectionSeeds,
+      sectionsOwnSettled,
+      settledThreads,
+      threadGroupContext,
+      threadPrimaryGrouping,
+      threadSecondaryGrouping,
+    ],
   );
+  // Which section histories the user opened. Deliberately component state and
+  // not a persisted setting: an archive is opened to answer one question, and
+  // reopening the app with six histories still unrolled would bury the work.
+  const [expandedSettledKeys, setExpandedSettledKeys] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const [fullSettledKeys, setFullSettledKeys] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const toggleSectionSettled = useCallback((shelfKey: string) => {
+    setExpandedSettledKeys((current) => {
+      const next = new Set(current);
+      if (!next.delete(shelfKey)) {
+        next.add(shelfKey);
+      }
+      return next;
+    });
+  }, []);
+  const showAllSectionSettled = useCallback((shelfKey: string) => {
+    setFullSettledKeys((current) => new Set(current).add(shelfKey));
+  }, []);
   const activeThreadRows = useMemo(
-    () => flattenSidebarThreadGroups(activeThreadGroups, collapsedGroupKeys),
-    [activeThreadGroups, collapsedGroupKeys],
+    () =>
+      flattenSidebarThreadGroups(activeThreadGroups, collapsedGroupKeys, {
+        expandedSettledKeys,
+        settledPageSize: SETTLED_SECTION_INITIAL_COUNT,
+        fullSettledKeys,
+      }),
+    [activeThreadGroups, collapsedGroupKeys, expandedSettledKeys, fullSettledKeys],
   );
   // Which facts a section header already states. Grouped rows drop the
   // matching label so the list says each thing once.
@@ -2519,7 +2540,7 @@ export default function Sidebar() {
   // filter context changes so a scope/search flip never inherits a deep
   // page state.
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
-  const settledResetKey = projectScopeKey ?? "all";
+  const settledResetKey = threadProviderFilter ?? "all";
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
     lastSettledResetKeyRef.current = settledResetKey;
@@ -3840,99 +3861,28 @@ export default function Sidebar() {
                 </Tooltip>
               </div>
             </div>
-            {projectGroups.length > 0 ? (
+            {/* The project selector row is gone: every project is a section in
+                the list below, and the actions that used to hide inside the
+                selector — settings, New thread — live on the section header,
+                where the project already is. The one action with no section to
+                hang on is adding a project to an environment that has none, so
+                it keeps a home here whenever the layout has no environment
+                sections to carry it. */}
+            {projectGroups.length > 0 && !hasEnvironmentSections ? (
               <div className="flex items-center gap-1">
-                <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
-                  <MenuTrigger
-                    render={
-                      <SidebarMenuButton
-                        aria-label="Filter threads by project"
-                        className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                      />
-                    }
-                  >
-                    {scopedProjectGroup ? (
-                      <ProjectFavicon
-                        environmentId={scopedProjectGroup.environmentId}
-                        cwd={scopedProjectGroup.workspaceRoot}
-                        faviconPath={scopedProjectGroup.faviconPath}
-                        className="size-4 shrink-0"
-                      />
-                    ) : (
-                      <FolderIcon className="size-4 shrink-0" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {scopedProjectGroup?.displayName ?? "All projects"}
-                    </span>
-                    <ChevronDownIcon className="-mr-px size-4 shrink-0" />
-                  </MenuTrigger>
-                  <MenuPopup align="start" className="w-(--anchor-width)">
-                    <MenuRadioGroup
-                      value={projectScopeKey ?? "all"}
-                      onValueChange={(value) =>
-                        setProjectScopeKey(value === "all" ? null : (value as string))
-                      }
-                    >
-                      <MenuRadioItem
-                        value="all"
-                        closeOnClick
-                        className="h-8 min-h-8 px-1 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-                      >
-                        <FolderIcon className="size-4 shrink-0" />
-                        <span className="min-w-0 truncate text-sm">All projects</span>
-                      </MenuRadioItem>
-                      {projectGroups.map((project) => {
-                        const scopeKey = project.projectKey;
-                        return (
-                          <MenuRadioItem
-                            key={scopeKey}
-                            value={scopeKey}
-                            closeOnClick
-                            className="h-8 min-h-8 px-1 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-                          >
-                            <ProjectFavicon
-                              environmentId={project.environmentId}
-                              cwd={project.workspaceRoot}
-                              faviconPath={project.faviconPath}
-                              className="size-4 shrink-0"
-                            />
-                            <span className="min-w-0 truncate text-sm">{project.displayName}</span>
-                            <Button
-                              size="icon-xs"
-                              variant="ghost-muted"
-                              aria-label={`Project settings for ${project.displayName}`}
-                              title={`Project settings for ${project.displayName}`}
-                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                void handleProjectSettings(event, project);
-                              }}
-                            >
-                              <SettingsIcon className="size-3.5" />
-                            </Button>
-                          </MenuRadioItem>
-                        );
-                      })}
-                    </MenuRadioGroup>
-                  </MenuPopup>
-                </Menu>
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <SidebarMenuButton
-                        size="icon"
-                        className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={openAddProjectCommandPalette}
+                        className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        onClick={() => openAddProjectCommandPalette()}
                         type="button"
                         aria-label="New project"
                       />
                     }
                   >
-                    <FolderPlusIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
+                    <FolderPlusIcon className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-start">New project</span>
                   </TooltipTrigger>
                   <TooltipPopup side="right">New project</TooltipPopup>
                 </Tooltip>
@@ -4149,7 +4099,6 @@ export default function Sidebar() {
                       projectDisplayNameByKey={projectDisplayNameByKey}
                       projectCwdByKey={projectCwdByKey}
                       projectFaviconPathByKey={projectFaviconPathByKey}
-                      scopedProjectKeys={scopedProjectKeys}
                       routeDraftId={routeDraftIdForRows}
                       onNavigateToDraft={navigateToDraft}
                     />,
@@ -4203,41 +4152,93 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  // A project section owns exactly one project, so its
-                  // header can start a thread there. Read off the first
-                  // thread rather than parsing the group key, so the ids stay
-                  // branded and the key format stays an implementation detail.
-                  const groupNewThreadTarget = (
+                  const headerActionClass =
+                    "size-5 shrink-0 text-icon-muted opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar-group-header:opacity-100";
+                  /**
+                   * What a section header can do, read off `group.target`
+                   * rather than off its first thread: a section now exists
+                   * before it has any threads, and an empty project is exactly
+                   * the one that most needs its New thread button.
+                   *
+                   * A provider section spans projects and environments, so it
+                   * gets no action rather than a guess.
+                   */
+                  const groupHeaderActions = (
                     group: (typeof activeThreadGroups)[number],
                   ): ReactNode => {
-                    if (group.axis !== "project") {
+                    const { environmentId, projectId } = group.target;
+                    if (group.axis === "environment" && environmentId !== null) {
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                size="icon-xs"
+                                variant="ghost-muted"
+                                aria-label={`New project in ${group.label}`}
+                                className={headerActionClass}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAddProjectCommandPalette(environmentId);
+                                }}
+                              />
+                            }
+                          >
+                            <FolderPlusIcon className="size-3" />
+                          </TooltipTrigger>
+                          <TooltipPopup side="right">New project in {group.label}</TooltipPopup>
+                        </Tooltip>
+                      );
+                    }
+                    if (group.axis !== "project" || environmentId === null || projectId === null) {
                       return null;
                     }
-                    const thread = group.threads[0] ?? group.children[0]?.threads[0] ?? null;
-                    if (thread === null) {
-                      return null;
-                    }
-                    const projectRef = scopeProjectRef(thread.environmentId, thread.projectId);
+                    const projectRef = scopeProjectRef(environmentId, projectId);
+                    const projectGroup =
+                      projectGroupByProjectKey.get(`${environmentId}:${projectId}`) ?? null;
                     return (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              size="icon-xs"
-                              variant="ghost-muted"
-                              aria-label={`New thread in ${group.label}`}
-                              className="size-5 shrink-0 text-icon-muted opacity-0 transition-opacity focus-visible:opacity-100 group-hover/sidebar-group-header:opacity-100"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleNewThreadRef.current(projectRef);
-                              }}
-                            />
-                          }
-                        >
-                          <SquarePenIcon className="size-3" />
-                        </TooltipTrigger>
-                        <TooltipPopup side="right">New thread in {group.label}</TooltipPopup>
-                      </Tooltip>
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                size="icon-xs"
+                                variant="ghost-muted"
+                                aria-label={`New thread in ${group.label}`}
+                                className={headerActionClass}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleNewThreadRef.current(projectRef);
+                                }}
+                              />
+                            }
+                          >
+                            <SquarePenIcon className="size-3" />
+                          </TooltipTrigger>
+                          <TooltipPopup side="right">New thread in {group.label}</TooltipPopup>
+                        </Tooltip>
+                        {projectGroup === null ? null : (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  size="icon-xs"
+                                  variant="ghost-muted"
+                                  aria-label={`Project settings for ${group.label}`}
+                                  className={headerActionClass}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleProjectSettings(event, projectGroup);
+                                  }}
+                                />
+                              }
+                            >
+                              <SettingsIcon className="size-3" />
+                            </TooltipTrigger>
+                            <TooltipPopup side="right">Project settings</TooltipPopup>
+                          </Tooltip>
+                        )}
+                      </>
                     );
                   };
                   // Ungrouped is the default and stays a plain run of rows.
@@ -4259,6 +4260,87 @@ export default function Sidebar() {
                             compact: compactCardOptions,
                             indentDepth: row.depth,
                           }),
+                        );
+                        continue;
+                      }
+                      if (row.kind === "settled-thread") {
+                        items.push(
+                          renderThreadRow(row.thread, "settled", undefined, {
+                            compact: compactCardOptions,
+                            indentDepth: row.depth,
+                          }),
+                        );
+                        continue;
+                      }
+                      if (row.kind === "settled-more") {
+                        const shelfKey = settledShelfKey(row.group.key);
+                        items.push(
+                          <li
+                            key={`settled-more:${row.group.key}`}
+                            data-thread-selection-safe
+                            className="relative list-none"
+                            style={groupIndentStyle(row.depth)}
+                          >
+                            <GroupIndentGuides depth={row.depth} />
+                            <button
+                              type="button"
+                              onClick={() => showAllSectionSettled(shelfKey)}
+                              className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md ps-2.5 text-left text-[11px] text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                            >
+                              <PlusIcon aria-hidden className="size-3 shrink-0" />
+                              Show {row.hiddenCount} more
+                            </button>
+                          </li>,
+                        );
+                        continue;
+                      }
+                      if (row.kind === "settled-header") {
+                        const shelfKey = settledShelfKey(row.group.key);
+                        items.push(
+                          <li
+                            key={`settled-header:${row.group.key}`}
+                            data-thread-selection-safe
+                            className="relative mb-1 mt-1.5 flex list-none items-center gap-1 pe-1"
+                            style={groupIndentStyle(row.depth)}
+                          >
+                            <GroupIndentGuides depth={row.depth} />
+                            {/* History reads as a caption inside the section,
+                                never as a peer of it: same grammar as a group
+                                header, one step quieter. */}
+                            <button
+                              type="button"
+                              onClick={() => toggleSectionSettled(shelfKey)}
+                              aria-expanded={row.expanded}
+                              data-testid={`sidebar-section-settled-toggle:${row.group.key}`}
+                              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-left"
+                            >
+                              <ArchiveIcon
+                                aria-hidden
+                                className="size-3 shrink-0 text-muted-foreground/40"
+                              />
+                              <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground/50">
+                                Settled
+                              </span>
+                              <span className="text-[11px] tabular-nums text-muted-foreground/40">
+                                {row.group.settledThreads.length}
+                              </span>
+                              <span className="h-px flex-1 bg-sidebar-border/40" />
+                            </button>
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              aria-hidden="true"
+                              onClick={() => toggleSectionSettled(shelfKey)}
+                              className="flex shrink-0 cursor-pointer items-center px-0.5"
+                            >
+                              <ChevronDownIcon
+                                className={cn(
+                                  "size-3 text-muted-foreground/40 transition-transform",
+                                  !row.expanded && "-rotate-90",
+                                )}
+                              />
+                            </button>
+                          </li>,
                         );
                         continue;
                       }
@@ -4319,8 +4401,25 @@ export default function Sidebar() {
                                 isTopLevel ? "bg-sidebar-border" : "bg-sidebar-border/40",
                               )}
                             />
+                          </button>
+                          {/* Actions are siblings of the toggle, not children:
+                              a button inside a button is invalid. */}
+                          {groupHeaderActions(group)}
+                          {/* The chevron closes the row, always. It is the one
+                              control every section has, so anchoring it to the
+                              right edge keeps a fixed landmark while
+                              project-only actions appear and disappear on
+                              hover. Redundant for assistive tech — the labelled
+                              toggle above already exposes the same action — so
+                              it stays out of the tab order and the a11y tree. */}
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            onClick={() => toggleThreadGroupCollapsed(group.key)}
+                            className="flex shrink-0 cursor-pointer items-center px-0.5"
+                          >
                             <ChevronDownIcon
-                              aria-hidden
                               className={cn(
                                 "size-3 transition-transform",
                                 isTopLevel
@@ -4330,13 +4429,6 @@ export default function Sidebar() {
                               )}
                             />
                           </button>
-                          {/* Project sections are the only ones with an
-                              unambiguous target for a new thread; an
-                              environment or provider section spans several
-                              projects, so it gets no button rather than a
-                              guess. Sibling of the toggle, not a child: a
-                              button inside a button is invalid. */}
-                          {groupNewThreadTarget(group)}
                         </li>,
                       );
                     }
@@ -4380,7 +4472,11 @@ export default function Sidebar() {
                       items.push(renderThreadRow(thread, "snoozed"));
                     }
                   }
-                  if (settledThreads.length > 0) {
+                  // The global history shelf only exists when no section owns
+                  // history. With a project axis the same rows already live
+                  // under the project they belong to, and rendering both would
+                  // show every settled thread twice.
+                  if (!sectionsOwnSettled && settledThreads.length > 0) {
                     items.push(
                       <li
                         key="settled-shelf-header"
@@ -4411,12 +4507,14 @@ export default function Sidebar() {
                       </li>,
                     );
                   }
-                  for (const thread of renderedSettledThreads) {
-                    items.push(renderThreadRow(thread, "settled"));
+                  if (!sectionsOwnSettled) {
+                    for (const thread of renderedSettledThreads) {
+                      items.push(renderThreadRow(thread, "settled"));
+                    }
                   }
                   return items;
                 })()}
-                {settledShelfExpanded && hiddenSettledCount > 0 ? (
+                {!sectionsOwnSettled && settledShelfExpanded && hiddenSettledCount > 0 ? (
                   <li className="list-none">
                     <button
                       type="button"
@@ -4444,15 +4542,13 @@ export default function Sidebar() {
                   <span>No projects yet</span>
                   <button
                     type="button"
-                    onClick={openAddProjectCommandPalette}
+                    onClick={() => openAddProjectCommandPalette()}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
                     Add project
                   </button>
                 </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (
                 "No threads yet"
               )}

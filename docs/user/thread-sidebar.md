@@ -14,14 +14,15 @@ their pinned threads keep the default newest-first order below the ones you have
 
 ## Grouping, filtering, and sorting
 
-Below the project selector, a compact bar controls how the thread list is laid out. Every choice
+A compact bar at the top of the sidebar controls how the thread list is laid out. Every choice
 is remembered.
 
-**Group by** splits the list into collapsible sections. Choose **Leave open (flat list)** for one
-uninterrupted list, or group by **Environment**, **Project**, or **Provider**. Once a grouping is
-active, **Then by** adds a second level inside each section — for example environment sections
-that contain one subsection per project. Click a section header to collapse it; collapsing a
-section also hides its subsections. Changing either grouping expands everything again.
+**Group by** splits the list into collapsible sections. Out of the box the sidebar is grouped by
+**Environment** and then by **Project**. Choose **Leave open (flat list)** for one uninterrupted
+list, or group by **Environment**, **Project**, or **Provider**. Once a grouping is active,
+**Then by** adds a second level inside each section. Click a section header to collapse it;
+collapsing a section also hides its subsections. Changing either grouping expands everything
+again.
 
 **Treat a project as** decides what counts as one project in the sidebar: one row per repository,
 one row per folder inside a repository (useful for worktrees and monorepo packages), or one row
@@ -33,17 +34,37 @@ snoozed, and settled ones. The menu only lists providers that currently have thr
 The last menu sorts threads by **Last activity** or **Date created**. Sorting and grouping are
 independent: changing one never reshuffles the other.
 
-Project sections carry a **New thread** button next to their collapse arrow, so you can start work
-in that project without changing the project selector first. Environment and provider sections span
-several projects, so they do not offer one.
+## Acting on a section
+
+Section headers carry the actions for whatever they are about. They appear on hover and always sit
+to the left of the collapse arrow, which stays in the same place on every row.
+
+Project sections offer **New thread** and **Project settings**. Every project you have added keeps
+a section whether or not it currently has threads, so starting work in a quiet project is one
+click, not a detour through a menu.
+
+Environment sections offer **New project**, which opens the project picker already pointed at that
+environment.
+
+Provider sections span several projects and environments, so they carry no actions.
 
 A collapsed section shows what is waiting inside it as colored dots with counts, in order of
 urgency: amber for approvals, indigo for input requests, red for failures, green for finished
 threads you have not opened yet, and blue for threads still working. Open sections leave that to
 the rows themselves. Unread finished threads also carry a green dot next to their title.
 
-Pinned threads keep their manual order, and the snoozed and settled shelves stay whole — grouping
-applies to the main list.
+## Where settled threads go
+
+When the list is grouped by project, each project section ends with its own **Settled** shelf
+holding that project's finished threads. The shelf starts closed and shows a count, so history
+stays one click away without pushing live work off the screen. Long histories open a handful at a
+time with a **Show more** row.
+
+With any other grouping — including the flat list — settled threads collect in the single
+**Settled** shelf at the bottom of the sidebar instead.
+
+Pinned threads keep their manual order and the snoozed shelf stays whole: grouping applies to the
+main list.
 
 ## Environment artwork
 

@@ -86,19 +86,55 @@ export interface SidebarThreadProviderIdentity {
   readonly label: string;
 }
 
+/**
+ * What a section is *about*, when that is a single addressable thing.
+ *
+ * The header needs this to act on the section — start a thread in this
+ * project, add a project to this environment. Reading it off the first thread
+ * would work only for sections that have threads, and sections now exist
+ * precisely when they don't (an empty project still gets a row).
+ */
+export interface SidebarThreadGroupTarget {
+  readonly environmentId: EnvironmentId | null;
+  readonly projectId: ProjectId | null;
+}
+
 export interface SidebarThreadGroup<TThread extends GroupableThread> {
   /** Stable key for collapse persistence and React keys. Unique within the tree. */
   readonly key: string;
   readonly label: string;
   readonly axis: Exclude<SidebarThreadGroupingAxis, "none">;
+  /** The environment/project this section addresses, when it addresses one. */
+  readonly target: SidebarThreadGroupTarget;
   /** Threads directly in this section — empty when `children` carries them instead. */
   readonly threads: ReadonlyArray<TThread>;
+  /**
+   * Settled threads belonging to this section, in the order the caller passed
+   * them. Kept apart from `threads` so a section can show its history without
+   * history competing with live work for the same space.
+   */
+  readonly settledThreads: ReadonlyArray<TThread>;
   /** Nested sections when a secondary axis is active. */
   readonly children: ReadonlyArray<SidebarThreadGroup<TThread>>;
   /** Total threads in this section, including every descendant. */
   readonly threadCount: number;
+  /** Settled threads in this section, including every descendant. */
+  readonly settledCount: number;
   /** Attention rollup over every thread in this section, including descendants. */
   readonly attention: SidebarAttentionCounts;
+}
+
+/**
+ * A section that must exist even with nothing in it.
+ *
+ * The sidebar seeds one per known project so every project keeps a row — and
+ * therefore its New thread and settings buttons — whether or not it currently
+ * has a single thread. Without this, the only way to reach a quiet project
+ * would be to already have work in it.
+ */
+export interface SidebarThreadGroupSeed {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
 }
 
 const UNKNOWN_PROVIDER_DRIVER = "unknown";
@@ -163,6 +199,32 @@ export function deriveSidebarProviderOptions(
 interface BucketIdentity {
   readonly key: string;
   readonly label: string;
+  readonly target: SidebarThreadGroupTarget;
+}
+
+const NO_TARGET: SidebarThreadGroupTarget = { environmentId: null, projectId: null };
+
+function environmentBucket(
+  environmentId: EnvironmentId,
+  context: SidebarThreadGroupContext,
+): BucketIdentity {
+  return {
+    key: `environment:${environmentId}`,
+    label: context.resolveEnvironmentLabel(environmentId) ?? "This computer",
+    target: { environmentId, projectId: null },
+  };
+}
+
+function projectBucket(
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+  context: SidebarThreadGroupContext,
+): BucketIdentity {
+  return {
+    key: `project:${environmentId}:${projectId}`,
+    label: context.resolveProjectLabel(environmentId, projectId) ?? "Unknown project",
+    target: { environmentId, projectId },
+  };
 }
 
 function bucketForAxis(
@@ -171,43 +233,105 @@ function bucketForAxis(
   context: SidebarThreadGroupContext,
 ): BucketIdentity {
   switch (axis) {
-    case "environment": {
-      const label = context.resolveEnvironmentLabel(thread.environmentId);
-      return {
-        key: `environment:${thread.environmentId}`,
-        label: label ?? "This computer",
-      };
-    }
-    case "project": {
-      const label = context.resolveProjectLabel(thread.environmentId, thread.projectId);
-      return {
-        key: `project:${thread.environmentId}:${thread.projectId}`,
-        label: label ?? "Unknown project",
-      };
-    }
+    case "environment":
+      return environmentBucket(thread.environmentId, context);
+    case "project":
+      return projectBucket(thread.environmentId, thread.projectId, context);
     case "provider": {
       const identity = resolveThreadProviderIdentity(thread, context.providerEntriesByEnvironment);
-      return { key: `provider:${identity.driverKind}`, label: identity.label };
+      return { key: `provider:${identity.driverKind}`, label: identity.label, target: NO_TARGET };
     }
   }
 }
 
-function partitionByAxis<TThread extends GroupableThread>(
-  threads: ReadonlyArray<TThread>,
+/**
+ * The bucket a seed belongs to on a given axis, or null when the axis cannot
+ * be derived from a project alone. A project has no provider until a thread
+ * runs in it, so seeding a provider section would be inventing data.
+ */
+function bucketForSeed(
+  seed: SidebarThreadGroupSeed,
   axis: Exclude<SidebarThreadGroupingAxis, "none">,
   context: SidebarThreadGroupContext,
-): Array<{ identity: BucketIdentity; threads: TThread[] }> {
-  const buckets = new Map<string, { identity: BucketIdentity; threads: TThread[] }>();
-  for (const thread of threads) {
-    const identity = bucketForAxis(thread, axis, context);
+): BucketIdentity | null {
+  switch (axis) {
+    case "environment":
+      return environmentBucket(seed.environmentId, context);
+    case "project":
+      return projectBucket(seed.environmentId, seed.projectId, context);
+    case "provider":
+      return null;
+  }
+}
+
+/** Seeds that belong under a parent section, for the nested level. */
+function seedsUnder(
+  seeds: ReadonlyArray<SidebarThreadGroupSeed>,
+  parent: BucketIdentity,
+): ReadonlyArray<SidebarThreadGroupSeed> {
+  if (parent.target.environmentId === null) {
+    return [];
+  }
+  return seeds.filter(
+    (seed) =>
+      seed.environmentId === parent.target.environmentId &&
+      (parent.target.projectId === null || seed.projectId === parent.target.projectId),
+  );
+}
+
+interface Bucket<TThread extends GroupableThread> {
+  readonly identity: BucketIdentity;
+  readonly threads: TThread[];
+  readonly settled: TThread[];
+}
+
+/**
+ * Buckets threads on one axis.
+ *
+ * Emission order is deliberate and layered: sections with live work first (in
+ * first-appearance order), then sections that only hold history, then the
+ * seeded-but-empty ones. A quiet project keeps its row without pushing the
+ * work you are actually doing down the list.
+ */
+function partitionByAxis<TThread extends GroupableThread>(input: {
+  readonly threads: ReadonlyArray<TThread>;
+  readonly settledThreads: ReadonlyArray<TThread>;
+  readonly seeds: ReadonlyArray<SidebarThreadGroupSeed>;
+  readonly axis: Exclude<SidebarThreadGroupingAxis, "none">;
+  readonly context: SidebarThreadGroupContext;
+}): Array<Bucket<TThread>> {
+  const { axis, context } = input;
+  const buckets = new Map<string, Bucket<TThread>>();
+  const ensure = (identity: BucketIdentity): Bucket<TThread> => {
     const existing = buckets.get(identity.key);
     if (existing) {
-      existing.threads.push(thread);
-    } else {
-      buckets.set(identity.key, { identity, threads: [thread] });
+      return existing;
+    }
+    const created: Bucket<TThread> = { identity, threads: [], settled: [] };
+    buckets.set(identity.key, created);
+    return created;
+  };
+
+  for (const thread of input.threads) {
+    ensure(bucketForAxis(thread, axis, context)).threads.push(thread);
+  }
+  const activeKeys = new Set(buckets.keys());
+  for (const thread of input.settledThreads) {
+    ensure(bucketForAxis(thread, axis, context)).settled.push(thread);
+  }
+  const seenKeys = new Set(buckets.keys());
+  for (const seed of input.seeds) {
+    const identity = bucketForSeed(seed, axis, context);
+    if (identity !== null) {
+      ensure(identity);
     }
   }
-  return [...buckets.values()];
+
+  const ordered = [...buckets.values()];
+  const rank = (bucket: Bucket<TThread>): number =>
+    activeKeys.has(bucket.identity.key) ? 0 : seenKeys.has(bucket.identity.key) ? 1 : 2;
+  // Stable sort: within a rank the insertion order (first appearance) holds.
+  return ordered.sort((a, b) => rank(a) - rank(b));
 }
 
 /**
@@ -222,42 +346,74 @@ function partitionByAxis<TThread extends GroupableThread>(
  */
 export function buildSidebarThreadGroups<TThread extends GroupableThread>(input: {
   readonly threads: ReadonlyArray<TThread>;
+  /**
+   * History for the same sections. Grouped on the same axes so a section owns
+   * its own archive instead of every section's history piling into one shelf
+   * at the bottom of the sidebar.
+   */
+  readonly settledThreads?: ReadonlyArray<TThread>;
+  /** Sections that must exist even with no threads at all. */
+  readonly seeds?: ReadonlyArray<SidebarThreadGroupSeed>;
   readonly primaryAxis: SidebarThreadGroupingAxis;
   readonly secondaryAxis: SidebarThreadGroupingAxis;
   readonly context: SidebarThreadGroupContext;
 }): ReadonlyArray<SidebarThreadGroup<TThread>> {
   const { primaryAxis, secondaryAxis, context, threads } = input;
-  if (primaryAxis === "none" || threads.length === 0) {
+  const settledThreads = input.settledThreads ?? [];
+  const seeds = input.seeds ?? [];
+  if (primaryAxis === "none") {
+    return [];
+  }
+  if (threads.length === 0 && settledThreads.length === 0 && seeds.length === 0) {
     return [];
   }
 
   const nestedAxis =
     secondaryAxis === "none" || secondaryAxis === primaryAxis ? null : secondaryAxis;
 
-  return partitionByAxis(threads, primaryAxis, context).map(({ identity, threads: bucket }) => {
-    const attention = countAttention(bucket, context.classifyAttention);
+  return partitionByAxis({
+    threads,
+    settledThreads,
+    seeds,
+    axis: primaryAxis,
+    context,
+  }).map((bucket) => {
+    const { identity } = bucket;
+    const attention = countAttention(bucket.threads, context.classifyAttention);
     if (nestedAxis === null) {
       return {
         key: identity.key,
         label: identity.label,
         axis: primaryAxis,
-        threads: bucket,
+        target: identity.target,
+        threads: bucket.threads,
+        settledThreads: bucket.settled,
         children: [],
-        threadCount: bucket.length,
+        threadCount: bucket.threads.length,
+        settledCount: bucket.settled.length,
         attention,
       } satisfies SidebarThreadGroup<TThread>;
     }
 
-    const children = partitionByAxis(bucket, nestedAxis, context).map(
+    const children = partitionByAxis({
+      threads: bucket.threads,
+      settledThreads: bucket.settled,
+      seeds: seedsUnder(seeds, identity),
+      axis: nestedAxis,
+      context,
+    }).map(
       (child): SidebarThreadGroup<TThread> => ({
         // Prefixed with the parent key so the same child bucket under two
         // parents gets two independent collapse states.
         key: `${identity.key}/${child.identity.key}`,
         label: child.identity.label,
         axis: nestedAxis,
+        target: child.identity.target,
         threads: child.threads,
+        settledThreads: child.settled,
         children: [],
         threadCount: child.threads.length,
+        settledCount: child.settled.length,
         attention: countAttention(child.threads, context.classifyAttention),
       }),
     );
@@ -266,9 +422,15 @@ export function buildSidebarThreadGroups<TThread extends GroupableThread>(input:
       key: identity.key,
       label: identity.label,
       axis: primaryAxis,
+      target: identity.target,
       threads: [],
+      // Nesting moves every thread down a level, history included: a parent
+      // that owned its settled rows *and* had children would render the same
+      // history twice.
+      settledThreads: [],
       children,
-      threadCount: bucket.length,
+      threadCount: bucket.threads.length,
+      settledCount: bucket.settled.length,
       attention,
     } satisfies SidebarThreadGroup<TThread>;
   });
@@ -284,25 +446,93 @@ export function buildSidebarThreadGroups<TThread extends GroupableThread>(input:
  */
 export type SidebarThreadGroupRow<TThread extends GroupableThread> =
   | { readonly kind: "header"; readonly group: SidebarThreadGroup<TThread>; readonly depth: number }
-  | { readonly kind: "thread"; readonly thread: TThread; readonly depth: number };
+  | { readonly kind: "thread"; readonly thread: TThread; readonly depth: number }
+  | {
+      readonly kind: "settled-header";
+      readonly group: SidebarThreadGroup<TThread>;
+      readonly depth: number;
+      readonly expanded: boolean;
+    }
+  | { readonly kind: "settled-thread"; readonly thread: TThread; readonly depth: number }
+  | {
+      readonly kind: "settled-more";
+      readonly group: SidebarThreadGroup<TThread>;
+      readonly depth: number;
+      readonly hiddenCount: number;
+    };
+
+/**
+ * Collapse key of a section's history shelf.
+ *
+ * Namespaced under the section so expanding one project's history says nothing
+ * about any other, and so the key can never collide with a section key.
+ */
+export function settledShelfKey(groupKey: string): string {
+  return `${groupKey}/settled`;
+}
 
 export function flattenSidebarThreadGroups<TThread extends GroupableThread>(
   groups: ReadonlyArray<SidebarThreadGroup<TThread>>,
   collapsedGroupKeys: ReadonlySet<string>,
-  depth = 0,
+  options?: {
+    /**
+     * History shelves the user opened. Opt-in rather than opt-out: a section's
+     * archive is closed until asked for, so history never pushes live work off
+     * the screen on first paint.
+     */
+    readonly expandedSettledKeys?: ReadonlySet<string>;
+    /**
+     * How many settled rows an open shelf shows before offering the rest.
+     * Omitted means no limit.
+     */
+    readonly settledPageSize?: number;
+    /** Shelves the user asked to see in full, exempt from `settledPageSize`. */
+    readonly fullSettledKeys?: ReadonlySet<string>;
+  },
 ): Array<SidebarThreadGroupRow<TThread>> {
-  const rows: Array<SidebarThreadGroupRow<TThread>> = [];
-  for (const group of groups) {
-    rows.push({ kind: "header", group, depth });
-    if (collapsedGroupKeys.has(group.key)) {
-      continue;
+  const expandedSettledKeys = options?.expandedSettledKeys ?? EMPTY_KEYS;
+  const fullSettledKeys = options?.fullSettledKeys ?? EMPTY_KEYS;
+  const settledPageSize = options?.settledPageSize;
+  const walk = (
+    level: ReadonlyArray<SidebarThreadGroup<TThread>>,
+    depth: number,
+  ): Array<SidebarThreadGroupRow<TThread>> => {
+    const rows: Array<SidebarThreadGroupRow<TThread>> = [];
+    for (const group of level) {
+      rows.push({ kind: "header", group, depth });
+      if (collapsedGroupKeys.has(group.key)) {
+        continue;
+      }
+      for (const thread of group.threads) {
+        rows.push({ kind: "thread", thread, depth: depth + 1 });
+      }
+      rows.push(...walk(group.children, depth + 1));
+      // History sits after the live rows and after any nested sections: it is
+      // the tail of this section, not an item competing with them.
+      if (group.settledThreads.length > 0) {
+        const shelfKey = settledShelfKey(group.key);
+        const expanded = expandedSettledKeys.has(shelfKey);
+        rows.push({ kind: "settled-header", group, depth: depth + 1, expanded });
+        if (expanded) {
+          const limit =
+            settledPageSize === undefined || fullSettledKeys.has(shelfKey)
+              ? group.settledThreads.length
+              : settledPageSize;
+          for (const thread of group.settledThreads.slice(0, limit)) {
+            rows.push({ kind: "settled-thread", thread, depth: depth + 1 });
+          }
+          const hiddenCount = group.settledThreads.length - limit;
+          if (hiddenCount > 0) {
+            rows.push({ kind: "settled-more", group, depth: depth + 1, hiddenCount });
+          }
+        }
+      }
     }
-    for (const thread of group.threads) {
-      rows.push({ kind: "thread", thread, depth: depth + 1 });
-    }
-    rows.push(...flattenSidebarThreadGroups(group.children, collapsedGroupKeys, depth + 1));
-  }
-  return rows;
+    return rows;
+  };
+  return walk(groups, 0);
 }
+
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 export { UNKNOWN_PROVIDER_DRIVER };
