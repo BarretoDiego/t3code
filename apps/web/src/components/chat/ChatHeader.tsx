@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type EditorId,
+  type ProjectId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
@@ -33,17 +34,18 @@ import ProjectScriptsControl, {
 } from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
 import { useRemoteOpenState, type RemoteOpenMode } from "../../remoteOpen";
-import { usePrimaryEnvironmentId } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
+import { EnvironmentCrumb, ProjectCrumb } from "../WorkspaceScopeCrumbs";
+import { resolveScopeEnvironmentLabel } from "../../workspaceScope";
 import { cn } from "~/lib/utils";
 
 interface ChatHeaderProps {
@@ -55,6 +57,8 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   /** PR feeding the settled classification, resolved by ChatView. */
   changeRequest: ChangeRequestSettleSource | null;
+  /** Null on a draft whose project has not resolved yet — the crumb hides. */
+  activeProjectId: ProjectId | null;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
@@ -66,7 +70,6 @@ interface ChatHeaderProps {
   rightPanelOpen: boolean;
   gitCwd: string | null;
   readonly onOpenPullRequest?: ((number: number) => void) | undefined;
-  onNewThreadInProject: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -124,6 +127,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   isServerThread,
   changeRequest,
+  activeProjectId,
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
@@ -135,13 +139,16 @@ export const ChatHeader = memo(function ChatHeader({
   rightPanelOpen,
   gitCwd,
   onOpenPullRequest,
-  onNewThreadInProject,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
+  const activeEnvironmentLabel = resolveScopeEnvironmentLabel(
+    environments.find((entry) => entry.environmentId === activeThreadEnvironmentId)?.label,
+  );
   const fileScripts = useT3ProjectFileScripts(
     activeThreadEnvironmentId,
     activeProjectScripts ? activeProjectCwd : null,
@@ -289,34 +296,30 @@ export const ChatHeader = memo(function ChatHeader({
       onContextMenu={handleHeaderContextMenu}
     >
       <WorkspaceBreadcrumb ariaLabel="Thread breadcrumb" className="flex-1">
-        {/* The project always leads the header: knowing which project a
-            thread lives in is priority zero, and the thread title alone
-            doesn't answer it. */}
-        {activeProjectName ? (
+        {/* The path to the thread, widest scope first. Every crumb but the
+            thread itself is a link to that scope's own page, so the header
+            answers "where am I" and "show me the rest of it" with the same
+            row. The environment leads it whenever one resolves: with more
+            than one server connected, the project name alone does not say
+            which machine the work is on. */}
+        {activeEnvironmentLabel === null ? null : (
           <>
-            <WorkspaceBreadcrumbItem>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`New thread in ${activeProjectName}`}
-                      onClick={onNewThreadInProject}
-                      className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  }
-                >
-                  <ProjectFavicon
-                    environmentId={activeThreadEnvironmentId}
-                    cwd={activeProjectCwd ?? ""}
-                    faviconPath={activeProjectFaviconPath}
-                    className="size-3.5"
-                  />
-                  <span className="max-w-40 truncate">{activeProjectName}</span>
-                </TooltipTrigger>
-                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
-              </Tooltip>
-            </WorkspaceBreadcrumbItem>
+            <EnvironmentCrumb
+              environmentId={activeThreadEnvironmentId}
+              label={activeEnvironmentLabel}
+            />
+            <WorkspaceBreadcrumbSeparator />
+          </>
+        )}
+        {activeProjectName && activeProjectId !== null ? (
+          <>
+            <ProjectCrumb
+              environmentId={activeThreadEnvironmentId}
+              projectId={activeProjectId}
+              label={activeProjectName}
+              cwd={activeProjectCwd}
+              faviconPath={activeProjectFaviconPath}
+            />
             <WorkspaceBreadcrumbSeparator />
           </>
         ) : null}
