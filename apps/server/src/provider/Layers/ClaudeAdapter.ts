@@ -95,6 +95,10 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  type ClaudeRateLimitEventPayload,
+  normalizeClaudeRateLimitEvent,
+} from "../providerRateLimits.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -3552,11 +3556,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
+      const snapshot = normalizeClaudeRateLimitEvent({
+        event: message.rate_limit_info as ClaudeRateLimitEventPayload,
+        observedAt: base.createdAt,
+      });
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
         payload: {
           rateLimits: message,
+          ...(snapshot ? { snapshot } : {}),
         },
       });
       return;

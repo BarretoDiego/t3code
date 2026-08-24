@@ -182,6 +182,34 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     );
   });
 
+  it("carries the cached rate-limit observation onto the fresh snapshot", () => {
+    const rateLimits = {
+      observedAt: "2026-04-10T12:00:00.000Z",
+      planLabel: "Pro",
+      windows: [
+        {
+          id: "five_hour",
+          label: "5-hour",
+          kind: "session",
+          usedPercent: 64,
+          resetsAt: "2026-04-10T15:00:00.000Z",
+          status: "ok",
+        },
+      ],
+    } as const;
+    const cachedCodex = makeProvider(CODEX_DRIVER, {
+      checkedAt: "2026-04-10T12:00:00.000Z",
+      rateLimits,
+    });
+    const fallbackCodex = makeProvider(CODEX_DRIVER);
+
+    assert.deepStrictEqual(
+      hydrateCachedProvider({ cachedProvider: cachedCodex, fallbackProvider: fallbackCodex })
+        .rateLimits,
+      rateLimits,
+    );
+  });
+
   it("ignores stale cached enabled state when the provider is now disabled", () => {
     const cachedCodex = makeProvider(CODEX_DRIVER, {
       checkedAt: "2026-04-10T12:00:00.000Z",

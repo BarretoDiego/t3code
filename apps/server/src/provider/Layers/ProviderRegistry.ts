@@ -26,6 +26,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type ProviderInstanceId,
+  type ProviderRateLimits,
   type ServerProvider,
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
@@ -53,6 +54,7 @@ import {
 } from "../providerStatusCache.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+import { mergeProviderRateLimits } from "../providerRateLimits.ts";
 import type { ProviderSnapshotSource } from "../builtInProviderCatalog.ts";
 
 const loadProviders = (
@@ -289,6 +291,16 @@ export const ProviderRegistryLive = Layer.effect(
       ),
     );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
+    // Plan rate limits ride along on the persisted snapshot, so the cache is
+    // also how the last observation survives a restart: seed the live map from
+    // it or the first refresh would drop what we already knew.
+    const rateLimitsRef = yield* Ref.make<ReadonlyMap<ProviderInstanceId, ProviderRateLimits>>(
+      new Map(
+        cachedProviders.flatMap((provider) =>
+          provider.rateLimits ? [[provider.instanceId, provider.rateLimits] as const] : [],
+        ),
+      ),
+    );
     const maintenanceActionStatesRef = yield* Ref.make<
       ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
     >(new Map());
@@ -344,6 +356,23 @@ export const ProviderRegistryLive = Layer.effect(
       };
     });
 
+    const applyProviderRateLimits = Effect.fn("applyProviderRateLimits")(function* (
+      provider: ServerProvider,
+    ) {
+      const rateLimits = (yield* Ref.get(rateLimitsRef)).get(provider.instanceId);
+      if (!rateLimits) {
+        const { rateLimits: _rateLimits, ...providerWithoutRateLimits } = provider;
+        return providerWithoutRateLimits;
+      }
+      return {
+        ...provider,
+        rateLimits,
+      };
+    });
+
+    const applyVolatileProviderState = (provider: ServerProvider) =>
+      applyProviderUpdateState(provider).pipe(Effect.flatMap(applyProviderRateLimits));
+
     const upsertProviders = Effect.fn("upsertProviders")(function* (
       nextProviders: ReadonlyArray<ServerProvider>,
       options?: {
@@ -352,9 +381,9 @@ export const ProviderRegistryLive = Layer.effect(
         readonly replace?: boolean;
       },
     ) {
-      const nextProvidersWithUpdateState = yield* Effect.forEach(
+      const nextProvidersWithVolatileState = yield* Effect.forEach(
         nextProviders,
-        applyProviderUpdateState,
+        applyVolatileProviderState,
         {
           concurrency: "unbounded",
         },
@@ -367,7 +396,7 @@ export const ProviderRegistryLive = Layer.effect(
           );
           const updatedKeys = new Set<ProviderInstanceId>();
 
-          for (const provider of nextProvidersWithUpdateState) {
+          for (const provider of nextProvidersWithVolatileState) {
             const key = snapshotInstanceKey(provider);
             updatedKeys.add(key);
             mergedProviders.set(
@@ -448,6 +477,31 @@ export const ProviderRegistryLive = Layer.effect(
         });
       },
     );
+
+    const setProviderRateLimits = Effect.fn("setProviderRateLimits")(function* (input: {
+      readonly instanceId: ProviderInstanceId;
+      readonly rateLimits: ProviderRateLimits;
+    }) {
+      const merged = yield* Ref.modify(rateLimitsRef, (previous) => {
+        const nextRateLimits = mergeProviderRateLimits(
+          previous.get(input.instanceId),
+          input.rateLimits,
+        );
+        const next = new Map(previous);
+        next.set(input.instanceId, nextRateLimits);
+        return [nextRateLimits, next] as const;
+      });
+
+      const existingProviders = yield* Ref.get(providersRef);
+      const matchingProvider = existingProviders.find(
+        (candidate) => candidate.instanceId === input.instanceId,
+      );
+      if (!matchingProvider) {
+        return existingProviders;
+      }
+
+      return yield* upsertProviders([{ ...matchingProvider, rateLimits: merged }]);
+    });
 
     const refreshOneSource = Effect.fn("refreshOneSource")(function* (
       providerSource: ProviderSnapshotSource,
@@ -712,6 +766,7 @@ export const ProviderRegistryLive = Layer.effect(
         refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
+      setProviderRateLimits,
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },

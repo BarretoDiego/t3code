@@ -28,8 +28,10 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
+import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
+import { SidebarRateLimitsMeter } from "./SidebarRateLimitsMeter";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
@@ -221,6 +223,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Usage"
             onClick={handleUsageClick}
           />
+          <Separator className="mx-0.5 h-4 self-center" orientation="vertical" />
+          <SidebarRateLimitsMeter />
         </>
       )}
       <SidebarUpdatePill />

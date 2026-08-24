@@ -112,6 +112,14 @@ The agent interaction style for a thread. In [the contracts][1], the values are 
 
 Controls how assistant text reaches the thread timeline. In [the contracts][1], `streaming` updates incrementally and `buffered` accumulates text. Buffered delivery is not held until the turn completes: it spills once accumulated text would exceed 24,000 characters, and flushes at approval and user-input boundaries. See [ProviderRuntimeIngestion.ts][5].
 
+#### Plan rate limits
+
+What a provider says is left of the subscription plan behind an account, as rolling windows (Claude's 5-hour and weekly windows, Codex's `primary`/`secondary` pair, plus spend or credit ceilings). Providers report them only while they run and in their own shapes; adapters normalize them in [providerRateLimits.ts][25] and [ProviderRateLimitsReactor.ts][26] merges each observation onto `ServerProvider.rateLimits`. Distinct from usage reporting, which counts tokens and cost from session transcripts. See [providers.md][16].
+
+#### Rate limit window
+
+One metered period inside a plan rate-limit observation: a label, a used percentage, and the instant it rolls over. Windows merge by id, so a sparse update from a provider never deletes a window it did not mention.
+
 #### Snapshot
 
 A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
@@ -179,3 +187,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ../../apps/server/src/provider/providerRateLimits.ts
+[26]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
