@@ -37,6 +37,23 @@ snoozed, and settled ones. The menu only lists providers that currently have thr
 The last menu sorts threads by **Last activity** or **Date created**. Sorting and grouping are
 independent: changing one never reshuffles the other.
 
+## Arranging sections
+
+The same menu carries **Order sections**, which decides where sections sit rather than which ones
+exist. **Busiest first** is the default: sections with live work come first, then the ones that
+only hold history, then your quiet projects. **Name (A–Z)** ignores all of that and sorts by
+label. **Custom** is your own arrangement.
+
+Drag a section header to move it, or right-click it and choose **Move up** or **Move down**.
+Either way the sidebar switches to **Custom** and remembers where you put things, so a section
+stays put no matter what arrives in it. Sections only move within their own level: a project
+cannot be dragged out of its environment, and a collapsed section travels with everything inside
+it.
+
+Switching to **Custom** from the menu freezes the layout exactly as it looks at that moment. A
+project you add later joins the end of its level. **Reset section order** in the same menu throws
+the arrangement away and goes back to **Busiest first**.
+
 ## Acting on a section
 
 Section headers carry the actions for whatever they are about. They appear on hover and always sit

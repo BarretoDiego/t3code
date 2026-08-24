@@ -51,6 +51,8 @@ const clientSettings: ClientSettings = {
   sidebarThreadSecondaryGrouping: "project",
   sidebarThreadProviderFilter: "codex",
   sidebarThreadCollapsedGroups: ["environment:environment-1"],
+  sidebarSectionOrderMode: "manual",
+  sidebarSectionOrder: ["environment:environment-2", "environment:environment-1"],
   legacySidebarEnabled: false,
   timestampFormat: "24-hour",
   wordWrap: true,

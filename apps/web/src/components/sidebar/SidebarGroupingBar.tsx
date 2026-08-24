@@ -2,6 +2,7 @@ import { ArrowUpDownIcon, CheckIcon, FunnelIcon, GroupIcon } from "lucide-react"
 import { memo, useCallback } from "react";
 import type {
   SidebarProjectGroupingMode,
+  SidebarSectionOrderMode,
   SidebarThreadGroupingAxis,
   SidebarThreadSortOrder,
 } from "@t3tools/contracts";
@@ -11,6 +12,7 @@ import type { SidebarThreadProviderIdentity } from "../sidebarThreadGrouping";
 import {
   Menu,
   MenuGroup,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -45,6 +47,15 @@ const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> =
 const THREAD_SORT_ORDER_LABELS: Record<SidebarThreadSortOrder, string> = {
   updated_at: "Last activity",
   created_at: "Date created",
+};
+
+// Sections and threads are ordered by two different questions, so the menu
+// spells the section one out rather than reusing "Last activity": what moves a
+// section up is work arriving anywhere inside it.
+const SECTION_ORDER_MODE_LABELS: Record<SidebarSectionOrderMode, string> = {
+  activity: "Busiest first",
+  alphabetical: "Name (A–Z)",
+  manual: "Custom (drag to arrange)",
 };
 
 /** Trigger readouts: one word each — the bar is ~350px wide with three of them. */
@@ -131,6 +142,9 @@ export interface SidebarGroupingBarProps {
   onProjectGroupingModeChange: (mode: SidebarProjectGroupingMode) => void;
   onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   onProviderFilterChange: (providerFilter: string | null) => void;
+  sectionOrderMode: SidebarSectionOrderMode;
+  onSectionOrderModeChange: (mode: SidebarSectionOrderMode) => void;
+  onSectionOrderReset: () => void;
 }
 
 export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: SidebarGroupingBarProps) {
@@ -139,6 +153,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
     onProjectGroupingModeChange,
     onProviderFilterChange,
     onSecondaryAxisChange,
+    onSectionOrderModeChange,
     onThreadSortOrderChange,
   } = props;
 
@@ -161,6 +176,10 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
   const handleProviderFilterChange = useCallback(
     (value: string) => onProviderFilterChange(value === "all" ? null : value),
     [onProviderFilterChange],
+  );
+  const handleSectionOrderModeChange = useCallback(
+    (value: string) => onSectionOrderModeChange(value as SidebarSectionOrderMode),
+    [onSectionOrderModeChange],
   );
 
   const groupingActive = props.primaryAxis !== "none";
@@ -323,6 +342,36 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
               )}
             </MenuRadioGroup>
           </MenuGroup>
+          {/* Sections and the rows inside them are two orders, and this is the
+              menu about order — so both live here rather than the section one
+              hiding under a grouping menu that is about which sections exist. */}
+          {groupingActive ? (
+            <>
+              <MenuSeparator />
+              <MenuGroup>
+                <div className={MENU_LABEL_CLASS}>Order sections</div>
+                <MenuRadioGroup
+                  value={props.sectionOrderMode}
+                  onValueChange={handleSectionOrderModeChange}
+                >
+                  {(
+                    Object.keys(SECTION_ORDER_MODE_LABELS) as ReadonlyArray<SidebarSectionOrderMode>
+                  ).map((mode) => (
+                    <MenuRadioItem key={mode} value={mode} className={MENU_ITEM_CLASS}>
+                      <Choice>{SECTION_ORDER_MODE_LABELS[mode]}</Choice>
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+                {/* Only offered once there is an arrangement to undo: with
+                    Busiest first selected there is nothing stored to reset. */}
+                {props.sectionOrderMode === "activity" ? null : (
+                  <MenuItem className={MENU_ITEM_CLASS} onClick={props.onSectionOrderReset}>
+                    Reset section order
+                  </MenuItem>
+                )}
+              </MenuGroup>
+            </>
+          ) : null}
         </MenuPopup>
       </Menu>
     </div>

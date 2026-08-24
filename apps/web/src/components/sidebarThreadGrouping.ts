@@ -1,4 +1,9 @@
-import type { EnvironmentId, ProjectId, SidebarThreadGroupingAxis } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectId,
+  SidebarSectionOrderMode,
+  SidebarThreadGroupingAxis,
+} from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "../providerInstances";
 
@@ -437,6 +442,111 @@ export function buildSidebarThreadGroups<TThread extends GroupableThread>(input:
 }
 
 /**
+ * How sections are arranged, layered on top of the order the grouping
+ * produced. Grouping decides which sections exist; this decides where they go.
+ */
+export interface SidebarSectionOrder {
+  readonly mode: SidebarSectionOrderMode;
+  /** Section keys in user order. Read only when `mode` is `manual`. */
+  readonly manualKeys: ReadonlyArray<string>;
+}
+
+// Numeric so "env 2" precedes "env 10", base sensitivity so case and accents
+// never decide a tie the user did not ask for.
+const SECTION_LABEL_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+/**
+ * Rearranges every level of the section tree.
+ *
+ * Applied after building rather than inside the bucketing so it can key off
+ * the final section keys — nested keys are parent-prefixed, and those prefixed
+ * keys are what a manual order and the collapse state both refer to.
+ *
+ * Only the order of sections changes: their threads, counts and nesting are
+ * passed through untouched, so ordering stays orthogonal to grouping the same
+ * way sorting already is.
+ */
+export function orderSidebarThreadGroups<TThread extends GroupableThread>(
+  groups: ReadonlyArray<SidebarThreadGroup<TThread>>,
+  order: SidebarSectionOrder,
+): ReadonlyArray<SidebarThreadGroup<TThread>> {
+  // The build order *is* the activity order, so this mode is a pass-through —
+  // returning the same array keeps referential equality for memoized callers.
+  if (order.mode === "activity") {
+    return groups;
+  }
+  const rank = new Map(order.manualKeys.map((key, index) => [key, index] as const));
+  const orderLevel = (
+    level: ReadonlyArray<SidebarThreadGroup<TThread>>,
+  ): ReadonlyArray<SidebarThreadGroup<TThread>> => {
+    if (order.mode === "alphabetical") {
+      return [...level].sort((a, b) => SECTION_LABEL_COLLATOR.compare(a.label, b.label));
+    }
+    // A section the user never placed — a project added since the last
+    // arrangement — keeps its incoming order and lands after everything that
+    // was placed, rather than silently displacing it.
+    const placed = level
+      .filter((group) => rank.has(group.key))
+      .sort((a, b) => rank.get(a.key)! - rank.get(b.key)!);
+    if (placed.length === level.length) {
+      return placed;
+    }
+    return [...placed, ...level.filter((group) => !rank.has(group.key))];
+  };
+  const walk = (
+    level: ReadonlyArray<SidebarThreadGroup<TThread>>,
+  ): ReadonlyArray<SidebarThreadGroup<TThread>> =>
+    orderLevel(level).map((group) =>
+      group.children.length === 0 ? group : { ...group, children: walk(group.children) },
+    );
+  return walk(groups);
+}
+
+/**
+ * Every section key in the tree, parents before their children.
+ *
+ * Used to seed a manual arrangement from what is currently on screen, so
+ * switching to manual freezes the layout the user is looking at instead of
+ * leaving unplaced levels free to reshuffle as work arrives.
+ */
+export function collectSidebarSectionKeys<TThread extends GroupableThread>(
+  groups: ReadonlyArray<SidebarThreadGroup<TThread>>,
+): ReadonlyArray<string> {
+  return groups.flatMap((group) => [group.key, ...collectSidebarSectionKeys(group.children)]);
+}
+
+/**
+ * The manual key list after moving one section within its own level.
+ *
+ * `siblingKeys` is the level exactly as rendered, so a drop or a Move up
+ * rewrites the whole level in one go and the result no longer depends on
+ * whatever the level's activity order happened to be.
+ */
+export function planSidebarSectionOrder(input: {
+  readonly siblingKeys: ReadonlyArray<string>;
+  readonly fromIndex: number;
+  readonly toIndex: number;
+  readonly manualKeys: ReadonlyArray<string>;
+}): ReadonlyArray<string> {
+  const { fromIndex, manualKeys, siblingKeys, toIndex } = input;
+  const inRange = (index: number) => index >= 0 && index < siblingKeys.length;
+  if (!inRange(fromIndex) || !inRange(toIndex) || fromIndex === toIndex) {
+    return manualKeys;
+  }
+  const moved = [...siblingKeys];
+  const [key] = moved.splice(fromIndex, 1);
+  moved.splice(toIndex, 0, key!);
+  // Levels never share keys and ranks are only ever compared within a level,
+  // so where this level's block sits in the flat list means nothing: dropping
+  // the old entries and appending the new ones is the whole merge.
+  const levelKeys = new Set(siblingKeys);
+  return [...manualKeys.filter((existing) => !levelKeys.has(existing)), ...moved];
+}
+
+/**
  * Flattens the group tree into the rows the sidebar renders, honoring collapse
  * state.
  *
@@ -445,7 +555,22 @@ export function buildSidebarThreadGroups<TThread extends GroupableThread>(input:
  * of how deep it nests.
  */
 export type SidebarThreadGroupRow<TThread extends GroupableThread> =
-  | { readonly kind: "header"; readonly group: SidebarThreadGroup<TThread>; readonly depth: number }
+  | {
+      readonly kind: "header";
+      readonly group: SidebarThreadGroup<TThread>;
+      readonly depth: number;
+      /** The section this one sits inside, or null at the top level. */
+      readonly parentKey: string | null;
+      /**
+       * Every section at this level, in the order they render. Carried on the
+       * row so a reorder never has to recover the level by parsing keys or
+       * re-walking the tree: a drop and a Move up both rewrite exactly this
+       * list.
+       */
+      readonly siblingKeys: ReadonlyArray<string>;
+      /** This section's position within `siblingKeys`. */
+      readonly index: number;
+    }
   | { readonly kind: "thread"; readonly thread: TThread; readonly depth: number }
   | {
       readonly kind: "settled-header";
@@ -496,17 +621,19 @@ export function flattenSidebarThreadGroups<TThread extends GroupableThread>(
   const walk = (
     level: ReadonlyArray<SidebarThreadGroup<TThread>>,
     depth: number,
+    parentKey: string | null,
   ): Array<SidebarThreadGroupRow<TThread>> => {
     const rows: Array<SidebarThreadGroupRow<TThread>> = [];
-    for (const group of level) {
-      rows.push({ kind: "header", group, depth });
+    const siblingKeys = level.map((group) => group.key);
+    for (const [index, group] of level.entries()) {
+      rows.push({ kind: "header", group, depth, parentKey, siblingKeys, index });
       if (collapsedGroupKeys.has(group.key)) {
         continue;
       }
       for (const thread of group.threads) {
         rows.push({ kind: "thread", thread, depth: depth + 1 });
       }
-      rows.push(...walk(group.children, depth + 1));
+      rows.push(...walk(group.children, depth + 1, group.key));
       // History sits after the live rows and after any nested sections: it is
       // the tail of this section, not an item competing with them.
       if (group.settledThreads.length > 0) {
@@ -530,7 +657,7 @@ export function flattenSidebarThreadGroups<TThread extends GroupableThread>(
     }
     return rows;
   };
-  return walk(groups, 0);
+  return walk(groups, 0, null);
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();

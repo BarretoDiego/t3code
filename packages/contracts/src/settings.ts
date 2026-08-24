@@ -38,6 +38,19 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+/**
+ * How the sidebar orders its sections (environments, projects, providers).
+ *
+ * `activity` is what the grouping itself produces: sections holding live work
+ * first, then history-only ones, then the empty-but-known ones. `alphabetical`
+ * ignores that and sorts by label. `manual` is the order the user arranged by
+ * dragging headers or moving them from the header context menu, stored in
+ * `sidebarSectionOrder`.
+ */
+export const SidebarSectionOrderMode = Schema.Literals(["activity", "alphabetical", "manual"]);
+export type SidebarSectionOrderMode = typeof SidebarSectionOrderMode.Type;
+export const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -288,6 +301,18 @@ export const ClientSettingsSchema = Schema.Struct({
   // `buildSidebarThreadGroups`. Only collapsed sections are stored, so
   // switching axes never resurrects stale expansion state.
   sidebarThreadCollapsedGroups: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  sidebarSectionOrderMode: SidebarSectionOrderMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_SECTION_ORDER_MODE)),
+  ),
+  // Section keys in the order the user arranged them, across every nesting
+  // level (child keys are already parent-prefixed, so one flat list is
+  // unambiguous). Keys of sections that are not currently rendered are kept
+  // rather than pruned: switching grouping axis or filtering by provider hides
+  // sections temporarily, and dropping their order would quietly discard an
+  // arrangement the user made.
+  sidebarSectionOrder: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   timestampFormat: TimestampFormat.pipe(
@@ -968,6 +993,8 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSecondaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
   sidebarThreadProviderFilter: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
   sidebarThreadCollapsedGroups: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  sidebarSectionOrderMode: Schema.optionalKey(SidebarSectionOrderMode),
+  sidebarSectionOrder: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
