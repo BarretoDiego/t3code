@@ -78,6 +78,26 @@ urgency: amber for approvals, indigo for input requests, red for failures, green
 threads you have not opened yet, and blue for threads still working. Open sections leave that to
 the rows themselves. Unread finished threads also carry a green dot next to their title.
 
+## The path above a thread
+
+Every open thread shows its path across the top of the window: the environment it runs on, the
+project it belongs to, then the thread's own title. The environment leads it whenever T3 Code can
+name one, so with more than one server connected the header says which machine the work is
+happening on without you having to guess from the project name.
+
+Both scopes are links.
+
+Clicking the **environment** opens a page listing every project on that server, busiest first,
+with each project's live thread count and when it was last touched. **New project** in the corner
+adds one to that environment.
+
+Clicking the **project** opens a page listing every thread in it, under the same **Active**,
+**Snoozed** and **Settled** shelves the sidebar uses, so the two never disagree about what is
+finished. **New thread** in the corner starts one there.
+
+Each page carries the path too, so the project page walks back up to its environment, and any
+thread walks back to the project it came from.
+
 ## Where settled threads go
 
 When the list is grouped by project, each project section ends with its own **Settled** shelf
