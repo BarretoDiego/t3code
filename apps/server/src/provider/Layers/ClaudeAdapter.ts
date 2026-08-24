@@ -15,6 +15,7 @@ import {
   type PermissionUpdate,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKControlGetUsageResponse,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -98,6 +99,7 @@ import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogg
 import {
   type ClaudeRateLimitEventPayload,
   normalizeClaudeRateLimitEvent,
+  normalizeClaudeUsageRateLimits,
 } from "../providerRateLimits.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -322,6 +324,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   readonly close: () => void;
 }
 
@@ -2148,6 +2151,59 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return normalizeClaudeContextUsageApiSnapshot(usage.value, totalProcessedTokens);
   });
 
+  const queryCurrentPlanRateLimits = Effect.fn("queryCurrentPlanRateLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (!readUsage) {
+      return;
+    }
+
+    const usage = yield* Effect.promise(async () => {
+      try {
+        return await readUsage.call(context.query);
+      } catch {
+        return undefined;
+      }
+    }).pipe(Effect.timeoutOption("2 seconds"));
+    if (Option.isNone(usage) || !usage.value) {
+      return;
+    }
+
+    // The control response also contains session cost and local behavioral
+    // attribution. Neither belongs in a plan-limit event; retaining only the
+    // provider account fields keeps runtime events small and avoids exposing
+    // unrelated local usage metadata downstream.
+    const rateLimits = {
+      subscription_type: usage.value.subscription_type,
+      rate_limits_available: usage.value.rate_limits_available,
+      rate_limits: usage.value.rate_limits,
+    };
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
+      payload: {
+        rateLimits,
+        snapshot: normalizeClaudeUsageRateLimits({
+          usage: rateLimits,
+          observedAt: stamp.createdAt,
+        }),
+        updateMode: "replace",
+      },
+      providerRefs: nativeProviderRefs(context),
+      raw: {
+        source: "claude.sdk.message",
+        method: "claude/control/get_usage",
+        payload: rateLimits,
+      },
+    });
+  });
+
   const emitProposedPlanCompleted = Effect.fn("emitProposedPlanCompleted")(function* (
     context: ClaudeSessionContext,
     input: {
@@ -2248,9 +2304,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.lastKnownTotalProcessedTokens = accumulatedTotalProcessedTokens;
     }
 
-    const contextUsageSnapshot = yield* queryCurrentContextUsage(
-      context,
-      accumulatedTotalProcessedTokens ?? context.lastKnownTotalProcessedTokens,
+    const [contextUsageSnapshot] = yield* Effect.all(
+      [
+        queryCurrentContextUsage(
+          context,
+          accumulatedTotalProcessedTokens ?? context.lastKnownTotalProcessedTokens,
+        ),
+        queryCurrentPlanRateLimits(context),
+      ],
+      { concurrency: "unbounded" },
     );
     const resultUsageRecord =
       result?.usage && typeof result.usage === "object" && !Array.isArray(result.usage)

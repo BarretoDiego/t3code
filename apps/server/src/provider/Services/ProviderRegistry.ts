@@ -73,15 +73,16 @@ export interface ProviderRegistryShape {
   /**
    * Record a plan rate-limit observation for one configured instance.
    *
-   * Observations are merged window-by-window onto the previous one (providers
-   * send sparse updates) and projected onto `ServerProvider.rateLimits`. Unlike
-   * maintenance-action state this *is* persisted with the snapshot: a limit
-   * observed minutes ago is still the truth after a restart, and re-observing
-   * it requires the provider to run a turn.
+   * Sparse observations merge window-by-window; complete observations replace
+   * the previous snapshot. Unlike maintenance-action state this *is* persisted
+   * with the provider-instance snapshot: a limit observed minutes ago is still
+   * the truth after a restart, and re-observing it requires that instance to
+   * run a turn.
    */
   readonly setProviderRateLimits: (input: {
     readonly instanceId: ProviderInstanceId;
     readonly rateLimits: ProviderRateLimits;
+    readonly mode?: "merge" | "replace";
   }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**

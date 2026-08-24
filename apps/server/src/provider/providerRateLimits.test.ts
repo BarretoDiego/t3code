@@ -4,6 +4,7 @@ import {
   describeRateLimitWindowDuration,
   mergeProviderRateLimits,
   normalizeClaudeRateLimitEvent,
+  normalizeClaudeUsageRateLimits,
   normalizeCodexRateLimits,
 } from "./providerRateLimits.ts";
 
@@ -25,7 +26,7 @@ describe("normalizeClaudeRateLimitEvent", () => {
       event: {
         status: "allowed",
         rateLimitType: "five_hour",
-        utilization: 42,
+        utilization: 0.42,
         resetsAt: 1_787_000_000,
       },
       observedAt: OBSERVED_AT,
@@ -48,7 +49,7 @@ describe("normalizeClaudeRateLimitEvent", () => {
 
   it("trusts the provider's status over the percentage", () => {
     const snapshot = normalizeClaudeRateLimitEvent({
-      event: { status: "rejected", rateLimitType: "seven_day", utilization: 99 },
+      event: { status: "rejected", rateLimitType: "seven_day", utilization: 0.99 },
       observedAt: OBSERVED_AT,
     });
 
@@ -65,6 +66,20 @@ describe("normalizeClaudeRateLimitEvent", () => {
     assert.strictEqual(snapshot?.windows[0]?.usedPercent, 100);
   });
 
+  it("uses the fractional utilization emitted by Claude rate_limit_event", () => {
+    const snapshot = normalizeClaudeRateLimitEvent({
+      event: {
+        status: "allowed_warning",
+        rateLimitType: "five_hour",
+        utilization: 0.99,
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.strictEqual(snapshot?.windows[0]?.usedPercent, 99);
+    assert.strictEqual(snapshot?.windows[0]?.status, "warning");
+  });
+
   it("skips events that name no window", () => {
     assert.strictEqual(
       normalizeClaudeRateLimitEvent({
@@ -73,6 +88,55 @@ describe("normalizeClaudeRateLimitEvent", () => {
       }),
       null,
     );
+  });
+});
+
+describe("normalizeClaudeUsageRateLimits", () => {
+  it("maps the authoritative structured usage snapshot", () => {
+    const snapshot = normalizeClaudeUsageRateLimits({
+      usage: {
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 42, resets_at: "2026-08-24T17:00:00.000Z" },
+          seven_day: { utilization: 18, resets_at: "2026-08-28T12:00:00.000Z" },
+          seven_day_opus: { utilization: 64, resets_at: null },
+          extra_usage: {
+            is_enabled: true,
+            monthly_limit: 100,
+            used_credits: 25,
+            utilization: 25,
+            currency: "USD",
+          },
+        },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.strictEqual(snapshot.planLabel, "Max");
+    assert.deepStrictEqual(
+      snapshot.windows.map((window) => [window.id, window.usedPercent, window.kind]),
+      [
+        ["five_hour", 42, "session"],
+        ["seven_day", 18, "weekly"],
+        ["seven_day_opus", 64, "weekly"],
+        ["extra_usage", 25, "credits"],
+      ],
+    );
+    assert.strictEqual(snapshot.windows.at(-1)?.detail, "25 / 100 USD");
+  });
+
+  it("returns an authoritative empty snapshot when plan limits are unavailable", () => {
+    const snapshot = normalizeClaudeUsageRateLimits({
+      usage: {
+        subscription_type: null,
+        rate_limits_available: false,
+        rate_limits: null,
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.deepStrictEqual(snapshot, { observedAt: OBSERVED_AT, windows: [] });
   });
 });
 

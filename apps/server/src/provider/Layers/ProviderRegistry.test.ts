@@ -1012,7 +1012,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
-      it.effect("keeps observed rate limits across a live refresh and persists them", () =>
+      it.effect("merges sparse limits, replaces authoritative limits, and persists them", () =>
         Effect.gen(function* () {
           const cursorDriver = ProviderDriverKind.make("cursor");
           const cursorInstanceId = ProviderInstanceId.make("cursor");
@@ -1134,6 +1134,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             );
             assert.strictEqual(providers[0]?.rateLimits?.planLabel, "Pro");
 
+            // A structured full snapshot is authoritative: a window it omits
+            // no longer applies and must not survive sparse-merge semantics.
+            yield* registry.setProviderRateLimits({
+              instanceId: cursorInstanceId,
+              mode: "replace",
+              rateLimits: {
+                observedAt: "2026-04-14T00:00:50.000Z",
+                planLabel: "Pro",
+                windows: [
+                  {
+                    id: "five_hour",
+                    label: "5-hour",
+                    kind: "session",
+                    usedPercent: 8,
+                    resetsAt: null,
+                    status: "ok",
+                  },
+                ],
+              },
+            });
+            assert.deepStrictEqual(
+              (yield* registry.getProviders)[0]?.rateLimits?.windows.map((window) => window.id),
+              ["five_hour"],
+            );
+
             // A provider health refresh replaces the snapshot; the observation
             // is projected back onto it instead of being lost.
             yield* PubSub.publish(changes, refreshedProvider);
@@ -1151,11 +1176,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
             assert.deepStrictEqual(
               cachedProvider?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour", "seven_day"],
+              ["five_hour"],
             );
             assert.deepStrictEqual(
               (yield* registry.getProviders)[0]?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour", "seven_day"],
+              ["five_hour"],
             );
           }).pipe(Effect.provide(runtimeServices));
         }),
@@ -1703,6 +1728,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             assert.strictEqual(initialCodex?.installed, false);
             assert.deepStrictEqual(spawnedCommands, [firstMissing]);
 
+            yield* registry.setProviderRateLimits({
+              instanceId: ProviderInstanceId.make("codex"),
+              rateLimits: {
+                observedAt: "2026-04-14T00:00:00.000Z",
+                windows: [
+                  {
+                    id: "primary",
+                    label: "Weekly",
+                    kind: "weekly",
+                    usedPercent: 77,
+                    resetsAt: null,
+                    status: "ok",
+                  },
+                ],
+              },
+            });
+            assert.strictEqual(
+              (yield* registry.getProviders).find((provider) => provider.instanceId === "codex")
+                ?.rateLimits?.windows[0]?.usedPercent,
+              77,
+            );
+
             // Drive a settings change. The Hydration layer's
             // `SettingsWatcherLive` consumes this via `streamChanges`,
             // calls `reconcile`, which rebuilds the codex instance (the
@@ -1741,6 +1788,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             assert.deepStrictEqual(spawnedCommands, [firstMissing, secondMissing]);
             assert.strictEqual(reprobedCodex?.status, "error");
             assert.strictEqual(reprobedCodex?.installed, false);
+            assert.strictEqual(reprobedCodex?.rateLimits, undefined);
           }).pipe(Effect.provide(runtimeServices));
         }),
       );

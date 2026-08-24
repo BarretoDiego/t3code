@@ -481,12 +481,13 @@ export const ProviderRegistryLive = Layer.effect(
     const setProviderRateLimits = Effect.fn("setProviderRateLimits")(function* (input: {
       readonly instanceId: ProviderInstanceId;
       readonly rateLimits: ProviderRateLimits;
+      readonly mode?: "merge" | "replace";
     }) {
       const merged = yield* Ref.modify(rateLimitsRef, (previous) => {
-        const nextRateLimits = mergeProviderRateLimits(
-          previous.get(input.instanceId),
-          input.rateLimits,
-        );
+        const nextRateLimits =
+          input.mode === "replace"
+            ? input.rateLimits
+            : mergeProviderRateLimits(previous.get(input.instanceId), input.rateLimits);
         const next = new Map(previous);
         next.set(input.instanceId, nextRateLimits);
         return [nextRateLimits, next] as const;
@@ -594,6 +595,21 @@ export const ProviderRegistryLive = Layer.effect(
           knownInstanceIds.add(snapshotInstanceKey(provider));
         }
         const previousSubs = yield* Ref.get(liveSubsRef);
+
+        // A rebuilt instance may point at a different provider home/account
+        // while retaining the same routing id. Its previous plan observation
+        // is not attributable to the replacement instance. Clear it before
+        // reading the new snapshot so both memory and the persisted provider
+        // cache are rewritten without the old account's limits.
+        yield* Ref.update(rateLimitsRef, (previous) => {
+          const next = new Map(previous);
+          for (const [instanceId, previousInstance] of previousSubs) {
+            if (nextByInstance.get(instanceId) !== previousInstance) {
+              next.delete(instanceId);
+            }
+          }
+          return next;
+        });
 
         // Carry over subscriptions for instances whose identity is
         // unchanged (reconcile treated them as no-op). Instances that

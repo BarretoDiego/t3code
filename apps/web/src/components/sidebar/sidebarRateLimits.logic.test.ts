@@ -180,6 +180,32 @@ describe("buildSidebarRateLimitsView", () => {
     expect(new Set(both.providers.map((entry) => entry.key)).size).toBe(2);
   });
 
+  it("keeps multiple accounts of the same provider distinct", () => {
+    const view = buildSidebarRateLimitsView({
+      environments: [
+        environment("Local", [
+          provider({
+            instanceId: "codex_personal",
+            driver: "codex",
+            rateLimits: { observedAt: "2026-08-24T11:58:00.000Z", windows: [weekly(10)] },
+          }),
+          provider({
+            instanceId: "codex_company",
+            driver: "codex",
+            displayName: "Codex Company",
+            rateLimits: { observedAt: "2026-08-24T11:59:00.000Z", windows: [weekly(70)] },
+          }),
+        ]),
+      ],
+      nowMs: NOW_MS,
+    });
+
+    expect(view.providers.map((entry) => [entry.key, entry.displayName])).toEqual([
+      ["local:codex_personal", "codex_personal"],
+      ["local:codex_company", "Codex Company"],
+    ]);
+  });
+
   it("keeps an exhausted window's tone even when another window peaks higher", () => {
     const view = buildSidebarRateLimitsView({
       environments: [

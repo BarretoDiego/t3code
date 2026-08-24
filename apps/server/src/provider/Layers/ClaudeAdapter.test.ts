@@ -2720,6 +2720,95 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("reads authoritative Claude plan limits when a turn completes", () => {
+    const harness = makeHarness();
+    Object.assign(harness.query, {
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: {
+            utilization: 42,
+            resets_at: "2026-08-24T17:00:00.000Z",
+          },
+          seven_day: {
+            utilization: 18,
+            resets_at: "2026-08-28T12:00:00.000Z",
+          },
+          seven_day_opus: {
+            utilization: 64,
+            resets_at: null,
+          },
+        },
+      }),
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 1234,
+        duration_api_ms: 1200,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-result-rate-limits",
+        usage: {
+          input_tokens: 4,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 8,
+        },
+        modelUsage: {},
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const rateLimitsEvent = runtimeEvents.find(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+      assert.equal(rateLimitsEvent?.type, "account.rate-limits.updated");
+      if (rateLimitsEvent?.type === "account.rate-limits.updated") {
+        assert.strictEqual(rateLimitsEvent.payload.updateMode, "replace");
+        assert.strictEqual(rateLimitsEvent.payload.snapshot?.planLabel, "Max");
+        assert.deepStrictEqual(
+          rateLimitsEvent.payload.snapshot?.windows.map((window) => [
+            window.id,
+            window.usedPercent,
+          ]),
+          [
+            ["five_hour", 42],
+            ["seven_day", 18],
+            ["seven_day_opus", 64],
+          ],
+        );
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("clamps oversized Claude usage to the reported context window", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

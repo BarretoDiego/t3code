@@ -117,6 +117,7 @@ export interface ClaudeRateLimitEventPayload {
   readonly status?: string | null;
   readonly resetsAt?: number | null;
   readonly rateLimitType?: string | null;
+  /** Fraction from 0 to 1 on Claude's live rate_limit_event. */
   readonly utilization?: number | null;
 }
 
@@ -158,7 +159,7 @@ export const normalizeClaudeRateLimitEvent = (input: {
   const status = claudeEventStatus(event.status);
   const usedPercent =
     typeof event.utilization === "number"
-      ? event.utilization
+      ? event.utilization * 100
       : status === "exhausted"
         ? 100
         : undefined;
@@ -179,6 +180,119 @@ export const normalizeClaudeRateLimitEvent = (input: {
         ...(status ? { status } : {}),
       }),
     ],
+  };
+};
+
+interface ClaudeUsageWindowPayload {
+  readonly utilization: number | null;
+  readonly resets_at: string | null;
+}
+
+interface ClaudeExtraUsagePayload {
+  readonly is_enabled: boolean;
+  readonly monthly_limit: number | null;
+  readonly used_credits: number | null;
+  readonly utilization: number | null;
+  readonly currency?: string | null;
+}
+
+export interface ClaudeStructuredUsagePayload {
+  readonly subscription_type: string | null;
+  readonly rate_limits_available: boolean;
+  readonly rate_limits: {
+    readonly five_hour?: ClaudeUsageWindowPayload | null;
+    readonly seven_day?: ClaudeUsageWindowPayload | null;
+    readonly seven_day_oauth_apps?: ClaudeUsageWindowPayload | null;
+    readonly seven_day_opus?: ClaudeUsageWindowPayload | null;
+    readonly seven_day_sonnet?: ClaudeUsageWindowPayload | null;
+    readonly extra_usage?: ClaudeExtraUsagePayload | null;
+  } | null;
+}
+
+const CLAUDE_USAGE_WINDOWS = [
+  ["five_hour", "5-hour", "session"],
+  ["seven_day", "Weekly", "weekly"],
+  ["seven_day_opus", "Weekly (Opus)", "weekly"],
+  ["seven_day_sonnet", "Weekly (Sonnet)", "weekly"],
+  ["seven_day_oauth_apps", "Weekly (apps)", "weekly"],
+] as const satisfies ReadonlyArray<
+  readonly [
+    Exclude<keyof NonNullable<ClaudeStructuredUsagePayload["rate_limits"]>, "extra_usage">,
+    string,
+    ProviderRateLimitWindowKind,
+  ]
+>;
+
+const describeClaudeSubscription = (subscriptionType: string | null): string | undefined => {
+  const value = trimmed(subscriptionType);
+  if (!value) {
+    return undefined;
+  }
+  return value
+    .split(/[_-]+/u)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const describeClaudeExtraUsage = (extraUsage: ClaudeExtraUsagePayload): string | undefined => {
+  if (extraUsage.used_credits === null || extraUsage.monthly_limit === null) {
+    return undefined;
+  }
+  const currency = trimmed(extraUsage.currency);
+  return `${extraUsage.used_credits} / ${extraUsage.monthly_limit}${currency ? ` ${currency}` : ""}`;
+};
+
+/**
+ * Normalize the structured data behind Claude's `/usage` command.
+ *
+ * Unlike `rate_limit_event`, this response is a complete observation: callers
+ * must replace the previous Claude windows so disappeared or unavailable
+ * limits do not survive an account or plan change.
+ */
+export const normalizeClaudeUsageRateLimits = (input: {
+  readonly usage: ClaudeStructuredUsagePayload;
+  readonly observedAt: string;
+}): ProviderRateLimits => {
+  const windows: Array<ProviderRateLimitWindow> = [];
+  const rateLimits = input.usage.rate_limits_available ? input.usage.rate_limits : null;
+
+  if (rateLimits) {
+    for (const [id, label, kind] of CLAUDE_USAGE_WINDOWS) {
+      const window = rateLimits[id];
+      if (!window || typeof window.utilization !== "number") {
+        continue;
+      }
+      windows.push(
+        makeWindow({
+          id,
+          label,
+          kind,
+          usedPercent: window.utilization,
+          resetsAt: window.resets_at === null ? null : isoOrNull(window.resets_at),
+        }),
+      );
+    }
+
+    const extraUsage = rateLimits.extra_usage;
+    if (extraUsage?.is_enabled === true && typeof extraUsage.utilization === "number") {
+      windows.push(
+        makeWindow({
+          id: "extra_usage",
+          label: "Extra usage",
+          kind: "credits",
+          usedPercent: extraUsage.utilization,
+          resetsAt: null,
+          detail: describeClaudeExtraUsage(extraUsage),
+        }),
+      );
+    }
+  }
+
+  const planLabel = describeClaudeSubscription(input.usage.subscription_type);
+  return {
+    observedAt: input.observedAt,
+    windows,
+    ...(planLabel ? { planLabel } : {}),
   };
 };
 

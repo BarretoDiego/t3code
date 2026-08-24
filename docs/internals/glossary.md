@@ -114,7 +114,7 @@ Controls how assistant text reaches the thread timeline. In [the contracts][1], 
 
 #### Plan rate limits
 
-What a provider says is left of the subscription plan behind an account, as rolling windows (Claude's 5-hour and weekly windows, Codex's `primary`/`secondary` pair, plus spend or credit ceilings). Providers report them only while they run and in their own shapes; adapters normalize them in [providerRateLimits.ts][25] and [ProviderRateLimitsReactor.ts][26] merges each observation onto `ServerProvider.rateLimits`. Distinct from usage reporting, which counts tokens and cost from session transcripts. See [providers.md][16].
+What a provider says is left of the subscription plan behind an account, as rolling windows (Claude's 5-hour and weekly windows, Codex's `primary`/`secondary` pair, plus spend or credit ceilings). Providers report them only while they run and in their own shapes; adapters normalize them in [providerRateLimits.ts][25], and [ProviderRateLimitsReactor.ts][26] either merges a sparse observation or replaces it with a complete one on `ServerProvider.rateLimits`. State is isolated by provider instance so multiple accounts of the same driver never share limits. Distinct from usage reporting, which counts tokens and cost from session transcripts. See [providers.md][16].
 
 #### Rate limit window
 
