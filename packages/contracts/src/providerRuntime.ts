@@ -713,6 +713,12 @@ const AccountRateLimitsUpdatedPayload = Schema.Struct({
    * headroom skip the event when it is absent rather than re-parse `rateLimits`.
    */
   snapshot: Schema.optionalKey(ProviderRateLimits),
+  /**
+   * Sparse provider notifications merge by window id. A complete provider
+   * read replaces the previous windows so removed limits and account changes
+   * cannot leave stale values behind. Older emitters omit this and merge.
+   */
+  updateMode: Schema.optionalKey(Schema.Literals(["merge", "replace"])),
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 

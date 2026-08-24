@@ -70,17 +70,25 @@ synchronization.
 
 ### Plan rate limits
 
-Providers report subscription headroom only while they run, and each in its own shape: Claude sends
-one window per `rate_limit_event`, Codex sends a sparse `primary`/`secondary` snapshot whose meaning
+Providers report subscription headroom only while they run, and each in its own shape. Claude's SDK
+exposes the complete data behind `/usage` after a turn and can also send a fractional-utilization
+`rate_limit_event` for one window. Codex sends a sparse `primary`/`secondary` snapshot whose meaning
 comes from `windowDurationMins`. Adapters normalize theirs in
 [`providerRateLimits.ts`][ratelimitsnorm] and attach the result to `account.rate-limits.updated`,
 which is the only wire shape downstream code reads.
 
 `ProviderRateLimitsReactor` hands each observation to `ProviderRegistry.setProviderRateLimits`, which
-merges it onto the previous one **by window id** — a sparse update must not delete windows it did not
-mention — and projects it onto `ServerProvider.rateLimits`. Clients therefore need no new
-subscription: it arrives with the provider snapshots they already watch, and the per-instance status
-cache is what carries the last observation across a restart.
+uses the event's update mode. Sparse notifications merge **by window id** so they do not delete
+windows they did not mention. Claude's complete usage read replaces the prior snapshot, including
+with an empty snapshot when plan limits no longer apply. The registry projects the result onto
+`ServerProvider.rateLimits`; clients need no new subscription because it arrives with the provider
+snapshots they already watch.
+
+Rate-limit state and its persisted status cache are keyed by `ProviderInstanceId`, not driver kind,
+so two Codex or Claude accounts remain independent. Rebuilding or removing an instance clears its
+in-memory observation before the replacement snapshot is published, preventing a changed provider
+home/account from inheriting stale limits. The per-instance cache carries only the current
+instance's last observation across a restart.
 
 ### Buffered assistant delivery
 

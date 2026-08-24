@@ -41,18 +41,24 @@ export const make = Effect.gen(function* () {
     if (!snapshot || instanceId === undefined) {
       return Effect.void;
     }
-    return providerRegistry.setProviderRateLimits({ instanceId, rateLimits: snapshot }).pipe(
-      Effect.asVoid,
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.logWarning("failed to record provider rate limits", {
-              instanceId,
-              provider: event.provider,
-              cause: Cause.pretty(cause),
-            }),
-      ),
-    );
+    return providerRegistry
+      .setProviderRateLimits({
+        instanceId,
+        rateLimits: snapshot,
+        ...(event.payload.updateMode ? { mode: event.payload.updateMode } : {}),
+      })
+      .pipe(
+        Effect.asVoid,
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("failed to record provider rate limits", {
+                instanceId,
+                provider: event.provider,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      );
   };
 
   const worker = yield* makeDrainableWorker(processEvent);

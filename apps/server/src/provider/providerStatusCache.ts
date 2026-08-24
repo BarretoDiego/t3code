@@ -39,7 +39,9 @@ export const isCachedProviderCorrelated = (input: {
   readonly fallbackProvider: ServerProvider;
 }): boolean =>
   input.cachedProvider.instanceId === input.fallbackProvider.instanceId &&
-  input.cachedProvider.driver === input.fallbackProvider.driver;
+  input.cachedProvider.driver === input.fallbackProvider.driver &&
+  (input.fallbackProvider.continuation === undefined ||
+    input.cachedProvider.continuation?.groupKey === input.fallbackProvider.continuation.groupKey);
 
 export const hydrateCachedProvider = (input: {
   readonly cachedProvider: ServerProvider;
@@ -88,8 +90,11 @@ export const hydrateCachedProvider = (input: {
  * Non-default instances (e.g. `codex_personal`) land in their own files and
  * never collide with other instances.
  *
- * Cache contents must still carry matching `instanceId` + `driver` identity
- * before hydration. The filename alone is not trusted as a routing key.
+ * Cache contents must still carry matching `instanceId`, `driver`, and, when
+ * the live instance supplies it, continuation identity before hydration. The
+ * continuation group identifies account-bearing homes for Codex and Claude,
+ * so editing settings while the server is stopped cannot hydrate one account
+ * with another account's cached plan limits.
  */
 export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCachePath")(
   function* (input: {
