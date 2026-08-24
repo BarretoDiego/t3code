@@ -22,7 +22,9 @@ export function WorkspaceBreadcrumb({ ariaLabel, children, className }: Workspac
 
 interface WorkspaceBreadcrumbItemProps {
   readonly children: ReactNode;
-  readonly className?: string;
+  // Explicitly `| undefined` so a caller can forward an optional className
+  // straight through under exactOptionalPropertyTypes.
+  readonly className?: string | undefined;
   readonly current?: boolean;
 }
 

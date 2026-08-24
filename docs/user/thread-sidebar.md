@@ -4,6 +4,9 @@ Pin a thread from its context menu to keep it in the pinned section above your a
 Pinned threads are shown independently of their project, including when you connect to more than
 one environment.
 
+Pinned threads still move to **Settled** when they become inactive. They also move when their pull
+request merges if **Auto-settle merged threads** is enabled.
+
 On web and desktop, drag a pinned thread to change its position. On mobile, open the thread's menu
 and choose **Move up** or **Move down**. The order is stored by the server and appears on your
 other connected devices.
@@ -34,6 +37,23 @@ snoozed, and settled ones. The menu only lists providers that currently have thr
 The last menu sorts threads by **Last activity** or **Date created**. Sorting and grouping are
 independent: changing one never reshuffles the other.
 
+## Arranging sections
+
+The same menu carries **Order sections**, which decides where sections sit rather than which ones
+exist. **Busiest first** is the default: sections with live work come first, then the ones that
+only hold history, then your quiet projects. **Name (A–Z)** ignores all of that and sorts by
+label. **Custom** is your own arrangement.
+
+Drag a section header to move it, or right-click it and choose **Move up** or **Move down**.
+Either way the sidebar switches to **Custom** and remembers where you put things, so a section
+stays put no matter what arrives in it. Sections only move within their own level: a project
+cannot be dragged out of its environment, and a collapsed section travels with everything inside
+it.
+
+Switching to **Custom** from the menu freezes the layout exactly as it looks at that moment. A
+project you add later joins the end of its level. **Reset section order** in the same menu throws
+the arrangement away and goes back to **Busiest first**.
+
 ## Acting on a section
 
 Section headers carry the actions for whatever they are about. They appear on hover and always sit
@@ -57,6 +77,26 @@ A collapsed section shows what is waiting inside it as colored dots with counts,
 urgency: amber for approvals, indigo for input requests, red for failures, green for finished
 threads you have not opened yet, and blue for threads still working. Open sections leave that to
 the rows themselves. Unread finished threads also carry a green dot next to their title.
+
+## The path above a thread
+
+Every open thread shows its path across the top of the window: the environment it runs on, the
+project it belongs to, then the thread's own title. The environment leads it whenever T3 Code can
+name one, so with more than one server connected the header says which machine the work is
+happening on without you having to guess from the project name.
+
+Both scopes are links.
+
+Clicking the **environment** opens a page listing every project on that server, busiest first,
+with each project's live thread count and when it was last touched. **New project** in the corner
+adds one to that environment.
+
+Clicking the **project** opens a page listing every thread in it, under the same **Active**,
+**Snoozed** and **Settled** shelves the sidebar uses, so the two never disagree about what is
+finished. **New thread** in the corner starts one there.
+
+Each page carries the path too, so the project page walks back up to its environment, and any
+thread walks back to the project it came from.
 
 ## Where settled threads go
 
