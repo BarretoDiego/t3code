@@ -235,11 +235,13 @@ function ThreadPaneTabs(props: {
 function ServerThreadPane({
   active,
   onRightPanelMaximizedChange,
+  reserveNativeControlsInset,
   rightPanelHost,
   target,
 }: {
   readonly active: boolean;
   readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
+  readonly reserveNativeControlsInset: boolean;
   readonly rightPanelHost: HTMLElement | null;
   readonly target: Extract<ThreadWorkspaceTarget, { routeKind: "server" }>;
 }) {
@@ -262,7 +264,7 @@ function ServerThreadPane({
       threadId={target.threadId}
       routeKind="server"
       threadSyncPhase={threadSyncPhase}
-      reserveTitleBarControlInset={false}
+      reserveTitleBarControlInset={reserveNativeControlsInset}
       workspace={{ active, rightPanelHost, onRightPanelMaximizedChange }}
     />
   );
@@ -271,11 +273,13 @@ function ServerThreadPane({
 function DraftThreadPane({
   active,
   onRightPanelMaximizedChange,
+  reserveNativeControlsInset,
   rightPanelHost,
   target,
 }: {
   readonly active: boolean;
   readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
+  readonly reserveNativeControlsInset: boolean;
   readonly rightPanelHost: HTMLElement | null;
   readonly target: Extract<ThreadWorkspaceTarget, { routeKind: "draft" }>;
 }) {
@@ -285,7 +289,7 @@ function DraftThreadPane({
       environmentId={target.environmentId}
       threadId={target.threadId}
       routeKind="draft"
-      reserveTitleBarControlInset={false}
+      reserveTitleBarControlInset={reserveNativeControlsInset}
       workspace={{ active, rightPanelHost, onRightPanelMaximizedChange }}
     />
   );
@@ -294,6 +298,7 @@ function DraftThreadPane({
 function ThreadPaneContent(props: {
   readonly active: boolean;
   readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
+  readonly reserveNativeControlsInset: boolean;
   readonly rightPanelHost: HTMLElement | null;
   readonly target: ThreadWorkspaceTarget | null;
 }) {
@@ -313,6 +318,7 @@ function ThreadPaneContent(props: {
   return props.target.routeKind === "server" ? (
     <ServerThreadPane
       active={props.active}
+      reserveNativeControlsInset={props.reserveNativeControlsInset}
       target={props.target}
       rightPanelHost={props.rightPanelHost}
       onRightPanelMaximizedChange={props.onRightPanelMaximizedChange}
@@ -320,6 +326,7 @@ function ThreadPaneContent(props: {
   ) : (
     <DraftThreadPane
       active={props.active}
+      reserveNativeControlsInset={props.reserveNativeControlsInset}
       target={props.target}
       rightPanelHost={props.rightPanelHost}
       onRightPanelMaximizedChange={props.onRightPanelMaximizedChange}
@@ -472,6 +479,7 @@ export function ThreadWorkspace({
                 <ThreadPaneContent
                   active={active}
                   target={target}
+                  reserveNativeControlsInset={reserveNativeControlsInset}
                   rightPanelHost={active ? rightPanelHost : null}
                   onRightPanelMaximizedChange={setRightPanelMaximized}
                 />
