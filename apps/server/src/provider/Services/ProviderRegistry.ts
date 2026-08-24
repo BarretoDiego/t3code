@@ -9,6 +9,7 @@
 import type {
   ProviderInstanceId,
   ProviderDriverKind,
+  ProviderRateLimits,
   ServerProvider,
   ServerProviderUpdateState,
 } from "@t3tools/contracts";
@@ -67,6 +68,20 @@ export interface ProviderRegistryShape {
     readonly instanceId: ProviderInstanceId;
     readonly action: ProviderMaintenanceActionKind;
     readonly state: ServerProviderUpdateState | null;
+  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /**
+   * Record a plan rate-limit observation for one configured instance.
+   *
+   * Observations are merged window-by-window onto the previous one (providers
+   * send sparse updates) and projected onto `ServerProvider.rateLimits`. Unlike
+   * maintenance-action state this *is* persisted with the snapshot: a limit
+   * observed minutes ago is still the truth after a restart, and re-observing
+   * it requires the provider to run a turn.
+   */
+  readonly setProviderRateLimits: (input: {
+    readonly instanceId: ProviderInstanceId;
+    readonly rateLimits: ProviderRateLimits;
   }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**

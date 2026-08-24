@@ -65,6 +65,7 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { normalizeCodexRateLimits } from "../providerRateLimits.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1408,15 +1409,25 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "account/rateLimits/updated") {
-    if (!readPayload(EffectCodexSchema.V2AccountRateLimitsUpdatedNotification, event.payload)) {
+    const payload = readPayload(
+      EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
       return [];
     }
+    const base = runtimeEventBase(event, canonicalThreadId);
+    const snapshot = normalizeCodexRateLimits({
+      rateLimits: payload.rateLimits,
+      observedAt: base.createdAt,
+    });
     return [
       {
         type: "account.rate-limits.updated",
-        ...runtimeEventBase(event, canonicalThreadId),
+        ...base,
         payload: {
           rateLimits: event.payload ?? {},
+          ...(snapshot ? { snapshot } : {}),
         },
       },
     ];

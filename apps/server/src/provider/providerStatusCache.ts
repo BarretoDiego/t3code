@@ -67,6 +67,9 @@ export const hydrateCachedProvider = (input: {
     checkedAt: input.cachedProvider.checkedAt,
     slashCommands: input.cachedProvider.slashCommands,
     skills: input.cachedProvider.skills,
+    // Rate limits only change when a provider runs, so the cached observation
+    // outlives the process that recorded it.
+    ...(input.cachedProvider.rateLimits ? { rateLimits: input.cachedProvider.rateLimits } : {}),
   };
 
   return input.cachedProvider.message

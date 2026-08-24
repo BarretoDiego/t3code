@@ -1012,6 +1012,155 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
+      it.effect("keeps observed rate limits across a live refresh and persists them", () =>
+        Effect.gen(function* () {
+          const cursorDriver = ProviderDriverKind.make("cursor");
+          const cursorInstanceId = ProviderInstanceId.make("cursor");
+          const initialProvider = {
+            instanceId: cursorInstanceId,
+            driver: cursorDriver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated" },
+            checkedAt: "2026-04-14T00:00:00.000Z",
+            version: "2026.04.09-f2b0fcd",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          } as const satisfies ServerProvider;
+          const refreshedProvider = {
+            ...initialProvider,
+            checkedAt: "2026-04-14T00:01:00.000Z",
+          } satisfies ServerProvider;
+          const changes = yield* PubSub.unbounded<ServerProvider>();
+          const instance = {
+            instanceId: cursorInstanceId,
+            driverKind: cursorDriver,
+            continuationIdentity: {
+              driverKind: cursorDriver,
+              continuationKey: "cursor:instance:cursor",
+            },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
+                provider: cursorDriver,
+                packageName: null,
+              }),
+              getSnapshot: Effect.succeed(initialProvider),
+              refresh: Effect.succeed(refreshedProvider),
+              streamChanges: Stream.fromPubSub(changes),
+            },
+            adapter: {} as ProviderInstance["adapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } satisfies ProviderInstance;
+          const instanceRegistryLayer = Layer.succeed(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            {
+              getInstance: (instanceId) =>
+                Effect.succeed(instanceId === cursorInstanceId ? instance : undefined),
+              listInstances: Effect.succeed([instance]),
+              listUnavailable: Effect.succeed([]),
+              streamChanges: Stream.empty,
+              subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
+                PubSub.subscribe(pubsub),
+              ),
+            },
+          );
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const runtimeServices = yield* Layer.build(
+            ProviderRegistryLive.pipe(
+              Layer.provideMerge(instanceRegistryLayer),
+              Layer.provideMerge(
+                ServerConfig.layerTest(process.cwd(), {
+                  prefix: "t3-provider-registry-rate-limits-",
+                }),
+              ),
+              Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+              Layer.provideMerge(NodeServices.layer),
+            ),
+          ).pipe(Scope.provide(scope));
+
+          yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry.ProviderRegistry;
+            const config = yield* ServerConfig.ServerConfig;
+            const filePath = yield* resolveProviderStatusCachePath({
+              cacheDir: config.providerStatusCacheDir,
+              instanceId: cursorInstanceId,
+            });
+
+            yield* registry.setProviderRateLimits({
+              instanceId: cursorInstanceId,
+              rateLimits: {
+                observedAt: "2026-04-14T00:00:30.000Z",
+                planLabel: "Pro",
+                windows: [
+                  {
+                    id: "five_hour",
+                    label: "5-hour",
+                    kind: "session",
+                    usedPercent: 40,
+                    resetsAt: null,
+                    status: "ok",
+                  },
+                ],
+              },
+            });
+
+            // A sparse follow-up must not drop the window it did not mention.
+            yield* registry.setProviderRateLimits({
+              instanceId: cursorInstanceId,
+              rateLimits: {
+                observedAt: "2026-04-14T00:00:45.000Z",
+                windows: [
+                  {
+                    id: "seven_day",
+                    label: "Weekly",
+                    kind: "weekly",
+                    usedPercent: 12,
+                    resetsAt: null,
+                    status: "ok",
+                  },
+                ],
+              },
+            });
+
+            const providers = yield* registry.getProviders;
+            assert.deepStrictEqual(
+              providers[0]?.rateLimits?.windows.map((window) => window.id),
+              ["five_hour", "seven_day"],
+            );
+            assert.strictEqual(providers[0]?.rateLimits?.planLabel, "Pro");
+
+            // A provider health refresh replaces the snapshot; the observation
+            // is projected back onto it instead of being lost.
+            yield* PubSub.publish(changes, refreshedProvider);
+
+            let cachedProvider = yield* readProviderStatusCache(filePath);
+            for (
+              let attempt = 0;
+              attempt < 50 && cachedProvider?.checkedAt !== refreshedProvider.checkedAt;
+              attempt += 1
+            ) {
+              yield* TestClock.adjust("10 millis");
+              yield* Effect.yieldNow;
+              cachedProvider = yield* readProviderStatusCache(filePath);
+            }
+
+            assert.deepStrictEqual(
+              cachedProvider?.rateLimits?.windows.map((window) => window.id),
+              ["five_hour", "seven_day"],
+            );
+            assert.deepStrictEqual(
+              (yield* registry.getProviders)[0]?.rateLimits?.windows.map((window) => window.id),
+              ["five_hour", "seven_day"],
+            );
+          }).pipe(Effect.provide(runtimeServices));
+        }),
+      );
+
       it.effect(
         "persists authoritative OpenCode removals without resurrecting them on a failed live refresh",
         () =>

@@ -20,6 +20,7 @@ import {
 import { EditorId, RemoteOpenTarget } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderRateLimits } from "./providerRateLimits.ts";
 import { ServerSettings } from "./settings.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
@@ -194,6 +195,9 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+  // Last plan rate-limit observation for this instance, absent until the
+  // provider reports one (and always absent for providers that never do).
+  rateLimits: Schema.optionalKey(ProviderRateLimits),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

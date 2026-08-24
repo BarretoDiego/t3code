@@ -14,6 +14,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderRateLimits } from "./providerRateLimits.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -704,7 +705,14 @@ const AccountUpdatedPayload = Schema.Struct({
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
+  /** The provider's native payload, kept for logs and debugging. */
   rateLimits: Schema.Unknown,
+  /**
+   * Adapter-normalized view of the same payload. Optional because a provider
+   * may report a shape we cannot map yet; consumers that only care about plan
+   * headroom skip the event when it is absent rather than re-parse `rateLimits`.
+   */
+  snapshot: Schema.optionalKey(ProviderRateLimits),
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 

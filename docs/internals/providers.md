@@ -55,7 +55,7 @@ Provider output comes back as internal commands such as `thread.message.assistan
 
 ## Server-side workers
 
-Provider work flows through three queue-backed workers. All three are built with
+Provider work flows through four queue-backed workers. All four are built with
 `makeDrainableWorker` from [`DrainableWorker.ts`][worker] and expose `drain` for deterministic test
 synchronization.
 
@@ -63,8 +63,24 @@ synchronization.
    commands.
 2. [`ProviderCommandReactor`][cmd] reacts to orchestration intent events and dispatches provider
    calls.
-3. [`CheckpointReactor`][checkpoint] captures workspace checkpoints on turn start and completion, and
+3. [`ProviderRateLimitsReactor`][ratelimits] records plan rate-limit observations onto the provider
+   snapshot.
+4. [`CheckpointReactor`][checkpoint] captures workspace checkpoints on turn start and completion, and
    performs reverts.
+
+### Plan rate limits
+
+Providers report subscription headroom only while they run, and each in its own shape: Claude sends
+one window per `rate_limit_event`, Codex sends a sparse `primary`/`secondary` snapshot whose meaning
+comes from `windowDurationMins`. Adapters normalize theirs in
+[`providerRateLimits.ts`][ratelimitsnorm] and attach the result to `account.rate-limits.updated`,
+which is the only wire shape downstream code reads.
+
+`ProviderRateLimitsReactor` hands each observation to `ProviderRegistry.setProviderRateLimits`, which
+merges it onto the previous one **by window id** — a sparse update must not delete windows it did not
+mention — and projects it onto `ServerProvider.rateLimits`. Clients therefore need no new
+subscription: it arrives with the provider snapshots they already watch, and the per-instance status
+cache is what carries the last observation across a restart.
 
 ### Buffered assistant delivery
 
@@ -89,4 +105,6 @@ when a request opens (approval) or user input is requested, via
 [worker]: ../../packages/shared/src/DrainableWorker.ts
 [ingest]: ../../apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
 [cmd]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+[ratelimits]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[ratelimitsnorm]: ../../apps/server/src/provider/providerRateLimits.ts
 [checkpoint]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
