@@ -308,6 +308,7 @@ export interface CodexRateLimitWindowPayload {
 }
 
 export interface CodexRateLimitsPayload {
+  readonly limitId?: string | null;
   readonly primary?: CodexRateLimitWindowPayload | null;
   readonly secondary?: CodexRateLimitWindowPayload | null;
   readonly credits?: {
@@ -325,6 +326,11 @@ export interface CodexRateLimitsPayload {
   readonly planType?: string | null;
   readonly rateLimitReachedType?: string | null;
   readonly spendControlReached?: boolean | null;
+}
+
+export interface CodexRateLimitsReadPayload {
+  readonly rateLimits: CodexRateLimitsPayload;
+  readonly rateLimitsByLimitId?: Readonly<Record<string, CodexRateLimitsPayload>> | null;
 }
 
 const CODEX_FALLBACK_LABELS = {
@@ -425,6 +431,51 @@ export const normalizeCodexRateLimits = (input: {
     windows,
     ...(planLabel ? { planLabel } : {}),
     ...(notice.length > 0 ? { notice } : {}),
+  };
+};
+
+/** Normalize the authoritative full read, including every named Codex bucket. */
+export const normalizeCodexRateLimitsRead = (input: {
+  readonly response: CodexRateLimitsReadPayload;
+  readonly observedAt: string;
+}): ProviderRateLimits => {
+  const namedBuckets = Object.entries(input.response.rateLimitsByLimitId ?? {});
+  const normalizeBuckets = (buckets: ReadonlyArray<readonly [string, CodexRateLimitsPayload]>) =>
+    buckets.flatMap(([bucketId, rateLimits]) => {
+      const snapshot = normalizeCodexRateLimits({ rateLimits, observedAt: input.observedAt });
+      return snapshot ? [{ bucketId, rateLimits, snapshot }] : [];
+    });
+  const normalizedNamedBuckets = normalizeBuckets(namedBuckets);
+  const normalized =
+    normalizedNamedBuckets.length > 0
+      ? normalizedNamedBuckets
+      : normalizeBuckets([
+          [input.response.rateLimits.limitId ?? "default", input.response.rateLimits],
+        ]);
+  const hasMultipleBuckets = normalized.length > 1;
+  const windows = normalized
+    .flatMap(({ bucketId, rateLimits, snapshot }) => {
+      const bucketLabel = trimmed(rateLimits.limitName) ?? trimmed(bucketId);
+      return snapshot.windows.map((window) => ({
+        ...window,
+        ...(hasMultipleBuckets
+          ? {
+              id: `${bucketId}:${window.id}`,
+              label: bucketLabel ? `${window.label} (${bucketLabel})` : window.label,
+            }
+          : {}),
+      }));
+    })
+    .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
+  const planLabel = normalized.find(({ snapshot }) => snapshot.planLabel)?.snapshot.planLabel;
+  const notices = Array.from(
+    new Set(normalized.flatMap(({ snapshot }) => (snapshot.notice ? [snapshot.notice] : []))),
+  );
+  return {
+    observedAt: input.observedAt,
+    windows,
+    ...(planLabel ? { planLabel } : {}),
+    ...(notices.length > 0 ? { notice: notices.join(" · ") } : {}),
   };
 };
 

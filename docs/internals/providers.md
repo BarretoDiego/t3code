@@ -70,10 +70,12 @@ synchronization.
 
 ### Plan rate limits
 
-Providers report subscription headroom only while they run, and each in its own shape. Claude's SDK
-exposes the complete data behind `/usage` after a turn and can also send a fractional-utilization
-`rate_limit_event` for one window. Codex sends a sparse `primary`/`secondary` snapshot whose meaning
-comes from `windowDurationMins`. Adapters normalize theirs in
+Providers report subscription headroom through their live protocol connection, and each in its own
+shape. Claude's SDK exposes the complete data behind `/usage` after a turn and can also send a
+fractional-utilization `rate_limit_event` for one window. Codex sends sparse
+`primary`/`secondary` notifications whose meaning comes from `windowDurationMins`; its authoritative
+`account/rateLimits/read` response can contain multiple named `rateLimitsByLimitId` buckets. Adapters
+normalize theirs in
 [`providerRateLimits.ts`][ratelimitsnorm] and attach the result to `account.rate-limits.updated`,
 which is the only wire shape downstream code reads.
 
@@ -83,6 +85,11 @@ windows they did not mention. Claude's complete usage read replaces the prior sn
 with an empty snapshot when plan limits no longer apply. The registry projects the result onto
 `ServerProvider.rateLimits`; clients need no new subscription because it arrives with the provider
 snapshots they already watch.
+
+`server.refreshProviderRateLimits` targets one `ProviderInstanceId`. `ProviderService` routes it to
+that instance's adapter, and the RPC writes the complete result to `ProviderRegistry` with replace
+semantics before replying. Clients fan this targeted operation out from one refresh button, so a
+failure or active-session requirement on one account cannot merge state with or block another.
 
 Rate-limit state and its persisted status cache are keyed by `ProviderInstanceId`, not driver kind,
 so two Codex or Claude accounts remain independent. Rebuilding or removing an instance clears its

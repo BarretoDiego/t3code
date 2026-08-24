@@ -2809,6 +2809,64 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("refreshes Claude plan limits without starting another turn", () => {
+    const harness = makeHarness();
+    Object.assign(harness.query, {
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+        subscription_type: "team",
+        rate_limits_available: true,
+        rate_limits: {
+          five_hour: { utilization: 21, resets_at: null },
+          seven_day: { utilization: 32, resets_at: null },
+          seven_day_opus: { utilization: 43, resets_at: null },
+          seven_day_sonnet: { utilization: 54, resets_at: null },
+          seven_day_oauth_apps: { utilization: 65, resets_at: null },
+        },
+      }),
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const snapshot = yield* adapter.refreshRateLimits!();
+
+      assert.strictEqual(snapshot.planLabel, "Team");
+      assert.deepStrictEqual(
+        snapshot.windows.map((window) => [window.id, window.usedPercent]),
+        [
+          ["five_hour", 21],
+          ["seven_day", 32],
+          ["seven_day_opus", 43],
+          ["seven_day_sonnet", 54],
+          ["seven_day_oauth_apps", 65],
+        ],
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("requires an active session to refresh Claude plan limits", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
+
+      assert.equal(result._tag, "Failure");
+      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      assert.match(result.failure.message, /active Claude session/i);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("clamps oversized Claude usage to the reported context window", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

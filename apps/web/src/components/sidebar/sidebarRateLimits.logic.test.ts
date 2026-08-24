@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRateLimits,
@@ -19,6 +20,7 @@ function provider(input: {
   readonly driver?: string;
   readonly displayName?: string;
   readonly rateLimits?: ProviderRateLimits;
+  readonly rateLimitsRefresh?: ServerProvider["rateLimitsRefresh"];
 }): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
@@ -33,6 +35,7 @@ function provider(input: {
     models: [],
     slashCommands: [],
     skills: [],
+    ...(input.rateLimitsRefresh ? { rateLimitsRefresh: input.rateLimitsRefresh } : {}),
     ...(input.rateLimits ? { rateLimits: input.rateLimits } : {}),
   };
 }
@@ -41,7 +44,7 @@ function environment(
   label: string,
   providers: ReadonlyArray<ServerProvider>,
 ): SidebarRateLimitsEnvironmentInput {
-  return { environmentId: label.toLowerCase(), label, providers };
+  return { environmentId: EnvironmentId.make(label.toLowerCase()), label, providers };
 }
 
 const fiveHour = (usedPercent: number, resetsAt: string | null) =>
@@ -89,6 +92,30 @@ describe("buildSidebarRateLimitsView", () => {
     expect(view.peakPercent).toBeNull();
     expect(view.tone).toBe("ok");
     expect(view.summary).toBe("Plan limits: no data yet");
+  });
+
+  it("collects refresh targets even before a provider reports its first snapshot", () => {
+    const view = buildSidebarRateLimitsView({
+      environments: [
+        environment("Local", [
+          provider({
+            instanceId: "claude_work",
+            rateLimitsRefresh: "active-session-required",
+          }),
+        ]),
+      ],
+      nowMs: NOW_MS,
+    });
+
+    expect(view.providers).toEqual([]);
+    expect(view.refreshTargets).toEqual([
+      {
+        key: "local:claude_work",
+        environmentId: "local",
+        instanceId: "claude_work",
+        mode: "active-session-required",
+      },
+    ]);
   });
 
   it("peaks on the most constrained live window across providers", () => {

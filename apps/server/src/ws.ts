@@ -43,6 +43,7 @@ import {
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   ProviderUploadFeedbackError,
+  ServerProviderRateLimitsRefreshError,
   RelayClientInstallFailedError,
   type RelayClientInstallProgressEvent,
   type ServerSelfUpdateError,
@@ -1542,6 +1543,28 @@ const makeWsRpcLayer = (
               : providerRegistry.refresh()
             ).pipe(Effect.map((providers) => ({ providers }))),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverRefreshProviderRateLimits]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverRefreshProviderRateLimits,
+            providerService.refreshRateLimits(input.instanceId).pipe(
+              Effect.flatMap((rateLimits) =>
+                providerRegistry.setProviderRateLimits({
+                  instanceId: input.instanceId,
+                  rateLimits,
+                  mode: "replace",
+                }),
+              ),
+              Effect.map((providers) => ({ providers })),
+              Effect.mapError(
+                (cause) =>
+                  new ServerProviderRateLimitsRefreshError({
+                    instanceId: input.instanceId,
+                    reason: cause.message,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "provider" },
           ),
         [WS_METHODS.providerUploadFeedback]: (input) =>
           observeRpcEffect(

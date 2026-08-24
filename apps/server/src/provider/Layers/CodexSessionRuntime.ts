@@ -198,6 +198,10 @@ export interface CodexSessionRuntimeShape {
   readonly uploadFeedback: (
     reason?: string,
   ) => Effect.Effect<EffectCodexSchema.V2FeedbackUploadResponse, CodexSessionRuntimeError>;
+  readonly readRateLimits: Effect.Effect<
+    EffectCodexSchema.V2GetAccountRateLimitsResponse,
+    CodexSessionRuntimeError
+  >;
   readonly respondToRequest: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -2211,6 +2215,7 @@ export const makeCodexSessionRuntime = (
             threadId: providerThreadId,
           });
         }),
+      readRateLimits: client.request("account/rateLimits/read", undefined),
       respondToRequest: (requestId, decision) =>
         Effect.gen(function* () {
           const pending = (yield* Ref.get(pendingApprovalsRef)).get(requestId);
