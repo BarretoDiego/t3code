@@ -5,8 +5,11 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { ProviderInstanceEntry } from "../providerInstances";
 import {
   buildSidebarThreadGroups,
+  collectSidebarSectionKeys,
   deriveSidebarProviderOptions,
   flattenSidebarThreadGroups,
+  orderSidebarThreadGroups,
+  planSidebarSectionOrder,
   resolveThreadProviderIdentity,
   settledShelfKey,
   type GroupableThread,
@@ -532,5 +535,205 @@ describe("history inside a section", () => {
     });
     expect(groups.map((group) => group.label)).toEqual(["local/archived"]);
     expect(groups[0]?.threadCount).toBe(0);
+  });
+});
+
+describe("orderSidebarThreadGroups", () => {
+  /** Three environment sections, deliberately not in alphabetical order. */
+  const environmentSections = () =>
+    buildSidebarThreadGroups({
+      threads: [
+        thread({ id: "a", environmentId: "remote" }),
+        thread({ id: "b", environmentId: "local" }),
+      ],
+      primaryAxis: "environment",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+
+  it("passes the built order through untouched when sorting by activity", () => {
+    const groups = environmentSections();
+    expect(
+      orderSidebarThreadGroups(groups, { mode: "activity", manualKeys: ["environment:local"] }),
+    ).toBe(groups);
+  });
+
+  it("sorts by label when alphabetical", () => {
+    expect(
+      orderSidebarThreadGroups(environmentSections(), {
+        mode: "alphabetical",
+        manualKeys: [],
+      }).map((group) => group.label),
+    ).toEqual(["Remote box", "This computer"]);
+  });
+
+  it("follows the manual order", () => {
+    expect(
+      orderSidebarThreadGroups(environmentSections(), {
+        mode: "manual",
+        manualKeys: ["environment:local", "environment:remote"],
+      }).map((group) => group.label),
+    ).toEqual(["This computer", "Remote box"]);
+  });
+
+  it("keeps a section the user never placed after the ones they did", () => {
+    expect(
+      orderSidebarThreadGroups(environmentSections(), {
+        mode: "manual",
+        manualKeys: ["environment:local"],
+      }).map((group) => group.label),
+    ).toEqual(["This computer", "Remote box"]);
+  });
+
+  it("orders nested sections by their parent-prefixed keys", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [
+        thread({ id: "a", environmentId: "local", projectId: "api" }),
+        thread({ id: "b", environmentId: "local", projectId: "app" }),
+      ],
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    const ordered = orderSidebarThreadGroups(groups, {
+      mode: "manual",
+      manualKeys: ["environment:local/project:local:app"],
+    });
+    expect(ordered[0]?.children.map((child) => child.label)).toEqual(["local/app", "local/api"]);
+    // Reordering a level must not disturb what is inside those sections.
+    expect(ordered[0]?.children[0]?.threads.map((t) => t.id)).toEqual(["b"]);
+  });
+
+  it("leaves thread order and counts alone", () => {
+    const groups = environmentSections();
+    const ordered = orderSidebarThreadGroups(groups, { mode: "alphabetical", manualKeys: [] });
+    expect(ordered.map((group) => group.threadCount)).toEqual([1, 1]);
+    expect(ordered.flatMap((group) => group.threads.map((t) => t.id)).sort()).toEqual(["a", "b"]);
+  });
+});
+
+describe("collectSidebarSectionKeys", () => {
+  it("lists every key, parents before their children", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", environmentId: "local", projectId: "app" })],
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    expect(collectSidebarSectionKeys(groups)).toEqual([
+      "environment:local",
+      "environment:local/project:local:app",
+    ]);
+  });
+});
+
+describe("planSidebarSectionOrder", () => {
+  it("records the whole level so the result no longer depends on activity", () => {
+    expect(
+      planSidebarSectionOrder({
+        siblingKeys: ["a", "b", "c"],
+        fromIndex: 2,
+        toIndex: 0,
+        manualKeys: [],
+      }),
+    ).toEqual(["c", "a", "b"]);
+  });
+
+  it("leaves other levels' keys in place", () => {
+    expect(
+      planSidebarSectionOrder({
+        siblingKeys: ["a", "b"],
+        fromIndex: 1,
+        toIndex: 0,
+        manualKeys: ["x", "a", "y", "b"],
+      }),
+    ).toEqual(["x", "y", "b", "a"]);
+  });
+
+  it("returns the same list for a move that changes nothing", () => {
+    const manualKeys = ["a", "b"];
+    expect(
+      planSidebarSectionOrder({ siblingKeys: ["a", "b"], fromIndex: 1, toIndex: 1, manualKeys }),
+    ).toBe(manualKeys);
+    expect(
+      planSidebarSectionOrder({ siblingKeys: ["a", "b"], fromIndex: 0, toIndex: -1, manualKeys }),
+    ).toBe(manualKeys);
+    expect(
+      planSidebarSectionOrder({ siblingKeys: ["a", "b"], fromIndex: 1, toIndex: 2, manualKeys }),
+    ).toBe(manualKeys);
+  });
+
+  it("round-trips through the order it plans", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [
+        thread({ id: "a", environmentId: "remote" }),
+        thread({ id: "b", environmentId: "local" }),
+      ],
+      primaryAxis: "environment",
+      secondaryAxis: "none",
+      context: CONTEXT,
+    });
+    const siblingKeys = groups.map((group) => group.key);
+    const manualKeys = planSidebarSectionOrder({
+      siblingKeys,
+      fromIndex: 1,
+      toIndex: 0,
+      manualKeys: [],
+    });
+    expect(
+      orderSidebarThreadGroups(groups, { mode: "manual", manualKeys }).map((group) => group.label),
+    ).toEqual(["This computer", "Remote box"]);
+  });
+});
+
+describe("header rows carry their level", () => {
+  it("gives each header its siblings and position, per level", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [
+        thread({ id: "a", environmentId: "local", projectId: "app" }),
+        thread({ id: "b", environmentId: "local", projectId: "api" }),
+        thread({ id: "c", environmentId: "remote", projectId: "app" }),
+      ],
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    const headers = flattenSidebarThreadGroups(groups, new Set()).flatMap((row) =>
+      row.kind === "header"
+        ? [
+            {
+              key: row.group.key,
+              parentKey: row.parentKey,
+              index: row.index,
+              siblingKeys: row.siblingKeys,
+            },
+          ]
+        : [],
+    );
+    expect(headers.map((header) => [header.key, header.parentKey, header.index])).toEqual([
+      ["environment:local", null, 0],
+      ["environment:local/project:local:app", "environment:local", 0],
+      ["environment:local/project:local:api", "environment:local", 1],
+      ["environment:remote", null, 1],
+      ["environment:remote/project:remote:app", "environment:remote", 0],
+    ]);
+    expect(headers[1]?.siblingKeys).toEqual([
+      "environment:local/project:local:app",
+      "environment:local/project:local:api",
+    ]);
+  });
+
+  it("hides a collapsed section's children from reordering, as it hides them from the eye", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [thread({ id: "a", environmentId: "local", projectId: "app" })],
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: CONTEXT,
+    });
+    expect(
+      flattenSidebarThreadGroups(groups, new Set(["environment:local"])).filter(
+        (row) => row.kind === "header",
+      ),
+    ).toHaveLength(1);
   });
 });
