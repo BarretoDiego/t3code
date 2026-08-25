@@ -23,9 +23,11 @@ headroom, which is what decides whether the next turn runs.
 
 Providers report plan limits while they work, so the gauge updates as your agents run and keeps the
 last observation between runs — including across restarts. Claude refreshes its complete 5-hour,
-weekly, model-specific, and extra-usage snapshot when a turn finishes; provider warnings can update
-an individual window sooner. A window whose reset time has passed is shown as reset rather than
-repeating a spent number, and it fills in again the next time that provider runs.
+weekly, model-specific (including Fable 5), and extra-usage snapshot when a turn finishes. New
+model-scoped windows reported by Claude appear independently without replacing the general weekly
+window; provider warnings can update an individual window sooner. A window whose reset time has
+passed is shown as reset rather than repeating a spent number, and it fills in again the next time
+that provider runs.
 
 Use the refresh button in the Plan limits header to request a fresh snapshot for every connected
 account. Codex and Claude currently answer that request through an active provider session, without

@@ -102,6 +102,13 @@ describe("normalizeClaudeUsageRateLimits", () => {
           five_hour: { utilization: 42, resets_at: "2026-08-24T17:00:00.000Z" },
           seven_day: { utilization: 18, resets_at: "2026-08-28T12:00:00.000Z" },
           seven_day_opus: { utilization: 64, resets_at: null },
+          model_scoped: [
+            {
+              display_name: "Fable",
+              utilization: 37,
+              resets_at: "2026-08-29T12:00:00.000Z",
+            },
+          ],
           extra_usage: {
             is_enabled: true,
             monthly_limit: 100,
@@ -121,10 +128,34 @@ describe("normalizeClaudeUsageRateLimits", () => {
         ["five_hour", 42, "session"],
         ["seven_day", 18, "weekly"],
         ["seven_day_opus", 64, "weekly"],
+        ["model_scoped:fable-5", 37, "weekly"],
         ["extra_usage", 25, "credits"],
       ],
     );
+    assert.strictEqual(snapshot.windows[3]?.label, "Weekly (Fable 5)");
+    assert.strictEqual(snapshot.windows[3]?.resetsAt, "2026-08-29T12:00:00.000Z");
     assert.strictEqual(snapshot.windows.at(-1)?.detail, "25 / 100 USD");
+  });
+
+  it("keeps future Claude model-scoped windows dynamic", () => {
+    const snapshot = normalizeClaudeUsageRateLimits({
+      usage: {
+        subscription_type: "max",
+        rate_limits_available: true,
+        rate_limits: {
+          model_scoped: [
+            { display_name: "Opus 5", utilization: 11, resets_at: null },
+            { display_name: "", utilization: 22, resets_at: null },
+          ],
+        },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.deepStrictEqual(
+      snapshot.windows.map((window) => [window.id, window.label, window.usedPercent]),
+      [["model_scoped:opus-5", "Weekly (Opus 5)", 11]],
+    );
   });
 
   it("returns an authoritative empty snapshot when plan limits are unavailable", () => {
