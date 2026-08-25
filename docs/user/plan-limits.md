@@ -7,8 +7,9 @@ is spent. The mobile Usage page shows the same provider breakdown.
 
 The ring fills to the most constrained window across every provider and environment you are
 connected to, and turns amber as a window gets tight and red once one is exhausted. Hover or click
-it for the full breakdown: each provider, its plan, every window it reports, how much is used, and
-how long the window has left.
+it for the breakdown of providers that are not pinned: each plan, every window it reports, how much
+is used, and how long the window has left. Pinned providers stay visible in the dock and are omitted
+from this popup to avoid showing the same account twice.
 
 On web and desktop, pin any provider from that breakdown to keep a compact plan-limit widget above
 the sidebar's Settings and Usage controls. Pinned widgets use an adaptive grid, keep their own
