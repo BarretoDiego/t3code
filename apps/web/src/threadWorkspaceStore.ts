@@ -10,6 +10,7 @@ export const THREAD_WORKSPACE_LAYOUTS = [
   "single",
   "two-columns",
   "three-columns",
+  "four-columns",
   "two-rows",
   "three-rows",
   "grid-2x2",
@@ -75,6 +76,7 @@ export function threadWorkspacePaneCount(layout: ThreadWorkspaceLayout): number 
     case "three-columns":
     case "three-rows":
       return 3;
+    case "four-columns":
     case "grid-2x2":
       return 4;
   }

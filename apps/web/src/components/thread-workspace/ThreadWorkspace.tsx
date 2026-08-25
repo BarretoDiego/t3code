@@ -19,7 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
-import { LayoutGridIcon, MessageSquareIcon, XIcon } from "lucide-react";
+import { ArrowDownToLineIcon, LayoutGridIcon, MessageSquareIcon, XIcon } from "lucide-react";
 import {
   useCallback,
   useLayoutEffect,
@@ -74,6 +74,7 @@ const LAYOUT_OPTIONS: ReadonlyArray<{
   { value: "single", label: "Single", columns: 1, rows: 1 },
   { value: "two-columns", label: "2 columns", columns: 2, rows: 1 },
   { value: "three-columns", label: "3 columns", columns: 3, rows: 1 },
+  { value: "four-columns", label: "4 columns", columns: 4, rows: 1 },
   { value: "two-rows", label: "2 rows", columns: 1, rows: 2 },
   { value: "three-rows", label: "3 rows", columns: 1, rows: 3 },
   { value: "grid-2x2", label: "2 × 2 grid", columns: 2, rows: 2 },
@@ -83,6 +84,7 @@ const GRID_CLASS_BY_LAYOUT: Record<ThreadWorkspaceLayout, string> = {
   single: "grid-cols-1 grid-rows-1",
   "two-columns": "grid-cols-2 grid-rows-1",
   "three-columns": "grid-cols-3 grid-rows-1",
+  "four-columns": "grid-cols-4 grid-rows-1",
   "two-rows": "grid-cols-1 grid-rows-2",
   "three-rows": "grid-cols-1 grid-rows-3",
   "grid-2x2": "grid-cols-2 grid-rows-2",
@@ -293,11 +295,47 @@ function SortableThreadTab(props: {
   );
 }
 
+// The hint stays mounted so its fade in and out is a one-shot transition instead of a mount
+// animation, and it never repaints while idle because opacity is the only animated property.
+function ThreadPaneDropHint(props: {
+  readonly dragging: boolean;
+  readonly over: boolean;
+  readonly paneNumber: number;
+}) {
+  return (
+    <div
+      aria-hidden
+      data-thread-pane-drop-hint={props.dragging ? "true" : undefined}
+      className={cn(
+        "pointer-events-none absolute inset-x-1.5 bottom-1.5 top-[calc(2rem+0.375rem)] z-20 flex items-center justify-center rounded-lg border border-dashed transition-[opacity,background-color,border-color] duration-150 ease-out motion-reduce:transition-none",
+        props.dragging ? "opacity-100" : "opacity-0",
+        props.over ? "border-primary/70 bg-primary/10" : "border-border bg-background/65",
+      )}
+    >
+      <span
+        className={cn(
+          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm transition-[transform,color,background-color,border-color] duration-150 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+          props.over
+            ? "scale-105 border-primary/70 bg-primary text-primary-foreground"
+            : "border-border/75 bg-popover text-muted-foreground",
+        )}
+      >
+        <ArrowDownToLineIcon className="size-3.5 shrink-0" />
+        {props.over
+          ? `Release to open in pane ${props.paneNumber}`
+          : `Drop here · pane ${props.paneNumber}`}
+      </span>
+    </div>
+  );
+}
+
 function ThreadPaneSection(props: {
   readonly paneId: string;
+  readonly paneNumber: number;
   readonly label: string;
   readonly className: string;
   readonly active: boolean;
+  readonly dragging: boolean;
   readonly onPointerDownCapture: PointerEventHandler<HTMLElement>;
   readonly children: ReactNode;
 }) {
@@ -316,6 +354,7 @@ function ThreadPaneSection(props: {
       onPointerDownCapture={props.onPointerDownCapture}
     >
       {props.children}
+      <ThreadPaneDropHint dragging={props.dragging} over={isOver} paneNumber={props.paneNumber} />
     </section>
   );
 }
@@ -454,7 +493,7 @@ function ThreadPaneContent(props: {
           <MessageSquareIcon className="mx-auto size-5 opacity-55" aria-hidden />
           <p className="mt-3 text-sm font-medium text-foreground">This pane is ready</p>
           <p className="mt-1 text-xs leading-relaxed">
-            Select a thread from the sidebar to open it here.
+            Select a thread from the sidebar, or drag a thread tab into this pane.
           </p>
         </div>
       </div>
@@ -666,8 +705,10 @@ export function ThreadWorkspace({
                 <ThreadPaneSection
                   key={pane.id}
                   paneId={pane.id}
+                  paneNumber={index + 1}
                   label={`Thread pane ${index + 1}`}
                   active={active}
+                  dragging={draggedTabKey !== null}
                   className={cn(
                     "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
                     !active && "max-md:hidden",

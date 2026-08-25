@@ -33,6 +33,7 @@ describe("threadWorkspaceStore", () => {
     expect(threadWorkspacePaneCount("single")).toBe(1);
     expect(threadWorkspacePaneCount("two-columns")).toBe(2);
     expect(threadWorkspacePaneCount("three-columns")).toBe(3);
+    expect(threadWorkspacePaneCount("four-columns")).toBe(4);
     expect(threadWorkspacePaneCount("two-rows")).toBe(2);
     expect(threadWorkspacePaneCount("three-rows")).toBe(3);
     expect(threadWorkspacePaneCount("grid-2x2")).toBe(4);
@@ -106,6 +107,24 @@ describe("threadWorkspaceStore", () => {
     expect(reduced.panes).toHaveLength(1);
     expect(reduced.panes[0]?.tabs.map((entry) => entry.threadId)).toEqual(["one", "two", "three"]);
     expect(selectActiveThreadWorkspaceTarget(reduced)?.threadId).toBe("three");
+  });
+
+  it("reshapes four cells between column and grid geometry without touching tabs", () => {
+    const first = target("one");
+    const fourth = target("four");
+    const model = {
+      layout: "four-columns" as const,
+      panes: [pane("pane-a", [first]), pane("pane-b"), pane("pane-c"), pane("pane-d", [fourth])],
+      activePaneId: "pane-d",
+    };
+
+    const gridded = resizeThreadWorkspace(model, "grid-2x2");
+
+    expect(gridded.layout).toBe("grid-2x2");
+    expect(gridded.panes.map((entry) => entry.tabs)).toEqual(
+      model.panes.map((entry) => entry.tabs),
+    );
+    expect(selectActiveThreadWorkspaceTarget(gridded)?.threadId).toBe("four");
   });
 
   it("keeps a canonical route target when closing tabs", () => {
