@@ -1,4 +1,4 @@
-import { ChevronDownIcon, PinIcon } from "lucide-react";
+import { ChevronDownIcon, HourglassIcon, PinIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { cn } from "../../lib/utils";
@@ -71,7 +71,12 @@ function CompactRateLimitBar({
             tabIndex={0}
           >
             <div className="mb-0.5 flex min-w-0 items-baseline justify-between gap-1 text-[9px] leading-3 group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-sidebar-muted-foreground">{window.label}</span>
+              <span className="flex min-w-0 items-center gap-0.5 truncate text-sidebar-muted-foreground">
+                {window.kind === "session" ? (
+                  <HourglassIcon aria-hidden className="size-2.5 shrink-0 opacity-70" />
+                ) : null}
+                <span className="truncate">{window.label}</span>
+              </span>
               <span className="shrink-0 font-medium tabular-nums text-sidebar-foreground">
                 {available}%
               </span>
