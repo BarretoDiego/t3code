@@ -23,7 +23,7 @@ import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
-import { allEnvironmentShellsBootstrappedAtom } from "./shell";
+import { allEnvironmentShellsBootstrappedAtom, threadWorkspacePruneScopeAtom } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
@@ -122,6 +122,13 @@ export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
+}
+
+export function useThreadWorkspacePruneScope(): {
+  readonly known: ReadonlySet<EnvironmentId>;
+  readonly loaded: ReadonlySet<EnvironmentId>;
+} | null {
+  return useAtomValue(threadWorkspacePruneScopeAtom);
 }
 
 export function useThreadShellsForProjectRefs(

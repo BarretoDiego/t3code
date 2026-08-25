@@ -8,6 +8,7 @@ import {
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
 } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
@@ -21,6 +22,27 @@ export const environmentShellSummaryAtom = createEnvironmentShellSummaryAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,
 });
+
+/**
+ * What the workspace is allowed to conclude about missing threads.
+ *
+ * `null` means the catalog itself has not resolved, so nothing can be judged
+ * yet. Otherwise `known` is every environment this device is configured for
+ * and `loaded` is the subset that has actually delivered a snapshot — only
+ * those can tell a deleted thread apart from one that simply has not arrived.
+ */
+export const threadWorkspacePruneScopeAtom = Atom.make((get) => {
+  const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
+  if (Option.isNone(catalog)) return null;
+  const known = new Set(catalog.value.entries.keys());
+  const loaded = new Set<EnvironmentId>();
+  for (const environmentId of known) {
+    if (Option.isSome(get(environmentShell.stateValueAtom(environmentId)).snapshot)) {
+      loaded.add(environmentId);
+    }
+  }
+  return { known, loaded } as const;
+}).pipe(Atom.withLabel("web-thread-workspace-prune-scope"));
 
 export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
