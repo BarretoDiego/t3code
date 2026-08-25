@@ -303,6 +303,17 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadCollapsedGroups: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  // Provider keys whose compact plan-limit widget is pinned above the
+  // sidebar's utility controls. Keys include the environment and instance so
+  // multiple accounts of the same provider remain independently selectable.
+  sidebarPinnedRateLimitProviderKeys: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  // Provider keys whose weekly plan-limit rows are hidden in the expanded
+  // breakdown. Session and credit windows remain visible.
+  sidebarCollapsedRateLimitWeeklyProviderKeys: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   sidebarSectionOrderMode: SidebarSectionOrderMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_SECTION_ORDER_MODE)),
   ),
@@ -1018,6 +1029,10 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSecondaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
   sidebarThreadProviderFilter: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
   sidebarThreadCollapsedGroups: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  sidebarPinnedRateLimitProviderKeys: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  sidebarCollapsedRateLimitWeeklyProviderKeys: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString),
+  ),
   sidebarSectionOrderMode: Schema.optionalKey(SidebarSectionOrderMode),
   sidebarSectionOrder: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   timestampFormat: Schema.optionalKey(TimestampFormat),

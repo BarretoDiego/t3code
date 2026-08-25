@@ -10,6 +10,17 @@ connected to, and turns amber as a window gets tight and red once one is exhaust
 it for the full breakdown: each provider, its plan, every window it reports, how much is used, and
 how long the window has left.
 
+On web and desktop, pin any provider from that breakdown to keep a compact plan-limit widget above
+the sidebar's Settings and Usage controls. The widget keeps the provider logo and account name in
+view, with a circular meter for current consumption, the percentage in its center, and the next
+reset time below. Weekly and model-specific limits appear as nested meter layers; hover a layer to
+see which window it represents, its consumption, and its reset time.
+
+Claude's weekly rows can also be collapsed independently for each connected account. Collapsing
+only hides those rows in the expanded breakdown — the 5-hour limit, credits, and the compact
+widget's weekly layers keep reporting normally. Both pinning and collapse choices persist for that
+client.
+
 Each connected provider account has its own entry. For example, a personal Codex instance and a
 company Codex instance keep independent windows and never combine their percentages. Their
 configured display names identify them; when two same-provider instances have no display name,
@@ -18,6 +29,9 @@ their instance IDs are shown instead.
 This is different from the [Usage page](usage.md). Usage counts tokens and API-equivalent cost from
 the providers' session history. Plan limits are what the provider itself says about your remaining
 headroom, which is what decides whether the next turn runs.
+
+The pinned dock is designed for the web and desktop sidebar. Mobile keeps the full provider and
+account breakdown on its Usage page, including session, weekly, model-specific, and credit windows.
 
 ## When the numbers refresh
 

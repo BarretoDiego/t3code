@@ -3,12 +3,14 @@ import type {
   ProviderInstanceId,
   ProviderRateLimitStatus,
   ProviderRateLimitWindow,
+  ProviderRateLimitWindowKind,
   ServerProvider,
 } from "@t3tools/contracts";
 
 export interface RateLimitWindowView {
   readonly id: string;
   readonly label: string;
+  readonly kind: ProviderRateLimitWindowKind;
   readonly usedPercent: number;
   readonly status: ProviderRateLimitStatus;
   readonly resetsInLabel: string | null;
@@ -92,6 +94,7 @@ const projectWindow = (window: ProviderRateLimitWindow, nowMs: number): RateLimi
   return {
     id: window.id,
     label: window.label,
+    kind: window.kind,
     usedPercent: isReset ? 0 : Math.max(0, Math.min(100, window.usedPercent)),
     status: isReset ? "ok" : window.status,
     resetsInLabel:

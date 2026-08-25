@@ -35,6 +35,8 @@ import {
 } from "../ui/sidebar";
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
+import { SidebarPinnedRateLimitsDock } from "../sidebar/SidebarPinnedRateLimitsDock";
+import { useSidebarRateLimitsMonitor } from "../sidebar/useSidebarRateLimitsMonitor";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
@@ -72,6 +74,7 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const rateLimitsMonitor = useSidebarRateLimitsMonitor();
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
@@ -284,10 +287,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
+        <SidebarPinnedRateLimitsDock monitor={rateLimitsMonitor} />
         <T3ConnectSidebarSignIn />
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
-            <SidebarUtilityMenu />
+            <SidebarUtilityMenu rateLimitsMonitor={rateLimitsMonitor} />
           </div>
           <T3ConnectSidebarAvatar />
         </div>
