@@ -7,7 +7,7 @@ grid.
 Each pane has its own thread tabs. When a layout adds an empty pane, it becomes selected; the next
 thread you choose from the sidebar opens there. Select another pane or tab to make it active, then
 continue opening threads from the sidebar to add tabs to that pane. Drag a tab to reorder it in its
-current pane, or drop it on another pane to move it there.
+current pane, or drop it on another pane to move it there. Middle-click a tab to close it.
 
 The sidebar remains shared by the whole workspace. The terminal drawer stays inside its thread
 pane, while the right panel is shared: browser, files, diff, pull request, terminal, and agent
