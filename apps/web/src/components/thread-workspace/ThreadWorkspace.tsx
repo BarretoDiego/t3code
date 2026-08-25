@@ -25,6 +25,7 @@ import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuGroup,
   MenuGroupLabel,
   MenuPopup,
   MenuRadioGroup,
@@ -95,21 +96,23 @@ function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }
         <TooltipPopup side="bottom">Configure thread layout</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="bottom" sideOffset={6} className="min-w-44">
-        <MenuGroupLabel>Thread layout</MenuGroupLabel>
-        <MenuSeparator />
-        <MenuRadioGroup
-          value={layout}
-          onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
-        >
-          {LAYOUT_OPTIONS.map((option) => (
-            <MenuRadioItem key={option.value} value={option.value} closeOnClick>
-              <span className="flex items-center gap-2">
-                <LayoutPreview columns={option.columns} rows={option.rows} />
-                {option.label}
-              </span>
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
+        <MenuGroup>
+          <MenuGroupLabel>Thread layout</MenuGroupLabel>
+          <MenuSeparator />
+          <MenuRadioGroup
+            value={layout}
+            onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
+          >
+            {LAYOUT_OPTIONS.map((option) => (
+              <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+                <span className="flex items-center gap-2">
+                  <LayoutPreview columns={option.columns} rows={option.rows} />
+                  {option.label}
+                </span>
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
       </MenuPopup>
     </Menu>
   );
