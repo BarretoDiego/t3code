@@ -20,6 +20,11 @@ card; hover a bar to see the legend with its window, available amount, and reset
 The short session window is marked with a small hourglass so it remains distinct from weekly limits
 at a glance.
 
+Collapse the sidebar to its icon rail and each pinned account shrinks to a single progress ring
+around its provider logo. The ring fills with the account's primary window - the session limit when
+the provider reports one - so the rail keeps one glyph per account. Hover a ring for the same
+legend with its window, available amount, and reset time.
+
 Claude's weekly rows can also be collapsed independently for each connected account. The same
 control is available in a pinned widget: its primary limit stays visible while the extra weekly
 layers fold away. The choice is shared with the expanded breakdown and persists for that client,
