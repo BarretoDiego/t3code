@@ -17,13 +17,27 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopedThreadKey,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowDownToLineIcon, LayoutGridIcon, MessageSquareIcon, XIcon } from "lucide-react";
+import {
+  ArrowDownToLineIcon,
+  BookmarkIcon,
+  BookmarkPlusIcon,
+  LayoutGridIcon,
+  MessageSquareIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type PointerEventHandler,
   type ReactNode,
@@ -33,16 +47,25 @@ import { useShallow } from "zustand/react/shallow";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
-import { useProject, useThreadDetail, useThreadShell, useThreadStatus } from "~/state/entities";
+import {
+  useProject,
+  useThreadDetail,
+  useThreadRefs,
+  useThreadShell,
+  useThreadStatus,
+  useThreadWorkspacePruneScope,
+} from "~/state/entities";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRoutes";
 import { resolveThreadSyncPhase } from "~/threadSync";
 import {
   closeThreadTabFromMiddleClick,
   preventThreadTabMiddleClickDefault,
 } from "~/threadWorkspaceTabInteractions";
+import { createThreadWorkspaceRetain } from "~/threadWorkspacePrune";
 import {
   selectActiveThreadWorkspaceTarget,
   threadWorkspaceTargetKey,
+  type SavedThreadWorkspace,
   type ThreadWorkspaceLayout,
   type ThreadWorkspacePane,
   type ThreadWorkspaceTarget,
@@ -54,9 +77,21 @@ import { ChatViewWithoutDiffWorkerPool } from "../ChatView";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { Button } from "../ui/button";
 import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -137,49 +172,186 @@ function LayoutPreview({ columns, rows }: { readonly columns: number; readonly r
   );
 }
 
-function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }) {
-  const setLayout = useThreadWorkspaceStore((state) => state.setLayout);
+function formatSavedWorkspaceSummary(entry: SavedThreadWorkspace): string {
+  const label =
+    LAYOUT_OPTIONS.find((option) => option.value === entry.layout)?.label ?? entry.layout;
+  const threads = entry.panes.reduce((count, pane) => count + pane.tabs.length, 0);
+  return `${label} · ${threads} ${threads === 1 ? "thread" : "threads"}`;
+}
+
+function SaveWorkspaceDialog(props: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly suggestedName: string;
+}) {
+  const saveWorkspace = useThreadWorkspaceStore((state) => state.saveWorkspace);
+  const [name, setName] = useState(props.suggestedName);
+
+  // The suggestion is derived from the live workspace, so it has to catch up
+  // each time the dialog is opened rather than freezing at first mount.
+  useEffect(() => {
+    if (props.open) setName(props.suggestedName);
+  }, [props.open, props.suggestedName]);
+
+  const trimmed = name.trim();
+  const submit = () => {
+    if (trimmed.length === 0) return;
+    saveWorkspace(trimmed);
+    props.onOpenChange(false);
+  };
+
   return (
-    <Menu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={
-                <Button
-                  aria-label="Configure thread layout"
-                  className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                  size="icon-xs"
-                  variant="ghost"
-                />
-              }
-            />
-          }
-        >
-          <LayoutGridIcon className="size-3.5" />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">Configure thread layout</TooltipPopup>
-      </Tooltip>
-      <MenuPopup align="end" side="bottom" sideOffset={6} className="min-w-44">
-        <MenuGroup>
-          <MenuGroupLabel>Thread layout</MenuGroupLabel>
-          <MenuSeparator />
-          <MenuRadioGroup
-            value={layout}
-            onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogPopup className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Save workspace</DialogTitle>
+          <DialogDescription>
+            Stores the current layout, open tabs and selected threads so you can come back to them.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <Input
+            autoFocus
+            aria-label="Workspace name"
+            value={name}
+            placeholder="Workspace name"
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              submit();
+            }}
+          />
+        </DialogPanel>
+        <DialogFooter>
+          <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+          <Button disabled={trimmed.length === 0} onClick={submit}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }) {
+  const navigate = useNavigate();
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const { deleteWorkspace, restoreWorkspace, saved, setLayout, totalTabs } =
+    useThreadWorkspaceStore(
+      useShallow((state) => ({
+        deleteWorkspace: state.deleteWorkspace,
+        restoreWorkspace: state.restoreWorkspace,
+        saved: state.saved,
+        setLayout: state.setLayout,
+        totalTabs: state.panes.reduce((count, pane) => count + pane.tabs.length, 0),
+      })),
+    );
+  const layoutLabel = LAYOUT_OPTIONS.find((option) => option.value === layout)?.label ?? layout;
+  const suggestedName = `${layoutLabel} · ${totalTabs} ${totalTabs === 1 ? "thread" : "threads"}`;
+
+  return (
+    <>
+      <Menu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                render={
+                  <Button
+                    aria-label="Configure thread layout"
+                    className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                    size="icon-xs"
+                    variant="ghost"
+                  />
+                }
+              />
+            }
           >
-            {LAYOUT_OPTIONS.map((option) => (
-              <MenuRadioItem key={option.value} value={option.value} closeOnClick>
-                <span className="flex items-center gap-2">
-                  <LayoutPreview columns={option.columns} rows={option.rows} />
-                  {option.label}
-                </span>
-              </MenuRadioItem>
-            ))}
-          </MenuRadioGroup>
-        </MenuGroup>
-      </MenuPopup>
-    </Menu>
+            <LayoutGridIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">Configure thread layout</TooltipPopup>
+        </Tooltip>
+        <MenuPopup align="end" side="bottom" sideOffset={6} className="min-w-56">
+          <MenuGroup>
+            <MenuGroupLabel>Thread layout</MenuGroupLabel>
+            <MenuSeparator />
+            <MenuRadioGroup
+              value={layout}
+              onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
+            >
+              {LAYOUT_OPTIONS.map((option) => (
+                <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+                  <span className="flex items-center gap-2">
+                    <LayoutPreview columns={option.columns} rows={option.rows} />
+                    {option.label}
+                  </span>
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>Saved workspaces</MenuGroupLabel>
+            {saved.length === 0 ? (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                Nothing saved yet. The current workspace is restored automatically on reload.
+              </p>
+            ) : (
+              saved.map((entry) => (
+                <MenuItem
+                  key={entry.id}
+                  closeOnClick
+                  className="group/saved gap-2"
+                  onClick={() => {
+                    restoreWorkspace(entry.id);
+                    // Without this the URL still names the thread that was open,
+                    // and binding it back would inject it into the workspace the
+                    // user just restored.
+                    const target = selectActiveThreadWorkspaceTarget(
+                      useThreadWorkspaceStore.getState(),
+                    );
+                    if (target) navigateToTarget(navigate, target);
+                  }}
+                >
+                  <BookmarkIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{entry.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {formatSavedWorkspaceSummary(entry)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Delete workspace ${entry.name}`}
+                    className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/saved:opacity-100 focus-visible:opacity-100"
+                    onClick={(event) => {
+                      // The row itself restores; deleting must not also load the
+                      // workspace it just removed.
+                      event.stopPropagation();
+                      event.preventDefault();
+                      deleteWorkspace(entry.id);
+                    }}
+                  >
+                    <Trash2Icon className="size-3" />
+                  </button>
+                </MenuItem>
+              ))
+            )}
+            <MenuSeparator />
+            <MenuItem closeOnClick onClick={() => setSaveDialogOpen(true)}>
+              <BookmarkPlusIcon className="size-3.5 shrink-0" aria-hidden />
+              Save current workspace…
+            </MenuItem>
+          </MenuGroup>
+        </MenuPopup>
+      </Menu>
+      <SaveWorkspaceDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        suggestedName={suggestedName}
+      />
+    </>
   );
 }
 
@@ -538,6 +710,7 @@ export function ThreadWorkspace({
     layout,
     moveTab,
     panes,
+    pruneTargets,
     activatePane,
     activateTab,
   } = useThreadWorkspaceStore(
@@ -550,9 +723,25 @@ export function ThreadWorkspace({
       layout: state.layout,
       moveTab: state.moveTab,
       panes: state.panes,
+      pruneTargets: state.pruneTargets,
     })),
   );
   const routedTargetKey = threadWorkspaceTargetKey(routedTarget);
+  const pruneScope = useThreadWorkspacePruneScope();
+  const threadRefs = useThreadRefs();
+  const knownThreadKeys = useMemo(
+    () => new Set(threadRefs.map((ref) => scopedThreadKey(ref))),
+    [threadRefs],
+  );
+  // Both sources above recompute on ordinary thread traffic while their
+  // membership is unchanged. Pruning on every one of those would write the
+  // persisted workspace to storage on each incoming message, so the pass is
+  // gated on what actually decides the outcome.
+  const pruneSignature = useMemo(() => {
+    const threads = [...knownThreadKeys].sort();
+    if (pruneScope === null) return JSON.stringify(["pending", threads]);
+    return JSON.stringify([[...pruneScope.known].sort(), [...pruneScope.loaded].sort(), threads]);
+  }, [knownThreadKeys, pruneScope]);
   const totalTabs = panes.reduce((count, pane) => count + pane.tabs.length, 0);
   const columnCount = LAYOUT_OPTIONS.find((option) => option.value === layout)?.columns ?? 1;
   const draggedTarget = useMemo(
@@ -588,6 +777,31 @@ export function ThreadWorkspace({
     routedTarget.threadId,
     routedTargetKey,
   ]);
+
+  // A restored workspace can name threads that were deleted since it was
+  // written. Prune once the owning environments have actually loaded, so an
+  // offline or still-syncing environment keeps its tabs instead of losing them.
+  //
+  // Deliberately not dependency-driven: the effect runs after every render and
+  // leaves immediately unless the signature moved. That keeps the values it
+  // reads current without turning ordinary render churn into storage writes.
+  const lastPrunedSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    const signature = JSON.stringify([pruneSignature, routedTargetKey]);
+    if (lastPrunedSignatureRef.current === signature) return;
+    lastPrunedSignatureRef.current = signature;
+    pruneTargets(
+      createThreadWorkspaceRetain({
+        scope: pruneScope,
+        knownThreadKeys,
+        retainedKeys: new Set([routedTargetKey]),
+        // Drafts change on every keystroke, so this reads the store instead of
+        // subscribing to it: a draft that disappears is caught by the next
+        // prune pass rather than re-running this one while the user types.
+        hasDraft: (draftId) => useComposerDraftStore.getState().getDraftSession(draftId) !== null,
+      }),
+    );
+  });
 
   const activateTarget = useCallback(
     (paneId: string, target: ThreadWorkspaceTarget) => {

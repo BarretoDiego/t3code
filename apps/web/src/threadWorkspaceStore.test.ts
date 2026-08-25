@@ -7,8 +7,12 @@ import {
   activateThreadWorkspacePane,
   bindThreadWorkspaceRouteTarget,
   closeThreadWorkspaceTab,
+  createSavedThreadWorkspace,
   moveThreadWorkspaceTab,
+  normalizeThreadWorkspaceModel,
+  pruneThreadWorkspaceTargets,
   resizeThreadWorkspace,
+  restoreSavedThreadWorkspace,
   selectActiveThreadWorkspaceTarget,
   threadWorkspacePaneCount,
   threadWorkspaceTargetKey,
@@ -218,5 +222,123 @@ describe("threadWorkspaceStore", () => {
     expect(moved.panes[0]?.activeTabKey).toBeNull();
     expect(moved.panes[1]?.tabs).toEqual([first]);
     expect(selectActiveThreadWorkspaceTarget(moved)).toEqual(first);
+  });
+});
+
+describe("thread workspace persistence", () => {
+  it("repairs a persisted model whose pane count no longer matches its layout", () => {
+    const first = target("one");
+    const second = target("two");
+
+    const restored = normalizeThreadWorkspaceModel({
+      layout: "two-columns",
+      panes: [
+        { id: "pane-a", tabs: [first], activeTabKey: threadWorkspaceTargetKey(first) },
+        { id: "pane-b", tabs: [second], activeTabKey: threadWorkspaceTargetKey(second) },
+        { id: "pane-c", tabs: [], activeTabKey: null },
+      ],
+      activePaneId: "pane-c",
+    });
+
+    expect(restored?.panes).toHaveLength(2);
+    // "pane-c" was dropped, so the active pane has to fall back to a real one.
+    expect(restored?.panes.some((entry) => entry.id === restored.activePaneId)).toBe(true);
+  });
+
+  it("drops persisted junk instead of surfacing a broken tab", () => {
+    const good = target("good");
+
+    const restored = normalizeThreadWorkspaceModel({
+      layout: "single",
+      panes: [
+        {
+          id: "pane-a",
+          tabs: [good, { routeKind: "server" }, null, { routeKind: "draft", environmentId: "e" }],
+          activeTabKey: "missing-key",
+        },
+      ],
+      activePaneId: "pane-a",
+    });
+
+    expect(restored?.panes[0]?.tabs).toEqual([good]);
+    // An activeTabKey that survived nothing must point back at a real tab.
+    expect(restored?.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(good));
+  });
+
+  it("refuses a persisted model with an unknown layout", () => {
+    expect(normalizeThreadWorkspaceModel({ layout: "five-columns", panes: [] })).toBeNull();
+    expect(normalizeThreadWorkspaceModel(null)).toBeNull();
+  });
+
+  it("keeps one tab in one pane when persisted data duplicates it", () => {
+    const duplicated = target("dupe");
+
+    const restored = normalizeThreadWorkspaceModel({
+      layout: "two-columns",
+      panes: [
+        { id: "pane-a", tabs: [duplicated], activeTabKey: threadWorkspaceTargetKey(duplicated) },
+        { id: "pane-b", tabs: [duplicated], activeTabKey: threadWorkspaceTargetKey(duplicated) },
+      ],
+      activePaneId: "pane-a",
+    });
+
+    expect(restored?.panes[0]?.tabs).toEqual([duplicated]);
+    expect(restored?.panes[1]?.tabs).toEqual([]);
+  });
+
+  it("round-trips a saved workspace and hands restored panes fresh ids", () => {
+    const first = target("one");
+    const second = target("two");
+    const model = {
+      layout: "two-columns" as const,
+      panes: [pane("thread-pane-1", [first]), pane("thread-pane-2", [second])],
+      activePaneId: "thread-pane-2",
+    };
+
+    // Normalizing is what the rehydrate path does, and it is where the pane id
+    // generator is told how far the restored ids already reach.
+    const live = normalizeThreadWorkspaceModel(model)!;
+    const saved = createSavedThreadWorkspace(live, { id: "s1", name: "Refactor", savedAt: 1 });
+    const restored = restoreSavedThreadWorkspace(saved);
+
+    expect(saved.activePaneIndex).toBe(1);
+    expect(restored.layout).toBe("two-columns");
+    expect(restored.panes.map((entry) => entry.tabs)).toEqual([[first], [second]]);
+    expect(selectActiveThreadWorkspaceTarget(restored)?.threadId).toBe("two");
+    // Restoring twice must not mint panes that alias the live ones or each other.
+    const ids = new Set([
+      ...live.panes.map((entry) => entry.id),
+      ...restored.panes.map((entry) => entry.id),
+      ...restoreSavedThreadWorkspace(saved).panes.map((entry) => entry.id),
+    ]);
+    expect(ids.size).toBe(6);
+  });
+
+  it("prunes dropped tabs and repoints the pane that lost its active one", () => {
+    const kept = target("kept");
+    const dropped = target("dropped");
+    const model = {
+      layout: "single" as const,
+      panes: [pane("pane-a", [kept, dropped], threadWorkspaceTargetKey(dropped))],
+      activePaneId: "pane-a",
+    };
+
+    const pruned = pruneThreadWorkspaceTargets(
+      model,
+      (entry) => threadWorkspaceTargetKey(entry) !== threadWorkspaceTargetKey(dropped),
+    );
+
+    expect(pruned.panes[0]?.tabs).toEqual([kept]);
+    expect(pruned.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(kept));
+  });
+
+  it("returns the same model when a prune pass finds nothing to drop", () => {
+    const model = {
+      layout: "single" as const,
+      panes: [pane("pane-a", [target("one")])],
+      activePaneId: "pane-a",
+    };
+
+    expect(pruneThreadWorkspaceTargets(model, () => true)).toBe(model);
   });
 });
