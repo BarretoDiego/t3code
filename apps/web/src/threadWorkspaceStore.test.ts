@@ -7,6 +7,7 @@ import {
   activateThreadWorkspacePane,
   bindThreadWorkspaceRouteTarget,
   closeThreadWorkspaceTab,
+  moveThreadWorkspaceTab,
   resizeThreadWorkspace,
   selectActiveThreadWorkspaceTarget,
   threadWorkspacePaneCount,
@@ -140,5 +141,63 @@ describe("threadWorkspaceStore", () => {
     const routed = bindThreadWorkspaceRouteTarget(activated, target("two"));
 
     expect(routed.panes[1]?.tabs.map((entry) => entry.threadId)).toEqual(["two"]);
+  });
+
+  it("reorders tabs within one pane without changing the active tab", () => {
+    const first = target("one");
+    const second = target("two");
+    const third = target("three");
+    const model = {
+      layout: "single" as const,
+      panes: [pane("pane-a", [first, second, third], threadWorkspaceTargetKey(second))],
+      activePaneId: "pane-a",
+    };
+
+    const reordered = moveThreadWorkspaceTab(model, threadWorkspaceTargetKey(third), "pane-a", 0);
+
+    expect(reordered.panes[0]?.tabs.map((entry) => entry.threadId)).toEqual([
+      "three",
+      "one",
+      "two",
+    ]);
+    expect(selectActiveThreadWorkspaceTarget(reordered)).toEqual(second);
+  });
+
+  it("moves a tab into another pane at the requested position", () => {
+    const first = target("one");
+    const second = target("two");
+    const third = target("three");
+    const model = {
+      layout: "two-columns" as const,
+      panes: [
+        pane("pane-a", [first, second], threadWorkspaceTargetKey(second)),
+        pane("pane-b", [third]),
+      ],
+      activePaneId: "pane-a",
+    };
+
+    const moved = moveThreadWorkspaceTab(model, threadWorkspaceTargetKey(second), "pane-b", 0);
+
+    expect(moved.panes[0]?.tabs).toEqual([first]);
+    expect(moved.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(first));
+    expect(moved.panes[1]?.tabs).toEqual([second, third]);
+    expect(moved.activePaneId).toBe("pane-b");
+    expect(selectActiveThreadWorkspaceTarget(moved)).toEqual(second);
+  });
+
+  it("moves the only tab in a pane into an empty pane", () => {
+    const first = target("one");
+    const model = {
+      layout: "two-rows" as const,
+      panes: [pane("pane-a", [first]), pane("pane-b")],
+      activePaneId: "pane-a",
+    };
+
+    const moved = moveThreadWorkspaceTab(model, threadWorkspaceTargetKey(first), "pane-b", 0);
+
+    expect(moved.panes[0]?.tabs).toEqual([]);
+    expect(moved.panes[0]?.activeTabKey).toBeNull();
+    expect(moved.panes[1]?.tabs).toEqual([first]);
+    expect(selectActiveThreadWorkspaceTarget(moved)).toEqual(first);
   });
 });

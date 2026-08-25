@@ -17,6 +17,7 @@ import type {
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderRuntimeEvent,
+  ProviderRateLimits,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -98,6 +99,11 @@ export interface ProviderServiceShape {
   readonly getInstanceInfo: (
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
+
+  /** Refresh plan limits for one configured provider account. */
+  readonly refreshRateLimits: (
+    instanceId: ProviderInstanceId,
+  ) => Effect.Effect<ProviderRateLimits, ProviderServiceError>;
 
   /**
    * Roll back provider conversation state by a number of turns.

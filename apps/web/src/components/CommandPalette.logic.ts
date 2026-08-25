@@ -39,6 +39,8 @@ export type SearchOverlayMode = "command" | "files" | "content";
 
 export interface CommandPaletteOpenIntent {
   readonly kind: "add-project" | "new-thread-in";
+  /** Preselected environment for "add-project"; absent means "ask". */
+  readonly environmentId?: string;
 }
 
 export interface CommandPaletteUiState {
@@ -50,7 +52,7 @@ export interface CommandPaletteUiState {
 export type CommandPaletteUiAction =
   | { readonly _tag: "SetOpen"; readonly open: boolean }
   | { readonly _tag: "ToggleMode"; readonly mode: SearchOverlayMode }
-  | { readonly _tag: "OpenAddProject" }
+  | { readonly _tag: "OpenAddProject"; readonly environmentId?: string }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "ClearOpenIntent" };
 
@@ -68,7 +70,14 @@ export function reduceCommandPaletteUiState(
         ? { ...state, open: false, openIntent: null }
         : { open: true, mode: action.mode, openIntent: null };
     case "OpenAddProject":
-      return { open: true, mode: "command", openIntent: { kind: "add-project" } };
+      return {
+        open: true,
+        mode: "command",
+        openIntent:
+          action.environmentId === undefined
+            ? { kind: "add-project" }
+            : { kind: "add-project", environmentId: action.environmentId },
+      };
     case "OpenNewThreadIn":
       return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
     case "ClearOpenIntent":

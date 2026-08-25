@@ -4,6 +4,13 @@ const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
+  /**
+   * Environment to add the project to, skipping the environment step of the
+   * flow. Set when the caller already knows the answer — an environment
+   * section header in the sidebar asks for a project *in that environment*,
+   * and re-asking would be the palette ignoring where the click came from.
+   */
+  readonly environmentId?: string;
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {

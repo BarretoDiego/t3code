@@ -1077,6 +1077,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getInstanceInfo: ProviderServiceMethod<"getInstanceInfo"> = (instanceId) =>
     registry.getInstanceInfo(instanceId);
 
+  const refreshRateLimits: ProviderServiceMethod<"refreshRateLimits"> = Effect.fn(
+    "refreshRateLimits",
+  )(function* (instanceId) {
+    const adapter = yield* registry.getByInstance(instanceId);
+    if (adapter.refreshRateLimits === undefined) {
+      return yield* toValidationError(
+        "ProviderService.refreshRateLimits",
+        `Provider '${adapter.provider}' does not support plan-limit refreshes.`,
+      );
+    }
+    return yield* adapter.refreshRateLimits();
+  });
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1229,6 +1242,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    refreshRateLimits,
     rollbackConversation,
     uploadFeedback,
     // Each access creates a fresh PubSub subscription so that multiple

@@ -745,6 +745,14 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    refreshProviderRateLimits: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:refresh-provider-rate-limits",
+      tag: WS_METHODS.serverRefreshProviderRateLimits,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.instanceId}`,
+      },
+    }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,

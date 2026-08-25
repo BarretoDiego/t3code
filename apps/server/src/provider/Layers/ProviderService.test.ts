@@ -14,7 +14,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
-  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -206,6 +205,22 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.succeed({ feedbackId: `feedback-${input.threadId}` }),
   );
 
+  const refreshRateLimits = vi.fn(() =>
+    Effect.succeed({
+      observedAt: "2026-08-24T12:00:00.000Z",
+      windows: [
+        {
+          id: `${provider}-window`,
+          label: "5-hour",
+          kind: "session" as const,
+          usedPercent: 25,
+          resetsAt: null,
+          status: "ok" as const,
+        },
+      ],
+    }),
+  );
+
   const stopAll = vi.fn(
     (): Effect.Effect<void, ProviderAdapterError> =>
       Effect.sync(() => {
@@ -229,6 +244,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     readThread,
     rollbackThread,
     ...(provider === CODEX_DRIVER ? { uploadFeedback } : {}),
+    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
@@ -265,6 +281,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     readThread,
     rollbackThread,
     uploadFeedback,
+    refreshRateLimits,
     stopAll,
   };
 }
@@ -928,6 +945,20 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("refreshes only the targeted provider account", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      routing.codex.refreshRateLimits.mockClear();
+      routing.claude.refreshRateLimits.mockClear();
+
+      const snapshot = yield* provider.refreshRateLimits(codexInstanceId);
+
+      assert.strictEqual(snapshot.windows[0]?.id, "codex-window");
+      assert.strictEqual(routing.codex.refreshRateLimits.mock.calls.length, 1);
+      assert.strictEqual(routing.claude.refreshRateLimits.mock.calls.length, 0);
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

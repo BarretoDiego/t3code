@@ -15,6 +15,7 @@ import {
   type PermissionUpdate,
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKControlGetUsageResponse,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -95,6 +96,11 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import {
+  type ClaudeRateLimitEventPayload,
+  normalizeClaudeRateLimitEvent,
+  normalizeClaudeUsageRateLimits,
+} from "../providerRateLimits.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -318,6 +324,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   readonly close: () => void;
 }
 
@@ -2144,6 +2151,85 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return normalizeClaudeContextUsageApiSnapshot(usage.value, totalProcessedTokens);
   });
 
+  const readCurrentPlanRateLimits = Effect.fn("readCurrentPlanRateLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+    if (!readUsage) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "This Claude session does not expose plan usage.",
+      });
+    }
+
+    const usage = yield* Effect.tryPromise({
+      try: () => readUsage.call(context.query),
+      catch: (cause) =>
+        new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "claude/control/get_usage",
+          detail: "Claude did not return plan usage.",
+          cause,
+        }),
+    }).pipe(Effect.timeoutOption("2 seconds"));
+    if (Option.isNone(usage)) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "Timed out while reading Claude plan usage.",
+      });
+    }
+
+    // The control response also contains session cost and local behavioral
+    // attribution. Neither belongs in a plan-limit event; retaining only the
+    // provider account fields keeps runtime events small and avoids exposing
+    // unrelated local usage metadata downstream.
+    const rateLimits = {
+      subscription_type: usage.value.subscription_type,
+      rate_limits_available: usage.value.rate_limits_available,
+      rate_limits: usage.value.rate_limits,
+    };
+    const stamp = yield* makeEventStamp();
+    return {
+      rateLimits,
+      snapshot: normalizeClaudeUsageRateLimits({
+        usage: rateLimits,
+        observedAt: stamp.createdAt,
+      }),
+      stamp,
+    };
+  });
+
+  const queryCurrentPlanRateLimits = Effect.fn("queryCurrentPlanRateLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const observation = yield* readCurrentPlanRateLimits(context).pipe(Effect.option);
+    if (Option.isNone(observation)) {
+      return;
+    }
+    const { rateLimits, snapshot, stamp } = observation.value;
+    yield* offerRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
+      payload: {
+        rateLimits,
+        snapshot,
+        updateMode: "replace",
+      },
+      providerRefs: nativeProviderRefs(context),
+      raw: {
+        source: "claude.sdk.message",
+        method: "claude/control/get_usage",
+        payload: rateLimits,
+      },
+    });
+  });
+
   const emitProposedPlanCompleted = Effect.fn("emitProposedPlanCompleted")(function* (
     context: ClaudeSessionContext,
     input: {
@@ -2244,9 +2330,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.lastKnownTotalProcessedTokens = accumulatedTotalProcessedTokens;
     }
 
-    const contextUsageSnapshot = yield* queryCurrentContextUsage(
-      context,
-      accumulatedTotalProcessedTokens ?? context.lastKnownTotalProcessedTokens,
+    const [contextUsageSnapshot] = yield* Effect.all(
+      [
+        queryCurrentContextUsage(
+          context,
+          accumulatedTotalProcessedTokens ?? context.lastKnownTotalProcessedTokens,
+        ),
+        queryCurrentPlanRateLimits(context),
+      ],
+      { concurrency: "unbounded" },
     );
     const resultUsageRecord =
       result?.usage && typeof result.usage === "object" && !Array.isArray(result.usage)
@@ -3552,11 +3644,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
+      const snapshot = normalizeClaudeRateLimitEvent({
+        event: message.rate_limit_info as ClaudeRateLimitEventPayload,
+        observedAt: base.createdAt,
+      });
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
         payload: {
           rateLimits: message,
+          ...(snapshot ? { snapshot } : {}),
         },
       });
       return;
@@ -4598,6 +4695,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return context !== undefined && !context.stopped;
     });
 
+  const refreshRateLimits: NonNullable<ClaudeAdapterShape["refreshRateLimits"]> = Effect.fn(
+    "refreshRateLimits",
+  )(function* () {
+    const context = Array.from(sessions.values())
+      .toReversed()
+      .find((candidate) => !candidate.stopped);
+    if (!context) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "An active Claude session is required to refresh plan limits.",
+      });
+    }
+    return (yield* readCurrentPlanRateLimits(context)).snapshot;
+  });
+
   const stopSessions = Effect.fn("stopSessions")(function* (
     contexts: ReadonlyArray<ClaudeSessionContext>,
     emitExitEvent: boolean,
@@ -4641,6 +4754,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
+    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

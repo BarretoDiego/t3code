@@ -13,6 +13,7 @@ import type {
   ProviderDriverKind,
   ProviderUserInputAnswers,
   ProviderRuntimeEvent,
+  ProviderRateLimits,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -122,6 +123,9 @@ export interface ProviderAdapterShape<TError> {
   readonly uploadFeedback?: (
     input: ProviderUploadFeedbackInput,
   ) => Effect.Effect<ProviderUploadFeedbackResult, TError>;
+
+  /** Read a complete plan-limit snapshot without starting a provider turn. */
+  readonly refreshRateLimits?: () => Effect.Effect<ProviderRateLimits, TError>;
 
   /**
    * Stop all sessions owned by this adapter.

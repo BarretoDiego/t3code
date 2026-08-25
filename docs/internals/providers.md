@@ -55,7 +55,7 @@ Provider output comes back as internal commands such as `thread.message.assistan
 
 ## Server-side workers
 
-Provider work flows through three queue-backed workers. All three are built with
+Provider work flows through four queue-backed workers. All four are built with
 `makeDrainableWorker` from [`DrainableWorker.ts`][worker] and expose `drain` for deterministic test
 synchronization.
 
@@ -63,8 +63,39 @@ synchronization.
    commands.
 2. [`ProviderCommandReactor`][cmd] reacts to orchestration intent events and dispatches provider
    calls.
-3. [`CheckpointReactor`][checkpoint] captures workspace checkpoints on turn start and completion, and
+3. [`ProviderRateLimitsReactor`][ratelimits] records plan rate-limit observations onto the provider
+   snapshot.
+4. [`CheckpointReactor`][checkpoint] captures workspace checkpoints on turn start and completion, and
    performs reverts.
+
+### Plan rate limits
+
+Providers report subscription headroom through their live protocol connection, and each in its own
+shape. Claude's SDK exposes the complete data behind `/usage` after a turn and can also send a
+fractional-utilization `rate_limit_event` for one window. Codex sends sparse
+`primary`/`secondary` notifications whose meaning comes from `windowDurationMins`; its authoritative
+`account/rateLimits/read` response can contain multiple named `rateLimitsByLimitId` buckets. Adapters
+normalize theirs in
+[`providerRateLimits.ts`][ratelimitsnorm] and attach the result to `account.rate-limits.updated`,
+which is the only wire shape downstream code reads.
+
+`ProviderRateLimitsReactor` hands each observation to `ProviderRegistry.setProviderRateLimits`, which
+uses the event's update mode. Sparse notifications merge **by window id** so they do not delete
+windows they did not mention. Claude's complete usage read replaces the prior snapshot, including
+with an empty snapshot when plan limits no longer apply. The registry projects the result onto
+`ServerProvider.rateLimits`; clients need no new subscription because it arrives with the provider
+snapshots they already watch.
+
+`server.refreshProviderRateLimits` targets one `ProviderInstanceId`. `ProviderService` routes it to
+that instance's adapter, and the RPC writes the complete result to `ProviderRegistry` with replace
+semantics before replying. Clients fan this targeted operation out from one refresh button, so a
+failure or active-session requirement on one account cannot merge state with or block another.
+
+Rate-limit state and its persisted status cache are keyed by `ProviderInstanceId`, not driver kind,
+so two Codex or Claude accounts remain independent. Rebuilding or removing an instance clears its
+in-memory observation before the replacement snapshot is published, preventing a changed provider
+home/account from inheriting stale limits. The per-instance cache carries only the current
+instance's last observation across a restart.
 
 ### Buffered assistant delivery
 
@@ -89,4 +120,6 @@ when a request opens (approval) or user input is requested, via
 [worker]: ../../packages/shared/src/DrainableWorker.ts
 [ingest]: ../../apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
 [cmd]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+[ratelimits]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[ratelimitsnorm]: ../../apps/server/src/provider/providerRateLimits.ts
 [checkpoint]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
