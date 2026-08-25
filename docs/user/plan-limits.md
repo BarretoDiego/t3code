@@ -12,9 +12,9 @@ how long the window has left.
 
 On web and desktop, pin any provider from that breakdown to keep a compact plan-limit widget above
 the sidebar's Settings and Usage controls. Pinned widgets sit in a two-column grid and keep the
-provider logo and account name in view. Their monochrome circular meters use the theme's action
-color and show the percentage still available, rather than the amount already spent. Weekly and
-model-specific limits appear as evenly spaced nested meter layers; hover a layer to see the legend
+provider logo and account name in view. Their monochrome bars use the theme's action color and show
+the percentage still available, rather than the amount already spent. Each session, weekly, or
+model-specific limit has its own thick horizontal bar across the card; hover a bar to see the legend
 with its window, available amount, and reset time.
 
 Claude's weekly rows can also be collapsed independently for each connected account. Collapsing

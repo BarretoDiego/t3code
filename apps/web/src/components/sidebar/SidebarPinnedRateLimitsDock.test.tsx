@@ -67,21 +67,22 @@ const monitor: SidebarRateLimitsMonitor = {
 };
 
 describe("SidebarPinnedRateLimitsDock", () => {
-  it("renders a compact accessible meter with availability, reset, and model layers", () => {
+  it("renders thick full-width bars with availability, reset, and model layers", () => {
     const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={monitor} />);
 
     expect(markup).toContain('aria-label="Pinned provider plan limits"');
     expect(markup).toContain('data-layout="two-column-grid"');
-    expect(markup).toContain('role="progressbar"');
+    expect(markup.match(/role="progressbar"/gu)).toHaveLength(2);
     expect(markup).toContain('aria-valuenow="36"');
-    expect(markup).toContain("36%");
+    expect(markup).toContain('data-available-percent="36"');
     expect(markup).toContain("36% available");
     expect(markup).toContain("Resets in 2h 14m");
     expect(markup).toContain("Weekly (Fable 5)");
     expect(markup).toContain("73% available");
-    expect(markup).toContain('data-rate-limit-ring="five_hour"');
-    expect(markup).toContain('data-rate-limit-ring="model_scoped:fable-5"');
-    expect(markup.match(/stroke-width="3.25"/gu)).toHaveLength(4);
+    expect(markup).toContain('data-rate-limit-bar="five_hour"');
+    expect(markup).toContain('data-rate-limit-bar="model_scoped:fable-5"');
+    expect(markup).toContain("h-2.5 w-full");
+    expect(markup).not.toContain("<circle");
     expect(markup).toContain('data-rate-limit-layer="model_scoped:fable-5"');
     expect(markup).toContain("claude_work");
     expect(markup).toContain('aria-label="Unpin Claude Work, claude_work, plan limits"');
