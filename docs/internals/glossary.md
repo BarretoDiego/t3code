@@ -7,6 +7,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 ## Table of contents
 
 - [Project and workspace](#project-and-workspace)
+- [Project sync](#project-sync)
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
@@ -27,6 +28,32 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 #### Worktree
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
+
+### Project sync
+
+Copying a project's workspace between two environments, driven entirely by the client: there is no
+server-to-server communication. See [project-sync.md][27].
+
+#### Project sync manifest
+
+A flat, sorted, hash-addressed description of a project's workspace tree — files with a sha256
+digest, empty directories, and symlinks with their raw target. Built by [`ProjectSyncManifest.ts`][28]
+and defined on the wire in [the project sync contracts][29]. The client diffs the origin and
+destination manifests to decide what a sync needs to copy or delete; it is never used for anything
+else.
+
+#### Send mode
+
+The project sync mode that creates a new project on the destination environment and copies
+everything into it. Never deletes destination entries, since the destination did not exist before
+the sync started. See [`operations/projectSync.ts`][30].
+
+#### Sync mode
+
+The project sync mode that mirrors an existing destination project against the source: entries
+missing or changed on the destination are copied, and destination entries absent from the source
+manifest are deleted. Unlike Send, Sync can delete destination files — the client surfaces that as
+an explicit confirmation before it runs. See [`operations/projectSync.ts`][30].
 
 ### Thread timeline
 
@@ -162,6 +189,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 - [Provider architecture][16]
 - [Permission modes][18]
 - [Workspace layout][2]
+- [Project sync architecture][27]
 
 [1]: ../../packages/contracts/src/orchestration.ts
 [2]: ./workspace-layout.md
@@ -189,3 +217,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [24]: ./overview.md
 [25]: ../../apps/server/src/provider/providerRateLimits.ts
 [26]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[27]: ./project-sync.md
+[28]: ../../apps/server/src/workspace/ProjectSyncManifest.ts
+[29]: ../../packages/contracts/src/projectSync.ts
+[30]: ../../packages/client-runtime/src/operations/projectSync.ts

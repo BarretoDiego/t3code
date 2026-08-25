@@ -25,7 +25,14 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  FolderSyncIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -74,6 +81,8 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { SyncProjectDialog } from "../SyncProjectDialog";
+import { selectProjectSyncEnvironmentOptions } from "../SyncProjectDialog.logic";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -291,6 +300,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
   const settings = usePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -437,6 +447,22 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         "Failed to update new-thread workspace",
       ),
     [updateAllMembers],
+  );
+
+  // ----- sync -----
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const projectSyncCapableEnvironments = useMemo(
+    () =>
+      selectProjectSyncEnvironmentOptions(
+        environments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+          connected: environment.connection.phase === "connected",
+          projectSyncCapable:
+            environment.serverConfig?.environment.capabilities.projectSync === true,
+        })),
+      ),
+    [environments],
   );
 
   // ----- favicon -----
@@ -1146,6 +1172,28 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           ) : null}
         </SettingsSection>
 
+        <SettingsSection title="Sync">
+          <SettingsRow
+            title="Sync to another environment"
+            description={
+              projectSyncCapableEnvironments.length > 0
+                ? "Send this checkout's files to another environment as a new project, or keep an existing project there in sync with it."
+                : "No other connected environment supports project sync yet. Connect one that supports it to send or sync this checkout."
+            }
+            control={
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={projectSyncCapableEnvironments.length === 0}
+                onClick={() => setSyncDialogOpen(true)}
+              >
+                <FolderSyncIcon className="size-3.5" />
+                Sync…
+              </Button>
+            }
+          />
+        </SettingsSection>
+
         <SettingsSection title="Danger">
           <SettingsRow
             title={
@@ -1187,6 +1235,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         onSelect={(path) => void setFaviconPath(path)}
         open={faviconPickerOpen}
         projectName={group.displayName}
+      />
+      <SyncProjectDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        initialSource={{
+          environmentId: selectedCheckout.environmentId,
+          projectId: selectedCheckout.id,
+        }}
       />
     </>
   );

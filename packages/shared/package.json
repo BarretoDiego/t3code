@@ -230,6 +230,10 @@
     "./providerRateLimits": {
       "types": "./src/providerRateLimits.ts",
       "import": "./src/providerRateLimits.ts"
+    },
+    "./projectSyncFraming": {
+      "types": "./src/projectSyncFraming.ts",
+      "import": "./src/projectSyncFraming.ts"
     }
   },
   "scripts": {

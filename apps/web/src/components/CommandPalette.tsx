@@ -40,6 +40,7 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  FolderSyncIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -93,6 +94,7 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { SyncProjectDialog, type SyncProjectDialogSource } from "./SyncProjectDialog";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
@@ -412,6 +414,16 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
+  // The sync dialog's state lives on this always-mounted wrapper, not on
+  // `OpenCommandPaletteDialog` below — that component (and any state inside
+  // it) unmounts the moment the palette closes, which is exactly what
+  // happens when one of its actions opens this dialog.
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncDialogSource, setSyncDialogSource] = useState<SyncProjectDialogSource | null>(null);
+  const openSyncDialog = useCallback((source: SyncProjectDialogSource | null) => {
+    setSyncDialogSource(source);
+    setSyncDialogOpen(true);
+  }, []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
@@ -512,8 +524,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen={setOpen}
           openOverlayMode={toggleMode}
           clearOpenIntent={clearOpenIntent}
+          openSyncDialog={openSyncDialog}
         />
       </CommandDialog>
+      <SyncProjectDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        {...(syncDialogSource ? { initialSource: syncDialogSource } : {})}
+      />
     </ComposerHandleContext>
   );
 }
@@ -524,6 +542,7 @@ function CommandPaletteDialog(props: {
   readonly setOpen: (open: boolean) => void;
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
+  readonly openSyncDialog: (source: SyncProjectDialogSource | null) => void;
 }) {
   const composerHandleRef = useComposerHandleContext();
 
@@ -558,6 +577,7 @@ function CommandPaletteDialog(props: {
           setOpen={props.setOpen}
           openOverlayMode={props.openOverlayMode}
           clearOpenIntent={props.clearOpenIntent}
+          openSyncDialog={props.openSyncDialog}
         />
       )}
     </CommandDialogPopup>
@@ -569,9 +589,10 @@ function OpenCommandPaletteDialog(props: {
   readonly setOpen: (open: boolean) => void;
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
+  readonly openSyncDialog: (source: SyncProjectDialogSource | null) => void;
 }) {
   const navigate = useNavigate();
-  const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
+  const { clearOpenIntent, openIntent, openOverlayMode, openSyncDialog, setOpen } = props;
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
@@ -1640,6 +1661,17 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  actionItems.push({
+    kind: "action",
+    value: "action:sync-project",
+    searchTerms: ["sync", "copy", "transfer", "environment", "send project"],
+    title: "Sync project between environments",
+    icon: <FolderSyncIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      openSyncDialog(null);
+    },
+  });
+
   // There is no projects listing page; the action targets the contextual
   // project (active thread/draft, falling back to the first sidebar group).
   const contextualProjectGroup =
@@ -1662,6 +1694,21 @@ function OpenCommandPaletteDialog(props: {
         await navigate({
           to: "/projects/$projectKey",
           params: { projectKey: contextualProjectGroup.projectKey },
+        });
+      },
+    });
+
+    actionItems.push({
+      kind: "action",
+      value: "action:sync-project-contextual",
+      searchTerms: ["sync", "copy", "transfer", "environment", "send project"],
+      title: "Sync this project to another environment",
+      description: contextualProjectGroup.displayName,
+      icon: <FolderSyncIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openSyncDialog({
+          environmentId: contextualProjectGroup.environmentId,
+          projectId: contextualProjectGroup.id,
         });
       },
     });

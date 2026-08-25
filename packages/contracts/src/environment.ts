@@ -82,6 +82,11 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       this is false — no update would ever repaint it. Absent on older
       servers, which may still publish, so only an explicit false skips. */
   agentActivityPublishing: Schema.optionalKey(Schema.Boolean),
+  /** Server exposes the project sync manifest/export/import/deletion RPCs and
+      HTTP routes used to copy a project between environments. Absent on
+      servers from before project sync shipped, so clients must not offer the
+      sync flow or probe these RPCs under version skew. */
+  projectSync: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
