@@ -1,4 +1,8 @@
-import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
+import {
+  splitPromptIntoComposerSegments,
+  type ComposerPromptSegment,
+} from "./composer-editor-mentions";
+import { findComposerCodeBlocks } from "./composerCodeBlocks";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
@@ -24,13 +28,10 @@ export function composerSubmissionIntentForEnter(input: {
   return input.modifierKey && input.isDraftThread ? "background" : "foreground";
 }
 
-const isInlineTokenSegment = (
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): boolean => segment.type !== "text";
+// A code block is editable text the caret moves through, not an atomic chip,
+// so it is deliberately absent from this list.
+const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean =>
+  segment.type === "mention" || segment.type === "skill" || segment.type === "terminal-context";
 
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
@@ -92,9 +93,21 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       expandedCursor += 1;
       continue;
     }
+    if (segment.type === "code-block") {
+      const collapsedLength = segment.content.length;
+      if (remaining <= collapsedLength) {
+        return expandedCursor + segment.prefixLength + remaining;
+      }
+      remaining -= collapsedLength;
+      expandedCursor += segment.source.length;
+      continue;
+    }
 
     const segmentLength = segment.text.length;
-    if (remaining <= segmentLength) {
+    // Strict, so a cursor landing exactly on the seam falls through to whatever
+    // follows. A code block must claim that seam: the caret is drawn inside the
+    // container there, and text typed at it belongs inside the fences.
+    if (remaining < segmentLength) {
       return expandedCursor + remaining;
     }
     remaining -= segmentLength;
@@ -104,26 +117,19 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
   return expandedCursor;
 }
 
-function collapsedSegmentLength(
-  segment:
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" },
-): number {
+function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
+  }
+  // Only the block's content is reachable; the fences are hidden.
+  if (segment.type === "code-block") {
+    return segment.content.length;
   }
   return 1;
 }
 
 function clampCollapsedComposerCursorForSegments(
-  segments: ReadonlyArray<
-    | { type: "text"; text: string }
-    | { type: "mention" }
-    | { type: "skill" }
-    | { type: "terminal-context" }
-  >,
+  segments: ReadonlyArray<ComposerPromptSegment>,
   cursorInput: number,
 ): number {
   const collapsedLength = segments.reduce(
@@ -186,6 +192,20 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
       collapsedCursor += 1;
       continue;
     }
+    if (segment.type === "code-block") {
+      const expandedLength = segment.source.length;
+      if (remaining <= expandedLength) {
+        // Anywhere in the hidden fences resolves to the nearest content edge.
+        const inner = Math.min(
+          segment.content.length,
+          Math.max(0, remaining - segment.prefixLength),
+        );
+        return collapsedCursor + inner;
+      }
+      remaining -= expandedLength;
+      collapsedCursor += segment.content.length;
+      continue;
+    }
 
     const segmentLength = segment.text.length;
     if (remaining <= segmentLength) {
@@ -228,8 +248,19 @@ export function isCollapsedCursorAdjacentToInlineToken(
 
 export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
 
+/** Expanded prompt offsets that sit inside a fenced block's content. */
+export function isExpandedCursorInsideCodeBlock(text: string, cursor: number): boolean {
+  return findComposerCodeBlocks(text).some(
+    (block) => block.start + block.prefixLength <= cursor && cursor <= block.end,
+  );
+}
+
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
+  // `@path` and `$skill` are literal inside a code block, so no menu there.
+  if (isExpandedCursorInsideCodeBlock(text, cursor)) {
+    return null;
+  }
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
 

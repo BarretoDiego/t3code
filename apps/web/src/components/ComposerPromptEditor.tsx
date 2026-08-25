@@ -16,9 +16,12 @@ import {
   $isElementNode,
   $isLineBreakNode,
   $isRangeSelection,
+  $isRootNode,
+  TextNode,
   $isTextNode,
   $createLineBreakNode,
   $createParagraphNode,
+  type ParagraphNode,
   $createTextNode,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_LEFT_COMMAND,
@@ -63,6 +66,7 @@ import {
 import {
   selectionTouchesMentionBoundary,
   splitPromptIntoComposerSegments,
+  type ComposerPromptSegment,
 } from "~/composer-editor-mentions";
 import {
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
@@ -78,6 +82,15 @@ import {
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
+import {
+  $createComposerCodeBlockNode,
+  $isComposerCodeBlockNode,
+  ComposerCodeBlockNode,
+} from "./ComposerCodeBlockNode";
+import {
+  $openCodeBlockFromTypedFence,
+  registerComposerCodeBlockKeys,
+} from "./composerCodeBlockKeys";
 import {
   $highlightComposerMarkdown,
   registerComposerMarkdownHighlight,
@@ -553,6 +566,12 @@ function getComposerNodeExpandedTextLength(node: LexicalNode): number {
   if (isComposerInlineTokenNode(node)) {
     return getComposerInlineTokenExpandedTextLength(node);
   }
+  if ($isComposerCodeBlockNode(node)) {
+    const content = node
+      .getChildren()
+      .reduce((total, child) => total + getComposerNodeExpandedTextLength(child), 0);
+    return node.getPrefixLength() + content + node.getSuffixLength();
+  }
   if ($isTextNode(node)) {
     return node.getTextContentSize();
   }
@@ -582,6 +601,10 @@ function getAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: number): numb
       const sibling = siblings[i];
       if (!sibling) continue;
       offset += getComposerNodeTextLength(sibling);
+    }
+    // Sibling blocks are separated by a newline that is not a node of its own.
+    if ($isRootNode(nextParent)) {
+      offset += index;
     }
     current = nextParent;
   }
@@ -626,6 +649,13 @@ function getExpandedAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: numbe
       const sibling = siblings[i];
       if (!sibling) continue;
       offset += getComposerNodeExpandedTextLength(sibling);
+    }
+    if ($isRootNode(nextParent)) {
+      offset += index;
+    }
+    // Ascending out of a block crosses its hidden opening fence.
+    if ($isComposerCodeBlockNode(nextParent)) {
+      offset += nextParent.getPrefixLength();
     }
     current = nextParent;
   }
@@ -700,7 +730,14 @@ function findSelectionPointAtOffset(
 
   if ($isElementNode(node)) {
     const children = node.getChildren();
-    for (const child of children) {
+    const separated = $isRootNode(node);
+    for (const [index, child] of children.entries()) {
+      if (separated && index > 0) {
+        if (remainingRef.value === 0) {
+          return { key: node.getKey(), offset: index, type: "element" };
+        }
+        remainingRef.value -= 1;
+      }
       const point = findSelectionPointAtOffset(child, remainingRef);
       if (point) {
         return point;
@@ -719,9 +756,23 @@ function findSelectionPointAtOffset(
 }
 
 function $getComposerRootLength(): number {
-  const root = $getRoot();
-  const children = root.getChildren();
-  return children.reduce((sum, child) => sum + getComposerNodeTextLength(child), 0);
+  const children = $getRoot().getChildren();
+  return children.reduce(
+    (sum, child, index) => sum + (index > 0 ? 1 : 0) + getComposerNodeTextLength(child),
+    0,
+  );
+}
+
+/**
+ * The prompt as submitted. Lexical joins sibling blocks with a double newline,
+ * but a fenced block is separated from its surroundings by exactly one, so the
+ * composer serializes the root itself.
+ */
+export function $readComposerPrompt(): string {
+  return $getRoot()
+    .getChildren()
+    .map((child) => child.getTextContent())
+    .join("\n");
 }
 
 function $setSelectionAtComposerOffset(nextOffset: number): void {
@@ -805,7 +856,7 @@ function $readExpandedSelectionOffsetFromEditorState(fallback: number): number {
   }
   const anchorNode = selection.anchor.getNode();
   const offset = getExpandedAbsoluteOffsetForPoint(anchorNode, selection.anchor.offset);
-  const expandedLength = $getRoot().getTextContent().length;
+  const expandedLength = $readComposerPrompt().length;
   return Math.max(0, Math.min(offset, expandedLength));
 }
 
@@ -822,25 +873,48 @@ function $appendTextWithLineBreaks(parent: ElementNode, text: string): void {
   }
 }
 
-function $setComposerEditorPrompt(
+export function $setComposerEditorPrompt(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft>,
   skillMetadata: ReadonlyMap<string, ComposerSkillMetadata>,
 ): void {
   const root = $getRoot();
   root.clear();
-  const paragraph = $createParagraphNode();
-  root.append(paragraph);
 
   const segments = splitPromptIntoComposerSegments(prompt, terminalContexts);
+  let paragraph: ParagraphNode | null = null;
+  let pendingLeadingNewline = false;
+
+  // Root children are joined with a single newline on the way out, so the
+  // newline a block is adjacent to lives in the join rather than in a segment.
+  const flushParagraph = (): void => {
+    if (paragraph && (paragraph.getChildrenSize() > 0 || root.getChildrenSize() === 0)) {
+      root.append(paragraph);
+    }
+    paragraph = null;
+  };
+  const currentParagraph = (): ParagraphNode => {
+    paragraph ??= $createParagraphNode();
+    return paragraph;
+  };
+
   for (const segment of segments) {
+    if (segment.type === "code-block") {
+      flushParagraph();
+      const block = $createComposerCodeBlockNode(segment.info);
+      $appendTextWithLineBreaks(block, segment.content);
+      root.append(block);
+      pendingLeadingNewline = true;
+      continue;
+    }
+
     if (segment.type === "mention") {
-      paragraph.append($createComposerMentionNode(segment.path));
+      currentParagraph().append($createComposerMentionNode(segment.path));
       continue;
     }
     if (segment.type === "skill") {
       const metadata = skillMetadata.get(segment.name);
-      paragraph.append(
+      currentParagraph().append(
         $createComposerSkillNode(
           segment.name,
           metadata?.label ?? formatProviderSkillDisplayName({ name: segment.name }),
@@ -851,12 +925,35 @@ function $setComposerEditorPrompt(
     }
     if (segment.type === "terminal-context") {
       if (segment.context) {
-        paragraph.append($createComposerTerminalContextNode(segment.context));
+        currentParagraph().append($createComposerTerminalContextNode(segment.context));
       }
       continue;
     }
-    $appendTextWithLineBreaks(paragraph, segment.text);
+
+    let text = segment.text;
+    if (pendingLeadingNewline && text.startsWith("\n")) {
+      text = text.slice(1);
+    }
+    pendingLeadingNewline = false;
+    if (nextSegmentIsCodeBlock(segments, segment) && text.endsWith("\n")) {
+      text = text.slice(0, -1);
+    }
+    if (text.length > 0) {
+      $appendTextWithLineBreaks(currentParagraph(), text);
+    }
   }
+
+  flushParagraph();
+  if (root.getChildrenSize() === 0) {
+    root.append($createParagraphNode());
+  }
+}
+
+function nextSegmentIsCodeBlock(
+  segments: ReadonlyArray<ComposerPromptSegment>,
+  segment: ComposerPromptSegment,
+): boolean {
+  return segments[segments.indexOf(segment) + 1]?.type === "code-block";
 }
 
 function collectTerminalContextIds(node: LexicalNode): string[] {
@@ -980,7 +1077,7 @@ function ComposerInlineTokenArrowPlugin() {
           if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
           const currentOffset = $readSelectionOffsetFromEditorState(0);
           if (currentOffset <= 0) return;
-          const promptValue = $getRoot().getTextContent();
+          const promptValue = $readComposerPrompt();
           if (!isCollapsedCursorAdjacentToInlineToken(promptValue, currentOffset, "left")) {
             return;
           }
@@ -1007,7 +1104,7 @@ function ComposerInlineTokenArrowPlugin() {
           const currentOffset = $readSelectionOffsetFromEditorState(0);
           const composerLength = $getComposerRootLength();
           if (currentOffset >= composerLength) return;
-          const promptValue = $getRoot().getTextContent();
+          const promptValue = $readComposerPrompt();
           if (!isCollapsedCursorAdjacentToInlineToken(promptValue, currentOffset, "right")) {
             return;
           }
@@ -1046,6 +1143,23 @@ function ComposerMarkdownHighlightPlugin() {
       { tag: HISTORY_MERGE_TAG },
     );
     return unregister;
+  }, [editor]);
+
+  return null;
+}
+
+function ComposerCodeBlockPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const unregisterKeys = registerComposerCodeBlockKeys(editor);
+    const unregisterFence = editor.registerNodeTransform(TextNode, () => {
+      $openCodeBlockFromTypedFence();
+    });
+    return () => {
+      unregisterKeys();
+      unregisterFence();
+    };
   }, [editor]);
 
   return null;
@@ -1332,7 +1446,7 @@ function ComposerSurroundSelectionPlugin(props: {
           if (!range || range.start === range.end) {
             return null;
           }
-          const value = $getRoot().getTextContent();
+          const value = $readComposerPrompt();
           if (selectionTouchesMentionBoundary(value, range.start, range.end)) {
             return null;
           }
@@ -1401,7 +1515,7 @@ function ComposerSurroundSelectionPlugin(props: {
           pendingDeadKeySelectionRef.current = null;
           return;
         }
-        const value = $getRoot().getTextContent();
+        const value = $readComposerPrompt();
         if (selectionTouchesMentionBoundary(value, range.start, range.end)) {
           pendingSurroundSelectionRef.current = null;
           pendingDeadKeySelectionRef.current = null;
@@ -1463,7 +1577,7 @@ function ComposerSurroundSelectionPlugin(props: {
               return;
             }
 
-            const currentValue = $getRoot().getTextContent();
+            const currentValue = $readComposerPrompt();
             const backtickCloseSymbol = BACKTICK_SURROUND_CLOSE_SYMBOL;
             if (backtickCloseSymbol === null) {
               pendingDeadKeySelectionRef.current = null;
@@ -1673,7 +1787,7 @@ function ComposerPromptEditorInner({
   } => {
     let snapshot = snapshotRef.current;
     editor.getEditorState().read(() => {
-      const nextValue = $getRoot().getTextContent();
+      const nextValue = $readComposerPrompt();
       const fallbackCursor = clampCollapsedComposerCursor(nextValue, snapshotRef.current.cursor);
       const nextCursor = clampCollapsedComposerCursor(
         nextValue,
@@ -1721,7 +1835,7 @@ function ComposerPromptEditorInner({
 
   const handleEditorChange = useCallback((editorState: EditorState) => {
     editorState.read(() => {
-      const nextValue = $getRoot().getTextContent();
+      const nextValue = $readComposerPrompt();
       const fallbackCursor = clampCollapsedComposerCursor(nextValue, snapshotRef.current.cursor);
       const nextCursor = clampCollapsedComposerCursor(
         nextValue,
@@ -1798,6 +1912,7 @@ function ComposerPromptEditorInner({
         <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
         <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
         <ComposerMarkdownHighlightPlugin />
+        <ComposerCodeBlockPlugin />
         <ComposerHomeEndKeyPlugin />
         <ComposerInlineTokenArrowPlugin />
         <ComposerInlineTokenSelectionNormalizePlugin />
@@ -1831,7 +1946,12 @@ export function ComposerPromptEditor({
     () => ({
       namespace: "t3tools-composer-editor",
       editable: true,
-      nodes: [ComposerMentionNode, ComposerSkillNode, ComposerTerminalContextNode],
+      nodes: [
+        ComposerMentionNode,
+        ComposerSkillNode,
+        ComposerTerminalContextNode,
+        ComposerCodeBlockNode,
+      ],
       // Owned entirely by ComposerMarkdownHighlightPlugin; the composer runs on
       // PlainTextPlugin and exposes no formatting commands of its own.
       theme: {

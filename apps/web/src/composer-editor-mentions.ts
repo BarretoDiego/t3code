@@ -6,6 +6,7 @@ import {
   collectComposerInlineTokens,
   type ComposerInlineToken,
 } from "@t3tools/shared/composerInlineTokens";
+import { findComposerCodeBlocks } from "./composerCodeBlocks";
 
 export type ComposerPromptSegment =
   | {
@@ -24,6 +25,19 @@ export type ComposerPromptSegment =
   | {
       type: "terminal-context";
       context: TerminalContextDraft | null;
+    }
+  | {
+      /**
+       * A closed fenced block. The composer renders it as a container and hides
+       * the fences, so `content` is what the caret can reach while `source` is
+       * what the prompt actually carries.
+       */
+      type: "code-block";
+      info: string;
+      content: string;
+      source: string;
+      /** Characters of `source` that precede `content` (the fence line plus its newline). */
+      prefixLength: number;
     };
 
 function rangeIncludesIndex(start: number, end: number, index: number): boolean {
@@ -195,16 +209,17 @@ export function selectionTouchesMentionBoundary(
   });
 }
 
-export function splitPromptIntoComposerSegments(
+/**
+ * Segments a stretch of prompt that is known to sit outside any code block.
+ * The terminal-context cursor is shared across calls so chips keep matching
+ * their drafts when blocks split the prompt into several stretches.
+ */
+function splitPlainPromptIntoComposerSegments(
   prompt: string,
-  terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
+  terminalContexts: ReadonlyArray<TerminalContextDraft>,
+  terminalContextCursor: { index: number },
 ): ComposerPromptSegment[] {
-  if (!prompt) {
-    return [];
-  }
-
   const segments: ComposerPromptSegment[] = [];
-  let terminalContextIndex = 0;
   forEachPromptSegmentSlice(prompt, (slice) => {
     if (slice.type === "text") {
       segments.push(...splitPromptTextIntoComposerSegments(slice.text));
@@ -213,11 +228,61 @@ export function splitPromptIntoComposerSegments(
 
     segments.push({
       type: "terminal-context",
-      context: terminalContexts[terminalContextIndex] ?? null,
+      context: terminalContexts[terminalContextCursor.index] ?? null,
     });
-    terminalContextIndex += 1;
+    terminalContextCursor.index += 1;
     return false;
   });
+
+  return segments;
+}
+
+export function splitPromptIntoComposerSegments(
+  prompt: string,
+  terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
+): ComposerPromptSegment[] {
+  if (!prompt) {
+    return [];
+  }
+
+  const terminalContextCursor = { index: 0 };
+  const blocks = findComposerCodeBlocks(prompt);
+  if (blocks.length === 0) {
+    return splitPlainPromptIntoComposerSegments(prompt, terminalContexts, terminalContextCursor);
+  }
+
+  // Code blocks are carved out first: their content is literal, so a `@path` or
+  // `$skill` inside one must stay text rather than becoming a chip.
+  const segments: ComposerPromptSegment[] = [];
+  let cursor = 0;
+  for (const block of blocks) {
+    if (block.start > cursor) {
+      segments.push(
+        ...splitPlainPromptIntoComposerSegments(
+          prompt.slice(cursor, block.start),
+          terminalContexts,
+          terminalContextCursor,
+        ),
+      );
+    }
+    segments.push({
+      type: "code-block",
+      info: block.info,
+      content: block.content,
+      source: prompt.slice(block.start, block.end),
+      prefixLength: block.prefixLength,
+    });
+    cursor = block.end;
+  }
+  if (cursor < prompt.length) {
+    segments.push(
+      ...splitPlainPromptIntoComposerSegments(
+        prompt.slice(cursor),
+        terminalContexts,
+        terminalContextCursor,
+      ),
+    );
+  }
 
   return segments;
 }
