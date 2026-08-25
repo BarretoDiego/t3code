@@ -71,7 +71,7 @@ describe("SidebarPinnedRateLimitsDock", () => {
     const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={monitor} />);
 
     expect(markup).toContain('aria-label="Pinned provider plan limits"');
-    expect(markup).toContain('data-layout="two-column-grid"');
+    expect(markup).toContain('data-layout="adaptive-grid"');
     expect(markup.match(/role="progressbar"/gu)).toHaveLength(2);
     expect(markup).toContain('aria-valuenow="36"');
     expect(markup).toContain('data-available-percent="36"');
@@ -88,7 +88,7 @@ describe("SidebarPinnedRateLimitsDock", () => {
     expect(markup).toContain('aria-label="Unpin Claude Work, claude_work, plan limits"');
   });
 
-  it("lays pinned providers out as compact widgets in the shared two-column grid", () => {
+  it("lays pinned providers out in an intrinsic-height adaptive grid", () => {
     const provider = monitor.view.providers[0]!;
     const gridMonitor: SidebarRateLimitsMonitor = {
       ...monitor,
@@ -110,7 +110,30 @@ describe("SidebarPinnedRateLimitsDock", () => {
     const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={gridMonitor} />);
 
     expect(markup.match(/data-rate-limit-widget=/gu)).toHaveLength(3);
-    expect(markup).toContain("grid-cols-2");
+    expect(markup).toContain("auto-rows-max");
+    expect(markup).toContain("items-start");
+    expect(markup).toContain("grid-cols-[repeat(auto-fit,minmax(7rem,1fr))]");
+    expect(markup).toContain("self-start");
+    expect(markup).not.toContain("min-h-14");
+  });
+
+  it("shares the persisted weekly collapse state with each pinned widget", () => {
+    const toggleProviderWeeklyCollapsed = vi.fn();
+    const markup = renderToStaticMarkup(
+      <SidebarPinnedRateLimitsDock
+        monitor={{
+          ...monitor,
+          collapsedWeeklyProviderKeys: new Set(["local:claude_work"]),
+          toggleProviderWeeklyCollapsed,
+        }}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Show weekly limits for Claude Work"');
+    expect(markup).toContain("-rotate-90");
+    expect(markup).toContain('data-rate-limit-bar="five_hour"');
+    expect(markup).not.toContain('data-rate-limit-bar="model_scoped:fable-5"');
+    expect(markup).not.toContain('data-pinned-weekly-limits="local:claude_work"');
   });
 
   it("does not describe non-resetting credits as missing reset data", () => {
