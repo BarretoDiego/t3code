@@ -71,16 +71,45 @@ describe("SidebarPinnedRateLimitsDock", () => {
     const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={monitor} />);
 
     expect(markup).toContain('aria-label="Pinned provider plan limits"');
+    expect(markup).toContain('data-layout="two-column-grid"');
     expect(markup).toContain('role="progressbar"');
-    expect(markup).toContain('aria-valuenow="64"');
-    expect(markup).toContain("64%");
+    expect(markup).toContain('aria-valuenow="36"');
+    expect(markup).toContain("36%");
     expect(markup).toContain("36% available");
     expect(markup).toContain("Resets in 2h 14m");
     expect(markup).toContain("Weekly (Fable 5)");
     expect(markup).toContain("73% available");
+    expect(markup).toContain('data-rate-limit-ring="five_hour"');
+    expect(markup).toContain('data-rate-limit-ring="model_scoped:fable-5"');
+    expect(markup.match(/stroke-width="3.25"/gu)).toHaveLength(4);
     expect(markup).toContain('data-rate-limit-layer="model_scoped:fable-5"');
     expect(markup).toContain("claude_work");
     expect(markup).toContain('aria-label="Unpin Claude Work, claude_work, plan limits"');
+  });
+
+  it("lays pinned providers out as compact widgets in the shared two-column grid", () => {
+    const provider = monitor.view.providers[0]!;
+    const gridMonitor: SidebarRateLimitsMonitor = {
+      ...monitor,
+      view: {
+        ...monitor.view,
+        providers: [
+          provider,
+          { ...provider, key: "local:codex_personal", displayName: "Codex Personal" },
+          { ...provider, key: "local:codex_work", displayName: "Codex Work" },
+        ],
+      },
+      pinnedProviderKeys: new Set([
+        "local:claude_work",
+        "local:codex_personal",
+        "local:codex_work",
+      ]),
+    };
+
+    const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={gridMonitor} />);
+
+    expect(markup.match(/data-rate-limit-widget=/gu)).toHaveLength(3);
+    expect(markup).toContain("grid-cols-2");
   });
 
   it("does not describe non-resetting credits as missing reset data", () => {
