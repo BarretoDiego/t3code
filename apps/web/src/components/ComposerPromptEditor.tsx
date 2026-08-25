@@ -78,6 +78,10 @@ import {
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
+import {
+  $highlightComposerMarkdown,
+  registerComposerMarkdownHighlight,
+} from "./composerMarkdownHighlight";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -1029,6 +1033,24 @@ function ComposerInlineTokenArrowPlugin() {
   return null;
 }
 
+function ComposerMarkdownHighlightPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const unregister = registerComposerMarkdownHighlight(editor);
+    // Transforms never see the initial editor state, so paint it once up front.
+    editor.update(
+      () => {
+        $highlightComposerMarkdown(editor);
+      },
+      { tag: HISTORY_MERGE_TAG },
+    );
+    return unregister;
+  }, [editor]);
+
+  return null;
+}
+
 function ComposerHomeEndKeyPlugin() {
   const [editor] = useLexicalComposerContext();
 
@@ -1775,6 +1797,7 @@ function ComposerPromptEditorInner({
         <OnChangePlugin onChange={handleEditorChange} />
         <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
         <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
+        <ComposerMarkdownHighlightPlugin />
         <ComposerHomeEndKeyPlugin />
         <ComposerInlineTokenArrowPlugin />
         <ComposerInlineTokenSelectionNormalizePlugin />
@@ -1809,6 +1832,17 @@ export function ComposerPromptEditor({
       namespace: "t3tools-composer-editor",
       editable: true,
       nodes: [ComposerMentionNode, ComposerSkillNode, ComposerTerminalContextNode],
+      // Owned entirely by ComposerMarkdownHighlightPlugin; the composer runs on
+      // PlainTextPlugin and exposes no formatting commands of its own.
+      theme: {
+        text: {
+          bold: "font-semibold",
+          italic: "italic",
+          strikethrough: "line-through",
+          underline: "underline underline-offset-2",
+          code: "composer-markdown-code",
+        },
+      },
       editorState: () => {
         $setComposerEditorPrompt(
           initialValueRef.current,
