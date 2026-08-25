@@ -11,16 +11,16 @@ it for the full breakdown: each provider, its plan, every window it reports, how
 how long the window has left.
 
 On web and desktop, pin any provider from that breakdown to keep a compact plan-limit widget above
-the sidebar's Settings and Usage controls. Pinned widgets sit in a two-column grid and keep the
-provider logo and account name in view. Their monochrome bars use the theme's action color and show
-the percentage still available, rather than the amount already spent. Each session, weekly, or
-model-specific limit has its own thick horizontal bar across the card; hover a bar to see the legend
-with its window, available amount, and reset time.
+the sidebar's Settings and Usage controls. Pinned widgets use an adaptive grid, keep their own
+content height, and preserve the provider logo and account name in view. Their monochrome bars use
+the theme's action color and show the percentage still available, rather than the amount already
+spent. Each session, weekly, or model-specific limit has its own thick horizontal bar across the
+card; hover a bar to see the legend with its window, available amount, and reset time.
 
-Claude's weekly rows can also be collapsed independently for each connected account. Collapsing
-only hides those rows in the expanded breakdown — the 5-hour limit, credits, and the compact
-widget's weekly layers keep reporting normally. Both pinning and collapse choices persist for that
-client.
+Claude's weekly rows can also be collapsed independently for each connected account. The same
+control is available in a pinned widget: its primary limit stays visible while the extra weekly
+layers fold away. The choice is shared with the expanded breakdown and persists for that client,
+along with the pinned accounts.
 
 Each connected provider account has its own entry. For example, a personal Codex instance and a
 company Codex instance keep independent windows and never combine their percentages. Their

@@ -1,9 +1,10 @@
-import { PinIcon } from "lucide-react";
+import { ChevronDownIcon, PinIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { cn } from "../../lib/utils";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   partitionRateLimitWindows,
@@ -140,41 +141,82 @@ function CompactRateLimitBars({
   provider,
   primary,
   weekly,
+  isWeeklyCollapsed,
+  onToggleWeeklyCollapsed,
 }: {
   provider: SidebarRateLimitProviderView;
   primary: SidebarRateLimitWindowView;
   weekly: ReadonlyArray<SidebarRateLimitWindowView>;
+  isWeeklyCollapsed: boolean;
+  onToggleWeeklyCollapsed: () => void;
 }) {
+  const collapsibleWeeklyCount = weekly.length - (primary.kind === "weekly" ? 1 : 0);
   const visibleWeekly = weekly
     .filter((window) => window.id !== primary.id)
     .slice(0, MAX_WEEKLY_BAR_COUNT);
-  const windows = [primary, ...visibleWeekly];
+  const hiddenWeeklyCount = collapsibleWeeklyCount - visibleWeekly.length;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5 group-data-[collapsible=icon]:gap-0">
-      {windows.map((window, index) => (
-        <CompactRateLimitBar
-          hiddenWhenCollapsed={index > 0}
-          key={window.id}
-          provider={provider}
-          window={window}
-        />
-      ))}
-      {weekly.length > visibleWeekly.length + (primary.kind === "weekly" ? 1 : 0) ? (
-        <div className="truncate text-[8px] leading-3 text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
-          More limits in the full monitor
-        </div>
-      ) : null}
+      <CompactRateLimitBar hiddenWhenCollapsed={false} provider={provider} window={primary} />
+      {visibleWeekly.length === 0 ? null : (
+        <Collapsible
+          onOpenChange={(open) => {
+            const shouldCollapse = !open;
+            if (shouldCollapse !== isWeeklyCollapsed) onToggleWeeklyCollapsed();
+          }}
+          open={!isWeeklyCollapsed}
+        >
+          <CollapsibleTrigger
+            aria-label={`${isWeeklyCollapsed ? "Show" : "Hide"} weekly limits for ${provider.displayName}`}
+            className="group/weekly flex min-h-4 w-full min-w-0 items-center gap-1 rounded-sm px-0.5 text-left text-[8px] leading-3 text-sidebar-muted-foreground outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 group-data-[collapsible=icon]:hidden"
+          >
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-2.5 shrink-0 transition-transform motion-reduce:transition-none",
+                isWeeklyCollapsed && "-rotate-90",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">Weekly limits</span>
+            <span className="shrink-0 tabular-nums">{collapsibleWeeklyCount}</span>
+          </CollapsibleTrigger>
+          <CollapsiblePanel className="motion-reduce:transition-none">
+            <div
+              className="flex min-w-0 flex-col gap-1.5 pt-1.5"
+              data-pinned-weekly-limits={provider.key}
+            >
+              {visibleWeekly.map((window) => (
+                <CompactRateLimitBar
+                  hiddenWhenCollapsed
+                  key={window.id}
+                  provider={provider}
+                  window={window}
+                />
+              ))}
+              {hiddenWeeklyCount > 0 ? (
+                <div className="truncate text-[8px] leading-3 text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
+                  {hiddenWeeklyCount} more in the full monitor
+                </div>
+              ) : null}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+      )}
     </div>
   );
 }
 
 const PinnedProviderWidget = memo(function PinnedProviderWidget({
   provider,
+  isWeeklyCollapsed,
   onUnpin,
+  onToggleWeeklyCollapsed,
 }: {
   provider: SidebarRateLimitProviderView;
+  isWeeklyCollapsed: boolean;
   onUnpin: () => void;
+  onToggleWeeklyCollapsed: () => void;
 }) {
   const primary = selectCompactPrimaryWindow(provider.windows);
   const { weekly } = partitionRateLimitWindows(provider.windows);
@@ -184,7 +226,7 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
   return (
     <article
       aria-label={`${provider.displayName}, ${context}, pinned plan limits`}
-      className="group/widget relative flex min-h-14 min-w-0 flex-col gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-1 motion-reduce:transition-none"
+      className="group/widget relative flex h-fit min-w-0 self-start flex-col gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-1 motion-reduce:transition-none"
       data-rate-limit-widget={provider.key}
     >
       <div className="flex min-w-0 items-center gap-1 pr-3 group-data-[collapsible=icon]:hidden">
@@ -198,7 +240,13 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
           {provider.displayName}
         </span>
       </div>
-      <CompactRateLimitBars provider={provider} primary={primary} weekly={weekly} />
+      <CompactRateLimitBars
+        isWeeklyCollapsed={isWeeklyCollapsed}
+        onToggleWeeklyCollapsed={onToggleWeeklyCollapsed}
+        primary={primary}
+        provider={provider}
+        weekly={weekly}
+      />
       <Button
         aria-label={`Unpin ${provider.displayName}, ${context}, plan limits`}
         className="absolute right-0.5 top-0.5 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-data-[collapsible=icon]:hidden motion-reduce:transition-none"
@@ -228,15 +276,17 @@ export const SidebarPinnedRateLimitsDock = memo(function SidebarPinnedRateLimits
     <section
       aria-label="Pinned provider plan limits"
       className={cn(
-        "grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto overscroll-contain pr-0.5",
+        "grid max-h-40 auto-rows-max grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] items-start gap-1.5 overflow-y-auto overscroll-contain pr-0.5",
         "group-data-[collapsible=icon]:max-h-40 group-data-[collapsible=icon]:grid-cols-1 group-data-[collapsible=icon]:justify-items-center group-data-[collapsible=icon]:pr-0",
       )}
-      data-layout="two-column-grid"
+      data-layout="adaptive-grid"
     >
       {providers.map((provider) => (
         <PinnedProviderWidget
+          isWeeklyCollapsed={monitor.collapsedWeeklyProviderKeys.has(provider.key)}
           key={provider.key}
           onUnpin={() => monitor.toggleProviderPinned(provider.key)}
+          onToggleWeeklyCollapsed={() => monitor.toggleProviderWeeklyCollapsed(provider.key)}
           provider={provider}
         />
       ))}
