@@ -31,8 +31,13 @@ import {
 import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
+import { SidebarPinnedRateLimitsDock } from "./SidebarPinnedRateLimitsDock";
 import { SidebarRateLimitsMeter } from "./SidebarRateLimitsMeter";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import {
+  useSidebarRateLimitsMonitor,
+  type SidebarRateLimitsMonitor,
+} from "./useSidebarRateLimitsMonitor";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -145,7 +150,11 @@ function SidebarUtilityItem({
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
+  rateLimitsMonitor,
+}: {
+  rateLimitsMonitor: SidebarRateLimitsMonitor;
+}) {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -224,7 +233,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleUsageClick}
           />
           <Separator className="mx-0.5 h-4 self-center" orientation="vertical" />
-          <SidebarRateLimitsMeter />
+          <SidebarRateLimitsMeter monitor={rateLimitsMonitor} />
         </>
       )}
       <SidebarUpdatePill />
@@ -233,11 +242,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 });
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+  const rateLimitsMonitor = useSidebarRateLimitsMonitor();
+
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu />
+      <SidebarPinnedRateLimitsDock monitor={rateLimitsMonitor} />
+      <SidebarUtilityMenu rateLimitsMonitor={rateLimitsMonitor} />
     </SidebarFooter>
   );
 });

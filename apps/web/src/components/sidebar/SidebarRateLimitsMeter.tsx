@@ -1,27 +1,19 @@
-import { GaugeIcon, RefreshCwIcon } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDownIcon, GaugeIcon, PinIcon, RefreshCwIcon } from "lucide-react";
+import { memo } from "react";
 
 import { cn } from "../../lib/utils";
-import { useEnvironments } from "../../state/environments";
-import { serverEnvironment } from "../../state/server";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { formatElapsedDurationLabel } from "../../timestampFormat";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import {
-  buildSidebarRateLimitsView,
+  partitionRateLimitWindows,
   type SidebarRateLimitProviderView,
   type SidebarRateLimitWindowView,
 } from "./sidebarRateLimits.logic";
-
-/**
- * Providers only report plan headroom while they run, so nothing here is a live
- * counter — the meter shows the last observation and how long its windows have
- * left. The tick below keeps those countdowns honest without animating.
- */
-const RESET_COUNTDOWN_TICK_MS = 60_000;
+import type { SidebarRateLimitsMonitor } from "./useSidebarRateLimitsMonitor";
 
 const TONE_COLOR = {
   ok: "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)",
@@ -40,20 +32,6 @@ const RING_TONE_COLOR = {
 } as const;
 
 const RING_TRACK_COLOR = "color-mix(in oklab, var(--sidebar-icon-color) 26%, transparent)";
-
-function useNowMs(enabled: boolean): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    const intervalId = window.setInterval(() => setNowMs(Date.now()), RESET_COUNTDOWN_TICK_MS);
-    return () => window.clearInterval(intervalId);
-  }, [enabled]);
-
-  return nowMs;
-}
 
 function RateLimitRing({
   percent,
@@ -155,11 +133,28 @@ function RateLimitProviderSection({
   provider,
   nowMs,
   isFirst,
+  isPinned,
+  isWeeklyCollapsed,
+  preferencesHydrated,
+  onTogglePinned,
+  onToggleWeeklyCollapsed,
 }: {
   provider: SidebarRateLimitProviderView;
   nowMs: number;
   isFirst: boolean;
+  isPinned: boolean;
+  isWeeklyCollapsed: boolean;
+  preferencesHydrated: boolean;
+  onTogglePinned: () => void;
+  onToggleWeeklyCollapsed: () => void;
 }) {
+  const { weekly, other } = partitionRateLimitWindows(provider.windows);
+  const accountContext = provider.environmentLabel ?? provider.instanceId;
+  const weeklyPeak = weekly.reduce<SidebarRateLimitWindowView | null>(
+    (peak, window) => (peak === null || window.usedPercent > peak.usedPercent ? window : peak),
+    null,
+  );
+
   return (
     <section className={cn("flex flex-col gap-2", !isFirst && "border-border/60 border-t pt-3")}>
       <div className="flex items-center justify-between gap-3">
@@ -178,18 +173,79 @@ function RateLimitProviderSection({
             </span>
           ) : null}
         </div>
-        <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-          {formatObservedLabel(provider.observedAt, nowMs)}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="text-[10px] text-muted-foreground tabular-nums">
+            {formatObservedLabel(provider.observedAt, nowMs)}
+          </span>
+          <Button
+            aria-label={`${isPinned ? "Unpin" : "Pin"} ${provider.displayName}, ${accountContext}, plan limits`}
+            aria-pressed={isPinned}
+            disabled={!preferencesHydrated}
+            onClick={onTogglePinned}
+            size="icon-micro"
+            title={`${isPinned ? "Remove" : "Keep"} this account ${isPinned ? "from" : "in"} the sidebar dock`}
+            variant="ghost-muted"
+          >
+            <PinIcon className={cn("size-3", isPinned && "fill-current")} />
+          </Button>
+        </div>
       </div>
       {provider.environmentLabel ? (
         <div className="-mt-1 truncate text-[10px] text-muted-foreground">
           {provider.environmentLabel}
         </div>
       ) : null}
-      {provider.windows.map((window) => (
+      {other.map((window) => (
         <RateLimitWindowRow key={window.id} window={window} />
       ))}
+      {weekly.length === 0 ? null : !preferencesHydrated ? (
+        <div
+          aria-busy="true"
+          className="flex min-h-6 w-full items-center gap-1.5 rounded-md px-1 text-[11px] text-secondary-label"
+        >
+          <ChevronDownIcon aria-hidden className="size-3 shrink-0 opacity-50" />
+          <span className="min-w-0 flex-1 truncate">
+            Weekly limits{weekly.length > 1 ? ` (${weekly.length})` : ""}
+          </span>
+          <span className="shrink-0 text-muted-foreground">Loading preference…</span>
+        </div>
+      ) : (
+        <Collapsible
+          onOpenChange={(open) => {
+            const shouldCollapse = !open;
+            if (shouldCollapse !== isWeeklyCollapsed) onToggleWeeklyCollapsed();
+          }}
+          open={!isWeeklyCollapsed}
+        >
+          <CollapsibleTrigger
+            aria-label={`${isWeeklyCollapsed ? "Show" : "Hide"} weekly limits for ${provider.displayName}`}
+            className="group/weekly flex min-h-6 w-full items-center gap-1.5 rounded-md px-1 text-left text-[11px] text-secondary-label outline-hidden ring-ring hover:bg-muted/40 focus-visible:ring-2"
+          >
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 transition-transform motion-reduce:transition-none",
+                isWeeklyCollapsed && "-rotate-90",
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">
+              Weekly limits{weekly.length > 1 ? ` (${weekly.length})` : ""}
+            </span>
+            {weeklyPeak ? (
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {Math.round(weeklyPeak.usedPercent)}% peak
+              </span>
+            ) : null}
+          </CollapsibleTrigger>
+          <CollapsiblePanel className="motion-reduce:transition-none">
+            <div className="flex flex-col gap-2 pt-2">
+              {weekly.map((window) => (
+                <RateLimitWindowRow key={window.id} window={window} />
+              ))}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+      )}
       {provider.notice ? (
         <div className="text-[11px] leading-4 text-warning-foreground">{provider.notice}</div>
       ) : null}
@@ -197,52 +253,12 @@ function RateLimitProviderSection({
   );
 }
 
-export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
-  const { environments } = useEnvironments();
-  const refreshProviderRateLimits = useAtomCommand(serverEnvironment.refreshProviderRateLimits, {
-    reportFailure: false,
-  });
-  const refreshingRef = useRef(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshFailed, setRefreshFailed] = useState(false);
-  const environmentInputs = useMemo(
-    () =>
-      environments.map((environment) => ({
-        environmentId: environment.environmentId,
-        label: environment.label,
-        providers: environment.serverConfig?.providers ?? [],
-      })),
-    [environments],
-  );
-  const hasSnapshots = environmentInputs.some((environment) =>
-    environment.providers.some((provider) => (provider.rateLimits?.windows.length ?? 0) > 0),
-  );
-  const nowMs = useNowMs(hasSnapshots);
-  const view = useMemo(
-    () => buildSidebarRateLimitsView({ environments: environmentInputs, nowMs }),
-    [environmentInputs, nowMs],
-  );
-  const refreshLimits = useCallback(() => {
-    if (refreshingRef.current || view.refreshTargets.length === 0) {
-      return;
-    }
-    refreshingRef.current = true;
-    setIsRefreshing(true);
-    setRefreshFailed(false);
-    void Promise.all(
-      view.refreshTargets.map((target) =>
-        refreshProviderRateLimits({
-          environmentId: target.environmentId,
-          input: { instanceId: target.instanceId },
-        }),
-      ),
-    ).then((results) => {
-      refreshingRef.current = false;
-      setIsRefreshing(false);
-      setRefreshFailed(results.some((result) => result._tag === "Failure"));
-    });
-  }, [refreshProviderRateLimits, view.refreshTargets]);
-
+export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter({
+  monitor,
+}: {
+  monitor: SidebarRateLimitsMonitor;
+}) {
+  const { view } = monitor;
   return (
     <SidebarMenuItem className="shrink-0">
       <Popover>
@@ -279,17 +295,21 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
               {view.refreshTargets.length > 0 ? (
                 <Button
                   aria-label="Refresh plan limits"
-                  disabled={isRefreshing}
-                  onClick={refreshLimits}
+                  disabled={monitor.isRefreshing}
+                  onClick={monitor.refreshLimits}
                   size="icon-micro"
                   title="Refresh plan limits for connected provider accounts"
                   variant="ghost-muted"
                 >
-                  <RefreshCwIcon className={cn(isRefreshing && "animate-spin")} />
+                  <RefreshCwIcon
+                    className={cn(
+                      monitor.isRefreshing && "animate-spin motion-reduce:animate-none",
+                    )}
+                  />
                 </Button>
               ) : null}
             </div>
-            {refreshFailed ? (
+            {monitor.refreshFailed ? (
               <p className="text-[11px] leading-4 text-warning-foreground">
                 Some accounts could not refresh. Start a provider session and try again.
               </p>
@@ -304,7 +324,14 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
                 <RateLimitProviderSection
                   key={provider.key}
                   isFirst={index === 0}
-                  nowMs={nowMs}
+                  isPinned={monitor.pinnedProviderKeys.has(provider.key)}
+                  isWeeklyCollapsed={monitor.collapsedWeeklyProviderKeys.has(provider.key)}
+                  nowMs={monitor.nowMs}
+                  onTogglePinned={() => monitor.toggleProviderPinned(provider.key)}
+                  onToggleWeeklyCollapsed={() =>
+                    monitor.toggleProviderWeeklyCollapsed(provider.key)
+                  }
+                  preferencesHydrated={monitor.preferencesHydrated}
                   provider={provider}
                 />
               ))

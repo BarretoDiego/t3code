@@ -10,7 +10,11 @@ import {
 import {
   buildSidebarRateLimitsView,
   formatRateLimitResetIn,
+  partitionRateLimitWindows,
+  selectCompactPrimaryWindow,
+  selectPinnedRateLimitProviders,
   type SidebarRateLimitsEnvironmentInput,
+  toggleRateLimitProviderKey,
 } from "./sidebarRateLimits.logic";
 
 const NOW_MS = Date.parse("2026-08-24T12:00:00.000Z");
@@ -255,5 +259,106 @@ describe("buildSidebarRateLimitsView", () => {
 
     expect(view.tone).toBe("exhausted");
     expect(view.providers[0]?.notice).toBe("Rate limit reached");
+  });
+});
+
+describe("compact plan limit preferences", () => {
+  it("keeps the session window central while weekly windows become layers", () => {
+    const view = buildSidebarRateLimitsView({
+      environments: [
+        environment("Local", [
+          provider({
+            instanceId: "claudeAgent",
+            rateLimits: {
+              observedAt: "2026-08-24T11:58:00.000Z",
+              windows: [
+                fiveHour(24, "2026-08-24T14:00:00.000Z"),
+                weekly(92),
+                {
+                  ...weekly(61),
+                  id: "model_scoped:fable-5",
+                  label: "Weekly (Fable 5)",
+                },
+              ],
+            },
+          }),
+        ]),
+      ],
+      nowMs: NOW_MS,
+    });
+    const windows = view.providers[0]!.windows;
+
+    expect(selectCompactPrimaryWindow(windows)?.id).toBe("five_hour");
+    expect(partitionRateLimitWindows(windows).weekly.map((window) => window.id)).toEqual([
+      "seven_day",
+      "model_scoped:fable-5",
+    ]);
+  });
+
+  it("falls back to the most used live non-weekly window, then weekly", () => {
+    const view = buildSidebarRateLimitsView({
+      environments: [
+        environment("Local", [
+          provider({
+            instanceId: "codex",
+            driver: "codex",
+            rateLimits: {
+              observedAt: "2026-08-24T11:58:00.000Z",
+              windows: [
+                weekly(81),
+                {
+                  id: "credits",
+                  label: "Credits",
+                  kind: "credits",
+                  usedPercent: 42,
+                  resetsAt: null,
+                  status: "ok",
+                },
+              ],
+            },
+          }),
+        ]),
+      ],
+      nowMs: NOW_MS,
+    });
+
+    expect(selectCompactPrimaryWindow(view.providers[0]!.windows)?.id).toBe("credits");
+    expect(selectCompactPrimaryWindow([view.providers[0]!.windows[0]!])?.id).toBe("seven_day");
+  });
+
+  it("keeps pins account-specific, ordered, and tolerant of stale keys", () => {
+    const view = buildSidebarRateLimitsView({
+      environments: [
+        environment("Local", [
+          provider({
+            instanceId: "codex_personal",
+            driver: "codex",
+            rateLimits: { observedAt: "2026-08-24T11:58:00.000Z", windows: [weekly(10)] },
+          }),
+          provider({
+            instanceId: "codex_company",
+            driver: "codex",
+            rateLimits: { observedAt: "2026-08-24T11:58:00.000Z", windows: [weekly(70)] },
+          }),
+        ]),
+      ],
+      nowMs: NOW_MS,
+    });
+
+    expect(
+      selectPinnedRateLimitProviders(
+        view.providers,
+        new Set(["missing:claude", "local:codex_company"]),
+      ).map((provider) => provider.key),
+    ).toEqual(["local:codex_company"]);
+    expect(toggleRateLimitProviderKey([], "local:codex_personal")).toEqual([
+      "local:codex_personal",
+    ]);
+    expect(
+      toggleRateLimitProviderKey(
+        ["local:codex_personal", "local:codex_company"],
+        "local:codex_personal",
+      ),
+    ).toEqual(["local:codex_company"]);
   });
 });

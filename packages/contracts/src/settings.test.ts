@@ -122,6 +122,28 @@ describe("ClientSettings sidebar", () => {
     expect(settings.legacySidebarEnabled).toBe(false);
     expect(settings.sidebarAutoSettleAfterDays).toBe(3);
     expect(settings.sidebarAutoSettleOnMerge).toBe(true);
+    expect(settings.sidebarPinnedRateLimitProviderKeys).toEqual([]);
+    expect(settings.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual([]);
+  });
+
+  it("persists per-account plan-limit pin and weekly collapse preferences", () => {
+    const patch = decodeClientSettingsPatch({
+      sidebarPinnedRateLimitProviderKeys: ["  local:claude_personal  "],
+      sidebarCollapsedRateLimitWeeklyProviderKeys: ["local:claude_work"],
+    });
+
+    expect(patch.sidebarPinnedRateLimitProviderKeys).toEqual(["local:claude_personal"]);
+    expect(patch.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual(["local:claude_work"]);
+  });
+
+  it.each([
+    ["sidebarPinnedRateLimitProviderKeys", [""]],
+    ["sidebarPinnedRateLimitProviderKeys", ["   "]],
+    ["sidebarCollapsedRateLimitWeeklyProviderKeys", [""]],
+    ["sidebarCollapsedRateLimitWeeklyProviderKeys", ["   "]],
+  ] as const)("rejects empty provider keys in %s", (key, value) => {
+    expect(() => decodeClientSettings({ [key]: value })).toThrow();
+    expect(() => decodeClientSettingsPatch({ [key]: value })).toThrow();
   });
 
   it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
