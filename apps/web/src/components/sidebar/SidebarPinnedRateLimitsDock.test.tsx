@@ -72,7 +72,7 @@ describe("SidebarPinnedRateLimitsDock", () => {
 
     expect(markup).toContain('aria-label="Pinned provider plan limits"');
     expect(markup).toContain('data-layout="adaptive-grid"');
-    expect(markup.match(/role="progressbar"/gu)).toHaveLength(2);
+    expect(markup.match(/role="progressbar"/gu)).toHaveLength(3);
     expect(markup).toContain('aria-valuenow="36"');
     expect(markup).toContain('data-available-percent="36"');
     expect(markup).toContain("36% available");
@@ -87,6 +87,17 @@ describe("SidebarPinnedRateLimitsDock", () => {
     expect(markup).toContain('data-rate-limit-layer="model_scoped:fable-5"');
     expect(markup).toContain("claude_work");
     expect(markup).toContain('aria-label="Unpin Claude Work, claude_work, plan limits"');
+  });
+
+  it("collapses each pinned account to a single progress ring", () => {
+    const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={monitor} />);
+
+    expect(markup).toContain('data-rate-limit-ring="five_hour"');
+    expect(markup.match(/data-rate-limit-ring=/gu)).toHaveLength(1);
+    expect(markup).toContain("group-data-[collapsible=icon]:flex");
+    expect(markup).toContain("conic-gradient");
+    expect(markup).toContain("129.6deg");
+    expect(markup).not.toContain("<circle");
   });
 
   it("lays pinned providers out in an intrinsic-height adaptive grid", () => {

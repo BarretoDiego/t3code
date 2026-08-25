@@ -18,6 +18,8 @@ import type { SidebarRateLimitsMonitor } from "./useSidebarRateLimitsMonitor";
 const MAX_WEEKLY_BAR_COUNT = 5;
 const BAR_COLOR = "var(--color-primary)";
 const BAR_TRACK_COLOR = "color-mix(in oklab, var(--color-primary) 16%, transparent)";
+const RING_MASK =
+  "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))";
 
 function availablePercent(window: SidebarRateLimitWindowView): number {
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
@@ -41,14 +43,72 @@ function accessibilityLabel(
   return `${provider.displayName}, ${accountContext(provider)}, ${window.label}: ${Math.round(availablePercent(window))}% available, ${used}% used. ${resetLabel(window)}.`;
 }
 
-function CompactRateLimitBar({
+/** One popup shape for both the expanded bars and the collapsed ring. */
+function RateLimitTooltipPopup({
+  provider,
+  windows,
+}: {
+  provider: SidebarRateLimitProviderView;
+  windows: ReadonlyArray<SidebarRateLimitWindowView>;
+}) {
+  return (
+    <TooltipPopup
+      align="start"
+      className="w-60 max-w-none whitespace-normal p-1"
+      side="right"
+      sideOffset={8}
+    >
+      <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5 font-medium">
+          <ProviderInstanceIcon
+            className="size-4"
+            driverKind={provider.driver}
+            displayName={provider.displayName}
+            iconClassName="size-4"
+            {...(provider.accentColor ? { accentColor: provider.accentColor } : {})}
+          />
+          <span className="truncate">{provider.displayName}</span>
+          {provider.planLabel ? (
+            <span className="shrink-0 text-muted-foreground">· {provider.planLabel}</span>
+          ) : null}
+        </div>
+        <div className="truncate text-[10px] text-muted-foreground">{accountContext(provider)}</div>
+        {windows.map((window) => (
+          <div className="flex items-start gap-2" data-rate-limit-layer={window.id} key={window.id}>
+            <span
+              aria-hidden
+              className="mt-1 h-2 w-4 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: BAR_COLOR }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-[11px]">{window.label}</span>
+                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
+                  {Math.round(availablePercent(window))}% available
+                </span>
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                {resetLabel(window)}
+                {window.detail ? ` · ${window.detail}` : ""}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </TooltipPopup>
+  );
+}
+
+/**
+ * Collapsed sidebar has room for one glyph per account, so the primary window becomes a ring and
+ * the provider icon keeps the account identifiable. Conic gradient, not SVG: no per-frame repaint.
+ */
+function CollapsedRateLimitRing({
   provider,
   window,
-  hiddenWhenCollapsed,
 }: {
   provider: SidebarRateLimitProviderView;
   window: SidebarRateLimitWindowView;
-  hiddenWhenCollapsed: boolean;
 }) {
   const available = Math.round(availablePercent(window));
 
@@ -61,16 +121,60 @@ function CompactRateLimitBar({
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={available}
-            className={cn(
-              "group/bar min-w-0 cursor-help rounded-sm outline-hidden ring-ring focus-visible:ring-2 group-data-[collapsible=icon]:w-6",
-              hiddenWhenCollapsed && "group-data-[collapsible=icon]:hidden",
-            )}
+            className="relative hidden size-7 shrink-0 cursor-help items-center justify-center rounded-full outline-hidden ring-ring focus-visible:ring-2 group-data-[collapsible=icon]:flex"
+            data-available-percent={available}
+            data-rate-limit-ring={window.id}
+            role="progressbar"
+            tabIndex={0}
+          >
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full"
+              style={{
+                background: `conic-gradient(${BAR_COLOR} ${available * 3.6}deg, ${BAR_TRACK_COLOR} 0deg)`,
+                mask: RING_MASK,
+                WebkitMask: RING_MASK,
+              }}
+            />
+            <ProviderInstanceIcon
+              className="size-3.5"
+              driverKind={provider.driver}
+              displayName={provider.displayName}
+              iconClassName="size-3.5"
+            />
+          </div>
+        }
+      />
+      <RateLimitTooltipPopup provider={provider} windows={[window]} />
+    </Tooltip>
+  );
+}
+
+function CompactRateLimitBar({
+  provider,
+  window,
+}: {
+  provider: SidebarRateLimitProviderView;
+  window: SidebarRateLimitWindowView;
+}) {
+  const available = Math.round(availablePercent(window));
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div
+            aria-label={accessibilityLabel(provider, window)}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={available}
+            className="group/bar min-w-0 cursor-help rounded-sm outline-hidden ring-ring focus-visible:ring-2"
             data-available-percent={available}
             data-rate-limit-bar={window.id}
             role="progressbar"
             tabIndex={0}
           >
-            <div className="mb-0.5 flex min-w-0 items-baseline justify-between gap-1 text-[9px] leading-3 group-data-[collapsible=icon]:hidden">
+            <div className="mb-0.5 flex min-w-0 items-baseline justify-between gap-1 text-[9px] leading-3">
               <span className="flex min-w-0 items-center gap-0.5 truncate text-sidebar-muted-foreground">
                 {window.kind === "session" ? (
                   <HourglassIcon aria-hidden className="size-2.5 shrink-0 opacity-70" />
@@ -83,7 +187,7 @@ function CompactRateLimitBar({
             </div>
             <div
               aria-hidden="true"
-              className="h-2.5 w-full overflow-hidden rounded-[3px] group-data-[collapsible=icon]:h-1.5"
+              className="h-2.5 w-full overflow-hidden rounded-[3px]"
               style={{ backgroundColor: BAR_TRACK_COLOR }}
             >
               <div
@@ -94,50 +198,7 @@ function CompactRateLimitBar({
           </div>
         }
       />
-      <TooltipPopup
-        align="start"
-        className="w-60 max-w-none whitespace-normal p-1"
-        side="right"
-        sideOffset={8}
-      >
-        <div className="flex flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-1.5 font-medium">
-            <ProviderInstanceIcon
-              className="size-4"
-              driverKind={provider.driver}
-              displayName={provider.displayName}
-              iconClassName="size-4"
-              {...(provider.accentColor ? { accentColor: provider.accentColor } : {})}
-            />
-            <span className="truncate">{provider.displayName}</span>
-            {provider.planLabel ? (
-              <span className="shrink-0 text-muted-foreground">· {provider.planLabel}</span>
-            ) : null}
-          </div>
-          <div className="truncate text-[10px] text-muted-foreground">
-            {accountContext(provider)}
-          </div>
-          <div className="flex items-start gap-2" data-rate-limit-layer={window.id}>
-            <span
-              aria-hidden
-              className="mt-1 h-2 w-4 shrink-0 rounded-[2px]"
-              style={{ backgroundColor: BAR_COLOR }}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-[11px]">{window.label}</span>
-                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
-                  {available}% available
-                </span>
-              </div>
-              <div className="text-[10px] text-muted-foreground">
-                {resetLabel(window)}
-                {window.detail ? ` · ${window.detail}` : ""}
-              </div>
-            </div>
-          </div>
-        </div>
-      </TooltipPopup>
+      <RateLimitTooltipPopup provider={provider} windows={[window]} />
     </Tooltip>
   );
 }
@@ -162,8 +223,8 @@ function CompactRateLimitBars({
   const hiddenWeeklyCount = collapsibleWeeklyCount - visibleWeekly.length;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 group-data-[collapsible=icon]:gap-0">
-      <CompactRateLimitBar hiddenWhenCollapsed={false} provider={provider} window={primary} />
+    <div className="flex min-w-0 flex-col gap-1.5 group-data-[collapsible=icon]:hidden">
+      <CompactRateLimitBar provider={provider} window={primary} />
       {visibleWeekly.length === 0 ? null : (
         <Collapsible
           onOpenChange={(open) => {
@@ -174,7 +235,7 @@ function CompactRateLimitBars({
         >
           <CollapsibleTrigger
             aria-label={`${isWeeklyCollapsed ? "Show" : "Hide"} weekly limits for ${provider.displayName}`}
-            className="group/weekly flex min-h-4 w-full min-w-0 items-center gap-1 rounded-sm px-0.5 text-left text-[8px] leading-3 text-sidebar-muted-foreground outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 group-data-[collapsible=icon]:hidden"
+            className="group/weekly flex min-h-4 w-full min-w-0 items-center gap-1 rounded-sm px-0.5 text-left text-[8px] leading-3 text-sidebar-muted-foreground outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2"
           >
             <ChevronDownIcon
               aria-hidden
@@ -192,15 +253,10 @@ function CompactRateLimitBars({
               data-pinned-weekly-limits={provider.key}
             >
               {visibleWeekly.map((window) => (
-                <CompactRateLimitBar
-                  hiddenWhenCollapsed
-                  key={window.id}
-                  provider={provider}
-                  window={window}
-                />
+                <CompactRateLimitBar key={window.id} provider={provider} window={window} />
               ))}
               {hiddenWeeklyCount > 0 ? (
-                <div className="truncate text-[8px] leading-3 text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
+                <div className="truncate text-[8px] leading-3 text-sidebar-muted-foreground">
                   {hiddenWeeklyCount} more in the full monitor
                 </div>
               ) : null}
@@ -231,7 +287,7 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
   return (
     <article
       aria-label={`${provider.displayName}, ${context}, pinned plan limits`}
-      className="group/widget relative flex h-fit min-w-0 self-start flex-col gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-1 motion-reduce:transition-none"
+      className="group/widget relative flex h-fit min-w-0 self-start flex-col gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-7 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:rounded-full group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 motion-reduce:transition-none"
       data-rate-limit-widget={provider.key}
     >
       <div className="flex min-w-0 items-center gap-1 pr-3 group-data-[collapsible=icon]:hidden">
@@ -245,6 +301,7 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
           {provider.displayName}
         </span>
       </div>
+      <CollapsedRateLimitRing provider={provider} window={primary} />
       <CompactRateLimitBars
         isWeeklyCollapsed={isWeeklyCollapsed}
         onToggleWeeklyCollapsed={onToggleWeeklyCollapsed}
