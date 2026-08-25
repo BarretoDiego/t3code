@@ -1,7 +1,33 @@
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import { LayoutGridIcon, MessageSquareIcon, XIcon } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type PointerEventHandler,
+  type ReactNode,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -25,6 +51,7 @@ import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuGroup,
   MenuGroupLabel,
   MenuPopup,
   MenuRadioGroup,
@@ -56,6 +83,39 @@ const GRID_CLASS_BY_LAYOUT: Record<ThreadWorkspaceLayout, string> = {
   "three-rows": "grid-cols-1 grid-rows-3",
   "grid-2x2": "grid-cols-2 grid-rows-2",
 };
+
+const THREAD_PANE_DROP_PREFIX = "thread-pane-drop:";
+
+type ThreadTabDragData = {
+  readonly type: "thread-tab";
+  readonly paneId: string;
+  readonly tabKey: string;
+};
+
+type ThreadPaneDropData = {
+  readonly type: "thread-pane";
+  readonly paneId: string;
+};
+
+function threadPaneDropId(paneId: string): string {
+  return `${THREAD_PANE_DROP_PREFIX}${paneId}`;
+}
+
+function isThreadTabDragData(value: unknown): value is ThreadTabDragData {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ThreadTabDragData>;
+  return (
+    candidate.type === "thread-tab" &&
+    typeof candidate.paneId === "string" &&
+    typeof candidate.tabKey === "string"
+  );
+}
+
+function isThreadPaneDropData(value: unknown): value is ThreadPaneDropData {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ThreadPaneDropData>;
+  return candidate.type === "thread-pane" && typeof candidate.paneId === "string";
+}
 
 function LayoutPreview({ columns, rows }: { readonly columns: number; readonly rows: number }) {
   return (
@@ -95,21 +155,23 @@ function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }
         <TooltipPopup side="bottom">Configure thread layout</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="bottom" sideOffset={6} className="min-w-44">
-        <MenuGroupLabel>Thread layout</MenuGroupLabel>
-        <MenuSeparator />
-        <MenuRadioGroup
-          value={layout}
-          onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
-        >
-          {LAYOUT_OPTIONS.map((option) => (
-            <MenuRadioItem key={option.value} value={option.value} closeOnClick>
-              <span className="flex items-center gap-2">
-                <LayoutPreview columns={option.columns} rows={option.rows} />
-                {option.label}
-              </span>
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
+        <MenuGroup>
+          <MenuGroupLabel>Thread layout</MenuGroupLabel>
+          <MenuSeparator />
+          <MenuRadioGroup
+            value={layout}
+            onValueChange={(value) => setLayout(value as ThreadWorkspaceLayout)}
+          >
+            {LAYOUT_OPTIONS.map((option) => (
+              <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+                <span className="flex items-center gap-2">
+                  <LayoutPreview columns={option.columns} rows={option.rows} />
+                  {option.label}
+                </span>
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
       </MenuPopup>
     </Menu>
   );
@@ -148,6 +210,110 @@ function navigateToTarget(
   });
 }
 
+function SortableThreadTab(props: {
+  readonly target: ThreadWorkspaceTarget;
+  readonly paneId: string;
+  readonly selected: boolean;
+  readonly routed: boolean;
+  readonly totalTabs: number;
+  readonly onActivate: () => void;
+  readonly onClose: () => void;
+}) {
+  const tabKey = threadWorkspaceTargetKey(props.target);
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({
+    id: tabKey,
+    data: {
+      type: "thread-tab",
+      paneId: props.paneId,
+      tabKey,
+    } satisfies ThreadTabDragData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "group/tab flex h-6 min-w-24 max-w-48 shrink-0 items-center gap-1 rounded-md pr-1 pl-2 text-xs [-webkit-app-region:no-drag]",
+        props.selected
+          ? "bg-accent text-foreground"
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        isDragging && "z-10 opacity-30",
+      )}
+      data-active-tab={props.selected ? "true" : undefined}
+      data-dragging-thread-tab={isDragging ? "true" : undefined}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
+        {...attributes}
+        {...listeners}
+        role="tab"
+        aria-selected={props.selected}
+        className="flex min-w-0 flex-1 touch-none cursor-grab items-center gap-1.5 text-left active:cursor-grabbing"
+        onClick={props.onActivate}
+      >
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            props.routed ? "bg-primary" : "bg-muted-foreground/35",
+          )}
+          aria-hidden
+        />
+        <WorkspaceTabLabel target={props.target} />
+      </button>
+      {props.totalTabs > 1 ? (
+        <button
+          type="button"
+          aria-label="Close thread tab"
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/tab:opacity-100 focus-visible:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onClose();
+          }}
+        >
+          <XIcon className="size-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ThreadPaneSection(props: {
+  readonly paneId: string;
+  readonly label: string;
+  readonly className: string;
+  readonly active: boolean;
+  readonly onPointerDownCapture: PointerEventHandler<HTMLElement>;
+  readonly children: ReactNode;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: threadPaneDropId(props.paneId),
+    data: { type: "thread-pane", paneId: props.paneId } satisfies ThreadPaneDropData,
+  });
+
+  return (
+    <section
+      ref={setNodeRef}
+      aria-label={props.label}
+      className={cn(props.className, isOver && "ring-2 ring-inset ring-primary/65")}
+      data-active-thread-pane={props.active ? "true" : undefined}
+      data-thread-pane-drop-over={isOver ? "true" : undefined}
+      onPointerDownCapture={props.onPointerDownCapture}
+    >
+      {props.children}
+    </section>
+  );
+}
+
 function ThreadPaneTabs(props: {
   readonly pane: ThreadWorkspacePane;
   readonly active: boolean;
@@ -175,53 +341,26 @@ function ThreadPaneTabs(props: {
         aria-label="Threads in pane"
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {props.pane.tabs.map((target) => {
-          const tabKey = threadWorkspaceTargetKey(target);
-          const selected = props.pane.activeTabKey === tabKey;
-          const routed = props.routedTargetKey === tabKey;
-          return (
-            <div
-              key={tabKey}
-              className={cn(
-                "group/tab flex h-6 min-w-24 max-w-48 shrink-0 items-center gap-1 rounded-md pr-1 pl-2 text-xs",
-                selected
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-              )}
-              data-active-tab={selected ? "true" : undefined}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-                onClick={() => props.onActivateTab(target)}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    routed ? "bg-primary" : "bg-muted-foreground/35",
-                  )}
-                  aria-hidden
-                />
-                <WorkspaceTabLabel target={target} />
-              </button>
-              {props.totalTabs > 1 ? (
-                <button
-                  type="button"
-                  aria-label="Close thread tab"
-                  className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover/tab:opacity-100 focus-visible:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    props.onCloseTab(target);
-                  }}
-                >
-                  <XIcon className="size-3" />
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
+        <SortableContext
+          items={props.pane.tabs.map(threadWorkspaceTargetKey)}
+          strategy={horizontalListSortingStrategy}
+        >
+          {props.pane.tabs.map((target) => {
+            const tabKey = threadWorkspaceTargetKey(target);
+            return (
+              <SortableThreadTab
+                key={tabKey}
+                target={target}
+                paneId={props.pane.id}
+                selected={props.pane.activeTabKey === tabKey}
+                routed={props.routedTargetKey === tabKey}
+                totalTabs={props.totalTabs}
+                onActivate={() => props.onActivateTab(target)}
+                onClose={() => props.onCloseTab(target)}
+              />
+            );
+          })}
+        </SortableContext>
       </div>
       {props.active ? (
         <div className="ml-1 hidden shrink-0 items-center md:flex">
@@ -342,21 +481,44 @@ export function ThreadWorkspace({
   const navigate = useNavigate();
   const [rightPanelHost, setRightPanelHost] = useState<HTMLDivElement | null>(null);
   const [rightPanelMaximized, setRightPanelMaximized] = useState(false);
-  const { activePaneId, bindRouteTarget, closeTab, layout, panes, activatePane, activateTab } =
-    useThreadWorkspaceStore(
-      useShallow((state) => ({
-        activePaneId: state.activePaneId,
-        activatePane: state.activatePane,
-        activateTab: state.activateTab,
-        bindRouteTarget: state.bindRouteTarget,
-        closeTab: state.closeTab,
-        layout: state.layout,
-        panes: state.panes,
-      })),
-    );
+  const [draggedTabKey, setDraggedTabKey] = useState<string | null>(null);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const {
+    activePaneId,
+    bindRouteTarget,
+    closeTab,
+    layout,
+    moveTab,
+    panes,
+    activatePane,
+    activateTab,
+  } = useThreadWorkspaceStore(
+    useShallow((state) => ({
+      activePaneId: state.activePaneId,
+      activatePane: state.activatePane,
+      activateTab: state.activateTab,
+      bindRouteTarget: state.bindRouteTarget,
+      closeTab: state.closeTab,
+      layout: state.layout,
+      moveTab: state.moveTab,
+      panes: state.panes,
+    })),
+  );
   const routedTargetKey = threadWorkspaceTargetKey(routedTarget);
   const totalTabs = panes.reduce((count, pane) => count + pane.tabs.length, 0);
   const columnCount = LAYOUT_OPTIONS.find((option) => option.value === layout)?.columns ?? 1;
+  const draggedTarget = useMemo(
+    () =>
+      draggedTabKey
+        ? (panes
+            .flatMap((pane) => pane.tabs)
+            .find((target) => threadWorkspaceTargetKey(target) === draggedTabKey) ?? null)
+        : null,
+    [draggedTabKey, panes],
+  );
 
   useLayoutEffect(() => {
     if (routedTarget.routeKind === "draft") {
@@ -417,6 +579,50 @@ export function ThreadWorkspace({
     [closeTab, navigate, routedTargetKey],
   );
 
+  const handleTabDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const dragData: unknown = event.active.data.current;
+      if (!isThreadTabDragData(dragData)) return;
+      const sourcePane = panes.find((pane) => pane.id === dragData.paneId);
+      const target = sourcePane?.tabs.find(
+        (candidate) => threadWorkspaceTargetKey(candidate) === dragData.tabKey,
+      );
+      if (!sourcePane || !target) return;
+      setDraggedTabKey(dragData.tabKey);
+      activateTarget(sourcePane.id, target);
+    },
+    [activateTarget, panes],
+  );
+
+  const handleTabDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDraggedTabKey(null);
+      const dragData: unknown = event.active.data.current;
+      const dropData: unknown = event.over?.data.current;
+      if (!isThreadTabDragData(dragData) || !event.over) return;
+
+      let destinationPaneId: string;
+      let destinationIndex: number;
+      if (isThreadTabDragData(dropData)) {
+        destinationPaneId = dropData.paneId;
+        const destinationPane = panes.find((pane) => pane.id === destinationPaneId);
+        destinationIndex =
+          destinationPane?.tabs.findIndex(
+            (target) => threadWorkspaceTargetKey(target) === dropData.tabKey,
+          ) ?? -1;
+      } else if (isThreadPaneDropData(dropData)) {
+        destinationPaneId = dropData.paneId;
+        destinationIndex = panes.find((pane) => pane.id === destinationPaneId)?.tabs.length ?? -1;
+      } else {
+        return;
+      }
+
+      if (destinationIndex < 0) return;
+      moveTab(dragData.tabKey, destinationPaneId, destinationIndex);
+    },
+    [moveTab, panes],
+  );
+
   return (
     <DiffWorkerPoolProvider>
       <div
@@ -424,69 +630,86 @@ export function ThreadWorkspace({
         className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
         data-thread-workspace-right-panel-host
       >
-        <div
-          className={cn(
-            "grid min-h-0 min-w-0 gap-px bg-border/75",
-            "max-md:grid-cols-1 max-md:grid-rows-1",
-            rightPanelMaximized ? "w-0 flex-none overflow-hidden" : "flex-1",
-            GRID_CLASS_BY_LAYOUT[layout],
-          )}
-          data-thread-workspace-layout={layout}
+        <DndContext
+          sensors={dndSensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleTabDragStart}
+          onDragEnd={handleTabDragEnd}
+          onDragCancel={() => setDraggedTabKey(null)}
         >
-          {panes.map((pane, index) => {
-            const active = pane.id === activePaneId;
-            const target = pane.activeTabKey
-              ? (pane.tabs.find(
-                  (candidate) => threadWorkspaceTargetKey(candidate) === pane.activeTabKey,
-                ) ?? null)
-              : null;
-            const topRow = index < columnCount;
-            const reserveCollapsedSidebarInset = topRow && index === 0;
-            const reserveNativeControlsInset = topRow && index === columnCount - 1;
-            return (
-              <section
-                key={pane.id}
-                aria-label={`Thread pane ${index + 1}`}
-                className={cn(
-                  "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
-                  !active && "max-md:hidden",
-                  active && "ring-1 ring-inset ring-primary/35",
-                )}
-                data-active-thread-pane={active ? "true" : undefined}
-                onPointerDownCapture={(event) => {
-                  if (
-                    event.target instanceof Element &&
-                    event.target.closest("[data-thread-pane-tabbar]")
-                  ) {
-                    activatePane(pane.id);
-                    return;
-                  }
-                  activatePaneAndRoute(pane);
-                }}
-              >
-                <ThreadPaneTabs
-                  pane={pane}
+          <div
+            className={cn(
+              "grid min-h-0 min-w-0 gap-px bg-border/75",
+              "max-md:grid-cols-1 max-md:grid-rows-1",
+              rightPanelMaximized ? "w-0 flex-none overflow-hidden" : "flex-1",
+              GRID_CLASS_BY_LAYOUT[layout],
+            )}
+            data-thread-workspace-layout={layout}
+          >
+            {panes.map((pane, index) => {
+              const active = pane.id === activePaneId;
+              const target = pane.activeTabKey
+                ? (pane.tabs.find(
+                    (candidate) => threadWorkspaceTargetKey(candidate) === pane.activeTabKey,
+                  ) ?? null)
+                : null;
+              const topRow = index < columnCount;
+              const reserveCollapsedSidebarInset = topRow && index === 0;
+              const reserveNativeControlsInset = topRow && index === columnCount - 1;
+              return (
+                <ThreadPaneSection
+                  key={pane.id}
+                  paneId={pane.id}
+                  label={`Thread pane ${index + 1}`}
                   active={active}
-                  layout={layout}
-                  reserveCollapsedSidebarInset={reserveCollapsedSidebarInset}
-                  reserveNativeControlsInset={reserveNativeControlsInset}
-                  windowDragRegion={topRow}
-                  totalTabs={totalTabs}
-                  routedTargetKey={routedTargetKey}
-                  onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
-                  onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
-                />
-                <ThreadPaneContent
-                  active={active}
-                  target={target}
-                  reserveNativeControlsInset={reserveNativeControlsInset}
-                  rightPanelHost={active ? rightPanelHost : null}
-                  onRightPanelMaximizedChange={setRightPanelMaximized}
-                />
-              </section>
-            );
-          })}
-        </div>
+                  className={cn(
+                    "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+                    !active && "max-md:hidden",
+                    active && "ring-1 ring-inset ring-primary/35",
+                  )}
+                  onPointerDownCapture={(event) => {
+                    if (
+                      event.target instanceof Element &&
+                      event.target.closest("[data-thread-pane-tabbar]")
+                    ) {
+                      activatePane(pane.id);
+                      return;
+                    }
+                    activatePaneAndRoute(pane);
+                  }}
+                >
+                  <ThreadPaneTabs
+                    pane={pane}
+                    active={active}
+                    layout={layout}
+                    reserveCollapsedSidebarInset={reserveCollapsedSidebarInset}
+                    reserveNativeControlsInset={reserveNativeControlsInset}
+                    windowDragRegion={topRow}
+                    totalTabs={totalTabs}
+                    routedTargetKey={routedTargetKey}
+                    onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
+                    onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
+                  />
+                  <ThreadPaneContent
+                    active={active}
+                    target={target}
+                    reserveNativeControlsInset={reserveNativeControlsInset}
+                    rightPanelHost={active ? rightPanelHost : null}
+                    onRightPanelMaximizedChange={setRightPanelMaximized}
+                  />
+                </ThreadPaneSection>
+              );
+            })}
+          </div>
+          <DragOverlay>
+            {draggedTarget ? (
+              <div className="pointer-events-none flex h-7 min-w-32 max-w-52 items-center gap-1.5 rounded-md border border-border/75 bg-popover px-2 text-xs text-foreground shadow-lg">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                <WorkspaceTabLabel target={draggedTarget} />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </div>
     </DiffWorkerPoolProvider>
   );

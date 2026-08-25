@@ -48,6 +48,7 @@ interface ThreadWorkspaceStoreState extends ThreadWorkspaceModel {
   activatePane: (paneId: string) => void;
   activateTab: (paneId: string, tabKey: string) => void;
   closeTab: (paneId: string, tabKey: string) => void;
+  moveTab: (tabKey: string, destinationPaneId: string, destinationIndex: number) => void;
 }
 
 const THREAD_WORKSPACE_STORAGE_KEY = "t3code:thread-workspace:v1";
@@ -248,6 +249,68 @@ export function closeThreadWorkspaceTab(
   return fallbackPane ? { ...model, panes, activePaneId: fallbackPane.id } : model;
 }
 
+export function moveThreadWorkspaceTab(
+  model: ThreadWorkspaceModel,
+  tabKey: string,
+  destinationPaneId: string,
+  destinationIndex: number,
+): ThreadWorkspaceModel {
+  const sourcePane = model.panes.find((pane) =>
+    pane.tabs.some((target) => threadWorkspaceTargetKey(target) === tabKey),
+  );
+  const destinationPane = model.panes.find((pane) => pane.id === destinationPaneId);
+  if (!sourcePane || !destinationPane) return model;
+
+  const sourceIndex = sourcePane.tabs.findIndex(
+    (target) => threadWorkspaceTargetKey(target) === tabKey,
+  );
+  const movedTarget = sourcePane.tabs[sourceIndex];
+  if (!movedTarget) return model;
+
+  if (sourcePane.id === destinationPane.id) {
+    const nextIndex = Math.max(0, Math.min(destinationIndex, sourcePane.tabs.length - 1));
+    if (sourceIndex === nextIndex) return model;
+    const tabs = [...sourcePane.tabs];
+    tabs.splice(sourceIndex, 1);
+    tabs.splice(nextIndex, 0, movedTarget);
+    return {
+      ...model,
+      panes: model.panes.map((pane) => (pane.id === sourcePane.id ? { ...pane, tabs } : pane)),
+    };
+  }
+
+  const sourceTabs = sourcePane.tabs.filter(
+    (target) => threadWorkspaceTargetKey(target) !== tabKey,
+  );
+  const nextSourceTarget = sourceTabs[Math.min(sourceIndex, sourceTabs.length - 1)] ?? null;
+  const targetTabs = [...destinationPane.tabs];
+  const nextIndex = Math.max(0, Math.min(destinationIndex, targetTabs.length));
+  targetTabs.splice(nextIndex, 0, movedTarget);
+
+  return {
+    ...model,
+    activePaneId: destinationPane.id,
+    panes: model.panes.map((pane) => {
+      if (pane.id === sourcePane.id) {
+        return {
+          ...pane,
+          tabs: sourceTabs,
+          activeTabKey:
+            pane.activeTabKey === tabKey
+              ? nextSourceTarget
+                ? threadWorkspaceTargetKey(nextSourceTarget)
+                : null
+              : pane.activeTabKey,
+        };
+      }
+      if (pane.id === destinationPane.id) {
+        return { ...pane, tabs: targetTabs, activeTabKey: tabKey };
+      }
+      return pane;
+    }),
+  };
+}
+
 export function selectActiveThreadWorkspaceTarget(
   model: Pick<ThreadWorkspaceModel, "panes" | "activePaneId">,
 ): ThreadWorkspaceTarget | null {
@@ -277,6 +340,8 @@ export const useThreadWorkspaceStore = create<ThreadWorkspaceStoreState>()(
       activateTab: (paneId, tabKey) =>
         set((state) => activateThreadWorkspaceTab(state, paneId, tabKey)),
       closeTab: (paneId, tabKey) => set((state) => closeThreadWorkspaceTab(state, paneId, tabKey)),
+      moveTab: (tabKey, destinationPaneId, destinationIndex) =>
+        set((state) => moveThreadWorkspaceTab(state, tabKey, destinationPaneId, destinationIndex)),
     }),
     {
       name: THREAD_WORKSPACE_STORAGE_KEY,
