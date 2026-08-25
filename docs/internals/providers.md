@@ -74,8 +74,9 @@ Providers report subscription headroom through their live protocol connection, a
 shape. Claude's SDK exposes the complete data behind `/usage` after a turn and can also send a
 fractional-utilization `rate_limit_event` for one window. Codex sends sparse
 `primary`/`secondary` notifications whose meaning comes from `windowDurationMins`; its authoritative
-`account/rateLimits/read` response can contain multiple named `rateLimitsByLimitId` buckets. Adapters
-normalize theirs in
+`account/rateLimits/read` response can contain multiple named `rateLimitsByLimitId` buckets. Claude's
+structured usage response can likewise contain dynamic `model_scoped` weekly buckets such as Fable
+5 alongside its legacy Opus and Sonnet fields. Adapters normalize these provider-native shapes in
 [`providerRateLimits.ts`][ratelimitsnorm] and attach the result to `account.rate-limits.updated`,
 which is the only wire shape downstream code reads.
 

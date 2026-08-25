@@ -2821,6 +2821,7 @@ describe("ClaudeAdapterLive", () => {
           seven_day_opus: { utilization: 43, resets_at: null },
           seven_day_sonnet: { utilization: 54, resets_at: null },
           seven_day_oauth_apps: { utilization: 65, resets_at: null },
+          model_scoped: [{ display_name: "Fable", utilization: 76, resets_at: null }],
         },
       }),
     });
@@ -2844,6 +2845,7 @@ describe("ClaudeAdapterLive", () => {
           ["seven_day_opus", 43],
           ["seven_day_sonnet", 54],
           ["seven_day_oauth_apps", 65],
+          ["model_scoped:fable-5", 76],
         ],
       );
     }).pipe(

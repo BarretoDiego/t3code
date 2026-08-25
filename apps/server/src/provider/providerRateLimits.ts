@@ -196,6 +196,12 @@ interface ClaudeExtraUsagePayload {
   readonly currency?: string | null;
 }
 
+interface ClaudeModelScopedUsagePayload {
+  readonly display_name: string;
+  readonly utilization: number | null;
+  readonly resets_at: string | null;
+}
+
 export interface ClaudeStructuredUsagePayload {
   readonly subscription_type: string | null;
   readonly rate_limits_available: boolean;
@@ -205,6 +211,7 @@ export interface ClaudeStructuredUsagePayload {
     readonly seven_day_oauth_apps?: ClaudeUsageWindowPayload | null;
     readonly seven_day_opus?: ClaudeUsageWindowPayload | null;
     readonly seven_day_sonnet?: ClaudeUsageWindowPayload | null;
+    readonly model_scoped?: ReadonlyArray<ClaudeModelScopedUsagePayload> | null;
     readonly extra_usage?: ClaudeExtraUsagePayload | null;
   } | null;
 }
@@ -242,6 +249,23 @@ const describeClaudeExtraUsage = (extraUsage: ClaudeExtraUsagePayload): string |
   return `${extraUsage.used_credits} / ${extraUsage.monthly_limit}${currency ? ` ${currency}` : ""}`;
 };
 
+const describeClaudeModelScopedWindow = (displayName: string): string | undefined => {
+  const value = trimmed(displayName);
+  if (!value) {
+    return undefined;
+  }
+  // Claude currently names the claude-fable-5 bucket "Fable" in get_usage.
+  // Keep the user-facing model generation explicit while preserving any
+  // future server-supplied model names verbatim.
+  return /^fable$/iu.test(value) ? "Fable 5" : value;
+};
+
+const claudeModelScopedWindowId = (displayName: string): string =>
+  `model_scoped:${displayName
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")}`;
+
 /**
  * Normalize the structured data behind Claude's `/usage` command.
  *
@@ -269,6 +293,22 @@ export const normalizeClaudeUsageRateLimits = (input: {
           kind,
           usedPercent: window.utilization,
           resetsAt: window.resets_at === null ? null : isoOrNull(window.resets_at),
+        }),
+      );
+    }
+
+    for (const modelWindow of rateLimits.model_scoped ?? []) {
+      const displayName = describeClaudeModelScopedWindow(modelWindow.display_name);
+      if (!displayName || typeof modelWindow.utilization !== "number") {
+        continue;
+      }
+      windows.push(
+        makeWindow({
+          id: claudeModelScopedWindowId(displayName),
+          label: `Weekly (${displayName})`,
+          kind: "weekly",
+          usedPercent: modelWindow.utilization,
+          resetsAt: modelWindow.resets_at === null ? null : isoOrNull(modelWindow.resets_at),
         }),
       );
     }
