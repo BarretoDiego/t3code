@@ -37,6 +37,10 @@ import { useProject, useThreadDetail, useThreadShell, useThreadStatus } from "~/
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRoutes";
 import { resolveThreadSyncPhase } from "~/threadSync";
 import {
+  closeThreadTabFromMiddleClick,
+  preventThreadTabMiddleClickDefault,
+} from "~/threadWorkspaceTabInteractions";
+import {
   selectActiveThreadWorkspaceTarget,
   threadWorkspaceTargetKey,
   type ThreadWorkspaceLayout,
@@ -249,6 +253,8 @@ function SortableThreadTab(props: {
       )}
       data-active-tab={props.selected ? "true" : undefined}
       data-dragging-thread-tab={isDragging ? "true" : undefined}
+      onAuxClick={(event) => closeThreadTabFromMiddleClick(event, props.onClose)}
+      onMouseDown={preventThreadTabMiddleClickDefault}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <button
@@ -668,6 +674,7 @@ export function ThreadWorkspace({
                     active && "ring-1 ring-inset ring-primary/35",
                   )}
                   onPointerDownCapture={(event) => {
+                    if (event.button === 1) return;
                     if (
                       event.target instanceof Element &&
                       event.target.closest("[data-thread-pane-tabbar]")
