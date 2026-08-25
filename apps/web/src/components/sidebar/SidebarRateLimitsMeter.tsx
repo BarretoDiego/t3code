@@ -10,6 +10,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import {
   partitionRateLimitWindows,
+  selectUnpinnedRateLimitProviders,
   type SidebarRateLimitProviderView,
   type SidebarRateLimitWindowView,
 } from "./sidebarRateLimits.logic";
@@ -259,6 +260,10 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter({
   monitor: SidebarRateLimitsMonitor;
 }) {
   const { view } = monitor;
+  const unpinnedProviders = selectUnpinnedRateLimitProviders(
+    view.providers,
+    monitor.pinnedProviderKeys,
+  );
   return (
     <SidebarMenuItem className="shrink-0">
       <Popover>
@@ -319,8 +324,12 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter({
                 No provider has reported plan limits yet. They appear here after a provider runs a
                 turn and reports its 5-hour and weekly windows.
               </p>
+            ) : unpinnedProviders.length === 0 ? (
+              <p className="text-pretty text-[11px] leading-4 text-muted-foreground">
+                All provider plan limits are pinned in the sidebar dock.
+              </p>
             ) : (
-              view.providers.map((provider, index) => (
+              unpinnedProviders.map((provider, index) => (
                 <RateLimitProviderSection
                   key={provider.key}
                   isFirst={index === 0}

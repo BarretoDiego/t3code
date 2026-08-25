@@ -13,6 +13,7 @@ import {
   partitionRateLimitWindows,
   selectCompactPrimaryWindow,
   selectPinnedRateLimitProviders,
+  selectUnpinnedRateLimitProviders,
   type SidebarRateLimitsEnvironmentInput,
   toggleRateLimitProviderKey,
 } from "./sidebarRateLimits.logic";
@@ -351,6 +352,12 @@ describe("compact plan limit preferences", () => {
         new Set(["missing:claude", "local:codex_company"]),
       ).map((provider) => provider.key),
     ).toEqual(["local:codex_company"]);
+    expect(
+      selectUnpinnedRateLimitProviders(
+        view.providers,
+        new Set(["missing:claude", "local:codex_company"]),
+      ).map((provider) => provider.key),
+    ).toEqual(["local:codex_personal"]);
     expect(toggleRateLimitProviderKey([], "local:codex_personal")).toEqual([
       "local:codex_personal",
     ]);

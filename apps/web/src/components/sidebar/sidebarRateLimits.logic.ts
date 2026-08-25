@@ -56,6 +56,14 @@ export function selectPinnedRateLimitProviders(
   return providers.filter((provider) => pinnedProviderKeys.has(provider.key));
 }
 
+/** Pinned accounts already have a persistent dock card, so the popup only shows the rest. */
+export function selectUnpinnedRateLimitProviders(
+  providers: ReadonlyArray<RateLimitProviderView>,
+  pinnedProviderKeys: ReadonlySet<string>,
+): ReadonlyArray<RateLimitProviderView> {
+  return providers.filter((provider) => !pinnedProviderKeys.has(provider.key));
+}
+
 export function toggleRateLimitProviderKey(
   keys: ReadonlyArray<string>,
   providerKey: string,
