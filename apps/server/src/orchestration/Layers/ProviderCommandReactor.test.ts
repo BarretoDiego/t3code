@@ -2026,6 +2026,10 @@ describe("ProviderCommandReactor", () => {
       providerInstanceId: ProviderInstanceId.make("codex_work"),
       resumeCursor: { opaque: "resume-1" },
     });
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(harness.stopSession.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.startSession.mock.invocationCallOrder[1]!,
+    );
 
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
