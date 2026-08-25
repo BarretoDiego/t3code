@@ -4681,12 +4681,12 @@ export default function Sidebar() {
                                   ref={sortable.setNodeRef}
                                   data-sidebar-section-axis={group.axis}
                                   className={cn(
-                                    "relative list-none border transition-[border-color,background-color]",
+                                    "relative list-none overflow-hidden border transition-[border-color,background-color]",
                                     isEnvironment
-                                      ? "my-1.5 rounded-lg border-sidebar-border/70 bg-sidebar-control-surface/30 p-1"
+                                      ? "my-1.5 rounded-lg border-sidebar-border/70 bg-sidebar-control-surface/30"
                                       : isProject
-                                        ? "my-1 rounded-md border-sidebar-border/55 bg-sidebar-row-hover/25 p-0.5"
-                                        : "my-1 rounded-md border-sidebar-border/45 bg-sidebar-row-hover/20 p-0.5",
+                                        ? "my-1 rounded-md border-sidebar-border/55 bg-sidebar-row-hover/25"
+                                        : "my-1 rounded-md border-sidebar-border/45 bg-sidebar-row-hover/20",
                                     sortable.isDragging && "z-20 opacity-80",
                                   )}
                                   style={{
@@ -4706,7 +4706,7 @@ export default function Sidebar() {
                                     }}
                                     {...sortable.listeners}
                                     className={cn(
-                                      "group/sidebar-section flex items-center gap-0.5 rounded-md transition-colors",
+                                      "group/sidebar-section flex items-center gap-0.5 transition-colors",
                                       isEnvironment
                                         ? "min-h-9 bg-sidebar-control-surface/75 hover:bg-sidebar-control-surface"
                                         : isProject
@@ -4719,7 +4719,7 @@ export default function Sidebar() {
                                       onClick={() => toggleThreadGroupCollapsed(group.key)}
                                       aria-expanded={!isCollapsed}
                                       data-testid={`sidebar-thread-group-toggle:${group.key}`}
-                                      className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     >
                                       {GroupStateIcon ? (
                                         <GroupStateIcon
@@ -4764,10 +4764,8 @@ export default function Sidebar() {
                                     <ul
                                       role="list"
                                       className={cn(
-                                        "flex flex-col",
-                                        isEnvironment
-                                          ? "gap-1 pb-0.5 pt-1"
-                                          : "gap-px px-0.5 pb-0.5 pt-0.5",
+                                        "flex flex-col [&>li]:my-0",
+                                        isEnvironment ? "gap-1 p-1.5" : "gap-px p-1",
                                       )}
                                     >
                                       {group.threads.map((thread) =>
