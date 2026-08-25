@@ -1,5 +1,5 @@
 import { PinIcon } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 
 import { cn } from "../../lib/utils";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -14,12 +14,9 @@ import {
 } from "./sidebarRateLimits.logic";
 import type { SidebarRateLimitsMonitor } from "./useSidebarRateLimitsMonitor";
 
-const MAX_WEEKLY_RING_COUNT = 5;
-const RING_COLOR = "var(--color-primary)";
-const RING_TRACK_COLOR = "color-mix(in oklab, var(--color-primary) 16%, transparent)";
-const RING_STROKE_WIDTH = 3.25;
-const RING_PITCH = 5;
-const OUTER_RING_RADIUS = 40;
+const MAX_WEEKLY_BAR_COUNT = 5;
+const BAR_COLOR = "var(--color-primary)";
+const BAR_TRACK_COLOR = "color-mix(in oklab, var(--color-primary) 16%, transparent)";
 
 function availablePercent(window: SidebarRateLimitWindowView): number {
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
@@ -37,114 +34,57 @@ function accountContext(provider: SidebarRateLimitProviderView): string {
 
 function accessibilityLabel(
   provider: SidebarRateLimitProviderView,
-  primary: SidebarRateLimitWindowView,
+  window: SidebarRateLimitWindowView,
 ): string {
-  const used = Math.round(primary.usedPercent);
-  return `${provider.displayName}, ${accountContext(provider)}, ${primary.label}: ${Math.round(availablePercent(primary))}% available, ${used}% used. ${resetLabel(primary)}.`;
+  const used = Math.round(window.usedPercent);
+  return `${provider.displayName}, ${accountContext(provider)}, ${window.label}: ${Math.round(availablePercent(window))}% available, ${used}% used. ${resetLabel(window)}.`;
 }
 
-function CompactRateLimitRings({
+function CompactRateLimitBar({
   provider,
-  primary,
-  weekly,
+  window,
+  hiddenWhenCollapsed,
 }: {
   provider: SidebarRateLimitProviderView;
-  primary: SidebarRateLimitWindowView;
-  weekly: ReadonlyArray<SidebarRateLimitWindowView>;
+  window: SidebarRateLimitWindowView;
+  hiddenWhenCollapsed: boolean;
 }) {
-  const visibleWeekly = weekly
-    .filter((window) => window.id !== primary.id)
-    .slice(0, MAX_WEEKLY_RING_COUNT);
-  const rings = [primary, ...visibleWeekly];
-  const [hoveredWindowId, setHoveredWindowId] = useState<string | null>(null);
-  const activeWindowId = rings.some((window) => window.id === hoveredWindowId)
-    ? hoveredWindowId
-    : primary.id;
+  const available = Math.round(availablePercent(window));
 
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <div
-            aria-label={accessibilityLabel(provider, primary)}
+            aria-label={accessibilityLabel(provider, window)}
             aria-valuemax={100}
             aria-valuemin={0}
-            aria-valuenow={Math.round(availablePercent(primary))}
-            className="relative grid size-11 shrink-0 cursor-default place-items-center rounded-full text-sidebar-foreground outline-hidden ring-ring focus-visible:ring-2 group-data-[collapsible=icon]:size-7"
+            aria-valuenow={available}
+            className={cn(
+              "group/bar min-w-0 cursor-help rounded-sm outline-hidden ring-ring focus-visible:ring-2 group-data-[collapsible=icon]:w-6",
+              hiddenWhenCollapsed && "group-data-[collapsible=icon]:hidden",
+            )}
+            data-available-percent={available}
+            data-rate-limit-bar={window.id}
             role="progressbar"
             tabIndex={0}
           >
-            <svg
+            <div className="mb-0.5 flex min-w-0 items-baseline justify-between gap-1 text-[9px] leading-3 group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-sidebar-muted-foreground">{window.label}</span>
+              <span className="shrink-0 font-medium tabular-nums text-sidebar-foreground">
+                {available}%
+              </span>
+            </div>
+            <div
               aria-hidden="true"
-              className="size-full"
-              onPointerLeave={() => setHoveredWindowId(null)}
-              viewBox="0 0 88 88"
+              className="h-2.5 w-full overflow-hidden rounded-[3px] group-data-[collapsible=icon]:h-1.5"
+              style={{ backgroundColor: BAR_TRACK_COLOR }}
             >
-              {rings.map((window, index) => {
-                const radius = OUTER_RING_RADIUS - (rings.length - index - 1) * RING_PITCH;
-                const circumference = 2 * Math.PI * radius;
-                const normalized = availablePercent(window);
-                const isActive = window.id === activeWindowId;
-                return (
-                  <g key={window.id}>
-                    <circle
-                      cx="44"
-                      cy="44"
-                      fill="none"
-                      r={radius}
-                      stroke={RING_TRACK_COLOR}
-                      strokeWidth={RING_STROKE_WIDTH}
-                    />
-                    <circle
-                      className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
-                      cx="44"
-                      cy="44"
-                      data-rate-limit-ring={window.id}
-                      fill="none"
-                      r={radius}
-                      stroke={RING_COLOR}
-                      strokeDasharray={circumference}
-                      strokeDashoffset={circumference * (1 - normalized / 100)}
-                      strokeLinecap="round"
-                      strokeOpacity={isActive ? 1 : 0.78}
-                      strokeWidth={RING_STROKE_WIDTH}
-                      transform="rotate(-90 44 44)"
-                    />
-                    <circle
-                      cx="44"
-                      cy="44"
-                      fill="none"
-                      onPointerEnter={() => setHoveredWindowId(window.id)}
-                      r={radius}
-                      stroke="transparent"
-                      strokeWidth={RING_PITCH}
-                      style={{ cursor: "help", pointerEvents: "stroke" }}
-                    />
-                  </g>
-                );
-              })}
-              <text
-                className="fill-sidebar-foreground font-semibold tabular-nums group-data-[collapsible=icon]:hidden"
-                dominantBaseline="central"
-                fontSize="15"
-                textAnchor="middle"
-                x="44"
-                y="39.5"
-              >
-                {Math.round(availablePercent(primary))}%
-              </text>
-              <text
-                className="fill-sidebar-muted-foreground group-data-[collapsible=icon]:hidden"
-                dominantBaseline="central"
-                fontSize="7"
-                letterSpacing="0.45"
-                textAnchor="middle"
-                x="44"
-                y="52"
-              >
-                LEFT
-              </text>
-            </svg>
+              <div
+                className="h-full rounded-[3px] transition-[width,opacity] duration-500 ease-out group-hover/bar:opacity-90 motion-reduce:transition-none"
+                style={{ backgroundColor: BAR_COLOR, width: `${available}%` }}
+              />
+            </div>
           </div>
         }
       />
@@ -154,7 +94,7 @@ function CompactRateLimitRings({
         side="right"
         sideOffset={8}
       >
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           <div className="flex min-w-0 items-center gap-1.5 font-medium">
             <ProviderInstanceIcon
               className="size-4"
@@ -171,47 +111,61 @@ function CompactRateLimitRings({
           <div className="truncate text-[10px] text-muted-foreground">
             {accountContext(provider)}
           </div>
-          <div className="flex flex-col gap-1.5">
-            {provider.windows.map((window) => {
-              return (
-                <div
-                  className={cn(
-                    "-mx-1 flex items-start gap-2 rounded px-1 py-0.5",
-                    activeWindowId === window.id && "bg-muted/70",
-                  )}
-                  data-active={activeWindowId === window.id ? "true" : undefined}
-                  data-rate-limit-layer={window.id}
-                  key={window.id}
-                >
-                  <span
-                    aria-hidden
-                    className="mt-1 size-1.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: RING_COLOR }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[11px]">{window.label}</span>
-                      <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
-                        {Math.round(availablePercent(window))}% available
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {resetLabel(window)}
-                      {window.detail ? ` · ${window.detail}` : ""}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {weekly.length > visibleWeekly.length + (primary.kind === "weekly" ? 1 : 0) ? (
-            <div className="text-[10px] text-muted-foreground">
-              Additional weekly limits remain available in the full monitor.
+          <div className="flex items-start gap-2" data-rate-limit-layer={window.id}>
+            <span
+              aria-hidden
+              className="mt-1 h-2 w-4 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: BAR_COLOR }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-[11px]">{window.label}</span>
+                <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
+                  {available}% available
+                </span>
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                {resetLabel(window)}
+                {window.detail ? ` · ${window.detail}` : ""}
+              </div>
             </div>
-          ) : null}
+          </div>
         </div>
       </TooltipPopup>
     </Tooltip>
+  );
+}
+
+function CompactRateLimitBars({
+  provider,
+  primary,
+  weekly,
+}: {
+  provider: SidebarRateLimitProviderView;
+  primary: SidebarRateLimitWindowView;
+  weekly: ReadonlyArray<SidebarRateLimitWindowView>;
+}) {
+  const visibleWeekly = weekly
+    .filter((window) => window.id !== primary.id)
+    .slice(0, MAX_WEEKLY_BAR_COUNT);
+  const windows = [primary, ...visibleWeekly];
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 group-data-[collapsible=icon]:gap-0">
+      {windows.map((window, index) => (
+        <CompactRateLimitBar
+          hiddenWhenCollapsed={index > 0}
+          key={window.id}
+          provider={provider}
+          window={window}
+        />
+      ))}
+      {weekly.length > visibleWeekly.length + (primary.kind === "weekly" ? 1 : 0) ? (
+        <div className="truncate text-[8px] leading-3 text-sidebar-muted-foreground group-data-[collapsible=icon]:hidden">
+          More limits in the full monitor
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -225,35 +179,26 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
   const primary = selectCompactPrimaryWindow(provider.windows);
   const { weekly } = partitionRateLimitWindows(provider.windows);
   if (primary === null) return null;
-  const available = Math.round(availablePercent(primary));
   const context = accountContext(provider);
 
   return (
     <article
       aria-label={`${provider.displayName}, ${context}, pinned plan limits`}
-      className="group/widget relative flex min-h-14 min-w-0 items-center gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 motion-reduce:transition-none"
+      className="group/widget relative flex min-h-14 min-w-0 flex-col gap-1.5 rounded-lg border border-sidebar-border/60 bg-sidebar-row-hover/35 p-1.5 transition-[border-color,background-color] hover:border-primary/30 hover:bg-sidebar-row-hover/65 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-1 motion-reduce:transition-none"
       data-rate-limit-widget={provider.key}
     >
-      <CompactRateLimitRings provider={provider} primary={primary} weekly={weekly} />
-      <div className="min-w-0 flex-1 pr-2.5 group-data-[collapsible=icon]:hidden">
-        <div className="flex min-w-0 items-center gap-1">
-          <ProviderInstanceIcon
-            className="size-3"
-            driverKind={provider.driver}
-            displayName={provider.displayName}
-            iconClassName="size-3"
-          />
-          <span className="truncate font-medium text-[10px] leading-3.5 text-sidebar-foreground">
-            {provider.displayName}
-          </span>
-        </div>
-        <div className="mt-0.5 truncate font-medium text-[10px] leading-3.5 tabular-nums text-sidebar-foreground">
-          {available}% available
-        </div>
-        <div className="truncate text-[9px] leading-3 text-sidebar-muted-foreground">
-          {primary.label}
-        </div>
+      <div className="flex min-w-0 items-center gap-1 pr-3 group-data-[collapsible=icon]:hidden">
+        <ProviderInstanceIcon
+          className="size-3"
+          driverKind={provider.driver}
+          displayName={provider.displayName}
+          iconClassName="size-3"
+        />
+        <span className="truncate font-medium text-[10px] leading-3.5 text-sidebar-foreground">
+          {provider.displayName}
+        </span>
       </div>
+      <CompactRateLimitBars provider={provider} primary={primary} weekly={weekly} />
       <Button
         aria-label={`Unpin ${provider.displayName}, ${context}, plan limits`}
         className="absolute right-0.5 top-0.5 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-data-[collapsible=icon]:hidden motion-reduce:transition-none"
