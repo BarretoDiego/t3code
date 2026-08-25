@@ -17,6 +17,8 @@ content height, and preserve the provider logo and account name in view. Their m
 the theme's action color and show the percentage still available, rather than the amount already
 spent. Each session, weekly, or model-specific limit has its own thick horizontal bar across the
 card; hover a bar to see the legend with its window, available amount, and reset time.
+The short session window is marked with a small hourglass so it remains distinct from weekly limits
+at a glance.
 
 Claude's weekly rows can also be collapsed independently for each connected account. The same
 control is available in a pinned widget: its primary limit stays visible while the extra weekly

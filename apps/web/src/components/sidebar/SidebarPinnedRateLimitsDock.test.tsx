@@ -81,6 +81,7 @@ describe("SidebarPinnedRateLimitsDock", () => {
     expect(markup).toContain("73% available");
     expect(markup).toContain('data-rate-limit-bar="five_hour"');
     expect(markup).toContain('data-rate-limit-bar="model_scoped:fable-5"');
+    expect(markup.match(/lucide-hourglass/gu)).toHaveLength(1);
     expect(markup).toContain("h-2.5 w-full");
     expect(markup).not.toContain("<circle");
     expect(markup).toContain('data-rate-limit-layer="model_scoped:fable-5"');
