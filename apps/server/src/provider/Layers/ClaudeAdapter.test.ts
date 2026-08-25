@@ -2858,7 +2858,9 @@ describe("ClaudeAdapterLive", () => {
       const adapter = yield* ClaudeAdapter;
       const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
 
-      assert.equal(result._tag, "Failure");
+      if (result._tag !== "Failure") {
+        assert.fail("Expected refreshRateLimits to fail without an active Claude session");
+      }
       assert.equal(result.failure._tag, "ProviderAdapterRequestError");
       assert.match(result.failure.message, /active Claude session/i);
     }).pipe(
