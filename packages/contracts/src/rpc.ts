@@ -167,6 +167,7 @@ import {
 import {
   ServerConfigStreamEvent,
   ServerConfig,
+  ServerProviderRateLimitsRefreshError,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
   ServerLifecycleStreamEvent,
@@ -273,6 +274,7 @@ export const WS_METHODS = {
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
+  serverRefreshProviderRateLimits: "server.refreshProviderRateLimits",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
@@ -370,6 +372,17 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
 });
+
+export const WsServerRefreshProviderRateLimitsRpc = Rpc.make(
+  WS_METHODS.serverRefreshProviderRateLimits,
+  {
+    payload: Schema.Struct({
+      instanceId: ProviderInstanceId,
+    }),
+    success: ServerProviderUpdatedPayload,
+    error: Schema.Union([ServerProviderRateLimitsRefreshError, EnvironmentAuthorizationError]),
+  },
+);
 
 export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   payload: ServerProviderUpdateInput,
@@ -1021,6 +1034,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
+  WsServerRefreshProviderRateLimitsRpc,
   WsServerUpdateProviderRpc,
   WsServerUpdateServerRpc,
   WsServerUpdateServerWithProgressRpc,

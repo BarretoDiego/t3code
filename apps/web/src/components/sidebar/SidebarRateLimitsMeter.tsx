@@ -1,10 +1,13 @@
-import { GaugeIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { GaugeIcon, RefreshCwIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { formatElapsedDurationLabel } from "../../timestampFormat";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import {
@@ -196,6 +199,12 @@ function RateLimitProviderSection({
 
 export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
   const { environments } = useEnvironments();
+  const refreshProviderRateLimits = useAtomCommand(serverEnvironment.refreshProviderRateLimits, {
+    reportFailure: false,
+  });
+  const refreshingRef = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const environmentInputs = useMemo(
     () =>
       environments.map((environment) => ({
@@ -213,6 +222,26 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
     () => buildSidebarRateLimitsView({ environments: environmentInputs, nowMs }),
     [environmentInputs, nowMs],
   );
+  const refreshLimits = useCallback(() => {
+    if (refreshingRef.current || view.refreshTargets.length === 0) {
+      return;
+    }
+    refreshingRef.current = true;
+    setIsRefreshing(true);
+    setRefreshFailed(false);
+    void Promise.all(
+      view.refreshTargets.map((target) =>
+        refreshProviderRateLimits({
+          environmentId: target.environmentId,
+          input: { instanceId: target.instanceId },
+        }),
+      ),
+    ).then((results) => {
+      refreshingRef.current = false;
+      setIsRefreshing(false);
+      setRefreshFailed(results.some((result) => result._tag === "Failure"));
+    });
+  }, [refreshProviderRateLimits, view.refreshTargets]);
 
   return (
     <SidebarMenuItem className="shrink-0">
@@ -245,7 +274,26 @@ export const SidebarRateLimitsMeter = memo(function SidebarRateLimitsMeter() {
           viewportClassName="p-0"
         >
           <div className="flex flex-col gap-3 p-[var(--floating-content-inset)]">
-            <div className="font-medium text-muted-foreground text-xs">Plan limits</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-medium text-muted-foreground text-xs">Plan limits</div>
+              {view.refreshTargets.length > 0 ? (
+                <Button
+                  aria-label="Refresh plan limits"
+                  disabled={isRefreshing}
+                  onClick={refreshLimits}
+                  size="icon-micro"
+                  title="Refresh plan limits for connected provider accounts"
+                  variant="ghost-muted"
+                >
+                  <RefreshCwIcon className={cn(isRefreshing && "animate-spin")} />
+                </Button>
+              ) : null}
+            </div>
+            {refreshFailed ? (
+              <p className="text-[11px] leading-4 text-warning-foreground">
+                Some accounts could not refresh. Start a provider session and try again.
+              </p>
+            ) : null}
             {view.providers.length === 0 ? (
               <p className="text-pretty text-[11px] leading-4 text-muted-foreground">
                 No provider has reported plan limits yet. They appear here after a provider runs a

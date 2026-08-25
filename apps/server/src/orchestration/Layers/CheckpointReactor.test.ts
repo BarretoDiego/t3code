@@ -124,6 +124,7 @@ function createProviderServiceHarness(
           continuationKey: `${providerName}:instance:${instanceId}`,
         },
       }),
+    refreshRateLimits: () => unsupported(),
     rollbackConversation,
     uploadFeedback: () => unsupported(),
     get streamEvents() {

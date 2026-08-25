@@ -28,6 +28,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -65,7 +66,7 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
-import { normalizeCodexRateLimits } from "../providerRateLimits.ts";
+import { normalizeCodexRateLimits, normalizeCodexRateLimitsRead } from "../providerRateLimits.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1994,6 +1995,28 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const hasSession: CodexAdapterShape["hasSession"] = (threadId) =>
     Effect.succeed(Boolean(sessions.get(threadId) && !sessions.get(threadId)?.stopped));
 
+  const refreshRateLimits: NonNullable<CodexAdapterShape["refreshRateLimits"]> = Effect.fn(
+    "refreshRateLimits",
+  )(function* () {
+    const session = Array.from(sessions.values())
+      .toReversed()
+      .find((candidate) => !candidate.stopped);
+    if (!session) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "account/rateLimits/read",
+        detail: "An active Codex session is required to refresh plan limits.",
+      });
+    }
+    const response = yield* session.runtime.readRateLimits.pipe(
+      Effect.mapError((cause) =>
+        mapCodexRuntimeError(session.threadId, "account/rateLimits/read", cause),
+      ),
+    );
+    const observedAt = DateTime.formatIso(yield* DateTime.now);
+    return normalizeCodexRateLimitsRead({ response, observedAt });
+  });
+
   const stopAll: CodexAdapterShape["stopAll"] = () =>
     Effect.forEach(Array.from(sessions.values()), stopSessionInternal, {
       concurrency: 1,
@@ -2024,6 +2047,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
+    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

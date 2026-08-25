@@ -1,4 +1,6 @@
 import type {
+  EnvironmentId,
+  ProviderInstanceId,
   ProviderRateLimitStatus,
   ProviderRateLimitWindow,
   ServerProvider,
@@ -16,7 +18,8 @@ export interface RateLimitWindowView {
 
 export interface RateLimitProviderView {
   readonly key: string;
-  readonly instanceId: string;
+  readonly environmentId: EnvironmentId;
+  readonly instanceId: ProviderInstanceId;
   readonly driver: ServerProvider["driver"];
   readonly displayName: string;
   readonly accentColor: string | undefined;
@@ -27,15 +30,23 @@ export interface RateLimitProviderView {
   readonly windows: ReadonlyArray<RateLimitWindowView>;
 }
 
+export interface ProviderRateLimitsRefreshTarget {
+  readonly key: string;
+  readonly environmentId: EnvironmentId;
+  readonly instanceId: ProviderInstanceId;
+  readonly mode: NonNullable<ServerProvider["rateLimitsRefresh"]>;
+}
+
 export interface ProviderRateLimitsView {
   readonly providers: ReadonlyArray<RateLimitProviderView>;
+  readonly refreshTargets: ReadonlyArray<ProviderRateLimitsRefreshTarget>;
   readonly peakPercent: number | null;
   readonly tone: ProviderRateLimitStatus;
   readonly summary: string;
 }
 
 export interface ProviderRateLimitsEnvironmentInput {
-  readonly environmentId: string;
+  readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly providers: ReadonlyArray<ServerProvider>;
 }
@@ -101,6 +112,20 @@ export function buildProviderRateLimitsView(input: {
   readonly environments: ReadonlyArray<ProviderRateLimitsEnvironmentInput>;
   readonly nowMs: number;
 }): ProviderRateLimitsView {
+  const refreshTargets = input.environments.flatMap((environment) =>
+    environment.providers.flatMap((provider) =>
+      provider.enabled && provider.installed && provider.rateLimitsRefresh
+        ? [
+            {
+              key: `${environment.environmentId}:${provider.instanceId}`,
+              environmentId: environment.environmentId,
+              instanceId: provider.instanceId,
+              mode: provider.rateLimitsRefresh,
+            } satisfies ProviderRateLimitsRefreshTarget,
+          ]
+        : [],
+    ),
+  );
   const environmentsWithLimits = input.environments.filter((environment) =>
     environment.providers.some((provider) => (provider.rateLimits?.windows.length ?? 0) > 0),
   );
@@ -119,6 +144,7 @@ export function buildProviderRateLimitsView(input: {
       }
       providers.push({
         key: `${environment.environmentId}:${provider.instanceId}`,
+        environmentId: environment.environmentId,
         instanceId: provider.instanceId,
         driver: provider.driver,
         displayName:
@@ -146,6 +172,7 @@ export function buildProviderRateLimitsView(input: {
 
   return {
     providers,
+    refreshTargets,
     peakPercent: peak?.usedPercent ?? null,
     tone,
     summary:

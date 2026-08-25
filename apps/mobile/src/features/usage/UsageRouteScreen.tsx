@@ -17,14 +17,22 @@ import {
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
-import { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../components/AppText";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { environmentServerConfigsAtom } from "../../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { UsageDailyChart } from "./UsageDailyChart";
@@ -52,6 +60,12 @@ export function UsageRouteScreen() {
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const refreshProviderRateLimits = useAtomCommand(serverEnvironment.refreshProviderRateLimits, {
+    reportFailure: false,
+  });
+  const refreshingPlanLimitsRef = useRef(false);
+  const [isRefreshingPlanLimits, setIsRefreshingPlanLimits] = useState(false);
+  const [planLimitsRefreshFailed, setPlanLimitsRefreshFailed] = useState(false);
   const rateLimitEnvironments = useMemo(
     () =>
       environments.map((environment) => ({
@@ -81,6 +95,26 @@ export function UsageRouteScreen() {
       }),
     [rateLimitEnvironments, rateLimitsNowMs],
   );
+  const refreshPlanLimits = useCallback(() => {
+    if (refreshingPlanLimitsRef.current || planLimits.refreshTargets.length === 0) {
+      return;
+    }
+    refreshingPlanLimitsRef.current = true;
+    setIsRefreshingPlanLimits(true);
+    setPlanLimitsRefreshFailed(false);
+    void Promise.all(
+      planLimits.refreshTargets.map((target) =>
+        refreshProviderRateLimits({
+          environmentId: target.environmentId,
+          input: { instanceId: target.instanceId },
+        }),
+      ),
+    ).then((results) => {
+      refreshingPlanLimitsRef.current = false;
+      setIsRefreshingPlanLimits(false);
+      setPlanLimitsRefreshFailed(results.some((result) => result._tag === "Failure"));
+    });
+  }, [planLimits.refreshTargets, refreshProviderRateLimits]);
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -154,7 +188,12 @@ export function UsageRouteScreen() {
 
         <UsageCoverageNotice environments={environments} merged={merged} isPartial={isPartial} />
 
-        <PlanLimitsSection view={planLimits} />
+        <PlanLimitsSection
+          isRefreshing={isRefreshingPlanLimits}
+          refreshFailed={planLimitsRefreshFailed}
+          view={planLimits}
+          onRefresh={refreshPlanLimits}
+        />
 
         {isPending ? (
           <Text className="py-16 text-center text-base text-foreground-muted">
@@ -187,13 +226,47 @@ export function UsageRouteScreen() {
   );
 }
 
-function PlanLimitsSection(props: { readonly view: ProviderRateLimitsView }) {
-  if (props.view.providers.length === 0) {
+function PlanLimitsSection(props: {
+  readonly view: ProviderRateLimitsView;
+  readonly isRefreshing: boolean;
+  readonly refreshFailed: boolean;
+  readonly onRefresh: () => void;
+}) {
+  if (props.view.providers.length === 0 && props.view.refreshTargets.length === 0) {
     return null;
   }
 
   return (
-    <SettingsSection title="Plan limits" card>
+    <SettingsSection
+      title="Plan limits"
+      card
+      headerAction={
+        props.view.refreshTargets.length > 0 ? (
+          <Pressable
+            accessibilityLabel="Refresh plan limits"
+            accessibilityRole="button"
+            className="min-h-8 min-w-16 flex-row items-center justify-center gap-2 rounded-full px-2 active:bg-subtle"
+            disabled={props.isRefreshing}
+            onPress={props.onRefresh}
+          >
+            {props.isRefreshing ? <ActivityIndicator size="small" /> : null}
+            <Text className="text-sm font-t3-medium text-foreground-muted">
+              {props.isRefreshing ? "Refreshing" : "Refresh"}
+            </Text>
+          </Pressable>
+        ) : null
+      }
+    >
+      {props.refreshFailed ? (
+        <Text className="border-b border-border-subtle px-4 py-3 text-sm text-danger-foreground">
+          Some accounts could not refresh. Start a provider session and try again.
+        </Text>
+      ) : null}
+      {props.view.providers.length === 0 ? (
+        <Text className="px-4 py-4 text-sm text-foreground-muted">
+          No plan limits reported yet. Start a provider session, then refresh.
+        </Text>
+      ) : null}
       {props.view.providers.map((provider, index) => (
         <View
           key={provider.key}

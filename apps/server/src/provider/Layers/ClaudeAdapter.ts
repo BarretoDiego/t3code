@@ -2151,23 +2151,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return normalizeClaudeContextUsageApiSnapshot(usage.value, totalProcessedTokens);
   });
 
-  const queryCurrentPlanRateLimits = Effect.fn("queryCurrentPlanRateLimits")(function* (
+  const readCurrentPlanRateLimits = Effect.fn("readCurrentPlanRateLimits")(function* (
     context: ClaudeSessionContext,
   ) {
     const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
     if (!readUsage) {
-      return;
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "This Claude session does not expose plan usage.",
+      });
     }
 
-    const usage = yield* Effect.promise(async () => {
-      try {
-        return await readUsage.call(context.query);
-      } catch {
-        return undefined;
-      }
+    const usage = yield* Effect.tryPromise({
+      try: () => readUsage.call(context.query),
+      catch: (cause) =>
+        new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "claude/control/get_usage",
+          detail: "Claude did not return plan usage.",
+          cause,
+        }),
     }).pipe(Effect.timeoutOption("2 seconds"));
-    if (Option.isNone(usage) || !usage.value) {
-      return;
+    if (Option.isNone(usage)) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "Timed out while reading Claude plan usage.",
+      });
     }
 
     // The control response also contains session cost and local behavioral
@@ -2180,6 +2191,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       rate_limits: usage.value.rate_limits,
     };
     const stamp = yield* makeEventStamp();
+    return {
+      rateLimits,
+      snapshot: normalizeClaudeUsageRateLimits({
+        usage: rateLimits,
+        observedAt: stamp.createdAt,
+      }),
+      stamp,
+    };
+  });
+
+  const queryCurrentPlanRateLimits = Effect.fn("queryCurrentPlanRateLimits")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const observation = yield* readCurrentPlanRateLimits(context).pipe(Effect.option);
+    if (Option.isNone(observation)) {
+      return;
+    }
+    const { rateLimits, snapshot, stamp } = observation.value;
     yield* offerRuntimeEvent({
       type: "account.rate-limits.updated",
       eventId: stamp.eventId,
@@ -2189,10 +2218,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
       payload: {
         rateLimits,
-        snapshot: normalizeClaudeUsageRateLimits({
-          usage: rateLimits,
-          observedAt: stamp.createdAt,
-        }),
+        snapshot,
         updateMode: "replace",
       },
       providerRefs: nativeProviderRefs(context),
@@ -4669,6 +4695,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return context !== undefined && !context.stopped;
     });
 
+  const refreshRateLimits: NonNullable<ClaudeAdapterShape["refreshRateLimits"]> = Effect.fn(
+    "refreshRateLimits",
+  )(function* () {
+    const context = Array.from(sessions.values())
+      .toReversed()
+      .find((candidate) => !candidate.stopped);
+    if (!context) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "claude/control/get_usage",
+        detail: "An active Claude session is required to refresh plan limits.",
+      });
+    }
+    return (yield* readCurrentPlanRateLimits(context)).snapshot;
+  });
+
   const stopSessions = Effect.fn("stopSessions")(function* (
     contexts: ReadonlyArray<ClaudeSessionContext>,
     emitExitEvent: boolean,
@@ -4712,6 +4754,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
+    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

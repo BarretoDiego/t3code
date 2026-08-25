@@ -34,6 +34,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
+import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -108,6 +109,11 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     Promise.resolve({ threadId: "provider-thread-1" }),
   );
 
+  public readonly readRateLimitsImpl = vi.fn(
+    (): Promise<EffectCodexSchema.V2GetAccountRateLimitsResponse> =>
+      Promise.resolve({ rateLimits: {} }),
+  );
+
   public readonly respondToRequestImpl = vi.fn(
     (_requestId: ApprovalRequestId, _decision: ProviderApprovalDecision): Promise<void> =>
       Promise.resolve(undefined),
@@ -149,6 +155,8 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   uploadFeedback(reason?: string) {
     return Effect.promise(() => this.uploadFeedbackImpl(reason));
   }
+
+  readRateLimits = Effect.promise(() => this.readRateLimitsImpl());
 
   respondToRequest(requestId: ApprovalRequestId, decision: ProviderApprovalDecision) {
     return Effect.promise(() => this.respondToRequestImpl(requestId, decision));
@@ -297,6 +305,46 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
+
+  it.effect("refreshes every Codex rate-limit bucket through the active app-server", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-rate-limits"),
+        runtimeMode: "full-access",
+      });
+      const runtime = validationRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.readRateLimitsImpl.mockResolvedValueOnce({
+        rateLimits: {},
+        rateLimitsByLimitId: {
+          codex: {
+            limitName: "Codex",
+            primary: { usedPercent: 12, windowDurationMins: 300 },
+            secondary: { usedPercent: 34, windowDurationMins: 10_080 },
+          },
+          "codex-fast": {
+            limitName: "Codex Fast",
+            primary: { usedPercent: 56, windowDurationMins: 300 },
+          },
+        },
+      });
+
+      const snapshot = yield* adapter.refreshRateLimits!();
+
+      NodeAssert.deepStrictEqual(
+        snapshot.windows.map((window) => [window.id, window.usedPercent]),
+        [
+          ["codex:primary", 12],
+          ["codex-fast:primary", 56],
+          ["codex:secondary", 34],
+        ],
+      );
+      NodeAssert.equal(runtime.readRateLimitsImpl.mock.calls.length, 1);
+    }),
+  );
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();
@@ -318,6 +366,17 @@ const sessionErrorLayer = it.layer(
 );
 
 sessionErrorLayer("CodexAdapterLive session errors", (it) => {
+  it.effect("requires an active session to refresh plan limits", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
+
+      NodeAssert.equal(result._tag, "Failure");
+      NodeAssert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      NodeAssert.match(result.failure.message, /active Codex session/i);
+    }),
+  );
+
   it.effect("maps missing adapter sessions to ProviderAdapterSessionNotFoundError", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;

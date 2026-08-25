@@ -27,9 +27,15 @@ weekly, model-specific, and extra-usage snapshot when a turn finishes; provider 
 an individual window sooner. A window whose reset time has passed is shown as reset rather than
 repeating a spent number, and it fills in again the next time that provider runs.
 
+Use the refresh button in the Plan limits header to request a fresh snapshot for every connected
+account. Codex and Claude currently answer that request through an active provider session, without
+starting another turn. If an account has no active session, its last snapshot stays visible and the
+app asks you to start that provider before trying again. One unavailable account does not prevent
+the other accounts from refreshing.
+
 Changing the account or home configured for a provider instance clears the previous account's last
 observation immediately. The replacement account appears after it runs and reports its own limits.
 
-Until a provider has reported anything, the gauge is empty and says so. Providers that do not meter
-a subscription plan at all — an API key, Bedrock, Vertex, or a provider without plan limits — never
-appear in the list.
+Until a provider has reported anything, the gauge is empty and says so; the refresh button is still
+available for supported, installed providers. Providers that do not meter a subscription plan at
+all — an API key, Bedrock, Vertex, or a provider without plan limits — never appear in the list.

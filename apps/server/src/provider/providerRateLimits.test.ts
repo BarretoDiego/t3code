@@ -6,6 +6,7 @@ import {
   normalizeClaudeRateLimitEvent,
   normalizeClaudeUsageRateLimits,
   normalizeCodexRateLimits,
+  normalizeCodexRateLimitsRead,
 } from "./providerRateLimits.ts";
 
 const OBSERVED_AT = "2026-08-24T12:00:00.000Z";
@@ -212,6 +213,47 @@ describe("normalizeCodexRateLimits", () => {
     assert.strictEqual(
       normalizeCodexRateLimits({ rateLimits: { planType: "pro" }, observedAt: OBSERVED_AT }),
       null,
+    );
+  });
+});
+
+describe("normalizeCodexRateLimitsRead", () => {
+  it("keeps every named limit bucket distinct in a complete read", () => {
+    const snapshot = normalizeCodexRateLimitsRead({
+      response: {
+        rateLimits: {},
+        rateLimitsByLimitId: {
+          codex: {
+            limitName: "Codex",
+            primary: { usedPercent: 20, windowDurationMins: 300 },
+            secondary: { usedPercent: 40, windowDurationMins: 10_080 },
+          },
+          "codex-fast": {
+            limitName: "Codex Fast",
+            primary: { usedPercent: 60, windowDurationMins: 300 },
+          },
+        },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.deepStrictEqual(
+      snapshot.windows.map((window) => [window.id, window.label, window.usedPercent]),
+      [
+        ["codex:primary", "5-hour (Codex)", 20],
+        ["codex-fast:primary", "5-hour (Codex Fast)", 60],
+        ["codex:secondary", "Weekly (Codex)", 40],
+      ],
+    );
+  });
+
+  it("returns an authoritative empty snapshot when the account has no windows", () => {
+    assert.deepStrictEqual(
+      normalizeCodexRateLimitsRead({
+        response: { rateLimits: {} },
+        observedAt: OBSERVED_AT,
+      }),
+      { observedAt: OBSERVED_AT, windows: [] },
     );
   });
 });
