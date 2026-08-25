@@ -2271,6 +2271,16 @@ code {
   font-size: 0.75rem;
 }
 
+/* Code painted live inside the prompt composer. Deliberately lighter than the
+   rendered `.chat-markdown` variant: no border, no padding, and no font-size
+   change, so the caret and the line boxes never shift as the user types. */
+.composer-markdown-code {
+  border-radius: 0.25rem;
+  background: var(--muted);
+  color: var(--code-foreground);
+  font-family: var(--font-mono);
+}
+
 .chat-markdown a.chat-markdown-file-link,
 .chat-markdown a.chat-markdown-file-link:hover {
   color: var(--contrast-foreground);
