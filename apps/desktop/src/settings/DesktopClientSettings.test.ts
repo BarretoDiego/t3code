@@ -51,6 +51,8 @@ const clientSettings: ClientSettings = {
   sidebarThreadSecondaryGrouping: "project",
   sidebarThreadProviderFilter: "codex",
   sidebarThreadCollapsedGroups: ["environment:environment-1"],
+  sidebarPinnedRateLimitProviderKeys: ["environment-1:codex-primary"],
+  sidebarCollapsedRateLimitWeeklyProviderKeys: ["environment-1:codex-primary"],
   sidebarSectionOrderMode: "manual",
   sidebarSectionOrder: ["environment:environment-2", "environment:environment-1"],
   legacySidebarEnabled: false,
