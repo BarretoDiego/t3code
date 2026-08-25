@@ -4,6 +4,7 @@ import type {
   ProjectSyncDeps,
   ProjectSyncTarget,
 } from "@t3tools/client-runtime/state/project-sync";
+import type { ProjectSyncExportEntry } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -54,10 +55,10 @@ export function useProjectSyncDeps(): ProjectSyncDeps {
   );
 
   const createExportUrl = useCallback(
-    async (target: ProjectSyncTarget, paths: ReadonlyArray<string>) => {
+    async (target: ProjectSyncTarget, entries: ReadonlyArray<ProjectSyncExportEntry>) => {
       const result = await createExportUrlRpc({
         environmentId: target.environmentId,
-        input: { projectId: target.projectId, paths },
+        input: { projectId: target.projectId, entries },
       });
       if (result._tag !== "Success") {
         throw squashAtomCommandFailure(result);

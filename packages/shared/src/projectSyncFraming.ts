@@ -20,12 +20,81 @@ import type { ProjectSyncEntryKind } from "@t3tools/contracts";
 
 const HEADER_LENGTH_BYTES = 4;
 
+/**
+ * Ceiling on a single record's JSON header.
+ *
+ * The length prefix is a uint32, so a hostile (or corrupt) stream can claim a
+ * 4 GiB header and make the decoder buffer the whole request body waiting for
+ * it. Real headers are a path (capped at 1024 characters by the contract)
+ * plus a handful of small fields, so anything past 64 KiB is not a header we
+ * would ever have written.
+ */
+const MAX_HEADER_BYTES = 64 * 1024;
+
+const FRAME_ENTRY_KINDS: ReadonlySet<string> = new Set(["file", "dir", "symlink"]);
+
 export interface ProjectSyncFrameHeader {
   readonly path: string;
   readonly size: number;
   readonly kind: ProjectSyncEntryKind;
   readonly mode?: number;
   readonly linkTarget?: string;
+}
+
+/**
+ * Parses and validates one JSON header off the wire.
+ *
+ * Nothing downstream re-checks these fields: the import route adds
+ * `header.size` to the byte budget the signed URL authorized, and the apply
+ * pass switches on `header.kind`. A header claiming `size: -1e10` would
+ * therefore *credit* the budget and let a token signed for a kilobyte write
+ * without bound, and a non-numeric size would turn the content cursor into
+ * NaN. So the decoder refuses anything it would not itself have written.
+ */
+function parseFrameHeader(json: string): ProjectSyncFrameHeader {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (cause) {
+    throw new Error("Project sync frame header is not valid JSON.", { cause });
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Project sync frame header is not a JSON object.");
+  }
+
+  const header = parsed as Record<string, unknown>;
+  const { path, size, kind, mode, linkTarget } = header;
+
+  if (typeof path !== "string" || path.length === 0) {
+    throw new Error("Project sync frame header is missing a non-empty 'path'.");
+  }
+  if (!FRAME_ENTRY_KINDS.has(kind as string)) {
+    throw new Error(
+      `Project sync frame header for '${path}' has an unknown kind ${JSON.stringify(kind)}.`,
+    );
+  }
+  if (typeof size !== "number" || !Number.isSafeInteger(size) || size < 0) {
+    throw new Error(
+      `Project sync frame header for '${path}' has an invalid size ${JSON.stringify(size)}.`,
+    );
+  }
+  if (mode !== undefined && (typeof mode !== "number" || !Number.isSafeInteger(mode) || mode < 0)) {
+    throw new Error(
+      `Project sync frame header for '${path}' has an invalid mode ${JSON.stringify(mode)}.`,
+    );
+  }
+  if (linkTarget !== undefined && typeof linkTarget !== "string") {
+    throw new Error(`Project sync frame header for '${path}' has a non-string link target.`);
+  }
+
+  return {
+    path,
+    size,
+    kind: kind as ProjectSyncEntryKind,
+    ...(mode === undefined ? {} : { mode }),
+    ...(linkTarget === undefined ? {} : { linkTarget }),
+  };
 }
 
 /** One record to encode: a header plus its content, given either as a single
@@ -268,12 +337,18 @@ export async function* createProjectSyncFrameDecoder(
       lengthBytes.byteLength,
     ).getUint32(0, false);
 
+    if (headerLength > MAX_HEADER_BYTES) {
+      throw new Error(
+        `Project sync frame header of ${headerLength} bytes exceeds the ${MAX_HEADER_BYTES} byte limit.`,
+      );
+    }
+
     const haveHeader = await cursor.ensure(headerLength);
     if (!haveHeader) {
       throw new Error("Project sync frame stream ended mid-header.");
     }
     const headerBytes = cursor.take(headerLength);
-    const header = JSON.parse(textDecoder.decode(headerBytes)) as ProjectSyncFrameHeader;
+    const header = parseFrameHeader(textDecoder.decode(headerBytes));
 
     const state = { consumed: 0 };
     const content = createContentIterable(cursor, header.size, header.path, state);

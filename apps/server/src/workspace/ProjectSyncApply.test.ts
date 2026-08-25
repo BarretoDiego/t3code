@@ -50,11 +50,13 @@ const applyThroughFraming = (input: {
   readonly workspaceRoot: string;
   readonly records: ReadonlyArray<ProjectSyncFrameRecord>;
   readonly maxContentBytes?: number;
+  readonly maxRecordCount?: number;
 }) =>
   applyProjectSyncRecords({
     workspaceRoot: input.workspaceRoot,
     records: createProjectSyncFrameDecoder(encodeProjectSyncRecords(iterate(input.records))),
     ...(input.maxContentBytes === undefined ? {} : { maxContentBytes: input.maxContentBytes }),
+    ...(input.maxRecordCount === undefined ? {} : { maxRecordCount: input.maxRecordCount }),
   });
 
 const readText = (root: string, relativePath: string) =>
@@ -88,11 +90,13 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("ProjectSyncApply", 
           "a/../../escape.txt",
           "/etc/passwd",
           "",
-          "   ",
           ".",
           "a/./b",
           "a//b",
           "a/\0b",
+          "a/b/..",
+          "a/../b",
+          "..",
         ]) {
           expect(resolveProjectSyncRelativePath({ workspaceRoot, relativePath })).toBeNull();
         }
@@ -101,6 +105,37 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("ProjectSyncApply", 
           absolutePath: NodePath.join(workspaceRoot, "a", "b.txt"),
           relativePath: "a/b.txt",
         });
+      }),
+    );
+
+    it.effect("never rewrites a legal path: no trimming, no separator swapping", () =>
+      Effect.gen(function* () {
+        const workspaceRoot = yield* makeTempDir;
+        // Whitespace at either edge and a backslash are all ordinary
+        // characters in a POSIX filename. Normalizing any of them would point
+        // the export at a file that does not exist, and the entry would be
+        // dropped from a sync that still reported success.
+        const onWindows = NodePath.sep === "\\";
+        const preserved = onWindows
+          ? ["docs/notes .md", " leading.md"]
+          : ["docs/notes .md", " leading.md", "draft v2\\final.md", "   "];
+
+        for (const relativePath of preserved) {
+          expect(
+            resolveProjectSyncRelativePath({ workspaceRoot, relativePath })?.relativePath,
+          ).toBe(relativePath);
+        }
+
+        // A backslash is a separator on Windows, so a segment carrying one is
+        // refused there rather than silently split into a traversal.
+        if (onWindows) {
+          expect(
+            resolveProjectSyncRelativePath({
+              workspaceRoot,
+              relativePath: "a\\..\\..\\escape.txt",
+            }),
+          ).toBeNull();
+        }
       }),
     );
   });
@@ -190,6 +225,21 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("ProjectSyncApply", 
       }),
     );
 
+    it.effect("replaces an ancestor that is a plain file with the directory it must be", () =>
+      Effect.gen(function* () {
+        const workspaceRoot = yield* makeTempDir;
+        yield* writeFile(workspaceRoot, "thing", "was a file");
+
+        yield* applyThroughFraming({
+          workspaceRoot,
+          records: [fileRecord("thing/inner.txt", "now a directory")],
+        });
+
+        expect((yield* lstat(workspaceRoot, "thing")).isDirectory()).toBe(true);
+        expect(yield* readText(workspaceRoot, "thing/inner.txt")).toBe("now a directory");
+      }),
+    );
+
     it.effect("stops once the signed byte budget is exhausted", () =>
       Effect.gen(function* () {
         const workspaceRoot = yield* makeTempDir;
@@ -202,6 +252,64 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("ProjectSyncApply", 
         );
         expect(error._tag).toBe("ProjectSyncImportLimitError");
         expect(yield* exists(workspaceRoot, "b.txt")).toBe(false);
+      }),
+    );
+
+    it.effect("stops once the signed record count is exhausted", () =>
+      Effect.gen(function* () {
+        // Zero-byte records cost no budget bytes at all, so without a record
+        // cap a token signed for two entries would authorize a million empty
+        // directories and the inodes they take.
+        const workspaceRoot = yield* makeTempDir;
+        const error = yield* Effect.flip(
+          applyThroughFraming({
+            workspaceRoot,
+            records: [dirRecord("one"), dirRecord("two"), dirRecord("three")],
+            maxContentBytes: 1024,
+            maxRecordCount: 2,
+          }),
+        );
+
+        expect(error._tag).toBe("ProjectSyncImportLimitError");
+        expect(yield* exists(workspaceRoot, "one")).toBe(true);
+        expect(yield* exists(workspaceRoot, "two")).toBe(true);
+        expect(yield* exists(workspaceRoot, "three")).toBe(false);
+      }),
+    );
+
+    it.effect("applies exactly the signed record count without tripping the cap", () =>
+      Effect.gen(function* () {
+        const workspaceRoot = yield* makeTempDir;
+        const result = yield* applyThroughFraming({
+          workspaceRoot,
+          records: [fileRecord("a.txt", "a"), fileRecord("b.txt", "b")],
+          maxRecordCount: 2,
+        });
+        expect(result.applied).toBe(2);
+      }),
+    );
+
+    it.effect("re-checks an ancestor the same batch replaced with a file", () =>
+      Effect.gen(function* () {
+        // Ancestors verified earlier in the batch are cached to keep a large
+        // sync off a per-record lstat chain; a record that turns a cached
+        // directory into a file has to drop that knowledge or the next record
+        // under it would be written against a path that no longer exists.
+        const workspaceRoot = yield* makeTempDir;
+
+        const result = yield* applyThroughFraming({
+          workspaceRoot,
+          records: [
+            fileRecord("thing/first.txt", "under a directory"),
+            fileRecord("thing", "now a file"),
+            fileRecord("thing/second.txt", "a directory again"),
+          ],
+        });
+
+        expect(result.applied).toBe(3);
+        expect((yield* lstat(workspaceRoot, "thing")).isDirectory()).toBe(true);
+        expect(yield* readText(workspaceRoot, "thing/second.txt")).toBe("a directory again");
+        expect(yield* exists(workspaceRoot, "thing/first.txt")).toBe(false);
       }),
     );
   });
@@ -249,6 +357,27 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("ProjectSyncApply", 
         expect(
           (yield* applyProjectSyncDeletions({ workspaceRoot, paths: ["gone.txt"] })).deleted,
         ).toBe(0);
+      }),
+    );
+
+    it.effect("treats a path under a non-directory ancestor as already deleted", () =>
+      Effect.gen(function* () {
+        // The copy pass replaces a destination directory with a file of the
+        // same name, so the delete pass meets paths whose parent is that file.
+        // Nothing is left to remove there, and the rest of the batch must
+        // still run.
+        const workspaceRoot = yield* makeTempDir;
+        yield* writeFile(workspaceRoot, "thing", "now a file");
+        yield* writeFile(workspaceRoot, "stale.txt", "remove me");
+
+        const result = yield* applyProjectSyncDeletions({
+          workspaceRoot,
+          paths: ["thing/inner.txt", "stale.txt"],
+        });
+
+        expect(result.deleted).toBe(1);
+        expect(yield* readText(workspaceRoot, "thing")).toBe("now a file");
+        expect(yield* exists(workspaceRoot, "stale.txt")).toBe(false);
       }),
     );
 

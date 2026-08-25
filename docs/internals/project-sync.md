@@ -50,7 +50,7 @@ both requirements.
    [`operations/projectSync.ts`][client-ops]: entries missing or changed on the destination go into
    `toCopy`, destination-only paths go into `toDelete` (deepest-first, so deletion never removes a
    directory before what was inside it). `batchProjectSyncEntries` then groups `toCopy` into batches
-   bounded by ~32MB or 500 files, so neither side ever buffers an entire project in memory.
+   bounded by ~32 MiB or 500 files, so neither side ever buffers an entire project in memory.
 3. **Transfer.** For each batch, the client calls `projectSync.createExportUrl` on the origin and
    `projectSync.createImportUrl` on the destination, then streams the export response body directly
    into the import request body. Content moves over HTTP, not the WebSocket, using the same signed
@@ -65,10 +65,10 @@ both requirements.
    workspace root. Send mode never calls this — a project it just created cannot have destination-only
    cruft that matters.
 
-`runProjectSync` in [`operations/projectSync.ts`][client-ops] and the progress/target types in
-[`state/projectSync.ts`][client-state] are what web and desktop wire up to a UI: a batch failure
-aborts the rest of the sync, leaving the destination with whatever batches already landed —
-always a subset of the plan, never partial destination-only leftovers.
+`runProjectSync` and the progress/target types in [`state/projectSync.ts`][client-state] are what
+web and desktop wire up to a UI: a batch failure aborts the rest of the sync, leaving the
+destination with whatever batches already landed — always a subset of the plan, never partial
+destination-only leftovers.
 
 ## Contracts
 
@@ -77,7 +77,10 @@ RPC payload/result/error types. Four `WS_METHODS` entries and their `Rpc.make` d
 [`rpc.ts`][rpc]:
 
 - `projectSync.manifest` — walk a project's workspace and return its manifest.
-- `projectSync.createExportUrl` — mint a signed URL to stream a set of paths out of a project.
+- `projectSync.createExportUrl` — mint a signed URL to stream a set of entries out of a project.
+  Each entry is a `{ path, size }` pair, not a bare path: the size is the one the client read from
+  the manifest and folded into the matching import URL's `totalBytes`, so the origin can skip
+  anything that no longer matches instead of overrunning the destination's budget.
 - `projectSync.createImportUrl` — mint a signed URL to stream content into a project, bounded to a
   declared file count and byte total.
 - `projectSync.applyDeletions` — remove a set of paths from a project's workspace.
@@ -86,40 +89,60 @@ RPC payload/result/error types. Four `WS_METHODS` entries and their `Rpc.make` d
 
 - **Path handling.** Every wire path is validated and resolved with
   `resolveProjectSyncRelativePath` before it touches the filesystem: absolute paths, `..` segments,
-  and null bytes are rejected outright. Ancestor directories are walked and checked before any
-  `mkdir`, and a symlinked ancestor aborts the write — `mkdir -p` semantics would otherwise happily
-  follow a crafted symlink out of the workspace root. A symlink _entry itself_ is still copied
-  faithfully; only ancestors are restricted.
+  and null bytes are rejected outright. Paths are only ever accepted or refused, never rewritten —
+  trailing whitespace and backslashes are legal POSIX filename characters, and normalizing either
+  would point the export at a file that does not exist, silently dropping it from a sync that
+  reported success. (On Windows a backslash _is_ a separator, so a segment carrying one is refused
+  there.) Ancestor directories are walked and checked before any `mkdir`, and a symlinked ancestor
+  aborts the write — `mkdir -p` semantics would otherwise happily follow a crafted symlink out of
+  the workspace root. The export side runs the same ancestor walk read-only before opening a file,
+  so a planted symlink cannot serve content from outside the root either. A symlink _entry itself_
+  is still copied faithfully; only ancestors are restricted.
+- **Framing headers are validated, not trusted.** `createProjectSyncFrameDecoder` structurally
+  checks each JSON header before yielding it: a non-empty string path, a known kind, and a
+  non-negative safe-integer size. Nothing downstream re-checks those fields — the import route adds
+  `header.size` to the signed byte budget — so a header claiming a negative size would otherwise
+  _credit_ the budget and let a token signed for a kilobyte write without bound.
 - **Atomic writes.** Files land through a temp-file-plus-rename in the same directory
   (`writeFileRecord` in [`ProjectSyncApply.ts`][apply]), so a partial write is never observable at
   the final path and an existing symlink at the target is swapped rather than written through.
-- **Import byte budget.** `projectSync.createImportUrl` declares a `totalBytes` ceiling up front;
-  the decode loop in `applyProjectSyncRecords` aborts mid-stream if the running total exceeds it,
-  and the HTTP route turns that into a 413. The budget is enforced from the framed content as it
-  decodes, not from `Content-Length`, since the body also carries header bytes.
-- **Export tolerates drift.** The manifest a client diffed is a snapshot; a vanished entry between
-  manifest and export time is skipped rather than failing the whole transfer — the next sync
-  reconciles it — and each frame's declared size is always taken from the still-open file handle
-  being read, so a file that grew mid-export cannot desynchronize the stream.
+- **Import budgets.** `projectSync.createImportUrl` declares both a `totalBytes` ceiling and a
+  `fileCount` up front, and `applyProjectSyncRecords` enforces both: the decode loop aborts
+  mid-stream when the running byte total or the applied record count exceeds what was signed, and
+  the HTTP route turns either into a 413. The record cap matters on its own, since a body of
+  zero-byte `"dir"` records costs no budget bytes at all and would still exhaust the destination's
+  inodes. The byte budget is enforced from the framed content as it decodes, not from
+  `Content-Length`, since the body also carries header bytes.
+- **Export tolerates drift.** The manifest a client diffed is a snapshot; an entry that vanished,
+  that now sits under a symlinked ancestor, or whose size no longer matches the one the client
+  signed for is skipped rather than failing the whole transfer — the next sync reconciles it. Each
+  frame's declared size is always taken from the still-open file handle being read, so a file that
+  grew mid-export cannot desynchronize the stream, and skipping the size mismatch is what keeps
+  that growth from overrunning the destination's signed byte budget and 413-ing the batch.
 - **Deletions stay inside the workspace.** `applyProjectSyncDeletions` re-resolves every path the
   same way writes do, so a deletion request cannot escape the project root either.
 - **Signed URLs are single-purpose.** Export/import tokens follow the asset/attachment upload
   precedent exactly: HMAC-SHA256 over a base64url claims blob keyed by the `asset-access-signing-key`
   secret, a `kind` claim that keeps export and import tokens from being replayed against each
-  other's routes, and a 10-minute TTL (`PROJECT_SYNC_URL_TTL_MS`). Export claims carry a random
-  `requestId` whose path list is kept server-side in a small in-process, TTL-bounded registry
-  (`pendingExports` in [`ProjectSyncTransfer.ts`][transfer]) rather than in the URL itself, since an
-  export can cover thousands of paths — far more than would fit in the 4096-character URL the
-  contract allows.
+  other's routes, and a 10-minute TTL (`PROJECT_SYNC_URL_TTL_MS`). All three token families share
+  one verification helper (`verifySignedClaims` in [`auth/utils.ts`][auth-utils]) so they cannot
+  drift apart on what counts as valid. Export claims carry a random `requestId` whose entry list is
+  kept server-side in a small in-process, TTL-bounded registry (`pendingExports` in
+  [`ProjectSyncTransfer.ts`][transfer]) rather than in the URL itself, since an export can cover
+  thousands of paths — far more than would fit in the 4096-character URL the contract allows. That
+  registration is released the moment its stream completes, so an export URL is single-use; a
+  client that needs the bytes again simply mints another.
 
 ## Capability flag and version skew
 
 `ExecutionEnvironmentCapabilities.projectSync` (added in [`environment.ts`][environment-contract])
 is set unconditionally by [`ServerEnvironment.ts`][server-environment] for any server that ships
-this feature. It is `Schema.optionalKey`, so an older server simply omits it. Clients gate the
-sync entry points in the command palette and Project Settings on this flag being `true`, rather
-than probing the RPCs and handling a method-not-found error — the same pattern other
-version-gated capabilities use.
+this feature. It is `Schema.optionalKey`, so an older server simply omits it. Clients gate on this
+flag being `true` rather than probing the RPCs and handling a method-not-found error — the same
+pattern other version-gated capabilities use. The command palette action always appears, but the
+sync dialog only offers environments with `capabilities.projectSync === true` as an origin or
+destination (`selectProjectSyncEnvironmentOptions`); Project Settings goes further and disables its
+**Sync…** button outright when no other connected environment qualifies.
 
 ## Authorization scopes
 
@@ -155,7 +178,9 @@ would be.
 
 ## Limitations
 
-- **No glob support in ignores.** `extraIgnores` matches exact path segments only.
+- **No glob support in ignores.** `extraIgnores` matches exact path segments only, and no
+  web/desktop/mobile UI currently populates it — only the always-ignored defaults
+  (`node_modules`, `.t3`, `.DS_Store`) apply in practice today.
 - **No concurrency lock.** Sync does not coordinate with a running turn's checkpoint or filesystem
   activity in the same workspace. See the user-facing limitation note for the recommended
   workaround.
@@ -177,6 +202,7 @@ would be.
 [contracts]: ../../packages/contracts/src/projectSync.ts
 [rpc]: ../../packages/contracts/src/rpc.ts
 [rpc-auth]: ../../apps/server/src/auth/RpcAuthorization.ts
+[auth-utils]: ../../apps/server/src/auth/utils.ts
 [environment-contract]: ../../packages/contracts/src/environment.ts
 [server-environment]: ../../apps/server/src/environment/ServerEnvironment.ts
 [http]: ../../apps/server/src/http.ts

@@ -1,12 +1,28 @@
 import {
+  ProjectSyncIoError,
+  ProjectSyncPathViolationError,
+  ProjectSyncProjectNotFoundError,
+  type EnvironmentId,
+  type ProjectId,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+import {
   ProjectSyncAbortedError,
   ProjectSyncTransferError,
   ProjectSyncUrlResolutionError,
   type ProjectSyncProgress,
-} from "@t3tools/client-runtime/state/project-sync";
-import type { ProjectSyncPlanSummary } from "@t3tools/client-runtime/operations/project-sync";
-import { ensureBrowseDirectoryPath } from "@t3tools/client-runtime/state/projects";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+} from "../state/projectSync.ts";
+import { getAddProjectInitialQuery } from "./projects.ts";
+import type { ProjectSyncPlanSummary } from "./projectSync.ts";
+
+/**
+ * Pure decision/presentation logic behind the "sync project between
+ * environments" flow: which environments and projects can take part, what the
+ * default destination folder is, how a run's progress and failures read, and
+ * when the flow is allowed to start. Shared by web and mobile — nothing here
+ * touches React, the DOM, or a socket.
+ */
 
 /**
  * One connected environment considered as a sync source/destination
@@ -30,6 +46,27 @@ export function selectProjectSyncEnvironmentOptions(
   candidates: ReadonlyArray<SyncEnvironmentCandidate>,
 ): SyncEnvironmentCandidate[] {
   return candidates.filter((candidate) => candidate.connected && candidate.projectSyncCapable);
+}
+
+/**
+ * Whether a specific environment can take part in a sync at all.
+ *
+ * The dialog's pickers only ever list eligible environments, but a fixed
+ * source (Project Settings, or the palette's project-scoped entry) skips the
+ * origin step entirely — so the source it was handed still has to be checked
+ * against the same rule, or an old/disconnected server would only fail once
+ * the manifest RPC came back.
+ */
+export function isProjectSyncEnvironmentEligible(
+  candidates: ReadonlyArray<SyncEnvironmentCandidate>,
+  environmentId: EnvironmentId | null,
+): boolean {
+  if (environmentId === null) {
+    return false;
+  }
+  return selectProjectSyncEnvironmentOptions(candidates).some(
+    (candidate) => candidate.environmentId === environmentId,
+  );
 }
 
 export interface SyncProjectCandidate {
@@ -95,17 +132,17 @@ export function slugifyProjectFolderName(title: string): string {
 }
 
 /**
- * Default destination path for a "send" (new project) sync: the
- * destination environment's configured `addProjectBaseDirectory` (or `~/`
- * when unset), plus a slug of the source project's title.
+ * Default destination path for a "send" (new project) sync: the destination
+ * environment's configured `addProjectBaseDirectory` (or `~/` when unset),
+ * plus a slug of the source project's title. The base folder comes from
+ * `getAddProjectInitialQuery`, the same rule the add-project flow uses, so
+ * both surfaces propose folders under the same directory.
  */
 export function buildDefaultSendDestinationPath(input: {
   readonly baseDirectory: string;
   readonly sourceProjectTitle: string;
 }): string {
-  const trimmedBase = input.baseDirectory.trim();
-  const base = trimmedBase.length > 0 ? trimmedBase : "~/";
-  const directory = ensureBrowseDirectoryPath(base);
+  const directory = getAddProjectInitialQuery(input.baseDirectory);
   return `${directory}${slugifyProjectFolderName(input.sourceProjectTitle)}`;
 }
 
@@ -162,20 +199,33 @@ export interface SyncProjectErrorDescription {
   readonly canRetry: boolean;
 }
 
-function describeTransferFailureMessage(message: string): string {
-  const statusMatch = /status (\d+)/.exec(message);
-  const status = statusMatch ? Number(statusMatch[1]) : null;
-  if (status === 404) {
-    return "The transfer link expired before the batch finished. Try again.";
+/** Signed export/import URLs are short-lived and budget-bound, so the handful
+    of statuses the endpoints can answer with each mean something specific to
+    the user. Anything else falls back to the raw failure text. */
+function describeTransferFailureMessage(error: ProjectSyncTransferError): string {
+  switch (error.status) {
+    case 404:
+      return "The transfer link expired before the batch finished. Try again.";
+    case 413:
+      return "The destination rejected the transfer because a batch was too large.";
+    case 400:
+      return "The destination rejected one or more file paths.";
+    default:
+      return error.message;
   }
-  if (status === 413) {
-    return "The destination rejected the transfer because a batch was too large.";
-  }
-  if (status === 400) {
-    return "The destination rejected one or more file paths.";
-  }
-  return message;
 }
+
+/**
+ * The destination refuses to create a second project over a workspace root it
+ * already tracks. That is the one "send" failure a user can act on directly,
+ * so it gets its own wording instead of the raw invariant text the
+ * orchestration layer produces.
+ */
+const WORKSPACE_ROOT_TAKEN_PATTERN = /already exists for workspace root/i;
+
+const isProjectSyncProjectNotFoundError = Schema.is(ProjectSyncProjectNotFoundError);
+const isProjectSyncPathViolationError = Schema.is(ProjectSyncPathViolationError);
+const isProjectSyncIoError = Schema.is(ProjectSyncIoError);
 
 /** Maps any error `runProjectSync` can throw (or reject with) to a
     human-readable title/message and whether a retry is worth offering. */
@@ -197,35 +247,49 @@ export function describeProjectSyncError(error: unknown): SyncProjectErrorDescri
   if (error instanceof ProjectSyncTransferError) {
     return {
       title: "Transfer failed",
-      message: describeTransferFailureMessage(error.message),
+      message: describeTransferFailureMessage(error),
       canRetry: true,
     };
   }
 
-  const tagged = error as { readonly _tag?: unknown; readonly message?: unknown } | null;
-  if (tagged && typeof tagged === "object") {
-    const message = typeof tagged.message === "string" ? tagged.message : null;
-    if (tagged._tag === "ProjectSyncProjectNotFoundError") {
-      return {
-        title: "Project not found",
-        message: message ?? "The project was not found.",
-        canRetry: false,
-      };
-    }
-    if (tagged._tag === "ProjectSyncPathViolationError") {
-      return {
-        title: "Blocked file path",
-        message: message ?? "A file path escaped the project workspace.",
-        canRetry: false,
-      };
-    }
-    if (tagged._tag === "ProjectSyncIoError") {
-      return {
-        title: "File operation failed",
-        message: message ?? "A file operation failed on one of the environments.",
-        canRetry: true,
-      };
-    }
+  const message =
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : null;
+
+  // Checked before the tagged cases below: the occupied-folder failure arrives
+  // wrapped in whatever error the dispatching command produced, so only its
+  // text identifies it.
+  if (message !== null && WORKSPACE_ROOT_TAKEN_PATTERN.test(message)) {
+    return {
+      title: "Folder already in use",
+      message:
+        "The destination environment already has a project at that folder. Pick a different folder, or use “Sync an existing project” to sync into it.",
+      canRetry: false,
+    };
+  }
+  if (isProjectSyncProjectNotFoundError(error)) {
+    return {
+      title: "Project not found",
+      message: error.message,
+      canRetry: false,
+    };
+  }
+  if (isProjectSyncPathViolationError(error)) {
+    return {
+      title: "Blocked file path",
+      message: error.message,
+      canRetry: false,
+    };
+  }
+  if (isProjectSyncIoError(error)) {
+    return {
+      title: "File operation failed",
+      message: error.message,
+      canRetry: true,
+    };
   }
 
   if (error instanceof Error) {
@@ -243,6 +307,14 @@ export function projectSyncPlanNeedsDeleteConfirmation(summary: {
   return summary.deleteCount > 0;
 }
 
+/**
+ * Formats a byte count for a sync plan summary. Deliberately drops the
+ * fractional part once it is meaningless ("2 KB", not "2.00 KB"): a plan
+ * summary is a one-line size estimate, not a measurement. The diagnostics
+ * panels' own `formatBytes` helpers keep two decimals instead because they
+ * render live telemetry where small deltas matter — that difference is
+ * intentional, not drift.
+ */
 export function formatProjectSyncBytes(bytes: number): string {
   if (bytes <= 0) {
     return "0 B";

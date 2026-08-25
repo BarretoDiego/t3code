@@ -196,4 +196,139 @@ describe("projectSyncFraming", () => {
       ]),
     ).rejects.toThrow(/length mismatch/);
   });
+
+  it("rejects an absurd header length instead of buffering the whole stream", async () => {
+    // A hostile body can claim a 4 GiB header; without a ceiling the decoder
+    // would pull every byte the peer cares to send while waiting for it.
+    const header = new Uint8Array(4);
+    new DataView(header.buffer).setUint32(0, 0xffffffff, false);
+
+    let pulledChunks = 0;
+    async function* endlessBody(): AsyncIterable<Uint8Array> {
+      yield header;
+      while (true) {
+        pulledChunks += 1;
+        yield new Uint8Array(1024);
+      }
+    }
+
+    await expect(
+      (async () => {
+        for await (const _record of createProjectSyncFrameDecoder(endlessBody())) {
+          // Never reached: the header length is refused before any pulling.
+        }
+      })(),
+    ).rejects.toThrow(/exceeds the .* byte limit/);
+    expect(pulledChunks).toBe(0);
+  });
+
+  describe("hostile headers", () => {
+    /** Hand-rolls one frame so a header the encoder would never produce can be
+        fed to the decoder. */
+    function rawFrame(headerJson: string, content = new Uint8Array(0)): Uint8Array {
+      const headerBytes = new TextEncoder().encode(headerJson);
+      const out = new Uint8Array(4 + headerBytes.length + content.length);
+      new DataView(out.buffer).setUint32(0, headerBytes.length, false);
+      out.set(headerBytes, 4);
+      out.set(content, 4 + headerBytes.length);
+      return out;
+    }
+
+    /** Decodes, returning how many records made it out before the throw. */
+    async function decodeCountingRecords(bytes: Uint8Array): Promise<number> {
+      let yielded = 0;
+      for await (const record of createProjectSyncFrameDecoder(asChunksOfSize(bytes, 5))) {
+        yielded += 1;
+        await collectBytes(record.content);
+      }
+      return yielded;
+    }
+
+    const cases: Array<[string, string, RegExp]> = [
+      [
+        // A negative size *credits* the import route's byte budget, so a token
+        // signed for a kilobyte could authorize an unbounded write.
+        "negative size",
+        JSON.stringify({ path: "a.txt", size: -10_000_000_000, kind: "file" }),
+        /invalid size/,
+      ],
+      ["string size", JSON.stringify({ path: "a.txt", size: "10", kind: "file" }), /invalid size/],
+      [
+        "fractional size",
+        JSON.stringify({ path: "a.txt", size: 1.5, kind: "file" }),
+        /invalid size/,
+      ],
+      ["unknown kind", JSON.stringify({ path: "a.txt", size: 0, kind: "device" }), /unknown kind/],
+      ["missing kind", JSON.stringify({ path: "a.txt", size: 0 }), /unknown kind/],
+      ["empty path", JSON.stringify({ path: "", size: 0, kind: "file" }), /non-empty 'path'/],
+      ["non-string path", JSON.stringify({ path: 42, size: 0, kind: "file" }), /non-empty 'path'/],
+      [
+        "negative mode",
+        JSON.stringify({ path: "a.txt", size: 0, kind: "file", mode: -1 }),
+        /invalid mode/,
+      ],
+      [
+        "non-string link target",
+        JSON.stringify({ path: "a", size: 0, kind: "symlink", linkTarget: 7 }),
+        /non-string link target/,
+      ],
+      ["array header", "[1,2,3]", /not a JSON object/],
+      ["invalid JSON", "{not json", /not valid JSON/],
+    ];
+
+    for (const [name, headerJson, expected] of cases) {
+      it(`rejects a header with a ${name} before yielding anything`, async () => {
+        let yielded = -1;
+        await expect(
+          (async () => {
+            yielded = await decodeCountingRecords(rawFrame(headerJson));
+          })(),
+        ).rejects.toThrow(expected);
+        expect(yielded).toBe(-1);
+      });
+    }
+
+    it("rejects the hostile header even when a valid record precedes it", async () => {
+      const valid = await encodeToBytes([
+        { header: { path: "ok.txt", size: 2, kind: "file" }, content: new Uint8Array([1, 2]) },
+      ]);
+      const hostile = rawFrame(JSON.stringify({ path: "b.txt", size: -1, kind: "file" }));
+      const combined = new Uint8Array(valid.length + hostile.length);
+      combined.set(valid, 0);
+      combined.set(hostile, valid.length);
+
+      let yielded = 0;
+      await expect(
+        (async () => {
+          for await (const record of createProjectSyncFrameDecoder(asChunksOfSize(combined, 4))) {
+            yielded += 1;
+            await collectBytes(record.content);
+          }
+        })(),
+      ).rejects.toThrow(/invalid size/);
+      expect(yielded).toBe(1);
+    });
+  });
+
+  it("reads only the declared size when a header under-reports its content", async () => {
+    // A header that lies low turns the trailing bytes into the next record's
+    // header, which must fail loudly rather than be silently applied.
+    const content = new TextEncoder().encode("0123456789");
+    const encoded = await encodeToBytes([
+      { header: { path: "liar.txt", size: 4, kind: "file" }, content: content.subarray(0, 4) },
+    ]);
+    const withTrailingGarbage = new Uint8Array(encoded.length + content.length);
+    withTrailingGarbage.set(encoded, 0);
+    withTrailingGarbage.set(content, encoded.length);
+
+    await expect(
+      (async () => {
+        for await (const record of createProjectSyncFrameDecoder(
+          asChunksOfSize(withTrailingGarbage, 3),
+        )) {
+          await collectBytes(record.content);
+        }
+      })(),
+    ).rejects.toThrow();
+  });
 });

@@ -7,6 +7,10 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  isProjectSyncEnvironmentEligible,
+  selectProjectSyncEnvironmentOptions,
+} from "@t3tools/client-runtime/operations/project-sync-flow";
 import { AsyncResult } from "effect/unstable/reactivity";
 import {
   deriveProjectGroupingOverrideKey,
@@ -82,7 +86,6 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { SyncProjectDialog } from "../SyncProjectDialog";
-import { selectProjectSyncEnvironmentOptions } from "../SyncProjectDialog.logic";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -451,18 +454,19 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
 
   // ----- sync -----
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const projectSyncCapableEnvironments = useMemo(
+  const syncEnvironmentCandidates = useMemo(
     () =>
-      selectProjectSyncEnvironmentOptions(
-        environments.map((environment) => ({
-          environmentId: environment.environmentId,
-          label: environment.label,
-          connected: environment.connection.phase === "connected",
-          projectSyncCapable:
-            environment.serverConfig?.environment.capabilities.projectSync === true,
-        })),
-      ),
+      environments.map((environment) => ({
+        environmentId: environment.environmentId,
+        label: environment.label,
+        connected: environment.connection.phase === "connected",
+        projectSyncCapable: environment.serverConfig?.environment.capabilities.projectSync === true,
+      })),
     [environments],
+  );
+  const projectSyncCapableEnvironments = useMemo(
+    () => selectProjectSyncEnvironmentOptions(syncEnvironmentCandidates),
+    [syncEnvironmentCandidates],
   );
 
   // ----- favicon -----
@@ -493,6 +497,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
   const keybindings = selectedServerConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
+  // Both ends have to support sync: this checkout is the origin, so an old or
+  // disconnected server here rules the flow out no matter what else is around.
+  const canSyncFromSelectedCheckout =
+    isProjectSyncEnvironmentEligible(syncEnvironmentCandidates, selectedCheckout.environmentId) &&
+    projectSyncCapableEnvironments.length > 0;
   const scripts = selectedCheckout.scripts;
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   // Script writes replace the whole array, so two overlapping writes computed
@@ -1176,15 +1185,15 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           <SettingsRow
             title="Sync to another environment"
             description={
-              projectSyncCapableEnvironments.length > 0
+              canSyncFromSelectedCheckout
                 ? "Send this checkout's files to another environment as a new project, or keep an existing project there in sync with it."
-                : "No other connected environment supports project sync yet. Connect one that supports it to send or sync this checkout."
+                : "Project sync needs this checkout's environment and at least one other environment to be connected and running a server that supports it."
             }
             control={
               <Button
                 size="xs"
                 variant="outline"
-                disabled={projectSyncCapableEnvironments.length === 0}
+                disabled={!canSyncFromSelectedCheckout}
                 onClick={() => setSyncDialogOpen(true)}
               >
                 <FolderSyncIcon className="size-3.5" />

@@ -1,12 +1,18 @@
 import {
+  EnvironmentId,
+  ProjectId,
+  ProjectSyncIoError,
+  ProjectSyncPathViolationError,
+  ProjectSyncProjectNotFoundError,
+} from "@t3tools/contracts";
+import { describe, expect, it } from "vite-plus/test";
+
+import {
   ProjectSyncAbortedError,
   ProjectSyncTransferError,
   ProjectSyncUrlResolutionError,
   type ProjectSyncProgress,
-} from "@t3tools/client-runtime/state/project-sync";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
-
+} from "../state/projectSync.ts";
 import {
   buildDefaultSendDestinationPath,
   buildSyncProjectDialogSteps,
@@ -14,7 +20,9 @@ import {
   describeProjectSyncError,
   describeProjectSyncPlanSummary,
   deriveProjectSyncProgressPercent,
+  describeProjectSyncStage,
   formatProjectSyncBytes,
+  isProjectSyncEnvironmentEligible,
   projectSyncPlanNeedsDeleteConfirmation,
   selectDestinationProjectCandidates,
   selectProjectSyncEnvironmentOptions,
@@ -22,7 +30,7 @@ import {
   sortDestinationProjectCandidatesBySourceMatch,
   type SyncEnvironmentCandidate,
   type SyncProjectCandidate,
-} from "./SyncProjectDialog.logic";
+} from "./projectSyncFlow.ts";
 
 const ENV_A = EnvironmentId.make("env-a");
 const ENV_B = EnvironmentId.make("env-b");
@@ -74,6 +82,37 @@ describe("selectProjectSyncEnvironmentOptions", () => {
       }),
     ];
     expect(selectProjectSyncEnvironmentOptions(candidates)).toEqual([candidates[0]]);
+  });
+});
+
+describe("isProjectSyncEnvironmentEligible", () => {
+  const candidates = [
+    envCandidate({ environmentId: ENV_A, connected: true, projectSyncCapable: true }),
+    envCandidate({ environmentId: ENV_B, connected: true, projectSyncCapable: false }),
+    envCandidate({
+      environmentId: EnvironmentId.make("env-c"),
+      connected: false,
+      projectSyncCapable: true,
+    }),
+  ];
+
+  it("accepts a connected, capable environment", () => {
+    expect(isProjectSyncEnvironmentEligible(candidates, ENV_A)).toBe(true);
+  });
+
+  it("rejects an environment whose server does not support sync", () => {
+    expect(isProjectSyncEnvironmentEligible(candidates, ENV_B)).toBe(false);
+  });
+
+  it("rejects a disconnected environment", () => {
+    expect(isProjectSyncEnvironmentEligible(candidates, EnvironmentId.make("env-c"))).toBe(false);
+  });
+
+  it("rejects an unknown or absent environment", () => {
+    expect(isProjectSyncEnvironmentEligible(candidates, EnvironmentId.make("env-gone"))).toBe(
+      false,
+    );
+    expect(isProjectSyncEnvironmentEligible(candidates, null)).toBe(false);
   });
 });
 
@@ -202,6 +241,16 @@ describe("deriveProjectSyncProgressPercent", () => {
   });
 });
 
+describe("describeProjectSyncStage", () => {
+  it("labels every stage the controller can report", () => {
+    expect(describeProjectSyncStage("manifest")).toBe("Reading file lists…");
+    expect(describeProjectSyncStage("planning")).toBe("Comparing projects…");
+    expect(describeProjectSyncStage("transferring")).toBe("Copying files…");
+    expect(describeProjectSyncStage("deleting")).toBe("Removing files no longer in the source…");
+    expect(describeProjectSyncStage("done")).toBe("Done");
+  });
+});
+
 describe("describeProjectSyncError", () => {
   it("describes an aborted sync as retryable", () => {
     const result = describeProjectSyncError(new ProjectSyncAbortedError());
@@ -217,31 +266,82 @@ describe("describeProjectSyncError", () => {
 
   it("translates a 404 transfer failure into an expired-link message", () => {
     const result = describeProjectSyncError(
-      new ProjectSyncTransferError("Import request to environment 'env-b' failed with status 404."),
+      new ProjectSyncTransferError(
+        "Import request to environment 'env-b' failed with status 404.",
+        undefined,
+        404,
+      ),
     );
     expect(result.message).toBe("The transfer link expired before the batch finished. Try again.");
   });
 
   it("translates a 413 transfer failure into a too-large message", () => {
     const result = describeProjectSyncError(
-      new ProjectSyncTransferError("Import request to environment 'env-b' failed with status 413."),
+      new ProjectSyncTransferError(
+        "Import request to environment 'env-b' failed with status 413.",
+        undefined,
+        413,
+      ),
     );
     expect(result.message).toContain("too large");
   });
 
-  it("maps a tagged ProjectSyncPathViolationError to a non-retryable description", () => {
-    const result = describeProjectSyncError({
-      _tag: "ProjectSyncPathViolationError",
-      message: "Path '../etc' escapes the project workspace root.",
-    });
+  it("translates a 400 transfer failure into a rejected-paths message", () => {
+    const result = describeProjectSyncError(
+      new ProjectSyncTransferError(
+        "Import request to environment 'env-b' failed with status 400.",
+        undefined,
+        400,
+      ),
+    );
+    expect(result.message).toBe("The destination rejected one or more file paths.");
+  });
+
+  it("keeps the raw message for a transfer failure with no HTTP status", () => {
+    // A network-level failure (fetch rejecting) carries no status, so a
+    // status-shaped substring in the text must not be mistaken for one.
+    const result = describeProjectSyncError(
+      new ProjectSyncTransferError("Could not reach environment 'env-b' (status 404 route)."),
+    );
+    expect(result.message).toBe("Could not reach environment 'env-b' (status 404 route).");
+  });
+
+  it("maps a ProjectSyncPathViolationError to a non-retryable description", () => {
+    const result = describeProjectSyncError(
+      new ProjectSyncPathViolationError({
+        path: "../etc",
+        message: "Path '../etc' escapes the project workspace root.",
+      }),
+    );
     expect(result.canRetry).toBe(false);
     expect(result.message).toBe("Path '../etc' escapes the project workspace root.");
   });
 
-  it("maps a tagged ProjectSyncIoError to a retryable description", () => {
-    const result = describeProjectSyncError({ _tag: "ProjectSyncIoError", message: "disk full" });
+  it("maps a ProjectSyncProjectNotFoundError to a non-retryable description", () => {
+    const result = describeProjectSyncError(
+      new ProjectSyncProjectNotFoundError({ projectId: "project-1" }),
+    );
+    expect(result.title).toBe("Project not found");
+    expect(result.canRetry).toBe(false);
+  });
+
+  it("maps a ProjectSyncIoError to a retryable description", () => {
+    const result = describeProjectSyncError(new ProjectSyncIoError({ message: "disk full" }));
     expect(result.canRetry).toBe(true);
     expect(result.message).toBe("disk full");
+  });
+
+  it("explains a destination folder that already belongs to another project", () => {
+    // What a failed "send" into an occupied folder actually looks like: the
+    // orchestration invariant text, wrapped in a dispatch error.
+    const result = describeProjectSyncError({
+      _tag: "OrchestrationDispatchCommandError",
+      message:
+        "Orchestration command invariant failed (project.create): Active project 'project-1' already exists for workspace root '/home/me/thing'.",
+    });
+    expect(result.title).toBe("Folder already in use");
+    expect(result.canRetry).toBe(false);
+    expect(result.message).toContain("Pick a different folder");
   });
 
   it("falls back to the error's own message for a plain Error", () => {

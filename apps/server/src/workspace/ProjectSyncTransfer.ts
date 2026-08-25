@@ -26,33 +26,38 @@ import {
   PROJECT_SYNC_EXPORT_ROUTE_PREFIX,
   PROJECT_SYNC_IMPORT_ROUTE_PREFIX,
   PROJECT_SYNC_URL_TTL_MS,
+  type ProjectSyncExportEntry,
   ProjectSyncIoError,
   ProjectSyncPathViolationError,
 } from "@t3tools/contracts";
 import type { ProjectSyncFrameRecord } from "@t3tools/shared/projectSyncFraming";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import {
-  base64UrlDecodeUtf8,
-  base64UrlEncode,
-  signPayload,
-  timingSafeEqualBase64Url,
-} from "../auth/utils.ts";
+import { base64UrlEncode, signPayload, verifySignedClaims } from "../auth/utils.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { isMissingOrUnreadable } from "./projectSyncErrno.ts";
-import { resolveProjectSyncRelativePath } from "./ProjectSyncApply.ts";
+import {
+  ProjectSyncAncestorCache,
+  projectSyncAncestorsAreSafe,
+  resolveProjectSyncRelativePath,
+} from "./ProjectSyncApply.ts";
 
 /** Shared with asset download and attachment upload tokens; the signed `kind`
     is what keeps a token from being replayed against another route. */
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
 
-/** A pending export holds its whole path list in memory, so the registry is
-    bounded on both ends: entries expire with their URL, and the oldest is
-    evicted once too many pile up. */
-const MAX_PENDING_EXPORTS = 64;
+/**
+ * Backstop on the pending-export registry.
+ *
+ * A registration is normally short-lived: it is released the moment its export
+ * finishes streaming, and otherwise expires with its URL. The cap only exists
+ * so a peer that issues URLs it never fetches cannot grow the map without
+ * bound, and it is set high enough that legitimate concurrent syncs never
+ * evict each other's in-flight token.
+ */
+const MAX_PENDING_EXPORTS = 1024;
 
 const ProjectSyncExportClaims = Schema.Struct({
   version: Schema.Literal(1),
@@ -84,7 +89,7 @@ const decodeImportClaims = Schema.decodeUnknownOption(importClaimsJson);
 const encodeImportClaims = Schema.encodeSync(importClaimsJson);
 
 interface PendingExport {
-  readonly paths: ReadonlyArray<string>;
+  readonly entries: ReadonlyArray<ProjectSyncExportEntry>;
   readonly expiresAt: number;
 }
 
@@ -94,6 +99,7 @@ function sweepPendingExports(nowMs: number): void {
   for (const [requestId, pending] of pendingExports) {
     if (pending.expiresAt <= nowMs) pendingExports.delete(requestId);
   }
+  // Only reached if expiry alone did not bring the map back under the cap.
   while (pendingExports.size >= MAX_PENDING_EXPORTS) {
     const oldest = pendingExports.keys().next();
     if (oldest.done) break;
@@ -111,64 +117,40 @@ const loadSigningSecret = Effect.gen(function* () {
   ),
 );
 
-function splitToken(token: string): { payload: string; signature: string } | null {
-  const [payload, signature, unexpected] = token.split(".");
-  if (!payload || !signature || unexpected) return null;
-  return { payload, signature };
-}
-
-const verifyToken = Effect.fn("ProjectSyncTransfer.verifyToken")(function* (token: string) {
-  const parts = splitToken(token);
-  if (!parts) return null;
-
-  const secret = yield* loadSigningSecret.pipe(
-    Effect.tapError((cause) =>
-      Effect.logError("Failed to load the project sync signing key.", { cause }),
-    ),
-    Effect.orElseSucceed(() => null),
-  );
-  if (!secret || !timingSafeEqualBase64Url(parts.signature, signPayload(parts.payload, secret))) {
-    return null;
-  }
-  return parts.payload;
-});
-
-function decodeClaimsPayload<A>(
-  payload: string,
-  decode: (input: unknown) => Option.Option<A>,
-): A | null {
-  try {
-    return Option.getOrNull(decode(base64UrlDecodeUtf8(payload)));
-  } catch {
-    return null;
-  }
-}
+/** The signing key, or `null` when it cannot be loaded — in which case no
+    token can be considered valid. */
+const loadSigningSecretOrNull = loadSigningSecret.pipe(
+  Effect.tapError((cause) =>
+    Effect.logError("Failed to load the project sync signing key.", { cause }),
+  ),
+  Effect.orElseSucceed(() => null),
+);
 
 export const issueProjectSyncExportUrl = Effect.fn("ProjectSyncTransfer.issueExportUrl")(
   function* (input: {
     readonly projectId: string;
     readonly workspaceRoot: string;
-    readonly paths: ReadonlyArray<string>;
+    readonly entries: ReadonlyArray<ProjectSyncExportEntry>;
   }) {
     const secret = yield* loadSigningSecret;
     const nowMs = yield* Clock.currentTimeMillis;
 
-    const paths: Array<string> = [];
-    for (const relativePath of input.paths) {
+    const entries: Array<ProjectSyncExportEntry> = [];
+    for (const entry of input.entries) {
       const resolved = resolveProjectSyncRelativePath({
         workspaceRoot: input.workspaceRoot,
-        relativePath,
+        relativePath: entry.path,
       });
       if (resolved === null) {
-        return yield* new ProjectSyncPathViolationError({ path: relativePath });
+        return yield* new ProjectSyncPathViolationError({ path: entry.path });
       }
-      paths.push(resolved.relativePath);
+      entries.push({ path: resolved.relativePath, size: entry.size });
     }
 
     sweepPendingExports(nowMs);
     const requestId = NodeCrypto.randomUUID();
     const expiresAt = nowMs + PROJECT_SYNC_URL_TTL_MS;
-    pendingExports.set(requestId, { paths, expiresAt });
+    pendingExports.set(requestId, { entries, expiresAt });
 
     const payload = base64UrlEncode(
       encodeExportClaims({
@@ -190,17 +172,19 @@ export const issueProjectSyncExportUrl = Effect.fn("ProjectSyncTransfer.issueExp
 
 export interface ResolvedProjectSyncExport {
   readonly claims: ProjectSyncExportClaims;
-  readonly paths: ReadonlyArray<string>;
+  readonly entries: ReadonlyArray<ProjectSyncExportEntry>;
 }
 
 export const resolveProjectSyncExportToken = Effect.fn("ProjectSyncTransfer.resolveExportToken")(
   function* (token: string) {
-    const payload = yield* verifyToken(token);
-    if (!payload) return null;
-
-    const claims = decodeClaimsPayload(payload, decodeExportClaims);
     const nowMs = yield* Clock.currentTimeMillis;
-    if (!claims || claims.expiresAt <= nowMs) return null;
+    const claims = verifySignedClaims({
+      token,
+      secret: yield* loadSigningSecretOrNull,
+      nowMs,
+      decode: decodeExportClaims,
+    });
+    if (!claims) return null;
 
     const pending = pendingExports.get(claims.requestId);
     if (!pending || pending.expiresAt <= nowMs) {
@@ -208,7 +192,7 @@ export const resolveProjectSyncExportToken = Effect.fn("ProjectSyncTransfer.reso
       return null;
     }
 
-    return { claims, paths: pending.paths } satisfies ResolvedProjectSyncExport;
+    return { claims, entries: pending.entries } satisfies ResolvedProjectSyncExport;
   },
 );
 
@@ -244,12 +228,12 @@ export const issueProjectSyncImportUrl = Effect.fn("ProjectSyncTransfer.issueImp
 
 export const resolveProjectSyncImportToken = Effect.fn("ProjectSyncTransfer.resolveImportToken")(
   function* (token: string) {
-    const payload = yield* verifyToken(token);
-    if (!payload) return null;
-
-    const claims = decodeClaimsPayload(payload, decodeImportClaims);
-    if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
-    return claims;
+    return verifySignedClaims({
+      token,
+      secret: yield* loadSigningSecretOrNull,
+      nowMs: yield* Clock.currentTimeMillis,
+      decode: decodeImportClaims,
+    });
   },
 );
 
@@ -259,18 +243,41 @@ const EMPTY_CONTENT = new Uint8Array(0);
  * Streams the requested entries as framing records.
  *
  * The manifest the client diffed is a snapshot; by the time it asks for these
- * bytes an agent may have deleted or replaced any of them. A vanished entry is
- * skipped rather than failing the transfer — the next sync reconciles it — but
- * a file's size is taken from the handle we are about to read so the declared
- * frame length and the bytes we emit come from the same open file.
+ * bytes an agent may have deleted or replaced any of them. Three things can
+ * therefore make an entry drop out here, all of them silent because the next
+ * sync reconciles them:
+ *
+ * - it vanished;
+ * - one of its ancestors is a symlink, which would read outside the root;
+ * - its size no longer matches the size the client signed a budget for.
+ *
+ * That last one is what keeps a growing file from failing the whole transfer:
+ * the destination's token authorizes exactly the manifest's bytes, so emitting
+ * the file's *current* larger size would blow the budget and 413 the batch.
  */
-export async function* projectSyncExportRecords(
-  workspaceRoot: string,
-  paths: ReadonlyArray<string>,
-): AsyncGenerator<ProjectSyncFrameRecord> {
-  for (const relativePath of paths) {
-    const resolved = resolveProjectSyncRelativePath({ workspaceRoot, relativePath });
+export async function* projectSyncExportRecords(input: {
+  readonly workspaceRoot: string;
+  readonly entries: ReadonlyArray<ProjectSyncExportEntry>;
+  /** When set, the pending registration is released once the stream finishes,
+      making the signed URL single-use. */
+  readonly requestId?: string | undefined;
+}): AsyncGenerator<ProjectSyncFrameRecord> {
+  const { workspaceRoot, entries } = input;
+  const ancestorCache = new ProjectSyncAncestorCache();
+
+  for (const entry of entries) {
+    const resolved = resolveProjectSyncRelativePath({ workspaceRoot, relativePath: entry.path });
     if (resolved === null) continue;
+
+    if (
+      !(await projectSyncAncestorsAreSafe({
+        workspaceRoot,
+        relativePath: resolved.relativePath,
+        cache: ancestorCache,
+      }))
+    ) {
+      continue;
+    }
 
     let stats;
     try {
@@ -314,6 +321,10 @@ export async function* projectSyncExportRecords(
     try {
       const fileStats = await handle.stat();
       const size = fileStats.size;
+      // The client signed a byte budget built from `entry.size`; a file that
+      // changed size since then is a different file than the one this transfer
+      // was authorized for, so it waits for the next sync.
+      if (size !== entry.size) continue;
       yield {
         header: {
           path: resolved.relativePath,
@@ -326,6 +337,13 @@ export async function* projectSyncExportRecords(
     } finally {
       await handle.close().catch(() => {});
     }
+  }
+
+  // Reached only when every entry has been streamed: the URL is single-use, and
+  // an aborted transfer leaves the registration to expire so a retry of the
+  // same token still works.
+  if (input.requestId !== undefined) {
+    pendingExports.delete(input.requestId);
   }
 }
 

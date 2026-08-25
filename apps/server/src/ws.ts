@@ -2011,7 +2011,7 @@ const makeWsRpcLayer = (
               return yield* issueProjectSyncExportUrl({
                 projectId: input.projectId,
                 workspaceRoot,
-                paths: input.paths,
+                entries: input.entries,
               });
             }),
             { "rpc.aggregate": "workspace" },

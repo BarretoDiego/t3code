@@ -3,10 +3,11 @@ import type {
   ProjectId,
   ProjectSyncApplyDeletionsResult,
   ProjectSyncCreateUrlResult,
+  ProjectSyncExportEntry,
   ProjectSyncManifestEntry,
   ProjectSyncManifestResult,
 } from "@t3tools/contracts";
-import { WS_METHODS } from "@t3tools/contracts";
+import { PROJECT_SYNC_MAX_PATHS_PER_REQUEST, WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -14,6 +15,7 @@ import {
   batchProjectSyncEntries,
   computeProjectSyncPlan,
   summarizeProjectSyncPlan,
+  type ProjectSyncPlan,
   type ProjectSyncPlanSummary,
 } from "../operations/projectSync.ts";
 import { createEnvironmentRpcCommand, createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
@@ -64,6 +66,16 @@ export interface ProjectSyncProgress {
   readonly totalFiles: number;
 }
 
+/** Everything a plan preview needs plus the manifests it was computed from,
+    so a caller that already fetched both can hand the exact same plan back
+    to `runProjectSync` instead of it re-fetching and re-diffing. */
+export interface ProjectSyncPlanResult {
+  readonly sourceManifest: ProjectSyncManifestResult;
+  readonly destManifest: ProjectSyncManifestResult;
+  readonly plan: ProjectSyncPlan;
+  readonly summary: ProjectSyncPlanSummary;
+}
+
 export interface RunProjectSyncParams {
   readonly source: ProjectSyncTarget;
   readonly dest: ProjectSyncTarget;
@@ -71,6 +83,49 @@ export interface RunProjectSyncParams {
   readonly includeGit: boolean;
   readonly signal?: AbortSignal;
   readonly onProgress: (progress: ProjectSyncProgress) => void;
+  /**
+   * A plan the user already confirmed (typically from a preview step that
+   * called `planProjectSync` directly). When present, `runProjectSync` trusts
+   * it byte-for-byte: it does not re-fetch either manifest or recompute the
+   * diff, so what gets copied/deleted is exactly what the user saw and
+   * confirmed, not a second, possibly different plan recomputed against
+   * whatever the destination looks like by the time execution starts. When
+   * absent, `runProjectSync` calls `planProjectSync` itself, preserving the
+   * original fetch-then-plan-then-execute behavior.
+   */
+  readonly precomputedPlan?: ProjectSyncPlanResult;
+}
+
+/**
+ * Fetches both projects' manifests and diffs them into a plan, without
+ * executing it. Split out from `runProjectSync` so a preview/confirmation UI
+ * can compute the plan once, show the user exactly what will be copied and
+ * deleted, and then hand that same plan back via `precomputedPlan` — instead
+ * of `runProjectSync` silently recomputing a second, potentially different
+ * plan against whatever the destination looks like by the time the user
+ * confirms.
+ */
+export async function planProjectSync(
+  deps: ProjectSyncDeps,
+  params: {
+    readonly source: ProjectSyncTarget;
+    readonly dest: ProjectSyncTarget;
+    readonly includeGit: boolean;
+    readonly signal?: AbortSignal;
+  },
+): Promise<ProjectSyncPlanResult> {
+  const { source, dest, includeGit, signal } = params;
+
+  checkProjectSyncAborted(signal);
+  const [sourceManifest, destManifest] = await Promise.all([
+    deps.getManifest(source, includeGit),
+    deps.getManifest(dest, includeGit),
+  ]);
+
+  checkProjectSyncAborted(signal);
+  const plan = computeProjectSyncPlan(sourceManifest.entries, destManifest.entries);
+
+  return { sourceManifest, destManifest, plan, summary: summarizeProjectSyncPlan(plan) };
 }
 
 /**
@@ -91,7 +146,7 @@ export interface ProjectSyncDeps {
   ) => Promise<ProjectSyncManifestResult>;
   readonly createExportUrl: (
     target: ProjectSyncTarget,
-    paths: ReadonlyArray<string>,
+    entries: ReadonlyArray<ProjectSyncExportEntry>,
   ) => Promise<ProjectSyncCreateUrlResult>;
   readonly createImportUrl: (
     target: ProjectSyncTarget,
@@ -105,6 +160,10 @@ export interface ProjectSyncDeps {
   /** Overrides for `batchProjectSyncEntries`; mainly useful in tests. */
   readonly maxBytesPerBatch?: number;
   readonly maxFilesPerBatch?: number;
+  /** Overrides `detectProjectSyncStreamingUploadSupport`'s runtime feature
+      detection; mainly useful in tests to force either the streaming or the
+      buffered fallback path deterministically. */
+  readonly streamingUploadSupported?: boolean;
 }
 
 export class ProjectSyncAbortedError extends Error {
@@ -128,16 +187,74 @@ export class ProjectSyncUrlResolutionError extends Error {
 export class ProjectSyncTransferError extends Error {
   readonly _tag = "ProjectSyncTransferError";
   override readonly cause?: unknown;
-  constructor(message: string, cause?: unknown) {
+  /** The HTTP status of the export/import response that failed, when the
+      failure was a non-ok response rather than a network error (`fetch`
+      rejecting). Lets callers branch on the status directly instead of
+      scraping it back out of `message`. */
+  readonly status?: number;
+  constructor(message: string, cause?: unknown, status?: number) {
     super(message);
     this.name = "ProjectSyncTransferError";
     this.cause = cause;
+    if (status !== undefined) {
+      this.status = status;
+    }
   }
 }
 
 function checkProjectSyncAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw new ProjectSyncAbortedError();
+  }
+}
+
+/** `RequestInit` plus the `duplex` option Chromium/Node require on a
+    streaming-body `Request`, which the DOM lib this repo's TypeScript
+    targets does not yet declare. */
+type StreamingRequestInit = RequestInit & { readonly duplex?: "half" };
+
+/**
+ * Feature-detects whether the current environment's `fetch`/`Request` can
+ * stream a `ReadableStream` request body end to end, rather than buffering it
+ * into memory first. Safari and React Native's `fetch` either throw when
+ * given a stream body or silently ignore `duplex` and buffer it anyway, so a
+ * capability probe is the only reliable signal (there is no separate feature
+ * flag to read).
+ *
+ * This is the check Chrome's own fetch-upload-streaming guidance recommends:
+ * constructing a `Request` with a stream body and a `duplex` *getter* is
+ * side-effect-free, so a runtime that understands duplex streaming reads the
+ * getter (proving it looked at the option) and does not fall back to forcing
+ * a `Content-Type` header the way non-streaming runtimes do when they end up
+ * buffering the stream through a different code path. Constructors that
+ * don't support streaming bodies at all can also throw outright, which the
+ * try/catch treats the same as "unsupported".
+ *
+ * `RequestCtor`/`ReadableStreamCtor` are parameterized (defaulting to the
+ * globals) purely so tests can substitute fakes that simulate an unsupported
+ * runtime without needing an actual old browser.
+ */
+export function detectProjectSyncStreamingUploadSupport(
+  RequestCtor: typeof Request = Request,
+  ReadableStreamCtor: typeof ReadableStream = ReadableStream,
+): boolean {
+  if (typeof RequestCtor === "undefined" || typeof ReadableStreamCtor === "undefined") {
+    return false;
+  }
+  try {
+    let duplexAccessed = false;
+    const probe = new RequestCtor("https://project-sync.invalid/", {
+      method: "POST",
+      body: new ReadableStreamCtor(),
+      get duplex() {
+        duplexAccessed = true;
+        return "half";
+      },
+    } as StreamingRequestInit);
+    const hasContentType = probe.headers.has("content-type");
+    return duplexAccessed && !hasContentType;
+  } catch {
+    return false;
   }
 }
 
@@ -148,11 +265,14 @@ async function transferProjectSyncBatch(
   batch: ReadonlyArray<ProjectSyncManifestEntry>,
   signal: AbortSignal | undefined,
 ): Promise<void> {
-  const paths = batch.map((entry) => entry.path);
+  const entries: ProjectSyncExportEntry[] = batch.map((entry) => ({
+    path: entry.path,
+    size: entry.size,
+  }));
   const totalBytes = batch.reduce((total, entry) => total + entry.size, 0);
 
   checkProjectSyncAborted(signal);
-  const exportUrlResult = await deps.createExportUrl(source, paths);
+  const exportUrlResult = await deps.createExportUrl(source, entries);
   const exportUrl = deps.resolveUrl(source.environmentId, exportUrlResult.url);
   if (exportUrl === null) {
     throw new ProjectSyncUrlResolutionError(source.environmentId);
@@ -174,9 +294,10 @@ async function transferProjectSyncBatch(
   if (!exportResponse.ok) {
     throw new ProjectSyncTransferError(
       `Export request to environment '${source.environmentId}' failed with status ${exportResponse.status}.`,
+      undefined,
+      exportResponse.status,
     );
   }
-  const bytes = await exportResponse.arrayBuffer();
 
   checkProjectSyncAborted(signal);
   const importUrlResult = await deps.createImportUrl(dest, batch.length, totalBytes);
@@ -185,15 +306,34 @@ async function transferProjectSyncBatch(
     throw new ProjectSyncUrlResolutionError(dest.environmentId);
   }
 
+  // Buffering the whole export response into an ArrayBuffer defeats the
+  // streaming both server-side endpoints already do: a single large file (a
+  // batch is sized by count/bytes budgets, not a hard per-file cap) would sit
+  // fully in memory in the tab/app process. Stream the body straight through
+  // when the runtime can actually deliver a streaming request; only fall
+  // back to buffering where that is not possible at all.
+  const streamingSupported =
+    deps.streamingUploadSupported ?? detectProjectSyncStreamingUploadSupport();
+  const canStreamImportBody = streamingSupported && exportResponse.body !== null;
+
   checkProjectSyncAborted(signal);
   let importResponse: Response;
   try {
-    importResponse = await deps.fetch(importUrl, {
-      method: "POST",
-      headers: { "content-type": "application/octet-stream" },
-      body: bytes,
-      ...(signal ? { signal } : {}),
-    });
+    const importInit: StreamingRequestInit = canStreamImportBody
+      ? {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: exportResponse.body,
+          duplex: "half",
+          ...(signal ? { signal } : {}),
+        }
+      : {
+          method: "POST",
+          headers: { "content-type": "application/octet-stream" },
+          body: await exportResponse.arrayBuffer(),
+          ...(signal ? { signal } : {}),
+        };
+    importResponse = await deps.fetch(importUrl, importInit);
   } catch (cause) {
     throw new ProjectSyncTransferError(
       `Could not reach environment '${dest.environmentId}' to import project files.`,
@@ -203,6 +343,8 @@ async function transferProjectSyncBatch(
   if (!importResponse.ok) {
     throw new ProjectSyncTransferError(
       `Import request to environment '${dest.environmentId}' failed with status ${importResponse.status}.`,
+      undefined,
+      importResponse.status,
     );
   }
 }
@@ -223,7 +365,7 @@ export async function runProjectSync(
   deps: ProjectSyncDeps,
   params: RunProjectSyncParams,
 ): Promise<ProjectSyncPlanSummary> {
-  const { source, dest, mode, includeGit, signal, onProgress } = params;
+  const { source, dest, mode, includeGit, signal, onProgress, precomputedPlan } = params;
 
   const idleProgress = (stage: ProjectSyncStage): ProjectSyncProgress => ({
     stage,
@@ -234,19 +376,28 @@ export async function runProjectSync(
   });
 
   checkProjectSyncAborted(signal);
-  onProgress(idleProgress("manifest"));
-  const [sourceManifest, destManifest] = await Promise.all([
-    deps.getManifest(source, includeGit),
-    deps.getManifest(dest, includeGit),
-  ]);
+
+  let plan: ProjectSyncPlan;
+  if (precomputedPlan !== undefined) {
+    plan = precomputedPlan.plan;
+  } else {
+    onProgress(idleProgress("manifest"));
+    const planResult = await planProjectSync(deps, {
+      source,
+      dest,
+      includeGit,
+      ...(signal ? { signal } : {}),
+    });
+    onProgress(idleProgress("planning"));
+    plan = planResult.plan;
+  }
 
   checkProjectSyncAborted(signal);
-  onProgress(idleProgress("planning"));
-  const plan = computeProjectSyncPlan(sourceManifest.entries, destManifest.entries);
-  const batches = batchProjectSyncEntries(plan.toCopy, {
+  const batchOptions = {
     ...(deps.maxBytesPerBatch === undefined ? {} : { maxBytes: deps.maxBytesPerBatch }),
     ...(deps.maxFilesPerBatch === undefined ? {} : { maxFiles: deps.maxFilesPerBatch }),
-  });
+  };
+  const batches = batchProjectSyncEntries(plan.toCopy, batchOptions);
 
   const totalBytes = plan.copyBytes;
   const totalFiles = plan.toCopy.length;
@@ -274,7 +425,33 @@ export async function runProjectSync(
   if (mode === "sync" && plan.toDelete.length > 0) {
     checkProjectSyncAborted(signal);
     onProgress({ stage: "deleting", transferredBytes, totalBytes, transferredFiles, totalFiles });
-    await deps.applyDeletions(dest, plan.toDelete);
+    // One request cannot name more paths than the contract allows, and the
+    // list stays deepest-first across chunks so a directory is never removed
+    // before what was inside it.
+    for (
+      let offset = 0;
+      offset < plan.toDelete.length;
+      offset += PROJECT_SYNC_MAX_PATHS_PER_REQUEST
+    ) {
+      checkProjectSyncAborted(signal);
+      await deps.applyDeletions(
+        dest,
+        plan.toDelete.slice(offset, offset + PROJECT_SYNC_MAX_PATHS_PER_REQUEST),
+      );
+    }
+
+    // Removing the last entry inside a destination directory also prunes that
+    // now-empty directory, which can collapse a directory the source publishes
+    // as a `"dir"` entry (manifests only name directories that are empty). The
+    // copy pass ran before the deletions, so re-assert those zero-byte entries
+    // afterwards or the destination would silently end up short a directory.
+    for (const batch of batchProjectSyncEntries(
+      plan.toCopy.filter((entry) => entry.kind === "dir"),
+      batchOptions,
+    )) {
+      checkProjectSyncAborted(signal);
+      await transferProjectSyncBatch(deps, source, dest, batch, signal);
+    }
   }
 
   onProgress({ stage: "done", transferredBytes, totalBytes, transferredFiles, totalFiles });

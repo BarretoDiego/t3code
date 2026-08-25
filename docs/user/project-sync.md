@@ -40,8 +40,11 @@ Two modes cover the two things you actually want to do:
 - **Sync** updates a project that already exists on both sides. T3 Code compares the two projects
   file by file and copies only what changed.
 
-Before either mode starts moving files, T3 Code shows you a summary of the plan — how many files
-will be copied and how much data that is — so you know what you are about to do.
+Before Sync starts moving files, T3 Code compares both projects and shows you a summary of the
+plan — how many files will be copied, how much data that is, and how many files (if any) will be
+deleted — so you know what you are about to do before anything changes. Send skips this preview:
+it is copying into a brand-new project, so there is nothing on the destination yet to compare
+against.
 
 ## Sync Mirrors the Source
 
@@ -53,10 +56,10 @@ carefully before confirming.
 
 ## Including Git History
 
-Sync includes your project's `.git` history by default, so the destination ends up as a complete
-working copy you can commit and push from independently. Turn off **Include .git** if you only
-want the working files without history — useful for a quick copy where you do not need the
-destination to be its own Git checkout.
+Both Send and Sync include your project's `.git` history by default, so the destination ends up as
+a complete working copy you can commit and push from independently. Turn off **Include .git** if
+you only want the working files without history — useful for a quick copy where you do not need
+the destination to be its own Git checkout.
 
 ## Progress and Cancelling
 
@@ -67,8 +70,8 @@ broken state.
 ## Limitations
 
 - **Mobile is not supported yet.** Start and manage a sync from the web or desktop app.
-- **Ignoring extra folders** (beyond the always-skipped `node_modules`, T3's own state, and
-  `.DS_Store`) matches exact folder names only — you cannot use wildcard patterns.
+- **Fixed exclusions.** Sync always skips `node_modules`, T3's own state, and `.DS_Store`. There
+  is no way to add your own ignore list from the UI in this version.
 - **Avoid syncing while a turn is actively running** in the project you're copying from or to.
   Sync does not lock the workspace against concurrent writes, so files an agent is mid-edit on can
   end up copied in an inconsistent state. Wait for the agent to finish, or pause it, before you

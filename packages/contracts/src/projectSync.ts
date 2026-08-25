@@ -5,11 +5,34 @@ import { IsoDateTime, NonNegativeInt, ProjectId, TrimmedNonEmptyString } from ".
 
 const PROJECT_SYNC_PATH_MAX_LENGTH = 1024;
 const PROJECT_SYNC_URL_MAX_LENGTH = 4096;
-const PROJECT_SYNC_MAX_PATHS_PER_REQUEST = 5000;
+/** Ceiling on how many paths one export/deletion request may name. Exported so
+    callers can chunk a large plan to fit instead of failing to encode it. */
+export const PROJECT_SYNC_MAX_PATHS_PER_REQUEST = 5000;
 
 /** A lowercase-hex sha256 digest, or empty when the entry has no content
     (directories and symlinks). */
 const SHA256_HEX_PATTERN = /^(?:[0-9a-f]{64})?$/i;
+
+/** No filesystem accepts a NUL inside a name, and any syscall that received
+    one would silently treat the path as ending there. */
+const noNulByteFilter = Schema.makeFilter(
+  (value: string) => !value.includes("\0") || "Path must not contain a NUL byte.",
+);
+
+/**
+ * A workspace-relative path exactly as it exists on disk.
+ *
+ * Deliberately *not* a trimmed string: leading and trailing whitespace are
+ * legal in a POSIX filename, so trimming here would quietly rewrite
+ * `"docs/notes .md"` into a path the origin cannot export and the destination
+ * would either skip forever or collide with a different, real file. Only
+ * genuinely impossible paths (empty, NUL-bearing, absurdly long) are refused.
+ */
+const ProjectSyncPath = Schema.String.check(
+  Schema.isNonEmpty(),
+  noNulByteFilter,
+  Schema.isMaxLength(PROJECT_SYNC_PATH_MAX_LENGTH),
+);
 
 export const ProjectSyncEntryKind = Schema.Literals(["file", "dir", "symlink"]);
 export type ProjectSyncEntryKind = typeof ProjectSyncEntryKind.Type;
@@ -25,7 +48,7 @@ export type ProjectSyncEntryKind = typeof ProjectSyncEntryKind.Type;
  * entries' paths and does not get its own "dir" entry.
  */
 export const ProjectSyncManifestEntry = Schema.Struct({
-  path: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SYNC_PATH_MAX_LENGTH)),
+  path: ProjectSyncPath,
   kind: ProjectSyncEntryKind,
   size: NonNegativeInt,
   // POSIX permission bits. Absent when the origin platform has no concept of
@@ -35,9 +58,7 @@ export const ProjectSyncManifestEntry = Schema.Struct({
   // lowercase-hex sha256 digest of the file contents for "file" entries.
   hash: Schema.optional(Schema.String.check(Schema.isPattern(SHA256_HEX_PATTERN))),
   // Only present for "symlink" entries: the raw link target, unresolved.
-  linkTarget: Schema.optional(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SYNC_PATH_MAX_LENGTH)),
-  ),
+  linkTarget: Schema.optional(ProjectSyncPath),
 });
 export type ProjectSyncManifestEntry = typeof ProjectSyncManifestEntry.Type;
 
@@ -84,11 +105,26 @@ export const PROJECT_SYNC_EXPORT_ROUTE_PREFIX = "/api/projectSync/export";
     project file contents into the destination environment. */
 export const PROJECT_SYNC_IMPORT_ROUTE_PREFIX = "/api/projectSync/import";
 
+/**
+ * One entry a client asks an origin environment to stream out.
+ *
+ * `size` is the size the client saw in the manifest it diffed, and the same
+ * number it folded into the `totalBytes` of the matching import URL. The origin
+ * re-stats each file at stream time and skips any whose size no longer matches,
+ * so a file that grew after the manifest was taken cannot push the transfer
+ * past the budget the destination's token was signed for.
+ */
+export const ProjectSyncExportEntry = Schema.Struct({
+  path: ProjectSyncPath,
+  size: NonNegativeInt,
+});
+export type ProjectSyncExportEntry = typeof ProjectSyncExportEntry.Type;
+
 export const ProjectSyncCreateExportUrlInput = Schema.Struct({
   projectId: ProjectId,
-  paths: Schema.Array(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SYNC_PATH_MAX_LENGTH)),
-  ).check(Schema.isMaxLength(PROJECT_SYNC_MAX_PATHS_PER_REQUEST)),
+  entries: Schema.Array(ProjectSyncExportEntry).check(
+    Schema.isMaxLength(PROJECT_SYNC_MAX_PATHS_PER_REQUEST),
+  ),
 });
 export type ProjectSyncCreateExportUrlInput = typeof ProjectSyncCreateExportUrlInput.Type;
 
@@ -107,9 +143,9 @@ export type ProjectSyncCreateUrlResult = typeof ProjectSyncCreateUrlResult.Type;
 
 export const ProjectSyncApplyDeletionsInput = Schema.Struct({
   projectId: ProjectId,
-  paths: Schema.Array(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SYNC_PATH_MAX_LENGTH)),
-  ).check(Schema.isMaxLength(PROJECT_SYNC_MAX_PATHS_PER_REQUEST)),
+  paths: Schema.Array(ProjectSyncPath).check(
+    Schema.isMaxLength(PROJECT_SYNC_MAX_PATHS_PER_REQUEST),
+  ),
 });
 export type ProjectSyncApplyDeletionsInput = typeof ProjectSyncApplyDeletionsInput.Type;
 

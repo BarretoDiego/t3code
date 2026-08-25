@@ -39,6 +39,10 @@
       "types": "./src/operations/projectSync.ts",
       "default": "./src/operations/projectSync.ts"
     },
+    "./operations/project-sync-flow": {
+      "types": "./src/operations/projectSyncFlow.ts",
+      "default": "./src/operations/projectSyncFlow.ts"
+    },
     "./platform": {
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"

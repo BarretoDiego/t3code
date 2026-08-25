@@ -333,7 +333,11 @@ export const projectSyncExportRouteLayer = HttpRouter.add(
     return HttpServerResponse.stream(
       Stream.fromAsyncIterable(
         encodeProjectSyncRecords(
-          projectSyncExportRecords(resolved.claims.workspaceRoot, resolved.paths),
+          projectSyncExportRecords({
+            workspaceRoot: resolved.claims.workspaceRoot,
+            entries: resolved.entries,
+            requestId: resolved.claims.requestId,
+          }),
         ),
         (cause) => new ProjectSyncExportStreamError({ cause }),
       ),
@@ -372,6 +376,7 @@ export const projectSyncImportRouteLayer = HttpRouter.add(
       workspaceRoot: claims.workspaceRoot,
       records: createProjectSyncFrameDecoder(Stream.toAsyncIterable(request.stream)),
       maxContentBytes: claims.totalBytes,
+      maxRecordCount: claims.fileCount,
     }).pipe(
       Effect.map((result) =>
         HttpServerResponse.jsonUnsafe({ applied: result.applied, bytes: result.bytes }),
