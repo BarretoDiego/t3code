@@ -14,6 +14,7 @@ export interface RateLimitWindowView {
   readonly usedPercent: number;
   readonly status: ProviderRateLimitStatus;
   readonly resetsInLabel: string | null;
+  readonly resetCountdownLabel: string | null;
   readonly isReset: boolean;
   readonly detail: string | undefined;
 }
@@ -56,6 +57,7 @@ export interface ProviderRateLimitsEnvironmentInput {
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
+const SECOND_MS = 1_000;
 
 const parseDateMs = (isoDate: string): number | null => {
   const timestampMs = Date.parse(isoDate);
@@ -88,6 +90,23 @@ export function formatRateLimitResetIn(isoDate: string, nowMs: number): string |
   return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
 }
 
+/** "2h 14m 07s" — second precision while a user is waiting for an exhausted limit. */
+export function formatRateLimitResetCountdown(isoDate: string, nowMs: number): string | null {
+  const timestampMs = parseDateMs(isoDate);
+  if (timestampMs === null) {
+    return null;
+  }
+  const remainingMs = timestampMs - nowMs;
+  if (remainingMs <= 0) {
+    return null;
+  }
+  const remainingSeconds = Math.ceil(remainingMs / SECOND_MS);
+  const hours = Math.floor(remainingSeconds / 3_600);
+  const minutes = Math.floor((remainingSeconds % 3_600) / 60);
+  const seconds = remainingSeconds % 60;
+  return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
+
 const projectWindow = (window: ProviderRateLimitWindow, nowMs: number): RateLimitWindowView => {
   const resetAtMs = window.resetsAt === null ? null : parseDateMs(window.resetsAt);
   const isReset = resetAtMs !== null && resetAtMs <= nowMs;
@@ -99,6 +118,10 @@ const projectWindow = (window: ProviderRateLimitWindow, nowMs: number): RateLimi
     status: isReset ? "ok" : window.status,
     resetsInLabel:
       !isReset && window.resetsAt !== null ? formatRateLimitResetIn(window.resetsAt, nowMs) : null,
+    resetCountdownLabel:
+      !isReset && window.status === "exhausted" && window.resetsAt !== null
+        ? formatRateLimitResetCountdown(window.resetsAt, nowMs)
+        : null,
     isReset,
     detail: window.detail,
   };
