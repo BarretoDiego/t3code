@@ -49,6 +49,7 @@ export function HomeHeader(props: {
   readonly onProjectSortOrderChange: (sortOrder: HomeProjectSortOrder) => void;
   readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   readonly onOpenEnvironments: () => void;
+  readonly onOpenAgentBoard: () => void;
   readonly onOpenSettings: () => void;
   readonly onStartNewTask: () => void;
 }) {
@@ -253,6 +254,19 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
                 />
               </Pressable>
             </ControlPillMenu>
+            <Pressable
+              accessibilityLabel="Open Agent Operations"
+              accessibilityRole="button"
+              onPress={props.onOpenAgentBoard}
+              className="size-11 items-center justify-center rounded-full bg-subtle"
+            >
+              <SymbolView
+                name="rectangle.3.group"
+                size={18}
+                tintColor={iconColor}
+                type="monochrome"
+              />
+            </Pressable>
             {/* Built identically to the filter button so the two circles
                 match exactly (ControlPill sizes via Tailwind classes and
                 resolves to a different box). */}
@@ -329,6 +343,14 @@ function IosHomeHeader(props: HomeHeaderProps) {
           unstable_headerRightItems:
             Platform.OS === "ios"
               ? () => [
+                  withNativeGlassHeaderItem({
+                    accessibilityLabel: "Open Agent Operations",
+                    icon: { name: "rectangle.3.group", type: "sfSymbol" } as const,
+                    identifier: "home-agent-board",
+                    label: "",
+                    onPress: props.onOpenAgentBoard,
+                    type: "button",
+                  }),
                   withNativeGlassHeaderItem({
                     accessibilityLabel: "Open settings",
                     icon: { name: "ellipsis", type: "sfSymbol" } as const,
@@ -464,6 +486,12 @@ function IosHomeHeader(props: HomeHeaderProps) {
             )}
           </NativeHeaderToolbar.Menu>
           <NativeHeaderToolbar.Spacer flexible />
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="Open Agent Operations"
+            icon="rectangle.3.group"
+            onPress={props.onOpenAgentBoard}
+            separateBackground
+          />
           <NativeHeaderToolbar.Button
             accessibilityLabel="New task"
             icon="square.and.pencil"

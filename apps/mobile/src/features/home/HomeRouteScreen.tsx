@@ -115,11 +115,18 @@ export function HomeRouteScreen() {
         />
         <WorkspaceSidebarToolbar
           afterSidebarButton={
-            <NativeHeaderToolbar.Button
-              accessibilityLabel="New task"
-              icon="square.and.pencil"
-              onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
-            />
+            <>
+              <NativeHeaderToolbar.Button
+                accessibilityLabel="Open Agent Operations"
+                icon="rectangle.3.group"
+                onPress={() => navigation.navigate("AgentBoard")}
+              />
+              <NativeHeaderToolbar.Button
+                accessibilityLabel="New task"
+                icon="square.and.pencil"
+                onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+              />
+            </>
           }
         />
         <WorkspaceEmptyDetail
@@ -165,6 +172,7 @@ export function HomeRouteScreen() {
               params: { screen: "SettingsEnvironments" },
             })
           }
+          onOpenAgentBoard={() => navigation.navigate("AgentBoard")}
           onOpenSettings={() =>
             navigation.navigate("SettingsSheet", {
               screen: "SettingsContent",

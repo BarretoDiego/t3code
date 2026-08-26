@@ -41,6 +41,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   LinkIcon,
+  LayoutDashboardIcon,
   MessageSquareIcon,
   PaletteIcon,
   ServerIcon,
@@ -1626,6 +1627,17 @@ function OpenCommandPaletteDialog(props: {
         themeHalves,
         initialAppearance: resolvedTheme,
       });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:agent-board",
+    searchTerms: ["agent operations", "board", "working", "needs attention", "review"],
+    title: "Open Agent Operations",
+    icon: <LayoutDashboardIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/board" });
     },
   });
 

@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./agent-board": {
+      "types": "./src/agentBoard.ts",
+      "default": "./src/agentBoard.ts"
+    },
     "./connection": {
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"
