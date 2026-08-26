@@ -27,6 +27,7 @@ function availablePercent(window: SidebarRateLimitWindowView): number {
 
 function resetLabel(window: SidebarRateLimitWindowView): string {
   if (window.isReset) return "Reset available";
+  if (window.resetCountdownLabel) return `Resets in ${window.resetCountdownLabel}`;
   if (window.kind === "credits" && window.resetsInLabel === null) return "No scheduled reset";
   return window.resetsInLabel ? `Resets in ${window.resetsInLabel}` : "Reset time unavailable";
 }
@@ -39,6 +40,9 @@ function accessibilityLabel(
   provider: SidebarRateLimitProviderView,
   window: SidebarRateLimitWindowView,
 ): string {
+  if (window.resetCountdownLabel) {
+    return `${provider.displayName}, ${accountContext(provider)}, ${window.label}: limit reached. Resets in ${window.resetCountdownLabel}.`;
+  }
   const used = Math.round(window.usedPercent);
   return `${provider.displayName}, ${accountContext(provider)}, ${window.label}: ${Math.round(availablePercent(window))}% available, ${used}% used. ${resetLabel(window)}.`;
 }
@@ -84,11 +88,12 @@ function RateLimitTooltipPopup({
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate text-[11px]">{window.label}</span>
                 <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
-                  {Math.round(availablePercent(window))}% available
+                  {window.resetCountdownLabel ??
+                    `${Math.round(availablePercent(window))}% available`}
                 </span>
               </div>
               <div className="text-[10px] text-muted-foreground">
-                {resetLabel(window)}
+                {window.resetCountdownLabel ? "until reset" : resetLabel(window)}
                 {window.detail ? ` · ${window.detail}` : ""}
               </div>
             </div>
@@ -182,7 +187,7 @@ function CompactRateLimitBar({
                 <span className="truncate">{window.label}</span>
               </span>
               <span className="shrink-0 font-medium tabular-nums text-sidebar-foreground">
-                {available}%
+                {window.resetCountdownLabel ?? `${available}%`}
               </span>
             </div>
             <div

@@ -52,6 +52,9 @@ window; provider warnings can update an individual window sooner. A window whose
 passed is shown as reset rather than repeating a spent number, and it fills in again the next time
 that provider runs.
 
+When a limit is exhausted, its percentage changes to a live hours, minutes, and seconds countdown
+until the provider resets that window.
+
 Use the refresh button in the Plan limits header to request a fresh snapshot for every connected
 account. Codex and Claude currently answer that request through an active provider session, without
 starting another turn. If an account has no active session, its last snapshot stays visible and the

@@ -34,6 +34,7 @@ const monitor: SidebarRateLimitsMonitor = {
             usedPercent: 64,
             status: "ok",
             resetsInLabel: "2h 14m",
+            resetCountdownLabel: null,
             isReset: false,
             detail: undefined,
           },
@@ -44,6 +45,7 @@ const monitor: SidebarRateLimitsMonitor = {
             usedPercent: 27,
             status: "ok",
             resetsInLabel: "3d",
+            resetCountdownLabel: null,
             isReset: false,
             detail: undefined,
           },
@@ -165,6 +167,7 @@ describe("SidebarPinnedRateLimitsDock", () => {
                 usedPercent: 12,
                 status: "ok",
                 resetsInLabel: null,
+                resetCountdownLabel: null,
                 isReset: false,
                 detail: "$8.80 available",
               },
@@ -177,6 +180,37 @@ describe("SidebarPinnedRateLimitsDock", () => {
 
     expect(markup).toContain("No scheduled reset");
     expect(markup).not.toContain("Reset time unavailable");
+  });
+
+  it("replaces zero availability with the live reset countdown when exhausted", () => {
+    const provider = monitor.view.providers[0]!;
+    const exhaustedMonitor: SidebarRateLimitsMonitor = {
+      ...monitor,
+      view: {
+        ...monitor.view,
+        providers: [
+          {
+            ...provider,
+            windows: [
+              {
+                ...provider.windows[0]!,
+                usedPercent: 100,
+                status: "exhausted",
+                resetsInLabel: "2h 14m",
+                resetCountdownLabel: "2h 14m 07s",
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const markup = renderToStaticMarkup(<SidebarPinnedRateLimitsDock monitor={exhaustedMonitor} />);
+
+    expect(markup).toContain("2h 14m 07s");
+    expect(markup).toContain("until reset");
+    expect(markup).toContain("limit reached. Resets in 2h 14m 07s.");
+    expect(markup).not.toContain("0% available");
   });
 
   it("stays absent when no connected account is pinned", () => {

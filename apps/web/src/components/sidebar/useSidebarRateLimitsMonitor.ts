@@ -14,8 +14,8 @@ import {
   toggleRateLimitProviderKey,
 } from "./sidebarRateLimits.logic";
 
-/** Countdown labels only need minute precision; provider usage itself changes on snapshots. */
-const RESET_COUNTDOWN_TICK_MS = 60_000;
+const RESET_COUNTDOWN_TICK_MS = 1_000;
+const IDLE_COUNTDOWN_TICK_MS = 60_000;
 
 const selectPinnedProviderKeys = (settings: {
   readonly sidebarPinnedRateLimitProviderKeys: ReadonlyArray<string>;
@@ -24,18 +24,6 @@ const selectPinnedProviderKeys = (settings: {
 const selectCollapsedWeeklyProviderKeys = (settings: {
   readonly sidebarCollapsedRateLimitWeeklyProviderKeys: ReadonlyArray<string>;
 }) => settings.sidebarCollapsedRateLimitWeeklyProviderKeys;
-
-function useNowMs(enabled: boolean): number {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!enabled) return;
-    const intervalId = window.setInterval(() => setNowMs(Date.now()), RESET_COUNTDOWN_TICK_MS);
-    return () => window.clearInterval(intervalId);
-  }, [enabled]);
-
-  return nowMs;
-}
 
 export interface SidebarRateLimitsMonitor {
   readonly view: SidebarRateLimitsView;
@@ -76,11 +64,23 @@ export function useSidebarRateLimitsMonitor(): SidebarRateLimitsMonitor {
   const hasSnapshots = environmentInputs.some((environment) =>
     environment.providers.some((provider) => (provider.rateLimits?.windows.length ?? 0) > 0),
   );
-  const nowMs = useNowMs(hasSnapshots);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const view = useMemo(
     () => buildSidebarRateLimitsView({ environments: environmentInputs, nowMs }),
     [environmentInputs, nowMs],
   );
+  const hasActiveCountdown = view.providers.some((provider) =>
+    provider.windows.some((window) => window.resetCountdownLabel !== null),
+  );
+  useEffect(() => {
+    if (!hasSnapshots) return;
+    setNowMs(Date.now());
+    const intervalId = window.setInterval(
+      () => setNowMs(Date.now()),
+      hasActiveCountdown ? RESET_COUNTDOWN_TICK_MS : IDLE_COUNTDOWN_TICK_MS,
+    );
+    return () => window.clearInterval(intervalId);
+  }, [hasActiveCountdown, hasSnapshots]);
   const pinnedProviderKeys = useMemo(() => new Set(pinnedProviderKeyList), [pinnedProviderKeyList]);
   const collapsedWeeklyProviderKeys = useMemo(
     () => new Set(collapsedWeeklyProviderKeyList),
