@@ -79,14 +79,6 @@ export function UsageRouteScreen() {
     environment.providers.some((provider) => (provider.rateLimits?.windows.length ?? 0) > 0),
   );
   const [rateLimitsNowMs, setRateLimitsNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (!hasRateLimitSnapshots) {
-      return;
-    }
-    setRateLimitsNowMs(Date.now());
-    const intervalId = setInterval(() => setRateLimitsNowMs(Date.now()), 60_000);
-    return () => clearInterval(intervalId);
-  }, [hasRateLimitSnapshots]);
   const planLimits = useMemo(
     () =>
       buildProviderRateLimitsView({
@@ -95,6 +87,20 @@ export function UsageRouteScreen() {
       }),
     [rateLimitEnvironments, rateLimitsNowMs],
   );
+  const hasActiveRateLimitCountdown = planLimits.providers.some((provider) =>
+    provider.windows.some((window) => window.resetCountdownLabel !== null),
+  );
+  useEffect(() => {
+    if (!hasRateLimitSnapshots) {
+      return;
+    }
+    setRateLimitsNowMs(Date.now());
+    const intervalId = setInterval(
+      () => setRateLimitsNowMs(Date.now()),
+      hasActiveRateLimitCountdown ? 1_000 : 60_000,
+    );
+    return () => clearInterval(intervalId);
+  }, [hasActiveRateLimitCountdown, hasRateLimitSnapshots]);
   const refreshPlanLimits = useCallback(() => {
     if (refreshingPlanLimitsRef.current || planLimits.refreshTargets.length === 0) {
       return;
@@ -308,7 +314,9 @@ function PlanLimitWindowRow(props: {
   readonly accentColor: string | undefined;
 }) {
   const { window } = props;
-  const percentLabel = window.isReset ? "reset" : `${Math.round(window.usedPercent)}%`;
+  const percentLabel = window.isReset
+    ? "reset"
+    : (window.resetCountdownLabel ?? `${Math.round(window.usedPercent)}%`);
 
   return (
     <View className="gap-1.5">
@@ -322,7 +330,9 @@ function PlanLimitWindowRow(props: {
           }
         >
           {percentLabel}
-          {!window.isReset && window.resetsInLabel ? ` · ${window.resetsInLabel} left` : ""}
+          {!window.isReset && !window.resetCountdownLabel && window.resetsInLabel
+            ? ` · ${window.resetsInLabel} left`
+            : ""}
         </Text>
       </View>
       <View

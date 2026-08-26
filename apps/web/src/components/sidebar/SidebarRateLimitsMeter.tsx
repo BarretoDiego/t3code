@@ -89,6 +89,10 @@ function RateLimitWindowRow({ window }: { window: SidebarRateLimitWindowView }) 
         <span className="shrink-0 text-[11px] leading-4 tabular-nums text-secondary-label">
           {window.isReset ? (
             "reset"
+          ) : window.resetCountdownLabel ? (
+            <span className="font-medium" style={{ color }}>
+              {window.resetCountdownLabel}
+            </span>
           ) : (
             <>
               <span className={cn(window.status !== "ok" && "font-medium")} style={{ color }}>
