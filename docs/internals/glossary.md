@@ -10,6 +10,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
+- [Marketplace](#marketplace)
 - [Checkpointing](#checkpointing)
 
 ## Concepts
@@ -128,6 +129,32 @@ A point-in-time view of state. The word is used in multiple layers, including or
 
 The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
 
+### Marketplace
+
+#### Marketplace
+
+An environment-owned list of package repositories plus their installed package records. Catalog
+distribution is generic; package handlers define how one open package type is installed. See
+[marketplace.md][27].
+
+#### Marketplace repository
+
+A static HTTP(S) location whose `t3-marketplace.json` catalog points to versioned package manifests.
+It does not require a registry service. The official repository ships at the repo root, and users
+may add community repositories per environment.
+
+#### Marketplace package
+
+A versioned manifest with generic metadata, declared permissions, compatibility, and an opaque
+payload. Its open `type` selects an environment-side handler. Unknown types stay discoverable but
+cannot be installed by that environment.
+
+#### Provider template
+
+The first marketplace package type. It declaratively creates a provider instance, environment
+variables, validated driver configuration, and optional files in an isolated T3-owned provider
+home. It cannot execute package scripts.
+
 ### Checkpointing
 
 Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
@@ -193,3 +220,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [24]: ./overview.md
 [25]: ../../apps/server/src/provider/providerRateLimits.ts
 [26]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[27]: ./marketplace.md

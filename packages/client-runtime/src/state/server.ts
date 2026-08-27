@@ -778,6 +778,46 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    marketplace: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:marketplace:list",
+      tag: WS_METHODS.marketplaceList,
+      staleTimeMs: 5 * 60_000,
+    }),
+    marketplacePackage: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:marketplace:package",
+      tag: WS_METHODS.marketplaceGetPackage,
+      staleTimeMs: 5 * 60_000,
+    }),
+    marketplaceAddSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:add-source",
+      tag: WS_METHODS.marketplaceAddSource,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceRemoveSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:remove-source",
+      tag: WS_METHODS.marketplaceRemoveSource,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceInstall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:install",
+      tag: WS_METHODS.marketplaceInstall,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:update",
+      tag: WS_METHODS.marketplaceUpdate,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceUninstall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:uninstall",
+      tag: WS_METHODS.marketplaceUninstall,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,

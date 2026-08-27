@@ -119,6 +119,7 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as MarketplaceService from "./marketplace/MarketplaceService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -425,6 +426,7 @@ const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  marketplace: MarketplaceService.MarketplaceService["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1703,6 +1705,36 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.marketplaceList]: (_input) =>
+          observeRpcEffect(WS_METHODS.marketplaceList, marketplace.list(), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceGetPackage]: ({ sourceId, packageId }) =>
+          observeRpcEffect(
+            WS_METHODS.marketplaceGetPackage,
+            marketplace.getPackage(sourceId, packageId),
+            { "rpc.aggregate": "marketplace" },
+          ),
+        [WS_METHODS.marketplaceAddSource]: ({ url }) =>
+          observeRpcEffect(WS_METHODS.marketplaceAddSource, marketplace.addSource(url), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceRemoveSource]: ({ sourceId }) =>
+          observeRpcEffect(WS_METHODS.marketplaceRemoveSource, marketplace.removeSource(sourceId), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceInstall]: (input) =>
+          observeRpcEffect(WS_METHODS.marketplaceInstall, marketplace.install(input), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceUpdate]: (input) =>
+          observeRpcEffect(WS_METHODS.marketplaceUpdate, marketplace.update(input), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceUninstall]: ({ installationId }) =>
+          observeRpcEffect(WS_METHODS.marketplaceUninstall, marketplace.uninstall(installationId), {
+            "rpc.aggregate": "marketplace",
+          }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,
@@ -2485,6 +2517,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const marketplace = yield* MarketplaceService.MarketplaceService;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2511,7 +2544,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, clientOrigin, previewAutomationBroker).pipe(
+            makeWsRpcLayer(session, clientOrigin, previewAutomationBroker, marketplace).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
