@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://t3.codes/schemas/marketplace/package/v1.json",
+  "title": "T3 Code Marketplace Package v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "type", "name", "version", "description", "payload"],
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "provider-template" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/providerTemplatePayload" } } }
+    }
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "type": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "publisher": { "type": "string", "minLength": 1 },
+    "license": { "type": "string", "minLength": 1 },
+    "homepage": { "type": "string", "minLength": 1 },
+    "repository": { "type": "string", "minLength": 1 },
+    "readme": { "type": "string", "minLength": 1 },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9.-]*$" }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "t3": { "type": "string", "minLength": 1 },
+        "platforms": { "type": "array", "items": { "enum": ["darwin", "linux", "win32"] } }
+      }
+    },
+    "payload": {}
+  },
+  "$defs": {
+    "inputId": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "providerId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][A-Za-z0-9_-]*$"
+    },
+    "templateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "control"],
+      "properties": {
+        "id": { "$ref": "#/$defs/inputId" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "control": { "enum": ["text", "password", "select"] },
+        "required": { "type": "boolean", "default": false },
+        "default": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "options": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "label"],
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "environmentVariable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "oneOf": [
+        { "required": ["input"], "not": { "required": ["value"] } },
+        { "required": ["value"], "not": { "required": ["input"] } }
+      ],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "input": { "$ref": "#/$defs/inputId" },
+        "value": { "type": "string" },
+        "sensitive": { "type": "boolean", "default": false },
+        "required": { "type": "boolean", "default": false }
+      }
+    },
+    "managedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "content"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "content": { "type": "string", "maxLength": 524288 }
+      }
+    },
+    "providerTemplatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driver", "suggestedInstanceId", "displayName"],
+      "properties": {
+        "driver": { "$ref": "#/$defs/providerId" },
+        "suggestedInstanceId": { "$ref": "#/$defs/providerId" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "accentColor": { "type": "string", "minLength": 1 },
+        "inputs": {
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/$defs/templateInput" }
+        },
+        "config": { "type": "object" },
+        "environment": {
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/$defs/environmentVariable" }
+        },
+        "providerHome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["configField", "files"],
+          "properties": {
+            "configField": { "const": "homePath" },
+            "files": { "type": "array", "items": { "$ref": "#/$defs/managedFile" } }
+          }
+        }
+      }
+    }
+  }
+}

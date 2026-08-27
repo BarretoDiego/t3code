@@ -1,0 +1,42 @@
+{
+  "$schema": "./marketplace/schemas/marketplace.schema.json",
+  "schemaVersion": 1,
+  "id": "t3-official",
+  "name": "T3 Code Official",
+  "description": "Official packages maintained alongside T3 Code.",
+  "homepage": "https://github.com/pingdotgg/t3code/tree/main/marketplace",
+  "packages": [
+    {
+      "id": "codex-openrouter",
+      "type": "provider-template",
+      "name": "Codex with OpenRouter",
+      "version": "1.0.0",
+      "description": "An isolated Codex instance configured to use OpenRouter's Responses API.",
+      "manifest": "./marketplace/packages/codex-openrouter/package.json",
+      "integrity": "sha256-68cb9c94ac0f009635d31537a7fe30367e96e0d182ebb269d4f4b22099d12add",
+      "publisher": "T3 Code",
+      "tags": ["codex", "openrouter", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "claude-api-key",
+      "type": "provider-template",
+      "name": "Claude with API key",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance authenticated with an Anthropic API key.",
+      "manifest": "./marketplace/packages/claude-api-key/package.json",
+      "integrity": "sha256-6d8223cd06eda33db40be7fd31fb1b4b0aef33b668eecf3742cb5285789e5b06",
+      "publisher": "T3 Code",
+      "tags": ["claude", "anthropic", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    }
+  ]
+}

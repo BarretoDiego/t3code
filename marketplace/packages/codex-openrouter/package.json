@@ -1,0 +1,73 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Codex with OpenRouter",
+  "version": "1.0.0",
+  "description": "Creates an isolated Codex home configured for OpenRouter and stores the API key in T3 Code's secret store.",
+  "homepage": "https://openrouter.ai/docs",
+  "license": "MIT",
+  "repository": "https://github.com/pingdotgg/t3code",
+  "publisher": "T3 Code",
+  "type": "provider-template",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "codex-openrouter",
+  "payload": {
+    "driver": "codex",
+    "suggestedInstanceId": "codex_openrouter",
+    "displayName": "Codex · OpenRouter",
+    "accentColor": "#7c3aed",
+    "inputs": [
+      {
+        "id": "api-key",
+        "label": "OpenRouter API key",
+        "description": "Stored encrypted by the environment and never written into the generated config file.",
+        "control": "password",
+        "required": true,
+        "placeholder": "sk-or-v1-…"
+      },
+      {
+        "id": "model",
+        "label": "Default model",
+        "description": "OpenRouter model slug used by new Codex sessions.",
+        "control": "text",
+        "required": true,
+        "default": "openai/gpt-5.4",
+        "placeholder": "openai/gpt-5.4"
+      }
+    ],
+    "config": {
+      "customModels": [
+        "{{input.model}}"
+      ]
+    },
+    "environment": [
+      {
+        "name": "OPENROUTER_API_KEY",
+        "input": "api-key",
+        "sensitive": true,
+        "required": true
+      }
+    ],
+    "providerHome": {
+      "configField": "homePath",
+      "files": [
+        {
+          "path": "config.toml",
+          "content": "model = \"{{input.model}}\"\nmodel_provider = \"openrouter\"\n\n[model_providers.openrouter]\nname = \"OpenRouter\"\nbase_url = \"https://openrouter.ai/api/v1\"\nenv_key = \"OPENROUTER_API_KEY\"\nwire_api = \"responses\"\n"
+        }
+      ]
+    }
+  },
+  "permissions": [
+    "provider.configure",
+    "provider.environment",
+    "provider.files"
+  ],
+  "schemaVersion": 1
+}

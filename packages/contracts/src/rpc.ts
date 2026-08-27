@@ -61,6 +61,16 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
+  MarketplaceError,
+  MarketplaceId,
+  MarketplaceInstallationId,
+  MarketplaceInstallInput,
+  MarketplacePackageDetail,
+  MarketplacePackageId,
+  MarketplaceSnapshot,
+  MarketplaceUpdateInput,
+} from "./marketplace.ts";
+import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -229,6 +239,15 @@ export const WS_METHODS = {
 
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
+
+  // Marketplace methods
+  marketplaceList: "marketplace.list",
+  marketplaceGetPackage: "marketplace.getPackage",
+  marketplaceAddSource: "marketplace.addSource",
+  marketplaceRemoveSource: "marketplace.removeSource",
+  marketplaceInstall: "marketplace.install",
+  marketplaceUpdate: "marketplace.update",
+  marketplaceUninstall: "marketplace.uninstall",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -416,6 +435,51 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
+  payload: Schema.Struct({}),
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceGetPackageRpc = Rpc.make(WS_METHODS.marketplaceGetPackage, {
+  payload: Schema.Struct({
+    sourceId: MarketplaceId,
+    packageId: MarketplacePackageId,
+  }),
+  success: MarketplacePackageDetail,
+  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceAddSourceRpc = Rpc.make(WS_METHODS.marketplaceAddSource, {
+  payload: Schema.Struct({ url: Schema.String }),
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceRemoveSourceRpc = Rpc.make(WS_METHODS.marketplaceRemoveSource, {
+  payload: Schema.Struct({ sourceId: MarketplaceId }),
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceInstallRpc = Rpc.make(WS_METHODS.marketplaceInstall, {
+  payload: MarketplaceInstallInput,
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceUpdateRpc = Rpc.make(WS_METHODS.marketplaceUpdate, {
+  payload: MarketplaceUpdateInput,
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceUninstallRpc = Rpc.make(WS_METHODS.marketplaceUninstall, {
+  payload: Schema.Struct({ installationId: MarketplaceInstallationId }),
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -1042,6 +1106,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsMarketplaceListRpc,
+  WsMarketplaceGetPackageRpc,
+  WsMarketplaceAddSourceRpc,
+  WsMarketplaceRemoveSourceRpc,
+  WsMarketplaceInstallRpc,
+  WsMarketplaceUpdateRpc,
+  WsMarketplaceUninstallRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

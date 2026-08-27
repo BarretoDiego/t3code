@@ -1,0 +1,55 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Claude with API key",
+  "version": "1.0.0",
+  "description": "Creates an isolated Claude Code home and stores the Anthropic API key in T3 Code's secret store.",
+  "homepage": "https://docs.anthropic.com/en/docs/claude-code",
+  "license": "MIT",
+  "repository": "https://github.com/pingdotgg/t3code",
+  "publisher": "T3 Code",
+  "type": "provider-template",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "claude-api-key",
+  "payload": {
+    "driver": "claudeAgent",
+    "suggestedInstanceId": "claude_api",
+    "displayName": "Claude · API",
+    "accentColor": "#d97757",
+    "inputs": [
+      {
+        "id": "api-key",
+        "label": "Anthropic API key",
+        "description": "Stored encrypted by the environment and passed only to Claude Code processes.",
+        "control": "password",
+        "required": true,
+        "placeholder": "sk-ant-…"
+      }
+    ],
+    "config": {},
+    "environment": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "input": "api-key",
+        "sensitive": true,
+        "required": true
+      }
+    ],
+    "providerHome": {
+      "configField": "homePath",
+      "files": []
+    }
+  },
+  "permissions": [
+    "provider.configure",
+    "provider.environment",
+    "provider.files"
+  ],
+  "schemaVersion": 1
+}
