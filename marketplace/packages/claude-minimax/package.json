@@ -1,0 +1,120 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Claude Code with MiniMax",
+  "version": "1.0.0",
+  "description": "An isolated Claude Code instance routed to MiniMax's Anthropic-compatible endpoint. Every Claude Code model tier is mapped to the chosen MiniMax model.",
+  "homepage": "https://platform.minimax.io/docs/token-plan/claude-code",
+  "license": "MIT",
+  "repository": "https://github.com/BarretoDiego/t3code",
+  "publisher": "T3 Code",
+  "type": "provider-template",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "claude-minimax",
+  "payload": {
+    "driver": "claudeAgent",
+    "suggestedInstanceId": "claude_minimax",
+    "displayName": "Claude · MiniMax",
+    "accentColor": "#F23F5D",
+    "icon": "minimax",
+    "inputs": [
+      {
+        "id": "api-key",
+        "label": "MiniMax API key",
+        "description": "Created at platform.minimax.io. Stored encrypted by the environment and passed only to Claude Code processes.",
+        "control": "password",
+        "required": true,
+        "placeholder": "sk-…"
+      },
+      {
+        "id": "model",
+        "label": "Model",
+        "description": "Applied to every Claude Code model tier (main, background, and sub-agents).",
+        "control": "text",
+        "required": true,
+        "default": "MiniMax-M3[1m]",
+        "placeholder": "MiniMax-M3[1m]"
+      },
+      {
+        "id": "compact-window",
+        "label": "Auto-compact window",
+        "description": "Context size in tokens that triggers auto-compaction. 1000000 matches MiniMax-M3's context window.",
+        "control": "text",
+        "required": true,
+        "default": "1000000",
+        "placeholder": "1000000"
+      }
+    ],
+    "config": {
+      "customModels": [
+        "{{input.model}}"
+      ]
+    },
+    "environment": [
+      {
+        "name": "ANTHROPIC_AUTH_TOKEN",
+        "input": "api-key",
+        "sensitive": true,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_BASE_URL",
+        "value": "https://api.minimax.io/anthropic",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "CLAUDE_CODE_SUBAGENT_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        "value": "{{input.compact-window}}",
+        "sensitive": false,
+        "required": true
+      }
+    ],
+    "providerHome": {
+      "configField": "homePath",
+      "files": []
+    }
+  },
+  "permissions": [
+    "provider.configure",
+    "provider.environment",
+    "provider.files"
+  ],
+  "schemaVersion": 1
+}

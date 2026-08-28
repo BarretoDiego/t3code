@@ -26,6 +26,7 @@ export interface RateLimitProviderView {
   readonly driver: ServerProvider["driver"];
   readonly displayName: string;
   readonly accentColor: string | undefined;
+  readonly icon: string | undefined;
   readonly environmentLabel: string | null;
   readonly planLabel: string | undefined;
   readonly notice: string | undefined;
@@ -177,6 +178,7 @@ export function buildProviderRateLimitsView(input: {
           provider.displayName ??
           ((driverCounts.get(provider.driver) ?? 0) > 1 ? provider.instanceId : provider.driver),
         accentColor: provider.accentColor,
+        icon: provider.icon,
         environmentLabel: showEnvironmentLabels ? environment.label : null,
         planLabel: rateLimits.planLabel,
         notice: rateLimits.notice,

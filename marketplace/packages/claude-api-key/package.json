@@ -5,7 +5,7 @@
   "description": "Creates an isolated Claude Code home and stores the Anthropic API key in T3 Code's secret store.",
   "homepage": "https://docs.anthropic.com/en/docs/claude-code",
   "license": "MIT",
-  "repository": "https://github.com/pingdotgg/t3code",
+  "repository": "https://github.com/BarretoDiego/t3code",
   "publisher": "T3 Code",
   "type": "provider-template",
   "compatibility": {
@@ -22,6 +22,7 @@
     "suggestedInstanceId": "claude_api",
     "displayName": "Claude · API",
     "accentColor": "#d97757",
+    "icon": "claude",
     "inputs": [
       {
         "id": "api-key",

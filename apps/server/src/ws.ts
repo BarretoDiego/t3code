@@ -1735,6 +1735,16 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.marketplaceUninstall, marketplace.uninstall(installationId), {
             "rpc.aggregate": "marketplace",
           }),
+        [WS_METHODS.marketplaceSetAutoUpdate]: (input) =>
+          observeRpcEffect(WS_METHODS.marketplaceSetAutoUpdate, marketplace.setAutoUpdate(input), {
+            "rpc.aggregate": "marketplace",
+          }),
+        [WS_METHODS.marketplaceExportProviderTemplate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.marketplaceExportProviderTemplate,
+            marketplace.exportProviderTemplate(input),
+            { "rpc.aggregate": "marketplace" },
+          ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,

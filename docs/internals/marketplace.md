@@ -52,6 +52,28 @@ adds one payload schema and one handler; it does not add RPC methods or marketpl
 state. Its installation returns a generic target (`provider-instance` today, `package-reference` for
 future resource types) plus the non-secret input values safe to persist.
 
+Installations carry an `autoUpdate` flag (default `false`). `marketplace.setAutoUpdate` toggles it;
+the web client applies a pending catalog update for flagged installations when the marketplace view
+loads, reusing the stored non-secret inputs and the installed instance's existing sensitive values.
+
+`marketplace.exportProviderTemplate` renders an existing provider instance back into a publishable
+provider-template manifest: environment variables become inputs (sensitive ones become password
+inputs whose values are never exported, non-sensitive ones keep their value as the input default),
+the driver config is copied verbatim except a managed `homePath`, and the result self-validates
+against the package schema before crossing the wire.
+
+## Icons and categories
+
+Provider templates and instances may carry an `icon` key (`ProviderInstanceConfig.icon`,
+`ServerProvider.icon`, `ProviderTemplatePayload.icon`). The key indexes the web registry in
+`apps/web/src/components/providerIcons.tsx`, which imports only the monochrome SVG component of each
+@lobehub/icons brand — the package root and its Avatar/Combine variants pull in @lobehub/ui and
+emoji data, so they are never imported. Unknown or absent keys fall back to the driver icon. The
+registry keys are part of the fork's package format; new template `icon` values must resolve there.
+The web settings view groups catalog packages by `type`
+(`apps/web/src/components/settings/MarketplaceSettings.logic.ts`), so categories such as `skill`,
+`agent`, or `specialist` render as sections without a schema change.
+
 Marketplace state lives below T3 home, while materialized package files live in a separate
 T3-owned packages directory. State never stores password inputs. Provider secrets flow through the
 existing `ServerSettingsService` secret-store behavior.

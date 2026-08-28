@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Security Reviewer",
+  "version": "1.0.0",
+  "description": "A subagent definition that audits diffs for injection surfaces, secret handling, and unsafe file or network boundaries before merge.",
+  "homepage": "https://github.com/BarretoDiego/t3code/tree/main/marketplace",
+  "license": "MIT",
+  "repository": "https://github.com/BarretoDiego/t3code",
+  "publisher": "T3 Code",
+  "type": "agent",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "agent-security-reviewer",
+  "payload": {
+    "kind": "agent",
+    "persona": "Application security reviewer focused on injection, secret leakage, and trust-boundary mistakes.",
+    "tools": [
+      "read",
+      "grep",
+      "diff"
+    ],
+    "invocation": "subagent"
+  },
+  "permissions": [],
+  "schemaVersion": 1
+}

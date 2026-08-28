@@ -1,0 +1,142 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Claude Code with GLM",
+  "version": "1.0.0",
+  "description": "An isolated Claude Code instance routed to Z.AI's Anthropic-compatible endpoint. Main tiers use the primary GLM model; the background tier uses its flash variant.",
+  "homepage": "https://docs.z.ai/devpack/tool/claude",
+  "license": "MIT",
+  "repository": "https://github.com/BarretoDiego/t3code",
+  "publisher": "T3 Code",
+  "type": "provider-template",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "claude-glm",
+  "payload": {
+    "driver": "claudeAgent",
+    "suggestedInstanceId": "claude_glm",
+    "displayName": "Claude · GLM",
+    "accentColor": "#3859FF",
+    "icon": "zhipu",
+    "inputs": [
+      {
+        "id": "api-key",
+        "label": "Z.AI API key",
+        "description": "Created at z.ai/model-api. Stored encrypted by the environment and passed only to Claude Code processes.",
+        "control": "password",
+        "required": true,
+        "placeholder": "sk-…"
+      },
+      {
+        "id": "model",
+        "label": "Model",
+        "description": "Used for the main conversation and the opus/sonnet tiers.",
+        "control": "text",
+        "required": true,
+        "default": "glm-5.3[1m]",
+        "placeholder": "glm-5.3[1m]"
+      },
+      {
+        "id": "fast-model",
+        "label": "Fast model",
+        "description": "Used for the haiku tier and sub-agents (background titles, summaries).",
+        "control": "text",
+        "required": true,
+        "default": "glm-5.3-flash[1m]",
+        "placeholder": "glm-5.3-flash[1m]"
+      },
+      {
+        "id": "compact-window",
+        "label": "Auto-compact window",
+        "description": "Context size in tokens that triggers auto-compaction.",
+        "control": "text",
+        "required": true,
+        "default": "1000000",
+        "placeholder": "1000000"
+      }
+    ],
+    "config": {
+      "customModels": [
+        "{{input.model}}",
+        "{{input.fast-model}}"
+      ]
+    },
+    "environment": [
+      {
+        "name": "ANTHROPIC_AUTH_TOKEN",
+        "input": "api-key",
+        "sensitive": true,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_BASE_URL",
+        "value": "https://api.z.ai/api/anthropic",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "value": "{{input.model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "value": "{{input.fast-model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "CLAUDE_CODE_SUBAGENT_MODEL",
+        "value": "{{input.fast-model}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        "value": "{{input.compact-window}}",
+        "sensitive": false,
+        "required": true
+      },
+      {
+        "name": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        "value": "1",
+        "sensitive": false,
+        "required": false
+      },
+      {
+        "name": "API_TIMEOUT_MS",
+        "value": "3000000",
+        "sensitive": false,
+        "required": false
+      }
+    ],
+    "providerHome": {
+      "configField": "homePath",
+      "files": []
+    }
+  },
+  "permissions": [
+    "provider.configure",
+    "provider.environment",
+    "provider.files"
+  ],
+  "schemaVersion": 1
+}

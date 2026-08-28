@@ -158,6 +158,11 @@ export const ProviderTemplatePayload = Schema.Struct({
   suggestedInstanceId: ProviderInstanceId,
   displayName: TrimmedNonEmptyString,
   accentColor: Schema.optionalKey(TrimmedNonEmptyString),
+  /**
+   * Optional key into the client's AI provider icon registry (for example
+   * `kimi` or `deepseek`). Unknown keys fall back to the driver icon.
+   */
+  icon: Schema.optionalKey(TrimmedNonEmptyString),
   inputs: Schema.Array(MarketplaceTemplateInput).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -230,6 +235,11 @@ export const MarketplaceInstallation = Schema.Struct({
   installedAt: TrimmedNonEmptyString,
   updatedAt: TrimmedNonEmptyString,
   target: MarketplaceInstallationTarget,
+  /**
+   * When true, clients apply a catalog update to this installation as soon
+   * as one is visible. Defaults to false for older persisted state.
+   */
+  autoUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type MarketplaceInstallation = typeof MarketplaceInstallation.Type;
 
@@ -269,6 +279,30 @@ export const MarketplaceUpdateInput = Schema.Struct({
 });
 export type MarketplaceUpdateInput = typeof MarketplaceUpdateInput.Type;
 
+export const MarketplaceSetAutoUpdateInput = Schema.Struct({
+  installationId: MarketplaceInstallationId,
+  autoUpdate: Schema.Boolean,
+});
+export type MarketplaceSetAutoUpdateInput = typeof MarketplaceSetAutoUpdateInput.Type;
+
+export const MarketplaceExportProviderTemplateInput = Schema.Struct({
+  instanceId: ProviderInstanceId,
+});
+export type MarketplaceExportProviderTemplateInput =
+  typeof MarketplaceExportProviderTemplateInput.Type;
+
+/**
+ * A provider instance rendered as a publishable provider-template package
+ * manifest. Sensitive environment values are never included; they become
+ * password inputs the next installer must answer.
+ */
+export const MarketplaceExportedTemplate = Schema.Struct({
+  packageId: MarketplacePackageId,
+  fileName: TrimmedNonEmptyString,
+  manifestJson: TrimmedNonEmptyString,
+});
+export type MarketplaceExportedTemplate = typeof MarketplaceExportedTemplate.Type;
+
 export const MarketplaceOperation = Schema.Literals([
   "list",
   "read-package",
@@ -277,6 +311,8 @@ export const MarketplaceOperation = Schema.Literals([
   "install",
   "update",
   "uninstall",
+  "set-auto-update",
+  "export",
   "read-state",
   "write-state",
   "fetch",
@@ -298,6 +334,7 @@ export const MarketplaceErrorReason = Schema.Literals([
   "integrity-mismatch",
   "invalid-input",
   "instance-conflict",
+  "instance-not-found",
   "installation-not-found",
   "state-failed",
   "materialization-failed",

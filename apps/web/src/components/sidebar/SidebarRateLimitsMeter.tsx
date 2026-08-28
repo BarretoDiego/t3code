@@ -170,6 +170,7 @@ function RateLimitProviderSection({
             displayName={provider.displayName}
             iconClassName="size-4"
             {...(provider.accentColor ? { accentColor: provider.accentColor } : {})}
+            {...(provider.icon ? { icon: provider.icon } : {})}
           />
           <span className="truncate font-medium text-xs">{provider.displayName}</span>
           {provider.planLabel ? (

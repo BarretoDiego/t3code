@@ -2,6 +2,8 @@ import {
   MarketplaceCatalogEntry,
   type MarketplaceCatalogPackage,
   MarketplaceError,
+  type MarketplaceExportedTemplate,
+  type MarketplaceExportProviderTemplateInput,
   MarketplaceId,
   type MarketplaceInstallInput,
   type MarketplaceInstallation,
@@ -13,6 +15,7 @@ import {
   MarketplaceManifest,
   MarketplacePackageId,
   MarketplacePackageManifest as MarketplacePackageManifestSchema,
+  type MarketplaceSetAutoUpdateInput,
   type MarketplaceSnapshot,
   type MarketplaceSource,
   MarketplaceSource as MarketplaceSourceSchema,
@@ -28,6 +31,7 @@ import {
 } from "@t3tools/contracts";
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -52,7 +56,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 const OFFICIAL_SOURCE: MarketplaceSource = {
   id: MarketplaceId.make("t3-official"),
   name: "T3 Code Official",
-  url: "https://raw.githubusercontent.com/pingdotgg/t3code/main/t3-marketplace.json",
+  url: "https://raw.githubusercontent.com/BarretoDiego/t3code/main/t3-marketplace.json",
   official: true,
   removable: false,
 };
@@ -70,6 +74,7 @@ const PersistedMarketplaceInstallation = Schema.Struct({
     installedVersion: Schema.String,
     installedAt: Schema.String,
     updatedAt: Schema.String,
+    autoUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
     target: Schema.Union([
       Schema.Struct({ type: Schema.Literal("provider-instance"), instanceId: Schema.String }),
       Schema.Struct({
@@ -106,6 +111,7 @@ const decodeMarketplaceJson = Schema.decodeUnknownEffect(
 const decodePackageJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(MarketplacePackageManifestSchema),
 );
+const decodePackageManifest = Schema.decodeUnknownEffect(MarketplacePackageManifestSchema);
 const decodeProviderTemplate = Schema.decodeUnknownEffect(ProviderTemplatePayload);
 const decodeUnknownRecord = Schema.decodeUnknownEffect(
   Schema.Record(Schema.String, Schema.Unknown),
@@ -190,6 +196,37 @@ function error(input: {
 
 function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+/** Render an arbitrary instance id as a valid lowercase marketplace package id. */
+export function sanitizeMarketplacePackageId(raw: string): string {
+  const slug = raw
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(/^[.-]+/, "")
+    .replace(/[.-]+$/, "")
+    .slice(0, 128);
+  if (slug.length === 0) return "provider-template";
+  return /^[a-z0-9]/.test(slug) ? slug : `x${slug}`;
+}
+
+/** Derive a unique template input id from an environment variable name. */
+function nextTemplateInputId(variableName: string, used: Set<string>): string {
+  const base =
+    variableName
+      .toLowerCase()
+      .replace(/_/g, "-")
+      .replace(/^[._-]+/, "") || "value";
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 /** Accept an exact JSON URL, a directory URL, or a GitHub repository URL. */
@@ -439,6 +476,12 @@ export class MarketplaceService extends Context.Service<
     readonly uninstall: (
       installationId: MarketplaceInstallationId,
     ) => Effect.Effect<MarketplaceSnapshot, MarketplaceError | ServerSettingsError>;
+    readonly setAutoUpdate: (
+      input: MarketplaceSetAutoUpdateInput,
+    ) => Effect.Effect<MarketplaceSnapshot, MarketplaceError>;
+    readonly exportProviderTemplate: (
+      input: MarketplaceExportProviderTemplateInput,
+    ) => Effect.Effect<MarketplaceExportedTemplate, MarketplaceError>;
   }
 >()("t3/marketplace/MarketplaceService") {}
 
@@ -941,6 +984,7 @@ const make = Effect.gen(function* () {
         driver: payload.driver,
         displayName: input.displayName?.trim() || payload.displayName,
         ...(payload.accentColor ? { accentColor: payload.accentColor } : {}),
+        ...(payload.icon ? { icon: payload.icon } : {}),
         environment,
         enabled: true,
         config: encodedConfig,
@@ -1222,6 +1266,7 @@ const make = Effect.gen(function* () {
           installedVersion: detail.manifest.version,
           installedAt: timestamp,
           updatedAt: timestamp,
+          autoUpdate: false,
           target: installed.target,
         };
         const persistedInstallation: PersistedInstallation = {
@@ -1359,6 +1404,150 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  const setAutoUpdate = (input: MarketplaceSetAutoUpdateInput) =>
+    mutationLock.withPermits(1)(
+      Effect.gen(function* () {
+        const state = yield* readState();
+        if (
+          !state.installations.some(({ installation }) => installation.id === input.installationId)
+        ) {
+          return yield* error({
+            operation: "set-auto-update",
+            reason: "installation-not-found",
+            detail: `Installation '${input.installationId}' was not found.`,
+            installationId: input.installationId,
+          });
+        }
+        const next: PersistedMarketplaceState = {
+          ...state,
+          installations: state.installations.map((entry) =>
+            entry.installation.id === input.installationId
+              ? { ...entry, installation: { ...entry.installation, autoUpdate: input.autoUpdate } }
+              : entry,
+          ),
+        };
+        yield* writeState(next);
+        return yield* listFromState(next);
+      }),
+    );
+
+  const exportProviderTemplate = (input: MarketplaceExportProviderTemplateInput) =>
+    Effect.gen(function* () {
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError((cause) =>
+          error({
+            operation: "read-state",
+            reason: "state-failed",
+            detail: `Could not read provider settings: ${errorDetail(cause)}`,
+          }),
+        ),
+      );
+      const instance = settings.providerInstances[input.instanceId];
+      if (!instance) {
+        return yield* error({
+          operation: "export",
+          reason: "instance-not-found",
+          detail: `Provider instance '${input.instanceId}' was not found.`,
+        });
+      }
+      const displayName = instance.displayName?.trim() || String(instance.driver);
+      const packageId = MarketplacePackageId.make(sanitizeMarketplacePackageId(input.instanceId));
+      const environment = instance.environment ?? [];
+      const usedInputIds = new Set<string>();
+      const inputs = environment.map((variable) => {
+        const inputId = nextTemplateInputId(variable.name, usedInputIds);
+        return {
+          id: inputId,
+          label: variable.name,
+          ...(variable.sensitive
+            ? {
+                control: "password",
+                required: true,
+                description: "Secret value; it is never included in an exported template.",
+              }
+            : {
+                control: "text",
+                required: false,
+                ...(variable.value.length > 0 ? { default: variable.value } : {}),
+              }),
+        };
+      });
+      const rawConfig =
+        instance.config !== null && typeof instance.config === "object"
+          ? { ...(instance.config as Record<string, unknown>) }
+          : {};
+      // A managed provider home belongs to the source installation and its
+      // files are not portable; exported templates isolate their own home.
+      const hadManagedHome = typeof rawConfig.homePath === "string";
+      delete rawConfig.homePath;
+      const payload = {
+        driver: instance.driver,
+        suggestedInstanceId: `${input.instanceId.slice(0, 56)}_copy`,
+        displayName,
+        ...(instance.accentColor ? { accentColor: instance.accentColor } : {}),
+        ...(instance.icon ? { icon: instance.icon } : {}),
+        inputs,
+        config: rawConfig,
+        environment: environment.map((variable, index) => ({
+          name: variable.name,
+          input: inputs[index]!.id,
+          sensitive: variable.sensitive,
+          required: variable.sensitive,
+        })),
+        ...(hadManagedHome ? { providerHome: { configField: "homePath", files: [] } } : {}),
+      };
+      const permissions = [
+        "provider.configure",
+        ...(environment.length > 0 ? ["provider.environment"] : []),
+        ...(hadManagedHome ? ["provider.files"] : []),
+      ];
+      const manifest = yield* decodePackageManifest({
+        $schema:
+          "https://raw.githubusercontent.com/BarretoDiego/t3code/main/marketplace/schemas/package.schema.json",
+        schemaVersion: 1,
+        id: packageId,
+        type: PROVIDER_TEMPLATE_PACKAGE_TYPE,
+        name: `${displayName} template`,
+        version: "1.0.0",
+        description: `Exported from the '${displayName}' provider instance. Review the generated inputs before publishing.`,
+        permissions,
+        payload,
+      }).pipe(
+        Effect.mapError((cause) =>
+          error({
+            operation: "export",
+            reason: "invalid-manifest",
+            detail: `The exported template is invalid: ${errorDetail(cause)}`,
+          }),
+        ),
+      );
+      yield* validateProviderTemplatePermissions(manifest).pipe(
+        Effect.mapError((cause) =>
+          error({
+            operation: "export",
+            reason: "invalid-manifest",
+            detail: `The exported template is invalid: ${cause.detail}`,
+          }),
+        ),
+      );
+      const manifestJson = yield* Schema.encodeEffect(
+        fromJsonStringPretty(MarketplacePackageManifestSchema),
+      )(manifest).pipe(
+        Effect.mapError((cause) =>
+          error({
+            operation: "export",
+            reason: "invalid-manifest",
+            detail: `The exported template could not be encoded: ${errorDetail(cause)}`,
+          }),
+        ),
+      );
+      return {
+        packageId: manifest.id,
+        fileName: `${manifest.id}.json`,
+        manifestJson: `${manifestJson}\n`,
+      } satisfies MarketplaceExportedTemplate;
+    });
+
   return {
     list,
     getPackage,
@@ -1367,6 +1556,8 @@ const make = Effect.gen(function* () {
     install,
     update,
     uninstall,
+    setAutoUpdate,
+    exportProviderTemplate,
   };
 });
 

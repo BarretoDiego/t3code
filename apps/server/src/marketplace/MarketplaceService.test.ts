@@ -4,9 +4,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   MarketplaceId,
   MarketplaceInputId,
+  MarketplaceInstallationId,
   MarketplaceManifest,
   MarketplacePackageId,
   MarketplacePackageManifest,
+  ProviderDriverKind,
   ProviderInstanceId,
   ProviderTemplatePayload,
 } from "@t3tools/contracts";
@@ -312,9 +314,28 @@ describe("marketplace provider-template lifecycle", () => {
       });
       expect(installed.installations).toHaveLength(1);
       const installation = installed.installations[0]!;
+      expect(installation.autoUpdate).toBe(false);
       expect(installation.target).toEqual({
         type: "provider-instance",
         instanceId: "codex_marketplace_test",
+      });
+
+      const autoUpdated = yield* marketplace.setAutoUpdate({
+        installationId: installation.id,
+        autoUpdate: true,
+      });
+      expect(autoUpdated.installations[0]?.autoUpdate).toBe(true);
+      // The flag survives a fresh state read, not just the mutation response.
+      expect((yield* marketplace.list()).installations[0]?.autoUpdate).toBe(true);
+      const missingAutoUpdate = yield* Effect.flip(
+        marketplace.setAutoUpdate({
+          installationId: MarketplaceInstallationId.make("missing-installation"),
+          autoUpdate: true,
+        }),
+      );
+      expect(missingAutoUpdate).toMatchObject({
+        operation: "set-auto-update",
+        reason: "installation-not-found",
       });
 
       const afterInstall = yield* settings.getSettings;
@@ -348,4 +369,86 @@ describe("marketplace provider-template lifecycle", () => {
       );
     }).pipe(Effect.provide(testLayer), Effect.scoped);
   });
+});
+
+describe("marketplace provider-template export", () => {
+  const unusedHttpLayer = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.die(new Error(`Unexpected marketplace fetch in export test: ${request.url}`)),
+    ),
+  );
+  const exportTestLayer = marketplaceLayer.pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-marketplace-export-test-" }),
+        ServerSettings.layerTest(),
+        unusedHttpLayer,
+      ),
+    ),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
+  it.effect("exports an instance as a template without leaking secret values", () =>
+    Effect.gen(function* () {
+      const marketplace = yield* MarketplaceService;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({
+        providerInstances: {
+          [ProviderInstanceId.make("claude_kimi")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            displayName: "Claude · Kimi",
+            accentColor: "#000000",
+            icon: "kimi",
+            environment: [
+              { name: "ANTHROPIC_AUTH_TOKEN", value: "sk-super-secret", sensitive: true },
+              {
+                name: "ANTHROPIC_BASE_URL",
+                value: "https://api.moonshot.ai/anthropic",
+                sensitive: false,
+              },
+            ],
+            enabled: true,
+            config: { homePath: "/managed/provider-home", customModels: ["kimi-k3[1m]"] },
+          },
+        },
+      });
+
+      const exported = yield* marketplace.exportProviderTemplate({
+        instanceId: ProviderInstanceId.make("claude_kimi"),
+      });
+
+      expect(exported.fileName).toBe("claude-kimi.json");
+      expect(exported.manifestJson).not.toContain("sk-super-secret");
+      const manifest = decodePackageManifestJson(exported.manifestJson);
+      expect(manifest.type).toBe("provider-template");
+      const payload = decodeTemplate(manifest.payload);
+      expect(payload.icon).toBe("kimi");
+      expect(payload.accentColor).toBe("#000000");
+      expect(payload.suggestedInstanceId).toBe("claude_kimi_copy");
+      // The managed home of the source installation is not portable; the
+      // exported template isolates a fresh home instead.
+      expect(payload.providerHome).toEqual({ configField: "homePath", files: [] });
+      expect((payload.config as Record<string, unknown>).homePath).toBeUndefined();
+      expect((payload.config as Record<string, unknown>).customModels).toEqual(["kimi-k3[1m]"]);
+      const keyInput = payload.inputs.find((entry) => entry.id === "anthropic-auth-token");
+      expect(keyInput?.control).toBe("password");
+      expect(keyInput && "default" in keyInput).toBe(false);
+      const urlInput = payload.inputs.find((entry) => entry.id === "anthropic-base-url");
+      expect(urlInput?.control).toBe("text");
+      expect(urlInput?.default).toBe("https://api.moonshot.ai/anthropic");
+    }).pipe(Effect.provide(exportTestLayer), Effect.scoped),
+  );
+
+  it.effect("rejects exporting an unknown provider instance", () =>
+    Effect.gen(function* () {
+      const marketplace = yield* MarketplaceService;
+      const failure = yield* Effect.flip(
+        marketplace.exportProviderTemplate({
+          instanceId: ProviderInstanceId.make("missing_instance"),
+        }),
+      );
+      expect(failure).toMatchObject({ operation: "export", reason: "instance-not-found" });
+    }).pipe(Effect.provide(exportTestLayer), Effect.scoped),
+  );
 });

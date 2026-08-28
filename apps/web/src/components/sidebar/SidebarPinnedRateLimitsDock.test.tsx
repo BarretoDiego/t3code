@@ -22,6 +22,7 @@ const monitor: SidebarRateLimitsMonitor = {
         driver: ProviderDriverKind.make("claudeAgent"),
         displayName: "Claude Work",
         accentColor: "#d97757",
+        icon: undefined,
         environmentLabel: null,
         planLabel: "Max",
         notice: undefined,

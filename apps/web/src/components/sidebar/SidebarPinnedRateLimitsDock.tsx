@@ -70,6 +70,7 @@ function RateLimitTooltipPopup({
             displayName={provider.displayName}
             iconClassName="size-4"
             {...(provider.accentColor ? { accentColor: provider.accentColor } : {})}
+            {...(provider.icon ? { icon: provider.icon } : {})}
           />
           <span className="truncate">{provider.displayName}</span>
           {provider.planLabel ? (
@@ -146,6 +147,7 @@ function CollapsedRateLimitRing({
               driverKind={provider.driver}
               displayName={provider.displayName}
               iconClassName="size-3.5"
+              {...(provider.icon ? { icon: provider.icon } : {})}
             />
           </div>
         }
@@ -301,6 +303,7 @@ const PinnedProviderWidget = memo(function PinnedProviderWidget({
           driverKind={provider.driver}
           displayName={provider.displayName}
           iconClassName="size-3"
+          {...(provider.icon ? { icon: provider.icon } : {})}
         />
         <span className="truncate font-medium text-[10px] leading-3.5 text-sidebar-foreground">
           {provider.displayName}

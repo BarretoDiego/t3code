@@ -47,6 +47,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.marketplaceInstall]: AuthOrchestrationOperateScope,
   [WS_METHODS.marketplaceUpdate]: AuthOrchestrationOperateScope,
   [WS_METHODS.marketplaceUninstall]: AuthOrchestrationOperateScope,
+  [WS_METHODS.marketplaceSetAutoUpdate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.marketplaceExportProviderTemplate]: AuthOrchestrationReadScope,
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,
