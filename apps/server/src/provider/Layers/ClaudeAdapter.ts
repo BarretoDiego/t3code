@@ -76,6 +76,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { HttpClient } from "effect/unstable/http";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -105,6 +106,11 @@ import {
   normalizeClaudeRateLimitEvent,
   normalizeClaudeUsageRateLimits,
 } from "../providerRateLimits.ts";
+import {
+  fetchKimiCodeUsage,
+  normalizeKimiCodeUsage,
+  resolveKimiCodeUsageSource,
+} from "../kimiCodeUsage.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -1709,6 +1715,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
   );
+  // Instances pointed at Kimi For Coding (ANTHROPIC_BASE_URL=api.kimi.com/coding/…)
+  // never emit `rate_limit_event`s and the SDK usage API reports
+  // `rate_limits_available: false` for third-party backends. Their plan limits
+  // come from Kimi's own `/usages` account endpoint instead. The client is
+  // captured here so adapter methods keep their service-free signatures.
+  const kimiCodeUsageSource = resolveKimiCodeUsageSource(claudeEnvironment);
+  const kimiCodeUsageHttpClient = yield* HttpClient.HttpClient;
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -2161,9 +2174,41 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return normalizeClaudeContextUsageApiSnapshot(usage.value, totalProcessedTokens);
   });
 
+  const readKimiCodePlanRateLimits = Effect.fn("readKimiCodePlanRateLimits")(function* () {
+    const source = kimiCodeUsageSource;
+    if (!source) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "kimi/usages",
+        detail: "This Claude instance is not configured against Kimi For Coding.",
+      });
+    }
+    const payload = yield* fetchKimiCodeUsage(source).pipe(
+      Effect.provideService(HttpClient.HttpClient, kimiCodeUsageHttpClient),
+      Effect.mapError(
+        (cause) =>
+          new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "kimi/usages",
+            detail: cause.message,
+            cause,
+          }),
+      ),
+    );
+    const stamp = yield* makeEventStamp();
+    return {
+      rateLimits: payload,
+      snapshot: normalizeKimiCodeUsage({ payload, observedAt: stamp.createdAt }),
+      stamp,
+    };
+  });
+
   const readCurrentPlanRateLimits = Effect.fn("readCurrentPlanRateLimits")(function* (
     context: ClaudeSessionContext,
   ) {
+    if (kimiCodeUsageSource) {
+      return yield* readKimiCodePlanRateLimits();
+    }
     const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
     if (!readUsage) {
       return yield* new ProviderAdapterRequestError({
@@ -4798,6 +4843,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const refreshRateLimits: NonNullable<ClaudeAdapterShape["refreshRateLimits"]> = Effect.fn(
     "refreshRateLimits",
   )(function* () {
+    // Kimi-backed instances read a standalone account endpoint: no session needed.
+    if (kimiCodeUsageSource) {
+      return (yield* readKimiCodePlanRateLimits()).snapshot;
+    }
     const context = Array.from(sessions.values())
       .toReversed()
       .find((candidate) => !candidate.stopped);

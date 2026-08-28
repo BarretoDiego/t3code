@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { FetchHttpClient } from "effect/unstable/http";
 import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
@@ -155,6 +156,8 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly fetch?: typeof globalThis.fetch;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -166,6 +169,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.environment ? { environment: config.environment } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -198,6 +202,13 @@ function makeHarness(config?: {
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(
+        config?.fetch
+          ? FetchHttpClient.layer.pipe(
+              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, config.fetch)),
+            )
+          : FetchHttpClient.layer,
+      ),
     ),
     query,
     getLastCreateQueryInput: () => createInput,
@@ -313,6 +324,7 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -1758,6 +1770,7 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -1821,6 +1834,7 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -2259,6 +2273,7 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -2350,6 +2365,7 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -2917,6 +2933,154 @@ describe("ClaudeAdapterLive", () => {
       }
       assert.equal(result.failure._tag, "ProviderAdapterRequestError");
       assert.match(result.failure.message, /active Claude session/i);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  const KIMI_USAGE_PAYLOAD = {
+    user: { membership: { level: "LEVEL_ADVANCED" } },
+    usage: { limit: "100", used: "4", remaining: "96", resetTime: "2026-09-03T13:09:01.801116Z" },
+    limits: [
+      {
+        window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+        detail: {
+          limit: "100",
+          used: "22",
+          remaining: "78",
+          resetTime: "2026-08-27T18:09:01.801116Z",
+        },
+      },
+    ],
+  } as const;
+
+  const makeKimiHarness = (options?: {
+    readonly onFetch?: (input: unknown) => void;
+    readonly status?: number;
+  }) =>
+    makeHarness({
+      environment: {
+        ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
+        ANTHROPIC_API_KEY: "sk-kimi-test",
+      },
+      fetch: ((input: unknown, _init?: unknown) => {
+        options?.onFetch?.(input);
+        const status = options?.status ?? 200;
+        return Promise.resolve(
+          new Response(JSON.stringify(KIMI_USAGE_PAYLOAD), {
+            status,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }) as unknown as typeof globalThis.fetch,
+    });
+
+  it.effect("reads Kimi For Coding plan limits over HTTP without a session", () => {
+    let fetchedUrl: string | undefined;
+    const harness = makeKimiHarness({
+      onFetch: (input) => {
+        fetchedUrl = String(input);
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const snapshot = yield* adapter.refreshRateLimits!();
+
+      assert.strictEqual(fetchedUrl, "https://api.kimi.com/coding/v1/usages");
+      assert.strictEqual(snapshot.planLabel, "Advanced");
+      assert.deepStrictEqual(
+        snapshot.windows.map((window) => [window.id, window.usedPercent]),
+        [
+          ["window_300", 22],
+          ["weekly", 4],
+        ],
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits Kimi plan limits after a turn completes", () => {
+    const harness = makeKimiHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 100,
+        duration_api_ms: 90,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-result-kimi-rate-limits",
+        usage: {
+          input_tokens: 4,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 8,
+        },
+        modelUsage: {},
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const rateLimitsEvent = runtimeEvents.find(
+        (event) => event.type === "account.rate-limits.updated",
+      );
+      assert.equal(rateLimitsEvent?.type, "account.rate-limits.updated");
+      if (rateLimitsEvent?.type === "account.rate-limits.updated") {
+        assert.strictEqual(rateLimitsEvent.payload.updateMode, "replace");
+        assert.strictEqual(rateLimitsEvent.payload.snapshot?.planLabel, "Advanced");
+        assert.deepStrictEqual(
+          rateLimitsEvent.payload.snapshot?.windows.map((window) => [
+            window.id,
+            window.usedPercent,
+          ]),
+          [
+            ["window_300", 22],
+            ["weekly", 4],
+          ],
+        );
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("fails the Kimi refresh when the usage endpoint rejects the key", () => {
+    const harness = makeKimiHarness({ status: 401 });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
+
+      if (result._tag !== "Failure") {
+        assert.fail("Expected refreshRateLimits to fail when Kimi rejects the key");
+      }
+      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      assert.match(result.failure.message, /rejected the instance API key/i);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
