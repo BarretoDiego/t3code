@@ -62,11 +62,14 @@ import {
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   MarketplaceError,
+  MarketplaceExportedTemplate,
+  MarketplaceExportProviderTemplateInput,
   MarketplaceId,
   MarketplaceInstallationId,
   MarketplaceInstallInput,
   MarketplacePackageDetail,
   MarketplacePackageId,
+  MarketplaceSetAutoUpdateInput,
   MarketplaceSnapshot,
   MarketplaceUpdateInput,
 } from "./marketplace.ts";
@@ -248,6 +251,8 @@ export const WS_METHODS = {
   marketplaceInstall: "marketplace.install",
   marketplaceUpdate: "marketplace.update",
   marketplaceUninstall: "marketplace.uninstall",
+  marketplaceSetAutoUpdate: "marketplace.setAutoUpdate",
+  marketplaceExportProviderTemplate: "marketplace.exportProviderTemplate",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -481,6 +486,21 @@ export const WsMarketplaceUninstallRpc = Rpc.make(WS_METHODS.marketplaceUninstal
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
 });
+
+export const WsMarketplaceSetAutoUpdateRpc = Rpc.make(WS_METHODS.marketplaceSetAutoUpdate, {
+  payload: MarketplaceSetAutoUpdateInput,
+  success: MarketplaceSnapshot,
+  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+});
+
+export const WsMarketplaceExportProviderTemplateRpc = Rpc.make(
+  WS_METHODS.marketplaceExportProviderTemplate,
+  {
+    payload: MarketplaceExportProviderTemplateInput,
+    success: MarketplaceExportedTemplate,
+    error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
+  },
+);
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   payload: Schema.Struct({}),
@@ -1113,6 +1133,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsMarketplaceInstallRpc,
   WsMarketplaceUpdateRpc,
   WsMarketplaceUninstallRpc,
+  WsMarketplaceSetAutoUpdateRpc,
+  WsMarketplaceExportProviderTemplateRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

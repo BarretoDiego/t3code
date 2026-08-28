@@ -1,0 +1,32 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Performance Tuner",
+  "version": "1.0.0",
+  "description": "A specialist profile that profiles hot paths before editing: frame rendering, websocket payload size, and list virtualization in the T3 Code clients.",
+  "homepage": "https://github.com/BarretoDiego/t3code/tree/main/marketplace",
+  "license": "MIT",
+  "repository": "https://github.com/BarretoDiego/t3code",
+  "publisher": "T3 Code",
+  "type": "specialist",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "specialist-performance-tuner",
+  "payload": {
+    "kind": "specialist",
+    "focus": "client-performance",
+    "persona": "Performance engineer who measures first and keeps animations off the GPU hot path.",
+    "checklist": [
+      "profile before editing",
+      "prefer memoized selectors",
+      "no continuously repainting animations"
+    ]
+  },
+  "permissions": [],
+  "schemaVersion": 1
+}

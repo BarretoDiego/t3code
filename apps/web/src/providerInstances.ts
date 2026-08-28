@@ -49,6 +49,8 @@ export interface ProviderInstanceEntry {
   readonly driverKind: ProviderDriverKind;
   readonly displayName: string;
   readonly accentColor?: string | undefined;
+  /** Custom AI brand icon key chosen for this instance, when set. */
+  readonly icon?: string | undefined;
   readonly continuationGroupKey?: string | undefined;
   readonly enabled: boolean;
   readonly installed: boolean;
@@ -188,6 +190,7 @@ export function deriveProviderInstanceEntries(
       driverKind,
       displayName,
       accentColor: normalizeProviderAccentColor(snapshot.accentColor),
+      icon: snapshot.icon,
       continuationGroupKey: snapshot.continuation?.groupKey,
       enabled: snapshot.enabled,
       installed: snapshot.installed,

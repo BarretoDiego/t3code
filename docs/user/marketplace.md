@@ -22,6 +22,24 @@ Installed packages can be updated or uninstalled from their Marketplace details.
 provider template removes the provider instance and files owned by that package. It does not remove
 the provider CLI itself.
 
+Turn on **Auto-update** on an installed package to apply catalog updates automatically when you open
+the Marketplace. Secrets are never re-asked: the update reuses the environment's stored values, and
+you can turn it off at any time.
+
+## Export your own configuration as a template
+
+Any configured provider can become a shareable template. In **Settings → Providers**, open the
+provider's configuration and choose **Export as template**. T3 Code generates the package manifest:
+secret values become install-time password inputs and are never included, while non-secret values
+(such as base URLs or model names) carry over as defaults. Review the JSON, then copy or download it
+and add it to a marketplace repository to share it.
+
+## Change a provider's icon
+
+In the provider's configuration, use **Icon** to pick any AI brand icon — Claude, Kimi, DeepSeek,
+GLM, MiniMax, Qwen, and many others — instead of the driver default. Marketplace templates may also
+suggest an icon, which you can change afterwards.
+
 ## Add a community repository
 
 Under **Marketplace repositories**, paste any of the following:

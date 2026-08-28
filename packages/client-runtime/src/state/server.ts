@@ -818,6 +818,18 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    marketplaceSetAutoUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:set-auto-update",
+      tag: WS_METHODS.marketplaceSetAutoUpdate,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceExportTemplate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:export-template",
+      tag: WS_METHODS.marketplaceExportProviderTemplate,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,

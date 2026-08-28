@@ -365,7 +365,7 @@ import {
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { useComposerHandleContext } from "../composerHandleContext";
+import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -1277,6 +1277,10 @@ function ChatViewContent(props: ChatViewProps) {
     workspace,
   } = props;
   const workspaceActive = workspace?.active ?? true;
+  // Mutable mirror so focus effects can bail on inactive panes without
+  // re-running (and stealing focus) every time the active pane changes.
+  const workspaceActiveRef = useRef(workspaceActive);
+  workspaceActiveRef.current = workspaceActive;
   const workspaceRightPanelHost = workspace?.rightPanelHost ?? null;
   const onWorkspaceRightPanelMaximizedChange = workspace?.onRightPanelMaximizedChange;
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -1424,8 +1428,16 @@ function ChatViewContent(props: ChatViewProps) {
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
-  const localComposerRef = useRef<ChatComposerHandle | null>(null);
-  const composerRef = useComposerHandleContext() ?? localComposerRef;
+  // Every chat column owns its composer handle. Sharing the root context ref
+  // here let the last-rendered column steal every "focus composer" call.
+  const composerRef = useRef<ChatComposerHandle | null>(null);
+  const rootComposerHandleRef = useComposerHandleContext();
+  // App-level UI (command palette) owns no pane, so it focuses through the
+  // root ref. While this pane is active, point that ref at this composer.
+  useEffect(() => {
+    if (!workspaceActive || !rootComposerHandleRef) return;
+    rootComposerHandleRef.current = composerRef.current;
+  });
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
@@ -4305,7 +4317,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id]);
 
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!workspaceActiveRef.current || !activeThread?.id || terminalUiState.terminalOpen) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
     });
@@ -5078,10 +5090,13 @@ function ChatViewContent(props: ChatViewProps) {
 
     if (!previous && current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
-      setTerminalFocusRequestId((value) => value + 1);
+      if (workspaceActiveRef.current) {
+        setTerminalFocusRequestId((value) => value + 1);
+      }
       return;
     } else if (previous && !current) {
       terminalUiOpenByThreadRef.current[activeThreadKey] = current;
+      if (!workspaceActiveRef.current) return;
       const frame = window.requestAnimationFrame(() => {
         focusComposer();
       });
@@ -6821,23 +6836,26 @@ function ChatViewContent(props: ChatViewProps) {
       activeProject &&
       activeWorkspaceRoot ? (
       <Suspense fallback={null}>
-        <FilePreviewPanel
-          key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
-          environmentId={activeProject.environmentId}
-          cwd={activeWorkspaceRoot}
-          projectName={activeProject.title}
-          threadRef={activeThreadRef}
-          composerDraftTarget={composerDraftTarget}
-          keybindings={keybindings}
-          availableEditors={availableEditors}
-          relativePath={
-            activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
-          }
-          revealLine={activeFileSurface?.revealLine ?? null}
-          revealRequestId={activeFileSurface?.revealRequestId ?? 0}
-          onOpenFile={openFileSurface}
-          onPendingChange={handleFilePendingChange}
-        />
+        {/* File mentions resolve through this column's composer handle. */}
+        <ComposerHandleContext value={composerRef}>
+          <FilePreviewPanel
+            key={`${activeProject.environmentId}:${activeWorkspaceRoot}`}
+            environmentId={activeProject.environmentId}
+            cwd={activeWorkspaceRoot}
+            projectName={activeProject.title}
+            threadRef={activeThreadRef}
+            composerDraftTarget={composerDraftTarget}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            relativePath={
+              activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
+            }
+            revealLine={activeFileSurface?.revealLine ?? null}
+            revealRequestId={activeFileSurface?.revealRequestId ?? 0}
+            onOpenFile={openFileSurface}
+            onPendingChange={handleFilePendingChange}
+          />
+        </ComposerHandleContext>
       </Suspense>
     ) : null
   ) : null;

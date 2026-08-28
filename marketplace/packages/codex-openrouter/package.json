@@ -5,7 +5,7 @@
   "description": "Creates an isolated Codex home configured for OpenRouter and stores the API key in T3 Code's secret store.",
   "homepage": "https://openrouter.ai/docs",
   "license": "MIT",
-  "repository": "https://github.com/pingdotgg/t3code",
+  "repository": "https://github.com/BarretoDiego/t3code",
   "publisher": "T3 Code",
   "type": "provider-template",
   "compatibility": {
@@ -22,6 +22,7 @@
     "suggestedInstanceId": "codex_openrouter",
     "displayName": "Codex · OpenRouter",
     "accentColor": "#7c3aed",
+    "icon": "openrouter",
     "inputs": [
       {
         "id": "api-key",

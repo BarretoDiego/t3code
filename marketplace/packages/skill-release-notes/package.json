@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/package.schema.json",
+  "name": "Release Notes Writer",
+  "version": "1.0.0",
+  "description": "A writing skill that turns a range of merged pull requests into user-facing release notes, grouped by what users actually notice.",
+  "homepage": "https://github.com/BarretoDiego/t3code/tree/main/marketplace",
+  "license": "MIT",
+  "repository": "https://github.com/BarretoDiego/t3code",
+  "publisher": "T3 Code",
+  "type": "skill",
+  "compatibility": {
+    "t3": ">=0.0.1",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "id": "skill-release-notes",
+  "payload": {
+    "kind": "skill",
+    "format": "SKILL.md",
+    "summary": "Draft release notes from merged PRs: group by user-visible outcome, drop internals, and keep one plain sentence per change.",
+    "targets": [
+      "claude",
+      "codex",
+      "cursor",
+      "opencode"
+    ]
+  },
+  "permissions": [],
+  "schemaVersion": 1
+}

@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
+  type EnvironmentId,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
@@ -26,9 +27,21 @@ import {
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { serverEnvironment } from "~/state/server";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
 import { DraftInput } from "../ui/draft-input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ScrollArea } from "../ui/scroll-area";
@@ -42,6 +55,7 @@ import { ProviderSettingsForm } from "./ProviderSettingsForm";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderInstanceIcon, providerInstanceInitials } from "../chat/ProviderInstanceIcon";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
+import { ProviderIconPicker } from "./ProviderIconPicker";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -341,6 +355,11 @@ interface ProviderInstanceCardProps {
   readonly driverOption: DriverOption | undefined;
   readonly liveProvider: ServerProvider | undefined;
   readonly mode: "list" | "editor";
+  /**
+   * Environment the instance belongs to. Enables the marketplace template
+   * export action in the editor; omit to hide it.
+   */
+  readonly environmentId?: EnvironmentId | undefined;
   readonly selected?: boolean | undefined;
   readonly onSelect?: (() => void) | undefined;
   readonly readOnly?: boolean | undefined;
@@ -395,6 +414,7 @@ export function ProviderInstanceCard({
   driverOption,
   liveProvider,
   mode,
+  environmentId,
   selected = false,
   onSelect,
   readOnly = false,
@@ -411,6 +431,14 @@ export function ProviderInstanceCard({
   isUpdating = false,
 }: ProviderInstanceCardProps) {
   const [activeTab, setActiveTab] = useState<"models" | "configuration">("configuration");
+  const [exportedTemplate, setExportedTemplate] = useState<{
+    fileName: string;
+    manifestJson: string;
+  } | null>(null);
+  const [isExportingTemplate, setIsExportingTemplate] = useState(false);
+  const exportTemplate = useAtomCommand(serverEnvironment.marketplaceExportTemplate, {
+    reportFailure: false,
+  });
   const enabled = resolveProviderInstanceEnabled(instance);
   // A locally disabled provider stays neutral even if its last server status
   // is stale. Enabled providers use the server status when one is available.
@@ -489,6 +517,15 @@ export function ProviderInstanceCard({
     );
   };
 
+  const updateIcon = (value: string | undefined) => {
+    const { icon: _omit, ...rest } = instance;
+    onUpdate(
+      value
+        ? ({ ...rest, icon: value } as ProviderInstanceConfig)
+        : (rest as ProviderInstanceConfig),
+    );
+  };
+
   const updateConfig = (nextConfig: Record<string, unknown> | undefined) => {
     const { config: _omit, ...rest } = instance;
     onUpdate(
@@ -514,11 +551,57 @@ export function ProviderInstanceCard({
     );
   };
 
+  const handleExportTemplate = async () => {
+    if (!environmentId || isExportingTemplate) return;
+    setIsExportingTemplate(true);
+    const result = await exportTemplate({ environmentId, input: { instanceId } });
+    setIsExportingTemplate(false);
+    if (result._tag === "Success") {
+      setExportedTemplate(result.value);
+      return;
+    }
+    const failure = squashAtomCommandFailure(result);
+    toastManager.add({
+      type: "error",
+      title: "Could not export template",
+      description: failure instanceof Error ? failure.message : "The request failed.",
+    });
+  };
+
+  const copyExportedTemplate = async () => {
+    if (!exportedTemplate) return;
+    try {
+      await navigator.clipboard.writeText(exportedTemplate.manifestJson);
+      toastManager.add({ type: "success", title: "Template JSON copied" });
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not copy template",
+          description: error instanceof Error ? error.message : "Clipboard is unavailable.",
+        }),
+      );
+    }
+  };
+
+  const downloadExportedTemplate = () => {
+    if (!exportedTemplate) return;
+    const url = URL.createObjectURL(
+      new Blob([exportedTemplate.manifestJson], { type: "application/json" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = exportedTemplate.fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const titleIconNode = driverKind ? (
     <ProviderInstanceIcon
       driverKind={driverKind}
       displayName={displayName}
       accentColor={accentColor}
+      icon={instance.icon}
       showBadge={Boolean(accentColor)}
       className="size-5"
       iconClassName="size-4 text-foreground/80"
@@ -810,11 +893,42 @@ export function ProviderInstanceCard({
           </div>
 
           <div>
+            <ProviderIconPicker
+              displayName={displayName}
+              value={instance.icon}
+              onCommit={updateIcon}
+              description="Overrides the driver icon anywhere this instance appears."
+            />
+          </div>
+
+          <div>
             <ProviderEnvironmentSection
               environment={instance.environment ?? []}
               onChange={updateEnvironment}
             />
           </div>
+
+          {environmentId ? (
+            <div className="grid gap-2">
+              <span className="text-xs font-medium text-foreground">Marketplace</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isExportingTemplate}
+                  onClick={() => void handleExportTemplate()}
+                >
+                  {isExportingTemplate ? <LoaderIcon className="animate-spin" /> : <CopyIcon />}
+                  Export as template
+                </Button>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Generates a provider-template package manifest from this configuration. Secrets
+                become install-time inputs and are never included.
+              </span>
+            </div>
+          ) : null}
 
           {driverOption ? (
             <ProviderSettingsForm
@@ -854,6 +968,44 @@ export function ProviderInstanceCard({
             />
           </div>
         ) : null}
+
+        <Dialog
+          open={exportedTemplate !== null}
+          onOpenChange={(open) => !open && setExportedTemplate(null)}
+        >
+          <DialogPopup className="w-full sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Marketplace template</DialogTitle>
+              <DialogDescription>
+                Publish this file as {exportedTemplate?.fileName ?? "package.json"} in a marketplace
+                repository and reference it from the catalog. Review the generated inputs before
+                sharing — non-secret values are included as defaults.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogPanel>
+              <textarea
+                readOnly
+                value={exportedTemplate?.manifestJson ?? ""}
+                aria-label="Exported marketplace template manifest"
+                spellCheck={false}
+                className="h-72 w-full resize-none rounded-md border border-border/70 bg-muted/30 p-3 font-mono text-xs text-foreground outline-none"
+              />
+            </DialogPanel>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setExportedTemplate(null)}>
+                Close
+              </Button>
+              <Button variant="outline" onClick={downloadExportedTemplate}>
+                <DownloadIcon />
+                Download
+              </Button>
+              <Button onClick={() => void copyExportedTemplate()}>
+                <CopyIcon />
+                Copy JSON
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
       </div>
     </div>
   );

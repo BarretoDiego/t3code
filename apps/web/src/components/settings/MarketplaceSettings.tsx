@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PackageOpenIcon, PlusIcon, RefreshCwIcon, StoreIcon, Trash2Icon } from "lucide-react";
 import {
   PROVIDER_TEMPLATE_PACKAGE_TYPE,
@@ -32,7 +32,9 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
+import { groupMarketplacePackagesByType } from "./MarketplaceSettings.logic";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
@@ -54,7 +56,7 @@ function PackageStatus({ entry }: { readonly entry: MarketplaceCatalogEntry }) {
   if (entry.updateAvailable) return <Badge variant="warning">Update</Badge>;
   if (entry.installedVersions.length > 0) return <Badge variant="success">Installed</Badge>;
   if (entry.availability === "unsupported-type") {
-    return <Badge variant="secondary">Requires a newer T3 Code</Badge>;
+    return <Badge variant="secondary">Not installable yet</Badge>;
   }
   if (entry.availability === "incompatible") return <Badge variant="warning">Incompatible</Badge>;
   return <Badge variant="outline">{entry.package.version}</Badge>;
@@ -168,6 +170,33 @@ function PackageDialog({
   const uninstallPackage = useAtomCommand(serverEnvironment.marketplaceUninstall, {
     reportFailure: false,
   });
+  const setAutoUpdate = useAtomCommand(serverEnvironment.marketplaceSetAutoUpdate, {
+    reportFailure: false,
+  });
+
+  const toggleAutoUpdate = async (installation: MarketplaceInstallation, enabled: boolean) => {
+    if (pendingAction) return;
+    setPendingAction(`auto-update:${installation.id}`);
+    const result = await setAutoUpdate({
+      environmentId,
+      input: { installationId: installation.id, autoUpdate: enabled },
+    });
+    setPendingAction(null);
+    if (result._tag === "Success") {
+      toastManager.add({
+        type: "success",
+        title: enabled ? "Automatic updates enabled" : "Automatic updates disabled",
+      });
+      packageQuery.refresh();
+      onChanged();
+      return;
+    }
+    toastManager.add({
+      type: "error",
+      title: "Marketplace request failed",
+      description: errorMessage(result),
+    });
+  };
   const detail = packageQuery.data;
   const template = detail
     ? Option.getOrNull(decodeProviderTemplate(detail.manifest.payload))
@@ -356,6 +385,17 @@ function PackageDialog({
                         <div className="text-xs text-muted-foreground">
                           v{installation.installedVersion}
                         </div>
+                        <label className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Switch
+                            checked={installation.autoUpdate}
+                            disabled={pendingAction !== null}
+                            onCheckedChange={(checked) =>
+                              void toggleAutoUpdate(installation, Boolean(checked))
+                            }
+                            aria-label={`Automatically update ${installation.packageName}`}
+                          />
+                          Auto-update
+                        </label>
                       </div>
                       <div className="flex gap-2">
                         {selected?.updateAvailable ? (
@@ -469,6 +509,10 @@ export function MarketplaceSettings() {
   const [selected, setSelected] = useState<MarketplaceCatalogEntry | null>(null);
   const [isAddingSource, setIsAddingSource] = useState(false);
   const [removingSourceId, setRemovingSourceId] = useState<string | null>(null);
+  const autoUpdatePackage = useAtomCommand(serverEnvironment.marketplaceUpdate, {
+    reportFailure: false,
+  });
+  const autoUpdateAttemptedRef = useRef<Set<string>>(new Set());
   const snapshot = marketplaceQuery.data;
   const packages = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -480,6 +524,47 @@ export function MarketplaceSettings() {
         .includes(normalized),
     );
   }, [query, snapshot]);
+  const packageGroups = useMemo(() => groupMarketplacePackagesByType(packages), [packages]);
+
+  // Apply updates for installations the user flagged as auto-update, once per
+  // installation per mount. Sensitive inputs are reused server-side from the
+  // installed provider environment, so an empty input record is sufficient.
+  useEffect(() => {
+    if (!snapshot || !environmentId) return;
+    for (const installation of snapshot.installations) {
+      if (!installation.autoUpdate || autoUpdateAttemptedRef.current.has(installation.id)) {
+        continue;
+      }
+      const entry = snapshot.packages.find(
+        (candidate) =>
+          candidate.sourceId === installation.sourceId &&
+          candidate.package.id === installation.packageId,
+      );
+      if (!entry?.updateAvailable) continue;
+      autoUpdateAttemptedRef.current.add(installation.id);
+      void autoUpdatePackage({
+        environmentId,
+        input: { installationId: installation.id, inputs: {} },
+      }).then((result) => {
+        if (result._tag === "Success") {
+          toastManager.add({
+            type: "success",
+            title: `${installation.packageName} updated automatically`,
+          });
+          marketplaceQuery.refresh();
+          return;
+        }
+        toastManager.add({
+          type: "error",
+          title: `Could not auto-update ${installation.packageName}`,
+          description: errorMessage(result),
+        });
+      });
+    }
+    // marketplaceQuery.refresh and autoUpdatePackage are stable atom-backed
+    // references; snapshot identity drives re-evaluation after each refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, environmentId]);
 
   const handleAddSource = async () => {
     if (!environmentId || !sourceUrl.trim() || isAddingSource) return;
@@ -640,13 +725,22 @@ export function MarketplaceSettings() {
             }
           />
         ) : (
-          <div className={cn("grid gap-3 px-3 pb-2 sm:grid-cols-2 sm:px-4 lg:grid-cols-3")}>
-            {packages.map((entry) => (
-              <PackageCard
-                key={`${entry.sourceId}/${entry.package.id}`}
-                entry={entry}
-                onOpen={() => setSelected(entry)}
-              />
+          <div className="grid gap-5 pb-2">
+            {packageGroups.map((group) => (
+              <div key={group.type} className="grid gap-2">
+                <h3 className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground sm:px-4">
+                  {group.label}
+                </h3>
+                <div className={cn("grid gap-3 px-3 sm:grid-cols-2 sm:px-4 lg:grid-cols-3")}>
+                  {group.entries.map((entry) => (
+                    <PackageCard
+                      key={`${entry.sourceId}/${entry.package.id}`}
+                      entry={entry}
+                      onOpen={() => setSelected(entry)}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

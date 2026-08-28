@@ -4,8 +4,93 @@
   "id": "t3-official",
   "name": "T3 Code Official",
   "description": "Official packages maintained alongside T3 Code.",
-  "homepage": "https://github.com/pingdotgg/t3code/tree/main/marketplace",
+  "homepage": "https://github.com/BarretoDiego/t3code/tree/main/marketplace",
   "packages": [
+    {
+      "id": "claude-api-key",
+      "type": "provider-template",
+      "name": "Claude with API key",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance authenticated with an Anthropic API key.",
+      "manifest": "./marketplace/packages/claude-api-key/package.json",
+      "integrity": "sha256-a1a09c9ef9cb4e6f74a7523f4e6115ea50e7fa5f3978798bca656a633ecac9fe",
+      "publisher": "T3 Code",
+      "icon": "claude",
+      "tags": ["claude", "anthropic", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "claude-kimi",
+      "type": "provider-template",
+      "name": "Claude Code with Kimi",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance routed to Moonshot AI's Anthropic-compatible endpoint.",
+      "manifest": "./marketplace/packages/claude-kimi/package.json",
+      "integrity": "sha256-8d8c9e3b19b8150de373b86fcc3f7185fc9e0e1fa6cee6b40aaf09859cbcd251",
+      "publisher": "T3 Code",
+      "icon": "kimi",
+      "tags": ["claude", "kimi", "moonshot", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "claude-glm",
+      "type": "provider-template",
+      "name": "Claude Code with GLM",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance routed to Z.AI's Anthropic-compatible endpoint.",
+      "manifest": "./marketplace/packages/claude-glm/package.json",
+      "integrity": "sha256-ef632fa3f28fb74e34cfd24b1dda5df8abdb5eb47a53020d98b07bb200c31a93",
+      "publisher": "T3 Code",
+      "icon": "zhipu",
+      "tags": ["claude", "glm", "zhipu", "z.ai", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "claude-minimax",
+      "type": "provider-template",
+      "name": "Claude Code with MiniMax",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance routed to MiniMax's Anthropic-compatible endpoint.",
+      "manifest": "./marketplace/packages/claude-minimax/package.json",
+      "integrity": "sha256-36a047e8ce84380c70f58214445228683e827b644f91e869075f485fc773d2d6",
+      "publisher": "T3 Code",
+      "icon": "minimax",
+      "tags": ["claude", "minimax", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "claude-deepseek",
+      "type": "provider-template",
+      "name": "Claude Code with DeepSeek",
+      "version": "1.0.0",
+      "description": "An isolated Claude Code instance routed to DeepSeek's Anthropic-compatible endpoint.",
+      "manifest": "./marketplace/packages/claude-deepseek/package.json",
+      "integrity": "sha256-47b94328b8ceb04040957538a2ca2463068cabfe793ff7681d80b245df4c5aa8",
+      "publisher": "T3 Code",
+      "icon": "deepseek",
+      "tags": ["claude", "deepseek", "provider"],
+      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
     {
       "id": "codex-openrouter",
       "type": "provider-template",
@@ -13,8 +98,9 @@
       "version": "1.0.0",
       "description": "An isolated Codex instance configured to use OpenRouter's Responses API.",
       "manifest": "./marketplace/packages/codex-openrouter/package.json",
-      "integrity": "sha256-68cb9c94ac0f009635d31537a7fe30367e96e0d182ebb269d4f4b22099d12add",
+      "integrity": "sha256-3ad58ef0e458650af6345e11e7f8c90d1a93abe9cf339c0b03b1997486485a65",
       "publisher": "T3 Code",
+      "icon": "openrouter",
       "tags": ["codex", "openrouter", "provider"],
       "permissions": ["provider.configure", "provider.environment", "provider.files"],
       "compatibility": {
@@ -23,16 +109,64 @@
       }
     },
     {
-      "id": "claude-api-key",
-      "type": "provider-template",
-      "name": "Claude with API key",
+      "id": "skill-pr-review",
+      "type": "skill",
+      "name": "PR Review Checklist",
       "version": "1.0.0",
-      "description": "An isolated Claude Code instance authenticated with an Anthropic API key.",
-      "manifest": "./marketplace/packages/claude-api-key/package.json",
-      "integrity": "sha256-6d8223cd06eda33db40be7fd31fb1b4b0aef33b668eecf3742cb5285789e5b06",
+      "description": "A review skill that walks a pull request against the repository's conventions.",
+      "manifest": "./marketplace/packages/skill-pr-review/package.json",
+      "integrity": "sha256-05004769942de6aea5cb174d17f026d1e7cf44081653afebcce8b798440d06da",
       "publisher": "T3 Code",
-      "tags": ["claude", "anthropic", "provider"],
-      "permissions": ["provider.configure", "provider.environment", "provider.files"],
+      "tags": ["skill", "review", "pull-request"],
+      "permissions": [],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "skill-release-notes",
+      "type": "skill",
+      "name": "Release Notes Writer",
+      "version": "1.0.0",
+      "description": "A writing skill that turns merged pull requests into user-facing release notes.",
+      "manifest": "./marketplace/packages/skill-release-notes/package.json",
+      "integrity": "sha256-3ec16089ea688868acc699160fa608d576f4d5f298356986468107f8b3a55134",
+      "publisher": "T3 Code",
+      "tags": ["skill", "release", "docs"],
+      "permissions": [],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "agent-security-reviewer",
+      "type": "agent",
+      "name": "Security Reviewer",
+      "version": "1.0.0",
+      "description": "A subagent definition that audits diffs for injection surfaces, secret handling, and unsafe boundaries.",
+      "manifest": "./marketplace/packages/agent-security-reviewer/package.json",
+      "integrity": "sha256-9e57ba4eb87aa9e2bbe867005310073988fbbd9c1027ad01937df4ee29cbd9e0",
+      "publisher": "T3 Code",
+      "tags": ["agent", "security", "review"],
+      "permissions": [],
+      "compatibility": {
+        "t3": ">=0.0.1",
+        "platforms": ["darwin", "linux", "win32"]
+      }
+    },
+    {
+      "id": "specialist-performance-tuner",
+      "type": "specialist",
+      "name": "Performance Tuner",
+      "version": "1.0.0",
+      "description": "A specialist profile that profiles hot paths before editing: rendering, payloads, and list virtualization.",
+      "manifest": "./marketplace/packages/specialist-performance-tuner/package.json",
+      "integrity": "sha256-881de54b3f8b744120d17346953939e326a8f42a3446d8c5875b3ff3c2ca4a72",
+      "publisher": "T3 Code",
+      "tags": ["specialist", "performance"],
+      "permissions": [],
       "compatibility": {
         "t3": ">=0.0.1",
         "platforms": ["darwin", "linux", "win32"]

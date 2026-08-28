@@ -140,4 +140,40 @@ describe("marketplace contracts", () => {
     expect(snapshot.packages).toHaveLength(1);
     expect(snapshot.packages[0]?.availability).toBe("unsupported-type");
   });
+
+  it("defaults an installation's autoUpdate to false when absent", () => {
+    const snapshot = decodeSnapshot({
+      sources: [],
+      packages: [],
+      installations: [
+        {
+          id: "install-1",
+          sourceId: "community",
+          packageId: "example",
+          packageType: "provider-template",
+          packageName: "Example",
+          installedVersion: "1.0.0",
+          installedAt: "2026-08-27T00:00:00.000Z",
+          updatedAt: "2026-08-27T00:00:00.000Z",
+          target: { type: "provider-instance", instanceId: "claude_kimi" },
+        },
+      ],
+      sourceErrors: [],
+    });
+
+    expect(snapshot.installations[0]?.autoUpdate).toBe(false);
+  });
+
+  it("accepts an optional provider template icon key", () => {
+    const payload = decodeProviderTemplate({
+      driver: "claudeAgent",
+      suggestedInstanceId: "claude_kimi",
+      displayName: "Claude · Kimi",
+      icon: "kimi",
+      inputs: [],
+      environment: [],
+    });
+
+    expect(payload.icon).toBe("kimi");
+  });
 });
