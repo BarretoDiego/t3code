@@ -4,7 +4,6 @@ import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
-import { useClientSettings } from "../../hooks/useSettings";
 import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -30,8 +29,6 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
   const projects = useProjects();
   const threads = useThreadShells();
   const serverConfigs = useServerConfigs();
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
   const environment = environments.find((entry) => entry.environmentId === environmentId) ?? null;
 
   const openAddProject = useCallback(
@@ -48,8 +45,6 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
     const shelves = shelveScopeThreads({
       threads: environmentThreads,
       now,
-      autoSettleAfterDays,
-      autoSettleOnMerge,
       supportsSettlement: (id) =>
         serverConfigs.get(id)?.environment.capabilities.threadSettlement === true,
       supportsSnooze: (id) => serverConfigs.get(id)?.environment.capabilities.threadSnooze === true,
@@ -62,8 +57,6 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
       isActiveThread: (thread) => activeThreadIds.has(thread.id),
     });
   }, [
-    autoSettleAfterDays,
-    autoSettleOnMerge,
     environmentId,
     nowMinute,
     projects,

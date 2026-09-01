@@ -6,7 +6,6 @@ import { SquarePenIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
-import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -39,8 +38,6 @@ export function ProjectScopePage(props: {
   const project = useProject(projectRef);
   const threads = useThreadShells();
   const serverConfigs = useServerConfigs();
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
   const environmentLabel = resolveScopeEnvironmentLabel(
     environments.find((entry) => entry.environmentId === environmentId)?.label,
   );
@@ -59,16 +56,12 @@ export function ProjectScopePage(props: {
           (thread) => thread.environmentId === environmentId && thread.projectId === projectId,
         ),
         now: new Date(nowMinute * 60_000).toISOString(),
-        autoSettleAfterDays,
-        autoSettleOnMerge,
         supportsSettlement: (id) =>
           serverConfigs.get(id)?.environment.capabilities.threadSettlement === true,
         supportsSnooze: (id) =>
           serverConfigs.get(id)?.environment.capabilities.threadSnooze === true,
       }),
     [
-      autoSettleAfterDays,
-      autoSettleOnMerge,
       environmentId,
       nowMinute,
       projectId,

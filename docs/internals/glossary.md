@@ -12,6 +12,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Provider runtime](#provider-runtime)
 - [Marketplace](#marketplace)
 - [Checkpointing](#checkpointing)
+- [Appearance](#appearance)
 
 ## Concepts
 
@@ -115,7 +116,7 @@ Controls how assistant text reaches the thread timeline. In [the contracts][1], 
 
 #### Plan rate limits
 
-What a provider says is left of the subscription plan behind an account, as rolling windows (Claude's 5-hour and weekly windows, Codex's `primary`/`secondary` pair, plus spend or credit ceilings). Providers report them only while they run and in their own shapes; adapters normalize them in [providerRateLimits.ts][25], and [ProviderRateLimitsReactor.ts][26] either merges a sparse observation or replaces it with a complete one on `ServerProvider.rateLimits`. State is isolated by provider instance so multiple accounts of the same driver never share limits. Distinct from usage reporting, which counts tokens and cost from session transcripts. See [providers.md][16].
+What a provider says is left of the subscription plan behind an account, as rolling windows (Claude's 5-hour and weekly windows, Codex's `primary`/`secondary` pair, plus spend or credit ceilings). Providers report them only while they run and in their own shapes; adapters normalize them in [providerRateLimits.ts][28], and [ProviderRateLimitsReactor.ts][29] either merges a sparse observation or replaces it with a complete one on `ServerProvider.rateLimits`. State is isolated by provider instance so multiple accounts of the same driver never share limits. Distinct from usage reporting, which counts tokens and cost from session transcripts. See [providers.md][16].
 
 #### Rate limit window
 
@@ -179,6 +180,21 @@ The patch difference between two checkpoints. Query logic lives in [CheckpointDi
 
 The file patch and changed-file summary for one turn. It is usually computed in [CheckpointDiffQuery.ts][20], represented in [the contracts][1], and recorded into thread state by [projector.ts][4].
 
+### Appearance
+
+#### Environment theme
+
+A theme an environment's machine publishes for clients to follow, one file per theme under `themes/` in that environment's state directory; the filename is the theme id. [environmentTheme.ts][25] watches the directory and streams the set over `subscribeServerConfig`; clients render each as a library card, generating a full palette when the file carries seed colors and using the palette directly when it is a standard exported theme file. A desktop that retints its apps when the system theme changes rewrites its file, so T3 Code follows along without a restart. See [environment-theme.md][26].
+
+#### Default theme
+
+The environment's theme, held in its `settings.json` as `defaultTheme` (with `defaultThemeSetAt`
+as the set-generation) and set with `t3 theme set <id>`. Web and desktop clients apply each set
+once — live when connected, on the next connect otherwise — so setting it switches them, while a
+theme a user picks in Settings afterwards sticks until the next set; mobile keeps its own
+appearance settings. Naming a published [environment theme](#environment-theme) is how a desktop
+ships T3 Code already matching it.
+
 ## Practical Shortcuts
 
 - If you see `requested`, think "intent recorded".
@@ -218,6 +234,8 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
-[25]: ../../apps/server/src/provider/providerRateLimits.ts
-[26]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[25]: ../../apps/server/src/environmentTheme.ts
+[26]: ../user/environment-theme.md
 [27]: ./marketplace.md
+[28]: ../../apps/server/src/provider/providerRateLimits.ts
+[29]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts

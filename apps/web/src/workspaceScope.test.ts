@@ -61,8 +61,6 @@ function shelve(
   return shelveScopeThreads({
     threads,
     now: NOW,
-    autoSettleAfterDays: null,
-    autoSettleOnMerge: false,
     supportsSettlement: overrides?.supportsSettlement ?? ALWAYS,
     supportsSnooze: overrides?.supportsSnooze ?? ALWAYS,
     ...overrides,

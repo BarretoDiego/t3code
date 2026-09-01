@@ -1,4 +1,4 @@
-import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -44,12 +44,9 @@ export interface ScopeThreadShelves<TThread> {
 /**
  * Splits a scope's threads into the shelves the page renders.
  *
- * Deliberately the sidebar's rule, minus its pull-request snapshot: that
- * snapshot is a sidebar-local cache of open PRs, and a page that had to build
- * one would be fetching PR state just to decide where a row goes. The
- * consequence is narrow and worth naming — with **Auto-settle merged threads**
- * on, a thread whose PR merged reads as active here until the server stamps
- * it, one beat behind the sidebar.
+ * Deliberately the sidebar's rule: settlement is stamped server-side (manual
+ * override or the auto-settle reactor reading the server's own settle
+ * settings), so shelving reads the stamp and never re-derives it here.
  *
  * Capability probes are injected because both are per-environment: a server
  * too old to settle or snooze must never have its threads filed under a shelf
@@ -58,8 +55,6 @@ export interface ScopeThreadShelves<TThread> {
 export function shelveScopeThreads<TThread extends EnvironmentThreadShell>(input: {
   readonly threads: ReadonlyArray<TThread>;
   readonly now: string;
-  readonly autoSettleAfterDays: number | null;
-  readonly autoSettleOnMerge: boolean;
   readonly supportsSettlement: (environmentId: EnvironmentId) => boolean;
   readonly supportsSnooze: (environmentId: EnvironmentId) => boolean;
 }): ScopeThreadShelves<TThread> {
@@ -69,6 +64,8 @@ export function shelveScopeThreads<TThread extends EnvironmentThreadShell>(input
   for (const thread of input.threads) {
     // Snooze outranks settlement, exactly as in the sidebar: a snoozed thread
     // is one you asked to hear from later, not one you are done with.
+    // Settlement itself is server-stamped (manual override or the server's
+    // auto-settle reactor), so the row reads `settledOverride` directly.
     if (
       input.supportsSnooze(thread.environmentId) &&
       effectiveSnoozed(thread, { now: input.now })
@@ -76,11 +73,12 @@ export function shelveScopeThreads<TThread extends EnvironmentThreadShell>(input
       snoozed.push(thread);
     } else if (
       input.supportsSettlement(thread.environmentId) &&
-      effectiveSettled(thread, {
-        now: input.now,
-        autoSettleAfterDays: input.autoSettleAfterDays,
-        autoSettleOnMerge: input.autoSettleOnMerge,
-      })
+      thread.settledOverride === "settled" &&
+      // Blocked work stays visible even when a server stamped it settled:
+      // hiding a thread that is waiting on you buries the one row that
+      // needs attention.
+      !thread.hasPendingApprovals &&
+      !thread.hasPendingUserInput
     ) {
       settled.push(thread);
     } else {

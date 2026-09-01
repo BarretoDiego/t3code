@@ -35,6 +35,8 @@ export interface ServerDerivedPaths {
   readonly settingsPath: string;
   readonly marketplaceStatePath: string;
   readonly marketplacePackagesDir: string;
+  /** Palettes this machine publishes for clients to follow, one file per theme. */
+  readonly environmentThemesDir: string;
   readonly providerStatusCacheDir: string;
   readonly worktreesDir: string;
   readonly attachmentsDir: string;
@@ -123,6 +125,7 @@ export const deriveServerPaths = Effect.fn(function* (
     settingsPath: join(stateDir, "settings.json"),
     marketplaceStatePath: join(stateDir, "marketplace", "state.json"),
     marketplacePackagesDir: join(stateDir, "marketplace", "packages"),
+    environmentThemesDir: join(stateDir, "themes"),
     providerStatusCacheDir,
     worktreesDir: join(baseDir, "worktrees"),
     attachmentsDir,

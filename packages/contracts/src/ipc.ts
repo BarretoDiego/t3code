@@ -734,6 +734,19 @@ export const DesktopPreviewRecordingFrameSchema: Schema.Codec<DesktopPreviewReco
     receivedAt: Schema.String,
   });
 
+export interface DesktopPreviewRecordingSource {
+  sourceId: string;
+  width: number;
+  height: number;
+}
+
+export const DesktopPreviewRecordingSourceSchema: Schema.Codec<DesktopPreviewRecordingSource> =
+  Schema.Struct({
+    sourceId: Schema.String,
+    width: Schema.Int.check(Schema.isGreaterThan(0)),
+    height: Schema.Int.check(Schema.isGreaterThan(0)),
+  });
+
 export interface DesktopPreviewRecordingArtifact {
   id: string;
   tabId: string;
@@ -1069,6 +1082,8 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
+  /** The desktop client's OS platform, read from Electron's preload process. */
+  getClientPlatform?: () => string;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
    * the packaged app ships only the `en-US` Chromium locale pak, so
@@ -1213,7 +1228,7 @@ export interface DesktopPreviewBridge {
     close: (tabId: string) => Promise<void>;
   };
   recording: {
-    startScreencast: (tabId: string) => Promise<void>;
+    startScreencast: (tabId: string) => Promise<DesktopPreviewRecordingSource>;
     stopScreencast: (tabId: string) => Promise<void>;
     save: (
       tabId: string,
