@@ -93,6 +93,9 @@ function makeDesktopWindowLayer(
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: input.flushMainWindowBounds ?? Effect.void,
     dispatchMenuAction: () => Effect.void,
+    setPetSnapshot: () => Effect.void,
+    getPetSnapshot: Effect.succeed(null),
+    dispatchPetAction: () => Effect.void,
     zoomMain: () => Effect.void,
     syncAppearance: Effect.void,
   });

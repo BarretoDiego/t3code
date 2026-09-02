@@ -112,6 +112,21 @@ describe("ClientSettings browser recording frame rate", () => {
   });
 });
 
+describe("ClientSettings pet companion", () => {
+  it("defaults to the in-app companion and accepts each supported mode", () => {
+    expect(decodeClientSettings({}).petCompanionMode).toBe("in-app");
+
+    for (const mode of ["off", "in-app", "always-on-top"] as const) {
+      expect(decodeClientSettingsPatch({ petCompanionMode: mode }).petCompanionMode).toBe(mode);
+    }
+  });
+
+  it("rejects an unsupported companion mode", () => {
+    expect(() => decodeClientSettings({ petCompanionMode: "overlay" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ petCompanionMode: "overlay" })).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

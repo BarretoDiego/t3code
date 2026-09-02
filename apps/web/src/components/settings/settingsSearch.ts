@@ -359,6 +359,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["agent opens browser pop into view hide"],
   },
   {
+    id: "pet-companion",
+    title: "Pet companion",
+    to: "/settings/integrations",
+    searchTerms: ["agent question notification assistant always on top desktop"],
+  },
+  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",

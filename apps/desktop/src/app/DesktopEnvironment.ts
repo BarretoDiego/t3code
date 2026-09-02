@@ -62,6 +62,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly backendEntryPath: string;
     readonly backendCwd: string;
     readonly preloadPath: string;
+    /** Minimal preload used solely by the local always-on-top pet window. */
+    readonly petPreloadPath: string;
     readonly appUpdateYmlPath: string;
     readonly devServerUrl: Option.Option<URL>;
     readonly devRemoteT3ServerEntryPath: Option.Option<string>;
@@ -212,6 +214,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     backendEntryPath: path.join(serverRoot, "apps/server/dist/bin.mjs"),
     backendCwd: input.isPackaged ? homeDirectory : appRoot,
     preloadPath: path.join(input.dirname, "preload.cjs"),
+    petPreloadPath: path.join(input.dirname, "pet-preload.cjs"),
     appUpdateYmlPath: input.isPackaged
       ? path.join(resourcesPath, "app-update.yml")
       : path.join(input.appPath, "dev-app-update.yml"),

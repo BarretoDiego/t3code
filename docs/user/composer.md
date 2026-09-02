@@ -161,6 +161,18 @@ to reveal them, or focus **Show other notices** with `Tab` and press `Enter` or 
 `Escape` to close the stack and return focus to that control. On a touchscreen, tap the peek to
 open the stack. Interacting with the attached banner or composer does not open the stack.
 
+## Pet companion
+
+The pet companion is a small visual shortcut for agent questions. Choose **In app** in
+**Settings → Integrations → Pet companion** to keep it in the lower-right corner of a
+conversation. A badge appears when the agent needs an answer; open the companion to read
+the question and choose an option directly.
+
+On desktop, choose **Always on top** to show the companion in a separate compact window.
+It stays above other windows, shows the active question and its options, and returns your
+choice to the same conversation. Selecting its title reveals T3 Code. Close the companion
+window or choose **Off** in Settings to stop it.
+
 ## Prompt stash
 
 Use the default shortcut, `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux, to stash the current

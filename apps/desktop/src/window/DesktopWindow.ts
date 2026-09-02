@@ -8,7 +8,11 @@ import * as Ref from "effect/Ref";
 
 import * as Electron from "electron";
 
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  type DesktopPetAction,
+  type DesktopPetSnapshot,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -20,6 +24,8 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   MENU_ACTION_CHANNEL,
+  PET_ACTION_EVENT_CHANNEL,
+  PET_SNAPSHOT_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
@@ -74,6 +80,8 @@ export type DesktopWindowError =
 
 export type MainWindowZoomDirection = "in" | "out" | "reset";
 
+const PET_WINDOW_SIZE = { width: 340, height: 420 } as const;
+
 export class DesktopWindow extends Context.Service<
   DesktopWindow,
   {
@@ -100,6 +108,18 @@ export class DesktopWindow extends Context.Service<
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
+    /**
+     * Keeps the isolated always-on-top companion in sync with the main
+     * renderer. It only receives this derived snapshot, never a backend URL.
+     */
+    readonly setPetSnapshot: (
+      snapshot: DesktopPetSnapshot,
+    ) => Effect.Effect<void, DesktopWindowError>;
+    readonly getPetSnapshot: Effect.Effect<DesktopPetSnapshot | null>;
+    /** Sends a validated companion action back to the one real app renderer. */
+    readonly dispatchPetAction: (
+      action: DesktopPetAction,
+    ) => Effect.Effect<void, DesktopWindowError>;
     // Zooms the main window's own webContents. The Electron `zoomIn`/`zoomOut`
     // menu roles act on whichever webContents has keyboard focus, so with an
     // embedded preview WebContentsView (or DevTools) focused they zoom the
@@ -177,6 +197,16 @@ function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+// This page deliberately has no network capabilities. It is a small DOM-only
+// renderer which receives a derived snapshot through its own preload and sends
+// commands back through that same narrow bridge. Keeping it a data URL means
+// it cannot accidentally boot a second copy of the app or its WebSocket.
+function buildPetDataUrl(): string {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
+  :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}body{padding:12px;display:flex;align-items:flex-end}.card{width:100%;max-height:100%;overflow:auto;border:1px solid rgba(255,255,255,.14);border-radius:22px;background:rgba(19,21,25,.96);box-shadow:0 16px 48px rgba(0,0,0,.42);padding:14px;color:#f8fafc}.top{display:flex;gap:10px;align-items:center}.pet{width:46px;height:46px;border:0;border-radius:16px;background:linear-gradient(145deg,#f59e0b,#ea580c);font-size:28px;cursor:pointer}.meta{min-width:0;flex:1}.status{font-size:12px;color:#cbd5e1;text-transform:capitalize}.thread{border:0;padding:0;margin:2px 0 0;max-width:100%;background:transparent;color:#fff;font:600 14px inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.close{border:0;background:transparent;color:#94a3b8;font-size:20px;line-height:1;padding:6px;cursor:pointer}.question{margin:14px 0 9px;font-size:14px;line-height:1.4;color:#e2e8f0}.options{display:grid;gap:7px}.option{border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#272a31;color:#f8fafc;padding:10px;text-align:left;font:13px inherit;cursor:pointer}.option:hover,.option:focus-visible{border-color:#f59e0b;background:#34302a;outline:none}.empty{margin:13px 0 0;font-size:13px;color:#94a3b8}.attention .pet{box-shadow:0 0 0 3px rgba(251,191,36,.6)}.working .pet{filter:saturate(.7)}.error .pet{background:linear-gradient(145deg,#ef4444,#b91c1c)}.complete .pet{background:linear-gradient(145deg,#22c55e,#15803d)}</style></head><body><main class="card idle" aria-live="polite"><div class="top"><button class="pet" id="open" aria-label="Open T3 Code">🦊</button><div class="meta"><div class="status" id="status">Idle</div><button class="thread" id="thread" type="button">T3 Code companion</button></div><button class="close" id="close" type="button" aria-label="Close companion">×</button></div><p class="question" id="question" hidden></p><div class="options" id="options"></div><p class="empty" id="empty">I’ll stay here while your agent works.</p></main><script>(function(){const bridge=window.desktopPetBridge;const card=document.querySelector('.card');const status=document.getElementById('status');const thread=document.getElementById('thread');const question=document.getElementById('question');const options=document.getElementById('options');const empty=document.getElementById('empty');let snapshot=null;const action=(value)=>void bridge.dispatchAction(value);document.getElementById('open').addEventListener('click',()=>action({type:'open'}));document.getElementById('close').addEventListener('click',()=>action({type:'close'}));thread.addEventListener('click',()=>snapshot&&snapshot.threadId?action({type:'open-thread',threadId:snapshot.threadId}):action({type:'open'}));function render(next){snapshot=next;card.className='card '+next.state;status.textContent=next.state;thread.textContent=next.threadTitle||'T3 Code companion';question.hidden=!next.question;question.textContent=next.question||'';options.replaceChildren();for(const option of next.options){const button=document.createElement('button');button.type='button';button.className='option';button.textContent=option.label;button.addEventListener('click',()=>{if(next.requestId&&next.questionId)action({type:'select-option',requestId:next.requestId,questionId:next.questionId,optionLabel:option.label});});options.append(button)}empty.hidden=Boolean(next.question||next.options.length)}bridge.getSnapshot().then((value)=>{if(value)render(value)});bridge.onSnapshot(render)})()</script></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -295,6 +325,10 @@ export const make = Effect.gen(function* () {
   // createMainIfBackendReady, which gates the post-readiness window
   // open in development and the macOS "activate without windows" path.
   const backendReadyRef = yield* Ref.make(false);
+  // The pet is not a main window and must never participate in the normal
+  // activation fallback. It is tracked separately for that reason.
+  const petWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  const petSnapshotRef = yield* Ref.make<Option.Option<DesktopPetSnapshot>>(Option.none());
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
@@ -311,23 +345,125 @@ export const make = Effect.gen(function* () {
   });
 
   // currentMainOrFirst / focusedMainOrFirst fall back to "any first window",
-  // which during WSL-only boot is the connecting splash. The splash is never
+  // which can be the connecting splash or the independent pet. Neither is
   // registered via setMain, so it must be treated as "no real main window" --
   // otherwise ensureMain/activate/dispatchMenuAction latch onto it and never
   // open (or retry) the real main. That is the failure the pool's swallowed
   // post-readiness window-open error would otherwise strand the user in:
   // splash up, backend ready, no main, and activation only re-reveals splash.
-  const withoutSplash = (window: Option.Option<Electron.BrowserWindow>) =>
-    Ref.get(splashWindowRef).pipe(
-      Effect.map((splash) =>
-        Option.isSome(splash) && Option.isSome(window) && window.value === splash.value
+  const withoutAuxiliaryWindow = (window: Option.Option<Electron.BrowserWindow>) =>
+    Effect.all([Ref.get(splashWindowRef), Ref.get(petWindowRef)]).pipe(
+      Effect.map(([splash, pet]) =>
+        (Option.isSome(splash) && Option.isSome(window) && window.value === splash.value) ||
+        (Option.isSome(pet) && Option.isSome(window) && window.value === pet.value)
           ? Option.none<Electron.BrowserWindow>()
           : window,
       ),
     );
 
-  const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
-  const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
+  const currentMainWindow = electronWindow.currentMainOrFirst.pipe(
+    Effect.flatMap(withoutAuxiliaryWindow),
+  );
+  const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(
+    Effect.flatMap(withoutAuxiliaryWindow),
+  );
+
+  const closePetWindow = Effect.gen(function* () {
+    const petWindow = yield* Ref.getAndSet(petWindowRef, Option.none());
+    if (Option.isSome(petWindow) && !petWindow.value.isDestroyed()) {
+      petWindow.value.close();
+    }
+  });
+
+  const ensurePetWindow = Effect.gen(function* () {
+    const existing = yield* Ref.get(petWindowRef);
+    if (Option.isSome(existing) && !existing.value.isDestroyed()) {
+      return existing.value;
+    }
+
+    const window = yield* electronWindow.create({
+      ...PET_WINDOW_SIZE,
+      minWidth: PET_WINDOW_SIZE.width,
+      minHeight: PET_WINDOW_SIZE.height,
+      maxWidth: PET_WINDOW_SIZE.width,
+      maxHeight: PET_WINDOW_SIZE.height,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      frame: false,
+      transparent: true,
+      hasShadow: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      title: `${environment.displayName} companion`,
+      webPreferences: {
+        preload: environment.petPreloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webviewTag: false,
+      },
+    });
+    // macOS puts an always-on-top window below full-screen spaces unless both
+    // flags are set. Other platforms ignore these macOS-specific details.
+    if (environment.platform === "darwin") {
+      window.setAlwaysOnTop(true, "floating");
+      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
+    yield* Ref.set(petWindowRef, Option.some(window));
+    window.once("closed", () => {
+      void runPromise(
+        Ref.update(petWindowRef, (current) =>
+          Option.isSome(current) && current.value === window
+            ? Option.none<Electron.BrowserWindow>()
+            : current,
+        ),
+      );
+    });
+    window.once("ready-to-show", () => {
+      if (!window.isDestroyed()) {
+        window.showInactive();
+      }
+    });
+    void window.loadURL(buildPetDataUrl()).catch(() => undefined);
+    yield* logWindowInfo("pet companion window created");
+    return window;
+  }).pipe(Effect.withSpan("desktop.window.ensurePet"));
+
+  const setPetSnapshot = Effect.fn("desktop.window.setPetSnapshot")(function* (
+    snapshot: DesktopPetSnapshot,
+  ) {
+    yield* Ref.set(petSnapshotRef, Option.some(snapshot));
+    if (!snapshot.enabled) {
+      yield* closePetWindow;
+      return;
+    }
+    const window = yield* ensurePetWindow;
+    // A new renderer obtains the cache through its preload. Sending only after
+    // it has finished loading avoids retaining state in a second frontend.
+    if (!window.isDestroyed() && !window.webContents.isLoadingMainFrame()) {
+      window.webContents.send(PET_SNAPSHOT_CHANNEL, snapshot);
+    }
+  });
+
+  const getPetSnapshot = Ref.get(petSnapshotRef).pipe(
+    Effect.map(Option.getOrNull),
+    Effect.withSpan("desktop.window.getPetSnapshot"),
+  );
+
+  const dispatchPetAction = Effect.fn("desktop.window.dispatchPetAction")(function* (
+    action: DesktopPetAction,
+  ) {
+    yield* Effect.annotateCurrentSpan({ action: action.type });
+    const mainWindow = yield* currentMainWindow;
+    if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) return;
+    mainWindow.value.webContents.send(PET_ACTION_EVENT_CHANNEL, action);
+    if (action.type === "open" || action.type === "open-thread") {
+      yield* electronWindow.reveal(mainWindow.value);
+    }
+  });
 
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
@@ -909,6 +1045,9 @@ export const make = Effect.gen(function* () {
 
       send();
     }),
+    setPetSnapshot,
+    getPetSnapshot,
+    dispatchPetAction,
     zoomMain: Effect.fn("desktop.window.zoomMain")(function* (direction) {
       yield* Effect.annotateCurrentSpan({ direction });
       const window = yield* focusedMainWindow;

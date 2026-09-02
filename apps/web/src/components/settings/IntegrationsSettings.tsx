@@ -11,6 +11,7 @@ import {
   DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW,
   DEFAULT_BROWSER_RECORDING_FRAME_RATE,
   DEFAULT_BROWSER_VIEWPORT,
+  DEFAULT_PET_COMPANION_MODE,
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_UNIFIED_SETTINGS,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
@@ -21,6 +22,7 @@ import {
   PREVIEW_ZOOM_LEVELS,
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
+  type PetCompanionMode,
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { InfoIcon } from "lucide-react";
@@ -45,6 +47,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   useClientSettings,
   usePrimarySettings,
+  useUpdateClientSettings,
   useUpdatePrimarySettings,
 } from "~/hooks/useSettings";
 
@@ -58,6 +61,11 @@ import { searchableSetting } from "./settingsSearch";
 
 const FILL_VALUE = "fill";
 const RESPONSIVE_VALUE = "responsive";
+const PET_COMPANION_MODE_LABELS: Record<PetCompanionMode, string> = {
+  off: "Off",
+  "in-app": "In app",
+  "always-on-top": "Always on top",
+};
 
 /**
  * The size a "Responsive" default falls back to when the user switches away
@@ -475,6 +483,46 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
   );
 }
 
+function PetCompanionSetting({ disabled }: { readonly disabled: boolean }) {
+  const mode = useClientSettings((settings) => settings.petCompanionMode);
+  const updateSettings = useUpdateClientSettings();
+  const availableModes = isElectron
+    ? (["off", "in-app", "always-on-top"] as const)
+    : (["off", "in-app"] as const);
+  return (
+    <SettingsRow
+      {...searchableSetting("pet-companion")}
+      description="A visual companion that surfaces agent questions. Always on top is available in the desktop app."
+      control={
+        <Select
+          value={mode}
+          disabled={disabled}
+          onValueChange={(value) => updateSettings({ petCompanionMode: value as PetCompanionMode })}
+        >
+          <SelectTrigger aria-label="Pet companion mode">
+            <SelectValue>{PET_COMPANION_MODE_LABELS[mode]}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            {availableModes.map((value) => (
+              <SelectItem key={value} value={value}>
+                {PET_COMPANION_MODE_LABELS[value]}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+      resetAction={
+        mode !== DEFAULT_PET_COMPANION_MODE ? (
+          <SettingResetButton
+            label="pet companion"
+            onClick={() => updateSettings({ petCompanionMode: DEFAULT_PET_COMPANION_MODE })}
+          />
+        ) : null
+      }
+    />
+  );
+}
+
 /**
  * Frames the client-local preview defaults as one unavailable block.
  *
@@ -526,6 +574,9 @@ export function IntegrationsSettingsPanel() {
         ) : (
           previewDefaults
         )}
+      </SettingsSection>
+      <SettingsSection id="pet" title="Pet">
+        <PetCompanionSetting disabled={false} />
       </SettingsSection>
     </SettingsPageContainer>
   );
