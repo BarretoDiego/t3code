@@ -109,11 +109,13 @@ describe("normalizeKimiCodeUsage", () => {
     assert.strictEqual(session.usedPercent, 22);
     assert.strictEqual(session.resetsAt, "2026-08-27T18:09:01.801116Z");
     assert.strictEqual(session.status, "ok");
+    assert.strictEqual(session.detail, "22 / 100");
 
     const weekly = snapshot.windows[1]!;
     assert.strictEqual(weekly.label, "Weekly");
     assert.strictEqual(weekly.usedPercent, 4);
     assert.strictEqual(weekly.resetsAt, "2026-09-03T13:09:01.801116Z");
+    assert.strictEqual(weekly.detail, "4 / 100");
   });
 
   it("marks windows at 80%+ as warning and 100% as exhausted", () => {

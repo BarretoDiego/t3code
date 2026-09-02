@@ -204,6 +204,18 @@ describe("normalizeCodexRateLimits", () => {
     assert.strictEqual(snapshot?.windows[0]?.resetsAt, null);
   });
 
+  it("uses the Codex bucket identity on sparse updates", () => {
+    const snapshot = normalizeCodexRateLimits({
+      rateLimits: {
+        limitId: "codex-fast",
+        primary: { usedPercent: 5, windowDurationMins: 300 },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.strictEqual(snapshot?.windows[0]?.id, "codex-fast:primary");
+  });
+
   it("reports spend controls as a credits window", () => {
     const snapshot = normalizeCodexRateLimits({
       rateLimits: {
@@ -278,6 +290,23 @@ describe("normalizeCodexRateLimitsRead", () => {
     );
   });
 
+  it("uses the named bucket identity even when the read only has one bucket", () => {
+    const snapshot = normalizeCodexRateLimitsRead({
+      response: {
+        rateLimits: {},
+        rateLimitsByLimitId: {
+          codex: { primary: { usedPercent: 20, windowDurationMins: 300 } },
+        },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.deepStrictEqual(
+      snapshot.windows.map((window) => window.id),
+      ["codex:primary"],
+    );
+  });
+
   it("returns an authoritative empty snapshot when the account has no windows", () => {
     assert.deepStrictEqual(
       normalizeCodexRateLimitsRead({
@@ -287,9 +316,64 @@ describe("normalizeCodexRateLimitsRead", () => {
       { observedAt: OBSERVED_AT, windows: [] },
     );
   });
+
+  it("shows rate-limit reset credits added by the current Codex account response", () => {
+    const snapshot = normalizeCodexRateLimitsRead({
+      response: {
+        rateLimits: {},
+        rateLimitResetCredits: { availableCount: 2 },
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    assert.deepStrictEqual(snapshot.windows, [
+      {
+        id: "reset_credits",
+        label: "Reset credits",
+        kind: "credits",
+        usedPercent: 0,
+        resetsAt: null,
+        status: "ok",
+        detail: "2 available",
+      },
+    ]);
+  });
 });
 
 describe("mergeProviderRateLimits", () => {
+  it("updates a named Codex bucket without adding an unscoped duplicate", () => {
+    const fullSnapshot = normalizeCodexRateLimitsRead({
+      response: {
+        rateLimits: {},
+        rateLimitsByLimitId: {
+          codex: {
+            primary: { usedPercent: 10, windowDurationMins: 300 },
+            secondary: { usedPercent: 20, windowDurationMins: 10_080 },
+          },
+        },
+      },
+      observedAt: "2026-08-24T11:00:00.000Z",
+    });
+    const sparseSnapshot = normalizeCodexRateLimits({
+      rateLimits: {
+        limitId: "codex",
+        primary: { usedPercent: 55, windowDurationMins: 300 },
+      },
+      observedAt: OBSERVED_AT,
+    });
+    assert.isNotNull(sparseSnapshot);
+
+    const merged = mergeProviderRateLimits(fullSnapshot, sparseSnapshot);
+
+    assert.deepStrictEqual(
+      merged.windows.map((window) => [window.id, window.usedPercent]),
+      [
+        ["codex:primary", 55],
+        ["codex:secondary", 20],
+      ],
+    );
+  });
+
   it("keeps windows a sparse update did not mention", () => {
     const previous = normalizeCodexRateLimits({
       rateLimits: {

@@ -321,6 +321,7 @@ export function normalizeKimiCodeUsage(input: {
         kind: kindFromWindowMinutes(row.windowMinutes),
         usedPercent,
         resetsAt: row.detail.resetAt,
+        detail: `${row.detail.used} / ${row.detail.limit}`,
       }),
     );
   }
@@ -336,6 +337,7 @@ export function normalizeKimiCodeUsage(input: {
           kind: "weekly",
           usedPercent,
           resetsAt: parsed.summary.resetAt,
+          detail: `${parsed.summary.used} / ${parsed.summary.limit}`,
         }),
       );
     }
