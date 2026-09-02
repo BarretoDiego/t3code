@@ -7647,6 +7647,9 @@ function ChatViewContent(props: ChatViewProps) {
               questionIndex={activePendingQuestionIndex}
               onToggleOption={onSelectActivePendingUserInputOption}
               onAdvance={onAdvanceActivePendingUserInput}
+              threadId={activeThread?.id ?? null}
+              threadTitle={activeThread?.title ?? null}
+              isWorking={isWorking}
             />
 
             <AlertDialog open={branchRestoreConfirmOpen} onOpenChange={setBranchRestoreConfirmOpen}>

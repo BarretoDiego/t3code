@@ -1,11 +1,12 @@
-import { type ApprovalRequestId } from "@t3tools/contracts";
+import { type ApprovalRequestId, type DesktopPetAction } from "@t3tools/contracts";
 import { BellRingIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import type { PendingUserInput } from "../../session-logic";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 
 /** A fixed companion that reuses the canonical pending-input command path. */
@@ -16,9 +17,73 @@ export const PetCompanion = memo(function PetCompanion(props: {
   readonly questionIndex: number;
   readonly onToggleOption: (questionId: string, optionLabel: string) => void;
   readonly onAdvance: () => void;
+  readonly threadId: string | null;
+  readonly threadTitle: string | null;
+  readonly isWorking: boolean;
 }) {
+  const mode = useClientSettings((settings) => settings.petCompanionMode);
+  const updateClientSettings = useUpdateClientSettings();
   const [expanded, setExpanded] = useState(false);
   const needsAttention = props.pendingUserInputs.length > 0;
+  const activeQuestion = props.pendingUserInputs[0]?.questions[props.questionIndex] ?? null;
+  const snapshot = useMemo(
+    () => ({
+      enabled: mode === "always-on-top",
+      state: needsAttention
+        ? ("attention" as const)
+        : props.isWorking
+          ? ("working" as const)
+          : ("idle" as const),
+      petId: "amber-fox",
+      threadId: props.threadId,
+      threadTitle: props.threadTitle,
+      requestId: props.pendingUserInputs[0]?.requestId ?? null,
+      questionId: activeQuestion?.id ?? null,
+      question: activeQuestion?.question ?? null,
+      options: activeQuestion?.options.map((option) => ({ label: option.label })) ?? [],
+    }),
+    [
+      activeQuestion,
+      mode,
+      needsAttention,
+      props.isWorking,
+      props.pendingUserInputs,
+      props.threadId,
+      props.threadTitle,
+    ],
+  );
+
+  useEffect(() => {
+    void window.desktopBridge?.setPetSnapshot?.(snapshot).catch(() => undefined);
+  }, [snapshot]);
+
+  useEffect(() => {
+    const unsubscribe = window.desktopBridge?.onPetAction?.((action: DesktopPetAction) => {
+      if (action.type === "open") setExpanded(true);
+      if (action.type === "close") updateClientSettings({ petCompanionMode: "off" });
+      if (
+        action.type === "select-option" &&
+        action.requestId === snapshot.requestId &&
+        action.questionId === snapshot.questionId
+      ) {
+        props.onToggleOption(action.questionId, action.optionLabel);
+        if (!activeQuestion?.multiSelect) {
+          window.setTimeout(props.onAdvance, 200);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [
+    activeQuestion?.multiSelect,
+    props.onAdvance,
+    props.onToggleOption,
+    snapshot.questionId,
+    snapshot.requestId,
+    updateClientSettings,
+  ]);
+
+  if (mode === "off") return null;
+  if (mode === "always-on-top" && window.desktopBridge?.setPetSnapshot) return null;
 
   return (
     <aside
