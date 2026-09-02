@@ -371,6 +371,9 @@ export interface CodexRateLimitsPayload {
 export interface CodexRateLimitsReadPayload {
   readonly rateLimits: CodexRateLimitsPayload;
   readonly rateLimitsByLimitId?: Readonly<Record<string, CodexRateLimitsPayload>> | null;
+  readonly rateLimitResetCredits?: {
+    readonly availableCount: number;
+  } | null;
 }
 
 const CODEX_FALLBACK_LABELS = {
@@ -415,9 +418,19 @@ const codexPlanLabel = (input: CodexRateLimitsPayload): string | undefined => {
   return plan.charAt(0).toUpperCase() + plan.slice(1);
 };
 
+const prefixCodexWindowIds = (
+  windows: ReadonlyArray<ProviderRateLimitWindow>,
+  limitId: string | undefined,
+): ReadonlyArray<ProviderRateLimitWindow> =>
+  limitId === undefined
+    ? windows
+    : windows.map((window) => ({ ...window, id: `${limitId}:${window.id}` }));
+
 export const normalizeCodexRateLimits = (input: {
   readonly rateLimits: CodexRateLimitsPayload | null | undefined;
   readonly observedAt: string;
+  /** Full reads already own the bucket key and apply it at their boundary. */
+  readonly namespaceWindowIds?: boolean | undefined;
 }): ProviderRateLimits | null => {
   const payload = input.rateLimits;
   if (!payload) {
@@ -450,9 +463,7 @@ export const normalizeCodexRateLimits = (input: {
     );
   }
 
-  if (windows.length === 0) {
-    return null;
-  }
+  if (windows.length === 0) return null;
 
   const planLabel = codexPlanLabel(payload);
   // `rateLimitReachedType` does not say which window ran out, so it stays a
@@ -468,7 +479,10 @@ export const normalizeCodexRateLimits = (input: {
     .join(" \u00b7 ");
   return {
     observedAt: input.observedAt,
-    windows,
+    windows:
+      input.namespaceWindowIds === false
+        ? windows
+        : prefixCodexWindowIds(windows, trimmed(payload.limitId)),
     ...(planLabel ? { planLabel } : {}),
     ...(notice.length > 0 ? { notice } : {}),
   };
@@ -482,7 +496,11 @@ export const normalizeCodexRateLimitsRead = (input: {
   const namedBuckets = Object.entries(input.response.rateLimitsByLimitId ?? {});
   const normalizeBuckets = (buckets: ReadonlyArray<readonly [string, CodexRateLimitsPayload]>) =>
     buckets.flatMap(([bucketId, rateLimits]) => {
-      const snapshot = normalizeCodexRateLimits({ rateLimits, observedAt: input.observedAt });
+      const snapshot = normalizeCodexRateLimits({
+        rateLimits,
+        observedAt: input.observedAt,
+        namespaceWindowIds: false,
+      });
       return snapshot ? [{ bucketId, rateLimits, snapshot }] : [];
     });
   const normalizedNamedBuckets = normalizeBuckets(namedBuckets);
@@ -492,13 +510,13 @@ export const normalizeCodexRateLimitsRead = (input: {
       : normalizeBuckets([
           [input.response.rateLimits.limitId ?? "default", input.response.rateLimits],
         ]);
-  const hasMultipleBuckets = normalized.length > 1;
+  const useNamedBuckets = normalizedNamedBuckets.length > 0;
   const windows = normalized
     .flatMap(({ bucketId, rateLimits, snapshot }) => {
       const bucketLabel = trimmed(rateLimits.limitName) ?? trimmed(bucketId);
       return snapshot.windows.map((window) => ({
         ...window,
-        ...(hasMultipleBuckets
+        ...(useNamedBuckets
           ? {
               id: `${bucketId}:${window.id}`,
               label: bucketLabel ? `${window.label} (${bucketLabel})` : window.label,
@@ -507,6 +525,23 @@ export const normalizeCodexRateLimitsRead = (input: {
       }));
     })
     .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
+  const resetCreditCount = input.response.rateLimitResetCredits?.availableCount;
+  if (
+    typeof resetCreditCount === "number" &&
+    Number.isFinite(resetCreditCount) &&
+    resetCreditCount > 0
+  ) {
+    windows.push(
+      makeWindow({
+        id: "reset_credits",
+        label: "Reset credits",
+        kind: "credits",
+        usedPercent: 0,
+        resetsAt: null,
+        detail: `${resetCreditCount} available`,
+      }),
+    );
+  }
   const planLabel = normalized.find(({ snapshot }) => snapshot.planLabel)?.snapshot.planLabel;
   const notices = Array.from(
     new Set(normalized.flatMap(({ snapshot }) => (snapshot.notice ? [snapshot.notice] : []))),
