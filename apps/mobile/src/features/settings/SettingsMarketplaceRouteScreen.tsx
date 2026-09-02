@@ -29,7 +29,7 @@ import * as Schema from "effect/Schema";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -433,7 +433,7 @@ function PackageDetailModal(props: {
 
 export function SettingsMarketplaceRouteScreen() {
   const insets = useSafeAreaInsets();
-  const iconColor = useThemeColor("--color-icon");
+  const iconColor = useUniwindTheme()["--color-icon"];
   const { environments, isReady } = useEnvironments();
   const [requestedEnvironmentId, setRequestedEnvironmentId] = useState<EnvironmentId | null>(null);
   const environmentId =
