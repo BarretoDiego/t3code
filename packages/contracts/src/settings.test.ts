@@ -115,6 +115,7 @@ describe("ClientSettings browser recording frame rate", () => {
 describe("ClientSettings pet companion", () => {
   it("defaults to the in-app companion and accepts each supported mode", () => {
     expect(decodeClientSettings({}).petCompanionMode).toBe("in-app");
+    expect(decodeClientSettings({}).petCompanionPosition).toEqual({ x: 1, y: 1 });
 
     for (const mode of ["off", "in-app", "always-on-top"] as const) {
       expect(decodeClientSettingsPatch({ petCompanionMode: mode }).petCompanionMode).toBe(mode);
@@ -124,6 +125,14 @@ describe("ClientSettings pet companion", () => {
   it("rejects an unsupported companion mode", () => {
     expect(() => decodeClientSettings({ petCompanionMode: "overlay" })).toThrow();
     expect(() => decodeClientSettingsPatch({ petCompanionMode: "overlay" })).toThrow();
+  });
+
+  it("accepts a viewport-relative position and rejects positions outside the viewport", () => {
+    expect(
+      decodeClientSettingsPatch({ petCompanionPosition: { x: 0.25, y: 0.75 } })
+        .petCompanionPosition,
+    ).toEqual({ x: 0.25, y: 0.75 });
+    expect(() => decodeClientSettingsPatch({ petCompanionPosition: { x: -0.1, y: 1 } })).toThrow();
   });
 });
 

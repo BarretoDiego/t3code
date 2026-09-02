@@ -44,6 +44,7 @@ const clientSettings: ClientSettings = {
   panelAnimationDurationMs: 0,
   planModeEnabled: false,
   petCompanionMode: "in-app",
+  petCompanionPosition: { x: 1, y: 1 },
   showSkillsInSlashMenu: false,
   providerModelPreferences: {},
   sidebarProjectGroupingMode: "repository_path",
