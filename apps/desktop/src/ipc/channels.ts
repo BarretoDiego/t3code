@@ -9,6 +9,14 @@ export const MENU_ACTION_CHANNEL = "desktop:menu-action";
 export const QUIT_SHORTCUT_CHANNEL = "desktop:quit-shortcut";
 export const GET_WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:get-window-fullscreen-state";
 export const WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:window-fullscreen-state";
+// The companion renderer is a local, isolated data URL. Its state is pushed
+// from the main renderer through the shell, and its actions take the reverse
+// route so it never needs its own server connection.
+export const SET_PET_SNAPSHOT_CHANNEL = "desktop:set-pet-snapshot";
+export const PET_GET_SNAPSHOT_CHANNEL = "desktop:pet-get-snapshot";
+export const PET_SNAPSHOT_CHANNEL = "desktop:pet-snapshot";
+export const PET_ACTION_CHANNEL = "desktop:pet-action";
+export const PET_ACTION_EVENT_CHANNEL = "desktop:pet-action-event";
 export const DESKTOP_APP_ACTIVATION_READY_CHANNEL = "desktop:app-activation-ready";
 export const DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL = "desktop:app-activation-complete";
 export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-request";
