@@ -604,6 +604,12 @@ function formatOutgoingPrompt(params: {
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
+interface ChatViewWorkspaceContext {
+  readonly active: boolean;
+  readonly rightPanelHost: HTMLElement | null;
+  readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
+}
+
 type ChatViewProps =
   | {
       environmentId: EnvironmentId;
@@ -611,6 +617,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      workspace?: ChatViewWorkspaceContext;
       threadSyncPhase?: ThreadSyncPhase | null;
       routeKind: "server";
       draftId?: never;
@@ -621,6 +628,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      workspace?: ChatViewWorkspaceContext;
       threadSyncPhase?: never;
       routeKind: "draft";
       draftId: DraftId;
@@ -8104,4 +8112,9 @@ export default function ChatView(props: ChatViewProps) {
       <ChatViewContent {...props} />
     </DiffWorkerPoolProvider>
   );
+}
+
+/** Thread workspace panes share one worker pool at their common parent. */
+export function ChatViewWithoutDiffWorkerPool(props: ChatViewProps) {
+  return <ChatViewContent {...props} />;
 }

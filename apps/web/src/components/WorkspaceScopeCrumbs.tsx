@@ -82,6 +82,7 @@ export function ProjectCrumb(props: {
       <ProjectFavicon
         environmentId={props.environmentId}
         cwd={props.cwd ?? ""}
+        projectName={props.label}
         faviconPath={props.faviconPath}
         className="size-3.5"
       />

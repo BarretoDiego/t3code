@@ -56,13 +56,7 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
       threads: environmentThreads,
       isActiveThread: (thread) => activeThreadIds.has(thread.id),
     });
-  }, [
-    environmentId,
-    nowMinute,
-    projects,
-    serverConfigs,
-    threads,
-  ]);
+  }, [environmentId, nowMinute, projects, serverConfigs, threads]);
 
   if (environment === null) {
     return (
@@ -131,6 +125,7 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
                 <ProjectFavicon
                   environmentId={environmentId}
                   cwd={project.workspaceRoot}
+                  projectName={project.title}
                   faviconPath={project.faviconPath}
                   className="size-4 shrink-0"
                 />
