@@ -14,6 +14,8 @@ import {
   resizeThreadWorkspace,
   restoreSavedThreadWorkspace,
   selectActiveThreadWorkspaceTarget,
+  setThreadWorkspaceSplitRatio,
+  splitActiveThreadWorkspacePane,
   threadWorkspacePaneCount,
   threadWorkspaceTargetKey,
   type ThreadWorkspacePane,
@@ -164,6 +166,37 @@ describe("threadWorkspaceStore", () => {
     const routed = bindThreadWorkspaceRouteTarget(activated, target("two"));
 
     expect(routed.panes[1]?.tabs.map((entry) => entry.threadId)).toEqual(["two"]);
+  });
+
+  it("splits one branch without reshaping its siblings", () => {
+    const first = target("one");
+    const initial = {
+      layout: "two-columns" as const,
+      panes: [pane("pane-a", [first]), pane("pane-b")],
+      activePaneId: "pane-a",
+    };
+
+    const split = splitActiveThreadWorkspacePane(initial, "vertical");
+
+    expect(split.panes).toHaveLength(3);
+    expect(split.activePaneId).toBe(split.panes[2]?.id);
+    expect(split.root).toMatchObject({
+      type: "split",
+      axis: "horizontal",
+      first: { type: "split", axis: "vertical", first: { paneId: "pane-a" } },
+      second: { type: "pane", paneId: "pane-b" },
+    });
+  });
+
+  it("keeps a resized divider inside usable bounds", () => {
+    const model = resizeThreadWorkspace(
+      { layout: "single", panes: [pane("pane-a")], activePaneId: "pane-a" },
+      "two-columns",
+    );
+
+    const resized = setThreadWorkspaceSplitRatio(model, "pane-a", 2);
+
+    expect(resized.root).toMatchObject({ type: "split", ratio: 0.85 });
   });
 
   it("reorders tabs within one pane without changing the active tab", () => {
