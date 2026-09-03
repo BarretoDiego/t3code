@@ -16,6 +16,9 @@ import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
 
+/** Compatibility alias for sidebar callers that use the settled-row label helper. */
+export const resolveSettledTimestamp = resolveSettledThreadTimestamp;
+
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
