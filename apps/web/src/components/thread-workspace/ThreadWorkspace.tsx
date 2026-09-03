@@ -27,8 +27,10 @@ import {
   ArrowDownToLineIcon,
   BookmarkIcon,
   BookmarkPlusIcon,
+  Columns2Icon,
   LayoutGridIcon,
   MessageSquareIcon,
+  Rows2Icon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -40,6 +42,7 @@ import {
   useRef,
   useState,
   type PointerEventHandler,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -68,6 +71,7 @@ import {
   type SavedThreadWorkspace,
   type ThreadWorkspaceLayout,
   type ThreadWorkspacePane,
+  type ThreadWorkspacePaneTree,
   type ThreadWorkspaceTarget,
   useThreadWorkspaceStore,
 } from "~/threadWorkspaceStore";
@@ -115,16 +119,6 @@ const LAYOUT_OPTIONS: ReadonlyArray<{
   { value: "grid-2x2", label: "2 × 2 grid", columns: 2, rows: 2 },
 ];
 
-const GRID_CLASS_BY_LAYOUT: Record<ThreadWorkspaceLayout, string> = {
-  single: "grid-cols-1 grid-rows-1",
-  "two-columns": "grid-cols-2 grid-rows-1",
-  "three-columns": "grid-cols-3 grid-rows-1",
-  "four-columns": "grid-cols-4 grid-rows-1",
-  "two-rows": "grid-cols-1 grid-rows-2",
-  "three-rows": "grid-cols-1 grid-rows-3",
-  "grid-2x2": "grid-cols-2 grid-rows-2",
-};
-
 const THREAD_PANE_DROP_PREFIX = "thread-pane-drop:";
 
 type ThreadTabDragData = {
@@ -140,6 +134,12 @@ type ThreadPaneDropData = {
 
 function threadPaneDropId(paneId: string): string {
   return `${THREAD_PANE_DROP_PREFIX}${paneId}`;
+}
+
+function treePaneIdsForUi(tree: ThreadWorkspacePaneTree): readonly string[] {
+  return tree.type === "pane"
+    ? [tree.paneId]
+    : [...treePaneIdsForUi(tree.first), ...treePaneIdsForUi(tree.second)];
 }
 
 function isThreadTabDragData(value: unknown): value is ThreadTabDragData {
@@ -237,13 +237,14 @@ function SaveWorkspaceDialog(props: {
 function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }) {
   const navigate = useNavigate();
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const { deleteWorkspace, restoreWorkspace, saved, setLayout, totalTabs } =
+  const { deleteWorkspace, restoreWorkspace, saved, setLayout, splitActivePane, totalTabs } =
     useThreadWorkspaceStore(
       useShallow((state) => ({
         deleteWorkspace: state.deleteWorkspace,
         restoreWorkspace: state.restoreWorkspace,
         saved: state.saved,
         setLayout: state.setLayout,
+        splitActivePane: state.splitActivePane,
         totalTabs: state.panes.reduce((count, pane) => count + pane.tabs.length, 0),
       })),
     );
@@ -289,6 +290,16 @@ function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>Split active pane</MenuGroupLabel>
+            <MenuItem closeOnClick onClick={() => splitActivePane("horizontal")}>
+              <Columns2Icon className="size-3.5 shrink-0" /> Split into columns
+            </MenuItem>
+            <MenuItem closeOnClick onClick={() => splitActivePane("vertical")}>
+              <Rows2Icon className="size-3.5 shrink-0" /> Split into rows
+            </MenuItem>
           </MenuGroup>
           <MenuSeparator />
           <MenuGroup>
@@ -690,6 +701,70 @@ function ThreadPaneContent(props: {
   );
 }
 
+function ThreadWorkspaceDivider(props: {
+  readonly axis: "horizontal" | "vertical";
+  readonly ratio: number;
+  readonly onRatioChange: (ratio: number) => void;
+}) {
+  const draggingRef = useRef(false);
+  const updateRatio = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const parent = event.currentTarget.parentElement;
+    if (!parent) return;
+    const rect = parent.getBoundingClientRect();
+    const length = props.axis === "horizontal" ? rect.width : rect.height;
+    const offset =
+      props.axis === "horizontal" ? event.clientX - rect.left : event.clientY - rect.top;
+    if (length > 0) props.onRatioChange(offset / length);
+  };
+  return (
+    <div
+      role="separator"
+      aria-orientation={props.axis === "horizontal" ? "vertical" : "horizontal"}
+      aria-valuemin={15}
+      aria-valuemax={85}
+      aria-valuenow={Math.round(props.ratio * 100)}
+      tabIndex={0}
+      className={cn(
+        "group relative z-30 shrink-0 bg-border/75 outline-none hover:bg-primary/70 focus-visible:bg-primary",
+        props.axis === "horizontal" ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
+      )}
+      onKeyDown={(event) => {
+        const decrease = props.axis === "horizontal" ? "ArrowLeft" : "ArrowUp";
+        const increase = props.axis === "horizontal" ? "ArrowRight" : "ArrowDown";
+        if (event.key !== decrease && event.key !== increase) return;
+        event.preventDefault();
+        props.onRatioChange(props.ratio + (event.key === increase ? 0.05 : -0.05));
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        draggingRef.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        updateRatio(event);
+      }}
+      onPointerMove={(event) => {
+        if (draggingRef.current) updateRatio(event);
+      }}
+      onPointerUp={(event) => {
+        draggingRef.current = false;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onPointerCancel={() => {
+        draggingRef.current = false;
+      }}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute rounded-full bg-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
+          props.axis === "horizontal"
+            ? "left-1/2 top-1/2 h-8 w-1.5 -translate-x-1/2 -translate-y-1/2"
+            : "left-1/2 top-1/2 h-1.5 w-8 -translate-x-1/2 -translate-y-1/2",
+        )}
+      />
+    </div>
+  );
+}
+
 export function ThreadWorkspace({
   routedTarget,
 }: {
@@ -710,7 +785,9 @@ export function ThreadWorkspace({
     layout,
     moveTab,
     panes,
+    root,
     pruneTargets,
+    setSplitRatio,
     activatePane,
     activateTab,
   } = useThreadWorkspaceStore(
@@ -723,7 +800,9 @@ export function ThreadWorkspace({
       layout: state.layout,
       moveTab: state.moveTab,
       panes: state.panes,
+      root: state.root,
       pruneTargets: state.pruneTargets,
+      setSplitRatio: state.setSplitRatio,
     })),
   );
   const routedTargetKey = threadWorkspaceTargetKey(routedTarget);
@@ -743,7 +822,11 @@ export function ThreadWorkspace({
     return JSON.stringify([[...pruneScope.known].sort(), [...pruneScope.loaded].sort(), threads]);
   }, [knownThreadKeys, pruneScope]);
   const totalTabs = panes.reduce((count, pane) => count + pane.tabs.length, 0);
-  const columnCount = LAYOUT_OPTIONS.find((option) => option.value === layout)?.columns ?? 1;
+  const paneOrder = useMemo(() => {
+    const visit = (node: ThreadWorkspacePaneTree): readonly string[] =>
+      node.type === "pane" ? [node.paneId] : [...visit(node.first), ...visit(node.second)];
+    return visit(root);
+  }, [root]);
   const draggedTarget = useMemo(
     () =>
       draggedTabKey
@@ -882,6 +965,89 @@ export function ThreadWorkspace({
     [moveTab, panes],
   );
 
+  const renderPane = (paneId: string) => {
+    const pane = panes.find((candidate) => candidate.id === paneId);
+    if (!pane) return null;
+    const index = paneOrder.indexOf(pane.id);
+    const active = pane.id === activePaneId;
+    const target = pane.activeTabKey
+      ? (pane.tabs.find((candidate) => threadWorkspaceTargetKey(candidate) === pane.activeTabKey) ??
+        null)
+      : null;
+    const reserveCollapsedSidebarInset = index === 0;
+    const reserveNativeControlsInset = index === paneOrder.length - 1;
+    return (
+      <ThreadPaneSection
+        key={pane.id}
+        paneId={pane.id}
+        paneNumber={index + 1}
+        label={`Thread pane ${index + 1}`}
+        active={active}
+        dragging={draggedTabKey !== null}
+        className={cn(
+          "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background",
+          !active && "max-md:hidden",
+          active && "ring-1 ring-inset ring-primary/35",
+        )}
+        onPointerDownCapture={(event) => {
+          if (event.button === 1) return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest("[data-thread-pane-tabbar]")
+          ) {
+            activatePane(pane.id);
+            return;
+          }
+          activatePaneAndRoute(pane);
+        }}
+      >
+        <ThreadPaneTabs
+          pane={pane}
+          active={active}
+          layout={layout}
+          reserveCollapsedSidebarInset={reserveCollapsedSidebarInset}
+          reserveNativeControlsInset={reserveNativeControlsInset}
+          windowDragRegion={index === 0}
+          totalTabs={totalTabs}
+          routedTargetKey={routedTargetKey}
+          onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
+          onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
+        />
+        <ThreadPaneContent
+          active={active}
+          target={target}
+          reserveNativeControlsInset={reserveNativeControlsInset}
+          rightPanelHost={active ? rightPanelHost : null}
+          onRightPanelMaximizedChange={setRightPanelMaximized}
+        />
+      </ThreadPaneSection>
+    );
+  };
+
+  const renderTree = (node: ThreadWorkspacePaneTree): ReactNode => {
+    if (node.type === "pane") return renderPane(node.paneId);
+    return (
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 bg-border/75",
+          node.axis === "horizontal" ? "flex-row" : "flex-col",
+        )}
+      >
+        <div className="flex min-h-0 min-w-0" style={{ flex: `${node.ratio} 1 0%` }}>
+          {renderTree(node.first)}
+        </div>
+        <ThreadWorkspaceDivider
+          axis={node.axis}
+          ratio={node.ratio}
+          onRatioChange={(ratio) => setSplitRatio(treePaneIdsForUi(node.first)[0] ?? "", ratio)}
+        />
+        <div className="flex min-h-0 min-w-0" style={{ flex: `${1 - node.ratio} 1 0%` }}>
+          {renderTree(node.second)}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <DiffWorkerPoolProvider>
       <div
@@ -898,70 +1064,12 @@ export function ThreadWorkspace({
         >
           <div
             className={cn(
-              "grid min-h-0 min-w-0 gap-px bg-border/75",
-              "max-md:grid-cols-1 max-md:grid-rows-1",
+              "flex min-h-0 min-w-0 bg-border/75",
               rightPanelMaximized ? "w-0 flex-none overflow-hidden" : "flex-1",
-              GRID_CLASS_BY_LAYOUT[layout],
             )}
             data-thread-workspace-layout={layout}
           >
-            {panes.map((pane, index) => {
-              const active = pane.id === activePaneId;
-              const target = pane.activeTabKey
-                ? (pane.tabs.find(
-                    (candidate) => threadWorkspaceTargetKey(candidate) === pane.activeTabKey,
-                  ) ?? null)
-                : null;
-              const topRow = index < columnCount;
-              const reserveCollapsedSidebarInset = topRow && index === 0;
-              const reserveNativeControlsInset = topRow && index === columnCount - 1;
-              return (
-                <ThreadPaneSection
-                  key={pane.id}
-                  paneId={pane.id}
-                  paneNumber={index + 1}
-                  label={`Thread pane ${index + 1}`}
-                  active={active}
-                  dragging={draggedTabKey !== null}
-                  className={cn(
-                    "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
-                    !active && "max-md:hidden",
-                    active && "ring-1 ring-inset ring-primary/35",
-                  )}
-                  onPointerDownCapture={(event) => {
-                    if (event.button === 1) return;
-                    if (
-                      event.target instanceof Element &&
-                      event.target.closest("[data-thread-pane-tabbar]")
-                    ) {
-                      activatePane(pane.id);
-                      return;
-                    }
-                    activatePaneAndRoute(pane);
-                  }}
-                >
-                  <ThreadPaneTabs
-                    pane={pane}
-                    active={active}
-                    layout={layout}
-                    reserveCollapsedSidebarInset={reserveCollapsedSidebarInset}
-                    reserveNativeControlsInset={reserveNativeControlsInset}
-                    windowDragRegion={topRow}
-                    totalTabs={totalTabs}
-                    routedTargetKey={routedTargetKey}
-                    onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
-                    onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
-                  />
-                  <ThreadPaneContent
-                    active={active}
-                    target={target}
-                    reserveNativeControlsInset={reserveNativeControlsInset}
-                    rightPanelHost={active ? rightPanelHost : null}
-                    onRightPanelMaximizedChange={setRightPanelMaximized}
-                  />
-                </ThreadPaneSection>
-              );
-            })}
+            {renderTree(root)}
           </div>
           <DragOverlay>
             {draggedTarget ? (

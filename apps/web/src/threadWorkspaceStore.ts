@@ -37,9 +37,24 @@ export interface ThreadWorkspacePane {
   readonly activeTabKey: string | null;
 }
 
+export type ThreadWorkspaceSplitAxis = "horizontal" | "vertical";
+
+/** A pane tree lets each branch choose its own direction, unlike a global grid. */
+export type ThreadWorkspacePaneTree =
+  | { readonly type: "pane"; readonly paneId: string }
+  | {
+      readonly type: "split";
+      readonly axis: ThreadWorkspaceSplitAxis;
+      /** Fraction allocated to the first child, kept away from unusable slivers. */
+      readonly ratio: number;
+      readonly first: ThreadWorkspacePaneTree;
+      readonly second: ThreadWorkspacePaneTree;
+    };
+
 interface ThreadWorkspaceModel {
   readonly layout: ThreadWorkspaceLayout;
   readonly panes: readonly ThreadWorkspacePane[];
+  readonly root?: ThreadWorkspacePaneTree;
   readonly activePaneId: string;
 }
 
@@ -56,6 +71,7 @@ export interface SavedThreadWorkspace {
   readonly name: string;
   readonly savedAt: number;
   readonly layout: ThreadWorkspaceLayout;
+  readonly root: ThreadWorkspacePaneTree;
   readonly panes: ReadonlyArray<{
     readonly tabs: readonly ThreadWorkspaceTarget[];
     readonly activeTabKey: string | null;
@@ -64,9 +80,12 @@ export interface SavedThreadWorkspace {
 }
 
 interface ThreadWorkspaceStoreState extends ThreadWorkspaceModel {
+  readonly root: ThreadWorkspacePaneTree;
   readonly saved: readonly SavedThreadWorkspace[];
   bindRouteTarget: (target: ThreadWorkspaceTarget) => void;
   setLayout: (layout: ThreadWorkspaceLayout) => void;
+  splitActivePane: (axis: ThreadWorkspaceSplitAxis) => void;
+  setSplitRatio: (paneId: string, ratio: number) => void;
   activatePane: (paneId: string) => void;
   activateTab: (paneId: string, tabKey: string) => void;
   closeTab: (paneId: string, tabKey: string) => void;
@@ -78,7 +97,7 @@ interface ThreadWorkspaceStoreState extends ThreadWorkspaceModel {
 }
 
 const THREAD_WORKSPACE_STORAGE_KEY = "t3code:thread-workspace:v1";
-const THREAD_WORKSPACE_STORAGE_VERSION = 2;
+const THREAD_WORKSPACE_STORAGE_VERSION = 3;
 
 export const MAX_SAVED_THREAD_WORKSPACES = 20;
 
@@ -121,6 +140,107 @@ export function threadWorkspacePaneCount(layout: ThreadWorkspaceLayout): number 
   }
 }
 
+const MIN_SPLIT_RATIO = 0.15;
+const MAX_SPLIT_RATIO = 1 - MIN_SPLIT_RATIO;
+
+function clampSplitRatio(ratio: number): number {
+  return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
+}
+
+function paneTreeForLayout(
+  layout: ThreadWorkspaceLayout,
+  paneIds: readonly string[],
+): ThreadWorkspacePaneTree {
+  const leaves = paneIds.map((paneId) => ({ type: "pane" as const, paneId }));
+  const leaf = (index: number) => leaves[index] ?? leaves[0]!;
+  const split = (
+    axis: ThreadWorkspaceSplitAxis,
+    first: ThreadWorkspacePaneTree,
+    second: ThreadWorkspacePaneTree,
+  ): ThreadWorkspacePaneTree => ({ type: "split", axis, ratio: 0.5, first, second });
+  switch (layout) {
+    case "single":
+      return leaf(0);
+    case "two-columns":
+      return split("horizontal", leaf(0), leaf(1));
+    case "two-rows":
+      return split("vertical", leaf(0), leaf(1));
+    case "three-columns":
+      return split("horizontal", leaf(0), split("horizontal", leaf(1), leaf(2)));
+    case "three-rows":
+      return split("vertical", leaf(0), split("vertical", leaf(1), leaf(2)));
+    case "four-columns":
+      return split(
+        "horizontal",
+        leaf(0),
+        split("horizontal", leaf(1), split("horizontal", leaf(2), leaf(3))),
+      );
+    case "grid-2x2":
+      return split(
+        "horizontal",
+        split("vertical", leaf(0), leaf(2)),
+        split("vertical", leaf(1), leaf(3)),
+      );
+  }
+}
+
+function treePaneIds(tree: ThreadWorkspacePaneTree): readonly string[] {
+  return tree.type === "pane"
+    ? [tree.paneId]
+    : [...treePaneIds(tree.first), ...treePaneIds(tree.second)];
+}
+
+function workspaceTree(model: ThreadWorkspaceModel): ThreadWorkspacePaneTree {
+  return (
+    model.root ??
+    paneTreeForLayout(
+      model.layout,
+      model.panes.map((pane) => pane.id),
+    )
+  );
+}
+
+function splitPaneInTree(
+  tree: ThreadWorkspacePaneTree,
+  paneId: string,
+  axis: ThreadWorkspaceSplitAxis,
+  nextPaneId: string,
+): ThreadWorkspacePaneTree {
+  if (tree.type === "pane") {
+    return tree.paneId === paneId
+      ? {
+          type: "split",
+          axis,
+          ratio: 0.5,
+          first: tree,
+          second: { type: "pane", paneId: nextPaneId },
+        }
+      : tree;
+  }
+  return {
+    ...tree,
+    first: splitPaneInTree(tree.first, paneId, axis, nextPaneId),
+    second: splitPaneInTree(tree.second, paneId, axis, nextPaneId),
+  };
+}
+
+function resizeTreeForPane(
+  tree: ThreadWorkspacePaneTree,
+  paneId: string,
+  ratio: number,
+): ThreadWorkspacePaneTree {
+  if (tree.type === "pane") return tree;
+  const containsFirst = treePaneIds(tree.first).includes(paneId);
+  const containsSecond = treePaneIds(tree.second).includes(paneId);
+  if (containsFirst) return { ...tree, ratio: clampSplitRatio(ratio) };
+  if (containsSecond) return { ...tree, ratio: clampSplitRatio(1 - ratio) };
+  return {
+    ...tree,
+    first: resizeTreeForPane(tree.first, paneId, ratio),
+    second: resizeTreeForPane(tree.second, paneId, ratio),
+  };
+}
+
 export function threadWorkspaceTargetKey(target: ThreadWorkspaceTarget): string {
   return scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId));
 }
@@ -149,9 +269,14 @@ export function resizeThreadWorkspace(
 
   if (nextPaneCount > model.panes.length) {
     const additions = Array.from({ length: nextPaneCount - model.panes.length }, createPane);
+    const panes = [...model.panes, ...additions];
     return {
       layout,
-      panes: [...model.panes, ...additions],
+      panes,
+      root: paneTreeForLayout(
+        layout,
+        panes.map((pane) => pane.id),
+      ),
       // The first new cell is ready to receive the next thread selected from the sidebar.
       activePaneId: additions[0]?.id ?? model.activePaneId,
     };
@@ -179,8 +304,35 @@ export function resizeThreadWorkspace(
     panes: keptPanes.map((pane) =>
       pane.id === destinationPane.id ? { ...pane, tabs: mergedTabs, activeTabKey } : pane,
     ),
+    root: paneTreeForLayout(
+      layout,
+      keptPanes.map((pane) => pane.id),
+    ),
     activePaneId: destinationPane.id,
   };
+}
+
+export function splitActiveThreadWorkspacePane(
+  model: ThreadWorkspaceModel,
+  axis: ThreadWorkspaceSplitAxis,
+): ThreadWorkspaceModel {
+  const pane = createPane();
+  return {
+    ...model,
+    panes: [...model.panes, pane],
+    root: splitPaneInTree(workspaceTree(model), model.activePaneId, axis, pane.id),
+    activePaneId: pane.id,
+  };
+}
+
+export function setThreadWorkspaceSplitRatio(
+  model: ThreadWorkspaceModel,
+  paneId: string,
+  ratio: number,
+): ThreadWorkspaceModel {
+  const root = workspaceTree(model);
+  if (!Number.isFinite(ratio) || !treePaneIds(root).includes(paneId)) return model;
+  return { ...model, root: resizeTreeForPane(root, paneId, ratio) };
 }
 
 export function bindThreadWorkspaceRouteTarget(
@@ -398,11 +550,17 @@ export function createSavedThreadWorkspace(
   input: { readonly id: string; readonly name: string; readonly savedAt: number },
 ): SavedThreadWorkspace {
   const activePaneIndex = model.panes.findIndex((pane) => pane.id === model.activePaneId);
+  const savedPaneId = new Map(model.panes.map((pane, index) => [pane.id, `saved-pane-${index}`]));
+  const saveTree = (tree: ThreadWorkspacePaneTree): ThreadWorkspacePaneTree =>
+    tree.type === "pane"
+      ? { type: "pane", paneId: savedPaneId.get(tree.paneId) ?? "saved-pane-0" }
+      : { ...tree, first: saveTree(tree.first), second: saveTree(tree.second) };
   return {
     id: input.id,
     name: input.name,
     savedAt: input.savedAt,
     layout: model.layout,
+    root: saveTree(workspaceTree(model)),
     panes: model.panes.map((pane) => ({ tabs: pane.tabs, activeTabKey: pane.activeTabKey })),
     activePaneIndex: activePaneIndex < 0 ? 0 : activePaneIndex,
   };
@@ -416,15 +574,33 @@ export function restoreSavedThreadWorkspace(saved: SavedThreadWorkspace): Thread
     return source ? { ...pane, tabs: source.tabs, activeTabKey: source.activeTabKey } : pane;
   });
   const activePane = panes[saved.activePaneIndex] ?? panes[0]!;
-  const model = { layout: saved.layout, panes, activePaneId: activePane.id };
+  const paneIdBySavedId = new Map(panes.map((pane, index) => [`saved-pane-${index}`, pane.id]));
+  const remapTree = (tree: ThreadWorkspacePaneTree): ThreadWorkspacePaneTree =>
+    tree.type === "pane"
+      ? { type: "pane", paneId: paneIdBySavedId.get(tree.paneId) ?? panes[0]!.id }
+      : { ...tree, first: remapTree(tree.first), second: remapTree(tree.second) };
+  const model = {
+    layout: saved.layout,
+    panes,
+    root: remapTree(saved.root),
+    activePaneId: activePane.id,
+  };
   return normalizeThreadWorkspaceModel(model) ?? model;
 }
 
 function createInitialWorkspaceModel(
   layout: ThreadWorkspaceLayout = "single",
-): ThreadWorkspaceModel {
+): ThreadWorkspaceModel & { readonly root: ThreadWorkspacePaneTree } {
   const panes = Array.from({ length: threadWorkspacePaneCount(layout) }, createPane);
-  return { layout, panes, activePaneId: panes[0]!.id };
+  return {
+    layout,
+    panes,
+    root: paneTreeForLayout(
+      layout,
+      panes.map((pane) => pane.id),
+    ),
+    activePaneId: panes[0]!.id,
+  };
 }
 
 function isThreadWorkspaceLayout(value: unknown): value is ThreadWorkspaceLayout {
@@ -447,6 +623,32 @@ function isThreadWorkspaceTarget(value: unknown): value is ThreadWorkspaceTarget
   }
   if (candidate.routeKind === "server") return true;
   return candidate.routeKind === "draft" && isNonEmptyString(candidate.draftId);
+}
+
+function parsePaneTree(
+  value: unknown,
+  paneIds: ReadonlySet<string>,
+): ThreadWorkspacePaneTree | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  if (source.type === "pane") {
+    return isNonEmptyString(source.paneId) && paneIds.has(source.paneId)
+      ? { type: "pane", paneId: source.paneId }
+      : null;
+  }
+  if (source.type !== "split" || (source.axis !== "horizontal" && source.axis !== "vertical")) {
+    return null;
+  }
+  const first = parsePaneTree(source.first, paneIds);
+  const second = parsePaneTree(source.second, paneIds);
+  if (!first || !second) return null;
+  return {
+    type: "split",
+    axis: source.axis,
+    ratio: typeof source.ratio === "number" ? clampSplitRatio(source.ratio) : 0.5,
+    first,
+    second,
+  };
 }
 
 /**
@@ -515,7 +717,21 @@ export function normalizeThreadWorkspaceModel(candidate: unknown): ThreadWorkspa
       : (panes[0]?.id ?? null);
   if (activePaneId === null) return null;
 
-  return { layout: source.layout, panes, activePaneId };
+  const root = parsePaneTree(source.root, new Set(panes.map((pane) => pane.id)));
+  const leafIds = root ? treePaneIds(root) : [];
+  const validRoot =
+    root && new Set(leafIds).size === panes.length && leafIds.length === panes.length;
+  return {
+    layout: source.layout,
+    panes,
+    root: validRoot
+      ? root
+      : paneTreeForLayout(
+          source.layout,
+          panes.map((pane) => pane.id),
+        ),
+    activePaneId,
+  };
 }
 
 function normalizeSavedThreadWorkspaces(candidate: unknown): readonly SavedThreadWorkspace[] {
@@ -540,6 +756,7 @@ function normalizeSavedThreadWorkspaces(candidate: unknown): readonly SavedThrea
       activePaneId: `saved-pane-${
         typeof source.activePaneIndex === "number" ? source.activePaneIndex : 0
       }`,
+      root: source.root,
     });
     if (!model) continue;
     seenIds.add(source.id);
@@ -568,6 +785,9 @@ export const useThreadWorkspaceStore = create<ThreadWorkspaceStoreState>()(
       saved: [],
       bindRouteTarget: (target) => set((state) => bindThreadWorkspaceRouteTarget(state, target)),
       setLayout: (layout) => set((state) => resizeThreadWorkspace(state, layout)),
+      splitActivePane: (axis) => set((state) => splitActiveThreadWorkspacePane(state, axis)),
+      setSplitRatio: (paneId, ratio) =>
+        set((state) => setThreadWorkspaceSplitRatio(state, paneId, ratio)),
       activatePane: (paneId) => set((state) => activateThreadWorkspacePane(state, paneId)),
       activateTab: (paneId, tabKey) =>
         set((state) => activateThreadWorkspaceTab(state, paneId, tabKey)),
@@ -610,6 +830,7 @@ export const useThreadWorkspaceStore = create<ThreadWorkspaceStoreState>()(
       partialize: (state) => ({
         layout: state.layout,
         panes: state.panes,
+        root: state.root,
         activePaneId: state.activePaneId,
         saved: state.saved,
       }),
