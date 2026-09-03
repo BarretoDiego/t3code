@@ -138,6 +138,13 @@ With any other grouping — including the flat list — settled threads collect 
 Pinned threads keep their manual order and the snoozed shelf stays whole: grouping applies to the
 main list.
 
+## Panel motion
+
+The main sidebar, right panel, and terminal drawer open and close immediately by default. Under
+**Settings → Appearance → Motion**, move the **Panel animations** slider above 0 ms to add motion.
+The duration can be set up to 400 ms. Clicking the preview replays all three panel transitions; at
+0 ms, it snaps between the same open and closed states.
+
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in

@@ -165,14 +165,15 @@ open the stack. Interacting with the attached banner or composer does not open t
 ## Pet companion
 
 The pet companion is a small visual shortcut for agent questions. Choose **In app** in
-**Settings → Integrations → Pet companion** to keep it in the lower-right corner of a
-conversation. A badge appears when the agent needs an answer; open the companion to read
-the question and choose an option directly.
+**Settings → Integrations → Pet companion** to add a movable pixel-art pet to a
+conversation. Drag it to a useful place; it remembers that position on this client. A badge
+and speech bubble appear when the agent needs an answer. Open the companion to read the
+question and choose an option directly.
 
 On desktop, choose **Always on top** to show the companion in a separate compact window.
 It stays above other windows, shows the active question and its options, and returns your
-choice to the same conversation. Selecting its title reveals T3 Code. Close the companion
-window or choose **Off** in Settings to stop it.
+choice to the same conversation. Drag the window to reposition it, and select its title to
+reveal T3 Code. Close the companion window or choose **Off** in Settings to stop it.
 
 ## Prompt stash
 

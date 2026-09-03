@@ -1,15 +1,17 @@
 import { type ApprovalRequestId, type DesktopPetAction } from "@t3tools/contracts";
-import { BellRingIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { BellRingIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PendingUserInput } from "../../session-logic";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import { cn } from "~/lib/utils";
-import { Button } from "../ui/button";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 
-/** A fixed companion that reuses the canonical pending-input command path. */
+const PET_EDGE_INSET = 20;
+const PET_SIZE = 88;
+
+/** A movable, pixel-art companion with a viewport-relative resting place. */
 export const PetCompanion = memo(function PetCompanion(props: {
   readonly pendingUserInputs: PendingUserInput[];
   readonly respondingRequestIds: ApprovalRequestId[];
@@ -22,10 +24,17 @@ export const PetCompanion = memo(function PetCompanion(props: {
   readonly isWorking: boolean;
 }) {
   const mode = useClientSettings((settings) => settings.petCompanionMode);
+  const savedPosition = useClientSettings((settings) => settings.petCompanionPosition);
   const updateClientSettings = useUpdateClientSettings();
   const [expanded, setExpanded] = useState(false);
+  const [position, setPosition] = useState(savedPosition);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const dragged = useRef(false);
   const needsAttention = props.pendingUserInputs.length > 0;
   const activeQuestion = props.pendingUserInputs[0]?.questions[props.questionIndex] ?? null;
+
+  useEffect(() => setPosition(savedPosition), [savedPosition]);
+
   const snapshot = useMemo(
     () => ({
       enabled: mode === "always-on-top",
@@ -34,7 +43,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
         : props.isWorking
           ? ("working" as const)
           : ("idle" as const),
-      petId: "amber-fox",
+      petId: "pixel-fox",
       threadId: props.threadId,
       threadTitle: props.threadTitle,
       requestId: props.pendingUserInputs[0]?.requestId ?? null,
@@ -67,9 +76,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
         action.questionId === snapshot.questionId
       ) {
         props.onToggleOption(action.questionId, action.optionLabel);
-        if (!activeQuestion?.multiSelect) {
-          window.setTimeout(props.onAdvance, 200);
-        }
+        if (!activeQuestion?.multiSelect) window.setTimeout(props.onAdvance, 200);
       }
     });
     return unsubscribe;
@@ -82,52 +89,142 @@ export const PetCompanion = memo(function PetCompanion(props: {
     updateClientSettings,
   ]);
 
+  const movePet = useCallback((clientX: number, clientY: number) => {
+    const maxX = Math.max(PET_EDGE_INSET, window.innerWidth - PET_SIZE - PET_EDGE_INSET);
+    const maxY = Math.max(PET_EDGE_INSET, window.innerHeight - PET_SIZE - PET_EDGE_INSET);
+    const next = {
+      x: Math.min(
+        1,
+        Math.max(0, (clientX - PET_SIZE / 2 - PET_EDGE_INSET) / Math.max(1, maxX - PET_EDGE_INSET)),
+      ),
+      y: Math.min(
+        1,
+        Math.max(0, (clientY - PET_SIZE / 2 - PET_EDGE_INSET) / Math.max(1, maxY - PET_EDGE_INSET)),
+      ),
+    };
+    setPosition(next);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      if (dragStart.current === null) return;
+      if (
+        Math.abs(event.clientX - dragStart.current.x) +
+          Math.abs(event.clientY - dragStart.current.y) >
+        4
+      )
+        dragged.current = true;
+      movePet(event.clientX, event.clientY);
+    };
+    const onUp = (event: PointerEvent) => {
+      if (dragStart.current === null) return;
+      const next = movePet(event.clientX, event.clientY);
+      dragStart.current = null;
+      updateClientSettings({ petCompanionPosition: next });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [movePet, updateClientSettings]);
+
   if (mode === "off") return null;
   if (mode === "always-on-top" && window.desktopBridge?.setPetSnapshot) return null;
 
+  const left =
+    PET_EDGE_INSET + position.x * Math.max(0, window.innerWidth - PET_SIZE - PET_EDGE_INSET * 2);
+  const top =
+    PET_EDGE_INSET + position.y * Math.max(0, window.innerHeight - PET_SIZE - PET_EDGE_INSET * 2);
+
   return (
     <aside
-      className="fixed bottom-5 right-5 z-50 flex max-w-[min(23rem,calc(100vw-2.5rem))] flex-col items-end gap-2"
-      aria-label="Pet companion"
+      className="fixed z-50 flex w-[min(23rem,calc(100vw-2rem))] flex-col items-start gap-2"
+      style={{ left, top }}
+      aria-label="Pixel pet companion"
     >
-      {expanded && needsAttention ? (
-        <div className="w-full overflow-hidden rounded-2xl border border-border/80 bg-popover/95 shadow-xl backdrop-blur">
-          <ComposerPendingUserInputPanel
-            pendingUserInputs={props.pendingUserInputs}
-            respondingRequestIds={props.respondingRequestIds}
-            answers={props.answers}
-            questionIndex={props.questionIndex}
-            onToggleOption={props.onToggleOption}
-            onAdvance={props.onAdvance}
-          />
+      {expanded ? (
+        <div className="relative w-full border-2 border-foreground bg-popover p-3 font-mono shadow-[5px_5px_0_var(--foreground)]">
+          <span className="absolute -bottom-2 left-7 size-3 rotate-45 border-b-2 border-r-2 border-foreground bg-popover" />
+          <div className="mb-3 flex items-center justify-between gap-3 text-xs uppercase tracking-wider text-muted-foreground">
+            <span>
+              {needsAttention ? "Mensagem do pet" : props.isWorking ? "Em missão" : "Pronto"}
+            </span>
+            <button
+              type="button"
+              className="p-1 text-muted-foreground hover:text-foreground"
+              onClick={() => setExpanded(false)}
+              aria-label="Minimize pet companion"
+            >
+              <XIcon className="size-4" />
+            </button>
+          </div>
+          {needsAttention ? (
+            <ComposerPendingUserInputPanel
+              pendingUserInputs={props.pendingUserInputs}
+              respondingRequestIds={props.respondingRequestIds}
+              answers={props.answers}
+              questionIndex={props.questionIndex}
+              onToggleOption={props.onToggleOption}
+              onAdvance={props.onAdvance}
+            />
+          ) : (
+            <p className="text-sm leading-6">
+              {props.threadTitle
+                ? `Acompanhando: ${props.threadTitle}`
+                : "Estou de olho no seu próximo passo."}
+            </p>
+          )}
         </div>
+      ) : needsAttention ? (
+        <button
+          type="button"
+          className="relative max-w-full border-2 border-foreground bg-popover px-3 py-2 text-left font-mono text-xs leading-5 shadow-[4px_4px_0_var(--foreground)]"
+          onClick={() => setExpanded(true)}
+        >
+          <span className="absolute -bottom-2 right-7 size-3 rotate-45 border-b-2 border-r-2 border-foreground bg-popover" />
+          {activeQuestion?.question ?? "Tenho uma pergunta para você."}
+        </button>
       ) : null}
-      <Button
+      <button
         type="button"
-        variant="ghost"
         className={cn(
-          "group relative h-20 w-20 rounded-full bg-transparent p-0 shadow-lg transition-transform hover:scale-105",
-          needsAttention && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+          "group relative size-[88px] touch-none select-none rounded-none bg-transparent p-0",
+          props.isWorking && "animate-[pet-pixel-bob_1.2s_steps(2,end)_infinite]",
         )}
-        onClick={() => setExpanded((value) => !value)}
+        onPointerDown={(event) => {
+          dragStart.current = { x: event.clientX, y: event.clientY };
+          dragged.current = false;
+        }}
+        onClick={() => {
+          if (dragged.current) return;
+          setExpanded((value) => !value);
+        }}
         aria-expanded={expanded}
         aria-label={needsAttention ? "Open pet question" : "Open pet companion"}
       >
         <img
-          src="/pets/amber-fox.png"
-          alt="Amber fox companion"
+          src="/pets/pixel-fox.png"
+          alt="Pixel art fox companion"
           draggable={false}
-          className="size-full object-contain"
+          className="size-full object-contain [image-rendering:pixelated]"
         />
         {needsAttention ? (
-          <span className="absolute right-0 top-0 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow">
+          <span className="absolute right-1 top-1 flex size-6 items-center justify-center border-2 border-foreground bg-primary text-primary-foreground shadow-[2px_2px_0_var(--foreground)]">
             <BellRingIcon className="size-3.5" aria-hidden />
           </span>
         ) : null}
-        <span className="absolute bottom-0 right-0 flex size-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow">
-          {expanded ? <ChevronDownIcon className="size-3" /> : <ChevronUpIcon className="size-3" />}
+        <span className="absolute bottom-1 right-1 flex size-5 items-center justify-center border-2 border-foreground bg-background text-muted-foreground">
+          <span className="sr-only">{expanded ? "Collapse" : "Expand"}</span>
+          {expanded ? (
+            <ChevronDownIcon className="size-3" aria-hidden />
+          ) : (
+            <ChevronUpIcon className="size-3" aria-hidden />
+          )}
         </span>
-      </Button>
+      </button>
     </aside>
   );
 });

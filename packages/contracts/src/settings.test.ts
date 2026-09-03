@@ -115,6 +115,7 @@ describe("ClientSettings browser recording frame rate", () => {
 describe("ClientSettings pet companion", () => {
   it("defaults to the in-app companion and accepts each supported mode", () => {
     expect(decodeClientSettings({}).petCompanionMode).toBe("in-app");
+    expect(decodeClientSettings({}).petCompanionPosition).toEqual({ x: 1, y: 1 });
 
     for (const mode of ["off", "in-app", "always-on-top"] as const) {
       expect(decodeClientSettingsPatch({ petCompanionMode: mode }).petCompanionMode).toBe(mode);
@@ -124,6 +125,14 @@ describe("ClientSettings pet companion", () => {
   it("rejects an unsupported companion mode", () => {
     expect(() => decodeClientSettings({ petCompanionMode: "overlay" })).toThrow();
     expect(() => decodeClientSettingsPatch({ petCompanionMode: "overlay" })).toThrow();
+  });
+
+  it("accepts a viewport-relative position and rejects positions outside the viewport", () => {
+    expect(
+      decodeClientSettingsPatch({ petCompanionPosition: { x: 0.25, y: 0.75 } })
+        .petCompanionPosition,
+    ).toEqual({ x: 0.25, y: 0.75 });
+    expect(() => decodeClientSettingsPatch({ petCompanionPosition: { x: -0.1, y: 1 } })).toThrow();
   });
 });
 
@@ -156,6 +165,22 @@ describe("ClientSettings appearance contrast", () => {
   it.each([50, 100, 150, 200])("accepts an appearance contrast in range: %s", (value) => {
     expect(decodeClientSettings({ appearanceContrast: value }).appearanceContrast).toBe(value);
     expect(decodeClientSettingsPatch({ appearanceContrast: value }).appearanceContrast).toBe(value);
+  });
+});
+
+describe("ClientSettings panel animations", () => {
+  it("defaults to instant changes", () => {
+    expect(decodeClientSettings({}).panelAnimationDurationMs).toBe(0);
+  });
+
+  it.each([0, 400])("accepts a panel animation duration: %s", (value) => {
+    expect(decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toEqual({
+      panelAnimationDurationMs: value,
+    });
+  });
+
+  it.each([-1, 401, 150.5])("rejects an invalid panel animation duration: %s", (value) => {
+    expect(() => decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toThrow();
   });
 });
 
