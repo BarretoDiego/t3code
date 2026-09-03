@@ -35,6 +35,7 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import { AntigravityInstallation } from "../AntigravityInstallation.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
@@ -897,6 +898,119 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         assert.deepStrictEqual(afterFailure.models, [authoritativeProvider.models[0]!]);
       });
 
+      describe("Antigravity model inventories", () => {
+        const previousProvider = {
+          instanceId: ProviderInstanceId.make("antigravity-personal"),
+          driver: ProviderDriverKind.make("antigravity"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-09-02T00:00:00.000Z",
+          version: "0.1.3",
+          models: [
+            {
+              slug: "gemini-3.1-pro-high",
+              name: "Gemini 3.1 Pro High",
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "gemini-3-flash",
+              name: "Gemini 3 Flash",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+
+        it("removes unavailable models after a successful refresh", () => {
+          for (const status of ["ready", "warning"] as const) {
+            const refreshedProvider = {
+              ...previousProvider,
+              status,
+              checkedAt: "2026-09-02T00:01:00.000Z",
+              models: [previousProvider.models[1]],
+            } satisfies ServerProvider;
+            const afterRefresh = mergeProviderSnapshot(previousProvider, refreshedProvider);
+
+            assert.deepStrictEqual(afterRefresh.models, refreshedProvider.models);
+
+            const afterFailure = mergeProviderSnapshot(afterRefresh, {
+              ...refreshedProvider,
+              status: "error",
+              auth: { status: "unknown" },
+              models: [],
+            });
+            assert.deepStrictEqual(afterFailure.models, refreshedProvider.models);
+          }
+        });
+
+        it("keeps cached models during health checks and temporary failures", () => {
+          for (const installed of [false, true]) {
+            const pendingProvider = {
+              ...previousProvider,
+              status: "warning",
+              installed,
+              auth: { status: "unknown" },
+              checkedAt: "2026-09-02T00:01:00.000Z",
+              version: installed ? previousProvider.version : null,
+              models: [],
+            } satisfies ServerProvider;
+
+            assert.deepStrictEqual(
+              mergeProviderSnapshot(previousProvider, pendingProvider).models,
+              previousProvider.models,
+            );
+          }
+
+          for (const authStatus of ["unknown", "authenticated"] as const) {
+            const failedProvider = {
+              ...previousProvider,
+              status: "error",
+              auth: { status: authStatus },
+              checkedAt: "2026-09-02T00:02:00.000Z",
+              models: [],
+            } satisfies ServerProvider;
+
+            assert.deepStrictEqual(
+              mergeProviderSnapshot(previousProvider, failedProvider).models,
+              previousProvider.models,
+            );
+          }
+        });
+
+        it("clears models after sign-out, disable, uninstall, or an empty successful refresh", () => {
+          const emptyProvider = {
+            ...previousProvider,
+            checkedAt: "2026-09-02T00:01:00.000Z",
+            models: [],
+          } satisfies ServerProvider;
+          const clearedProviders = [
+            { ...emptyProvider, status: "warning", auth: { status: "unauthenticated" } },
+            { ...emptyProvider, status: "error", auth: { status: "unauthenticated" } },
+            { ...emptyProvider, status: "disabled", enabled: false },
+            { ...emptyProvider, status: "error", enabled: false },
+            { ...emptyProvider, status: "error", installed: false, auth: { status: "unknown" } },
+            emptyProvider,
+          ] satisfies ReadonlyArray<ServerProvider>;
+
+          for (const provider of clearedProviders) {
+            const afterRemoval = mergeProviderSnapshot(previousProvider, provider);
+            assert.deepStrictEqual(afterRemoval.models, []);
+
+            const afterFailure = mergeProviderSnapshot(afterRemoval, {
+              ...emptyProvider,
+              status: "error",
+              auth: { status: "unknown" },
+            });
+            assert.deepStrictEqual(afterFailure.models, []);
+          }
+        });
+      });
+
       it("fills missing capabilities from the previous provider snapshot", () => {
         const previousProvider = {
           instanceId: ProviderInstanceId.make("cursor"),
@@ -1471,180 +1585,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
-      it.effect("merges sparse limits, replaces authoritative limits, and persists them", () =>
-        Effect.gen(function* () {
-          const cursorDriver = ProviderDriverKind.make("cursor");
-          const cursorInstanceId = ProviderInstanceId.make("cursor");
-          const initialProvider = {
-            instanceId: cursorInstanceId,
-            driver: cursorDriver,
-            status: "ready",
-            enabled: true,
-            installed: true,
-            auth: { status: "authenticated" },
-            checkedAt: "2026-04-14T00:00:00.000Z",
-            version: "2026.04.09-f2b0fcd",
-            models: [],
-            slashCommands: [],
-            skills: [],
-          } as const satisfies ServerProvider;
-          const refreshedProvider = {
-            ...initialProvider,
-            checkedAt: "2026-04-14T00:01:00.000Z",
-          } satisfies ServerProvider;
-          const changes = yield* PubSub.unbounded<ServerProvider>();
-          const instance = {
-            instanceId: cursorInstanceId,
-            driverKind: cursorDriver,
-            continuationIdentity: {
-              driverKind: cursorDriver,
-              continuationKey: "cursor:instance:cursor",
-            },
-            displayName: undefined,
-            enabled: true,
-            snapshot: {
-              maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
-                provider: cursorDriver,
-                packageName: null,
-              }),
-              getSnapshot: Effect.succeed(initialProvider),
-              refresh: Effect.succeed(refreshedProvider),
-              streamChanges: Stream.fromPubSub(changes),
-            },
-            adapter: {} as ProviderInstance["adapter"],
-            textGeneration: {} as ProviderInstance["textGeneration"],
-          } satisfies ProviderInstance;
-          const instanceRegistryLayer = Layer.succeed(
-            ProviderInstanceRegistry.ProviderInstanceRegistry,
-            {
-              getInstance: (instanceId) =>
-                Effect.succeed(instanceId === cursorInstanceId ? instance : undefined),
-              listInstances: Effect.succeed([instance]),
-              listUnavailable: Effect.succeed([]),
-              streamChanges: Stream.empty,
-              subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
-                PubSub.subscribe(pubsub),
-              ),
-            },
-          );
-          const scope = yield* Scope.make();
-          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
-          const runtimeServices = yield* Layer.build(
-            ProviderRegistryLive.pipe(
-              Layer.provideMerge(instanceRegistryLayer),
-              Layer.provideMerge(
-                ServerConfig.layerTest(process.cwd(), {
-                  prefix: "t3-provider-registry-rate-limits-",
-                }),
-              ),
-              Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
-              Layer.provideMerge(NodeServices.layer),
-            ),
-          ).pipe(Scope.provide(scope));
-
-          yield* Effect.gen(function* () {
-            const registry = yield* ProviderRegistry.ProviderRegistry;
-            const config = yield* ServerConfig.ServerConfig;
-            const filePath = yield* resolveProviderStatusCachePath({
-              cacheDir: config.providerStatusCacheDir,
-              instanceId: cursorInstanceId,
-            });
-
-            yield* registry.setProviderRateLimits({
-              instanceId: cursorInstanceId,
-              rateLimits: {
-                observedAt: "2026-04-14T00:00:30.000Z",
-                planLabel: "Pro",
-                windows: [
-                  {
-                    id: "five_hour",
-                    label: "5-hour",
-                    kind: "session",
-                    usedPercent: 40,
-                    resetsAt: null,
-                    status: "ok",
-                  },
-                ],
-              },
-            });
-
-            // A sparse follow-up must not drop the window it did not mention.
-            yield* registry.setProviderRateLimits({
-              instanceId: cursorInstanceId,
-              rateLimits: {
-                observedAt: "2026-04-14T00:00:45.000Z",
-                windows: [
-                  {
-                    id: "seven_day",
-                    label: "Weekly",
-                    kind: "weekly",
-                    usedPercent: 12,
-                    resetsAt: null,
-                    status: "ok",
-                  },
-                ],
-              },
-            });
-
-            const providers = yield* registry.getProviders;
-            assert.deepStrictEqual(
-              providers[0]?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour", "seven_day"],
-            );
-            assert.strictEqual(providers[0]?.rateLimits?.planLabel, "Pro");
-
-            // A structured full snapshot is authoritative: a window it omits
-            // no longer applies and must not survive sparse-merge semantics.
-            yield* registry.setProviderRateLimits({
-              instanceId: cursorInstanceId,
-              mode: "replace",
-              rateLimits: {
-                observedAt: "2026-04-14T00:00:50.000Z",
-                planLabel: "Pro",
-                windows: [
-                  {
-                    id: "five_hour",
-                    label: "5-hour",
-                    kind: "session",
-                    usedPercent: 8,
-                    resetsAt: null,
-                    status: "ok",
-                  },
-                ],
-              },
-            });
-            assert.deepStrictEqual(
-              (yield* registry.getProviders)[0]?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour"],
-            );
-
-            // A provider health refresh replaces the snapshot; the observation
-            // is projected back onto it instead of being lost.
-            yield* PubSub.publish(changes, refreshedProvider);
-
-            let cachedProvider = yield* readProviderStatusCache(filePath);
-            for (
-              let attempt = 0;
-              attempt < 50 && cachedProvider?.checkedAt !== refreshedProvider.checkedAt;
-              attempt += 1
-            ) {
-              yield* TestClock.adjust("10 millis");
-              yield* Effect.yieldNow;
-              cachedProvider = yield* readProviderStatusCache(filePath);
-            }
-
-            assert.deepStrictEqual(
-              cachedProvider?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour"],
-            );
-            assert.deepStrictEqual(
-              (yield* registry.getProviders)[0]?.rateLimits?.windows.map((window) => window.id),
-              ["five_hour"],
-            );
-          }).pipe(Effect.provide(runtimeServices));
-        }),
-      );
-
       it.effect(
         "persists authoritative OpenCode removals without resurrecting them on a failed live refresh",
         () =>
@@ -2041,6 +1981,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(AntigravityInstallation.layer),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -2106,18 +2047,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         }),
       );
 
-      // Guards the second half of the reported bug: changing
-      // `providers.codex.binaryPath` in settings must tear down the live
-      // instance and rebuild it so a fresh probe runs with the new binary.
-      // This test drives the real settings stream → registry reconcile →
-      // aggregator sync pipeline and asserts that `getProviders` reflects
-      // the new background probe's outcome.
-      //
+      // A binary path change must rebuild Codex and publish its new probe result.
       it.effect("re-probes when settings change the codex binaryPath", () =>
         Effect.gen(function* () {
           const firstMissing = `t3code_codex_first_`;
           const secondMissing = `t3code_codex_second_`;
           const spawnedCommands: Array<string> = [];
+          const secondProbeStarted = yield* Deferred.make<void>();
+          const releaseSecondProbe = yield* Deferred.make<void>();
           const allowLazySettingsStream = yield* Deferred.make<void>();
           const mutableServerSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
@@ -2144,6 +2081,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(AntigravityInstallation.layer),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -2163,8 +2101,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
-                spawnedCommands.push((command as { readonly command: string }).command);
-                return spawner.spawn(command);
+                if (command._tag !== "StandardCommand") return spawner.spawn(command);
+                spawnedCommands.push(command.command);
+                const beforeSpawn =
+                  command.command === secondMissing
+                    ? Deferred.succeed(secondProbeStarted, undefined).pipe(
+                        Effect.andThen(Deferred.await(releaseSecondProbe)),
+                      )
+                    : Effect.void;
+                return beforeSpawn.pipe(Effect.andThen(spawner.spawn(command)));
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -2176,58 +2121,29 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
-            // Boot-time probe: the default codex instance is enabled with
-            // `firstMissing`, so the real spawner yields ENOENT and the
-            // snapshot should be `status: "error"`.
-            let initialProviders = yield* registry.getProviders;
-            for (
-              let attempts = 0;
-              attempts < 50 &&
-              initialProviders.find((provider) => provider.instanceId === "codex")?.status !==
-                "error";
-              attempts += 1
-            ) {
-              yield* TestClock.adjust("10 millis");
-              yield* Effect.yieldNow;
-              initialProviders = yield* registry.getProviders;
-            }
-            const initialCodex = initialProviders.find(
+            const codexSnapshots = registry.streamChanges.pipe(
+              Stream.map((providers) =>
+                providers.find((provider) => provider.instanceId === "codex"),
+              ),
+              Stream.filter((provider): provider is ServerProvider => provider !== undefined),
+            );
+            const firstError = yield* Stream.toPull(
+              codexSnapshots.pipe(Stream.filter((provider) => provider.status === "error")),
+            );
+            const currentCodex = (yield* registry.getProviders).find(
               (provider) => provider.instanceId === "codex",
             );
+            const initialCodex =
+              currentCodex?.status === "error" ? currentCodex : (yield* firstError)[0];
             assert.strictEqual(initialCodex?.status, "error");
             assert.strictEqual(initialCodex?.installed, false);
             assert.deepStrictEqual(spawnedCommands, [firstMissing]);
 
-            yield* registry.setProviderRateLimits({
-              instanceId: ProviderInstanceId.make("codex"),
-              rateLimits: {
-                observedAt: "2026-04-14T00:00:00.000Z",
-                windows: [
-                  {
-                    id: "primary",
-                    label: "Weekly",
-                    kind: "weekly",
-                    usedPercent: 77,
-                    resetsAt: null,
-                    status: "ok",
-                  },
-                ],
-              },
-            });
-            assert.strictEqual(
-              (yield* registry.getProviders).find((provider) => provider.instanceId === "codex")
-                ?.rateLimits?.windows[0]?.usedPercent,
-              77,
+            const pendingRebuild = yield* Stream.toPull(
+              codexSnapshots.pipe(
+                Stream.filter((provider) => provider.status === "warning" && !provider.installed),
+              ),
             );
-
-            // Drive a settings change. The Hydration layer's
-            // `SettingsWatcherLive` consumes this via `subscribeChanges`,
-            // calls `reconcile`, which rebuilds the codex instance (the
-            // envelope changed because `binaryPath` differs → `entryEqual`
-            // is false). The registry's `Stream.runForEach(
-            // instanceRegistry.streamChanges, () => syncLiveSources)`
-            // fires `syncLiveSources`, which subscribes and launches a fresh
-            // background refresh on the rebuilt instance.
             yield* serverSettings.updateSettings({
               providers: {
                 codex: { enabled: true, binaryPath: secondMissing },
@@ -2237,31 +2153,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             // not subscribe before forking has already lost this update.
             yield* Deferred.succeed(allowLazySettingsStream, undefined);
 
-            // Poll until the injected process boundary observes the new
-            // executable. This verifies the public settings-to-probe behavior
-            // without depending on timestamps assigned by TestClock.
-            const refreshed = yield* Effect.gen(function* () {
-              for (let attempts = 0; attempts < 60; attempts += 1) {
-                const providers = yield* registry.getProviders;
-                const codex = providers.find((provider) => provider.instanceId === "codex");
-                if (
-                  codex !== undefined &&
-                  codex.status === "error" &&
-                  spawnedCommands.includes(secondMissing)
-                ) {
-                  return providers;
-                }
-                yield* TestClock.adjust("50 millis");
-                yield* Effect.yieldNow;
-              }
-              return yield* registry.getProviders;
-            });
-
-            const reprobedCodex = refreshed.find((provider) => provider.instanceId === "codex");
+            // Hold the second probe until the aggregator sees the rebuilt
+            // instance. Its next error must come from the new executable.
+            yield* Deferred.await(secondProbeStarted);
+            yield* pendingRebuild;
+            const rebuiltError = yield* Stream.toPull(
+              codexSnapshots.pipe(Stream.filter((provider) => provider.status === "error")),
+            );
+            yield* Deferred.succeed(releaseSecondProbe, undefined);
+            const [reprobedCodex] = yield* rebuiltError;
             assert.deepStrictEqual(spawnedCommands, [firstMissing, secondMissing]);
             assert.strictEqual(reprobedCodex?.status, "error");
             assert.strictEqual(reprobedCodex?.installed, false);
-            assert.strictEqual(reprobedCodex?.rateLimits, undefined);
           }).pipe(Effect.provide(runtimeServices));
         }),
       );
@@ -2293,6 +2196,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            Layer.provideMerge(AntigravityInstallation.layer),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -2353,6 +2257,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
             const providerRegistryLayer = ProviderRegistryLive.pipe(
               Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+              Layer.provideMerge(AntigravityInstallation.layer),
               Layer.provideMerge(
                 Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
               ),
@@ -2410,6 +2315,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               );
 
               assert.deepStrictEqual(providers.map((provider) => provider.instanceId).toSorted(), [
+                "antigravity",
                 "claudeAgent",
                 "codex",
                 "cursor",

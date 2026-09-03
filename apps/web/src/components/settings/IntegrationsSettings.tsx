@@ -8,12 +8,14 @@
  */
 import {
   BROWSER_PROFILE_MAX_COUNT,
+  type BrowserLinkTarget,
   type BrowserProfile,
   type EnvironmentId,
   BROWSER_PROFILE_NAME_MAX_LENGTH,
   BROWSER_RECORDING_FRAME_RATES,
   DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW,
   DEFAULT_BROWSER_PROFILE_ID,
+  DEFAULT_BROWSER_LINK_TARGET,
   DEFAULT_BROWSER_RECORDING_FRAME_RATE,
   DEFAULT_BROWSER_VIEWPORT,
   DEFAULT_PET_COMPANION_MODE,
@@ -362,7 +364,7 @@ function BrowserZoomSetting({ disabled }: { readonly disabled: boolean }) {
             if (next !== undefined) updateSettings({ browserDefaultZoomFactor: next });
           }}
         >
-          <SelectTrigger className="w-full sm:w-40" aria-label="Default browser zoom">
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Default browser zoom">
             <SelectValue>{zoomLabel(zoomFactor)}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -404,7 +406,11 @@ function BrowserAppearanceSetting({ disabled }: { readonly disabled: boolean }) 
             }
           }}
         >
-          <SelectTrigger className="w-full sm:w-40" aria-label="Default browser appearance">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-40"
+            aria-label="Default browser appearance"
+          >
             <SelectValue>{APPEARANCE_LABELS[appearance]}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -449,13 +455,64 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
             }
           }}
         >
-          <SelectTrigger className="w-full sm:w-40" aria-label="Browser recording frame rate">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-40"
+            aria-label="Browser recording frame rate"
+          >
             <SelectValue>{frameRate} fps</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
             {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
               <SelectItem hideIndicator key={rate} value={String(rate)}>
                 {rate} fps
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
+const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
+  system: "Your default browser",
+  app: "T3 Code",
+};
+
+function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) {
+  const linkTarget = useClientSettings((settings) => settings.browserLinkTarget);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("browser-link-target")}
+      description="Where links in the chat and terminal open. Hold ⌘ or Ctrl while clicking a chat link to open it in your default browser either way."
+      resetAction={
+        !disabled && linkTarget !== DEFAULT_BROWSER_LINK_TARGET ? (
+          <SettingResetButton
+            label="link target"
+            onClick={() => updateSettings({ browserLinkTarget: DEFAULT_BROWSER_LINK_TARGET })}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          disabled={disabled}
+          value={linkTarget}
+          onValueChange={(value) => {
+            if (value === "system" || value === "app") {
+              updateSettings({ browserLinkTarget: value });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Open links in">
+            <SelectValue>{LINK_TARGET_LABELS[linkTarget]}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {(Object.keys(LINK_TARGET_LABELS) as ReadonlyArray<BrowserLinkTarget>).map((target) => (
+              <SelectItem hideIndicator key={target} value={target}>
+                {LINK_TARGET_LABELS[target]}
               </SelectItem>
             ))}
           </SelectPopup>
@@ -754,7 +811,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                     render={
                       <span className="inline-flex" {...(!removalAvailable ? { tabIndex: 0 } : {})}>
                         <Button
-                          size="icon-sm"
+                          size="icon-xs"
                           variant="ghost-muted"
                           disabled={profileWritesDisabled || !removalAvailable}
                           aria-label={`Remove ${profile.name}`}
@@ -908,6 +965,7 @@ export function IntegrationsSettingsPanel() {
       <BrowserZoomSetting disabled={previewDefaultsDisabled} />
       <BrowserAppearanceSetting disabled={previewDefaultsDisabled} />
       <BrowserRecordingFrameRateSetting disabled={previewDefaultsDisabled} />
+      <BrowserLinkTargetSetting disabled={previewDefaultsDisabled} />
       <BrowserAutoShowFloatingPreviewSetting disabled={previewDefaultsDisabled} />
     </>
   );

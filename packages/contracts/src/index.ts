@@ -13,6 +13,7 @@ export * from "./terminal.ts";
 export * from "./provider.ts";
 export * from "./providerInstance.ts";
 export * from "./providerRateLimits.ts";
+export * from "./providerSetup.ts";
 export * from "./providerRuntime.ts";
 export * from "./model.ts";
 export * from "./marketplace.ts";
