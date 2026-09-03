@@ -1979,15 +1979,44 @@ function LegacyFeaturesSection() {
             />
             <SettingsRow
               {...searchableSetting("legacy-sidebar")}
-              description="Brings back the original sidebar with per-project thread trees. The default sidebar shows one flat list: active work as rich cards, settled threads as compact rows."
+              title="Sidebar experience"
+              description="Switch between the fork's grouped sidebar, the upstream original, and the legacy per-project tree. Your choice stays local to this environment."
               control={
-                <Switch
-                  checked={settings.legacySidebarEnabled}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ legacySidebarEnabled: Boolean(checked) })
-                  }
-                  aria-label="Sidebar (legacy)"
-                />
+                <Select
+                  value={settings.legacySidebarEnabled ? "legacy" : settings.sidebarExperience}
+                  onValueChange={(value) => {
+                    const sidebarExperience = value as typeof settings.sidebarExperience;
+                    updateSettings({
+                      sidebarExperience,
+                      legacySidebarEnabled: sidebarExperience === "legacy",
+                    });
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full sm:w-48"
+                    aria-label="Sidebar experience"
+                  >
+                    <SelectValue>
+                      {settings.legacySidebarEnabled || settings.sidebarExperience === "legacy"
+                        ? "Legacy tree"
+                        : settings.sidebarExperience === "original"
+                          ? "Original upstream"
+                          : "Grouped (fork)"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="grouped">
+                      Grouped (fork)
+                    </SelectItem>
+                    <SelectItem hideIndicator value="original">
+                      Original upstream
+                    </SelectItem>
+                    <SelectItem hideIndicator value="legacy">
+                      Legacy tree
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
               }
             />
           </div>
