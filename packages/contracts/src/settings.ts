@@ -64,6 +64,11 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 
+/** The sidebar implementation shown in the desktop and web clients. */
+export const SidebarExperience = Schema.Literals(["grouped", "original", "legacy"]);
+export type SidebarExperience = typeof SidebarExperience.Type;
+export const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
+
 /**
  * Axis the sidebar inbox groups threads along. `none` keeps the list flat
  * ("leave it open"); the rest split the inbox into collapsible sections.
@@ -379,6 +384,12 @@ export const ClientSettingsSchema = Schema.Struct({
   // old keys, so everyone, including prior beta opt-outs, resets to the new
   // default sidebar.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Keep the upstream implementation selectable while the fork's grouped
+  // sidebar evolves independently. `legacySidebarEnabled` remains so saved
+  // preferences from earlier releases still decode and select the legacy UI.
+  sidebarExperience: SidebarExperience.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_EXPERIENCE)),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -1264,6 +1275,7 @@ export const ClientSettingsPatch = Schema.Struct({
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarExperience: Schema.optionalKey(SidebarExperience),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

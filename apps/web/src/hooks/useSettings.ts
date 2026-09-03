@@ -302,6 +302,19 @@ export function useLegacySidebarEnabled(): boolean {
   return settingsHydrated && legacySidebarEnabled;
 }
 
+/**
+ * Resolves the selectable sidebar implementation after settings hydrate.
+ *
+ * Old installations only have `legacySidebarEnabled`; honour it ahead of the
+ * new selector so their previous choice is not lost during the migration.
+ */
+export function useSidebarExperience(): ClientSettings["sidebarExperience"] {
+  const settingsHydrated = useClientSettingsHydrated();
+  const settings = useClientSettingsValue();
+  if (!settingsHydrated) return "grouped";
+  return settings.legacySidebarEnabled ? "legacy" : settings.sidebarExperience;
+}
+
 /** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,
