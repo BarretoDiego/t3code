@@ -201,6 +201,16 @@ describe("searchSettings", () => {
     });
   });
 
+  it("finds sidebar style in General settings", () => {
+    expect(
+      searchSettings("sidebar style").find((item) => item.id === "sidebar-style"),
+    ).toMatchObject({
+      id: "sidebar-style",
+      to: "/settings/general",
+      title: "Sidebar style",
+    });
+  });
+
   it("routes browser recording quality to integrations", () => {
     const result = searchSettings("recording frame rate")[0];
     expect(result).toMatchObject({

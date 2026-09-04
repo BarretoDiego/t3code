@@ -501,6 +501,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
   const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
+  const effectiveSidebarExperience = settings.legacySidebarEnabled
+    ? "legacy"
+    : settings.sidebarExperience;
+  const isSidebarExperienceDirty =
+    effectiveSidebarExperience !== DEFAULT_UNIFIED_SETTINGS.sidebarExperience ||
+    settings.legacySidebarEnabled !== DEFAULT_UNIFIED_SETTINGS.legacySidebarEnabled;
 
   const changedSettingLabels = useMemo(
     () => [
@@ -528,6 +534,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
+      ...(isSidebarExperienceDirty ? ["Sidebar style"] : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -631,6 +638,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
+      settings.legacySidebarEnabled,
+      settings.sidebarExperience,
+      isSidebarExperienceDirty,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
@@ -722,6 +732,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+      sidebarExperience: DEFAULT_UNIFIED_SETTINGS.sidebarExperience,
+      legacySidebarEnabled: DEFAULT_UNIFIED_SETTINGS.legacySidebarEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
@@ -1878,7 +1890,6 @@ const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
   "legacy-plan-mode",
   "legacy-context-window-indicator",
   "legacy-token-streaming",
-  "legacy-sidebar",
 ]);
 
 /**
@@ -1994,19 +2005,6 @@ function LegacyFeaturesSection() {
                 />
               }
             />
-            <SettingsRow
-              {...searchableSetting("legacy-sidebar")}
-              description="Restore per-project thread trees instead of the default flat sidebar."
-              control={
-                <Switch
-                  checked={settings.legacySidebarEnabled}
-                  onCheckedChange={(checked) =>
-                    updateSettings({ legacySidebarEnabled: Boolean(checked) })
-                  }
-                  aria-label="Sidebar (legacy)"
-                />
-              }
-            />
           </div>
         </CollapsiblePanel>
       </Collapsible>
@@ -2027,6 +2025,9 @@ export function GeneralSettingsPanel() {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const supportsAutoSettlement =
     useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
+  const effectiveSidebarExperience = settings.legacySidebarEnabled
+    ? "legacy"
+    : settings.sidebarExperience;
   const composerCollapseTriggers = useMemo<ComposerCollapseTrigger[]>(
     () => [
       ...(settings.composerCollapseOnBlur ? (["blur"] as const) : []),
@@ -2091,6 +2092,58 @@ export function GeneralSettingsPanel() {
     <SettingsPageContainer>
       <SharedSettingsMismatchAlert />
       <SettingsSection id="organization" title="Organization">
+        <SettingsRow
+          {...searchableSetting("sidebar-style")}
+          description="Choose how the sidebar organizes threads and projects."
+          resetAction={
+            effectiveSidebarExperience !== DEFAULT_UNIFIED_SETTINGS.sidebarExperience ||
+            settings.legacySidebarEnabled !== DEFAULT_UNIFIED_SETTINGS.legacySidebarEnabled ? (
+              <SettingResetButton
+                label="sidebar style"
+                onClick={() =>
+                  updateSettings({
+                    sidebarExperience: DEFAULT_UNIFIED_SETTINGS.sidebarExperience,
+                    legacySidebarEnabled: DEFAULT_UNIFIED_SETTINGS.legacySidebarEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={effectiveSidebarExperience}
+              onValueChange={(value) => {
+                if (value === "grouped" || value === "original" || value === "legacy") {
+                  updateSettings({
+                    sidebarExperience: value,
+                    legacySidebarEnabled: value === "legacy",
+                  });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Sidebar style">
+                <SelectValue>
+                  {effectiveSidebarExperience === "grouped"
+                    ? "Grouped"
+                    : effectiveSidebarExperience === "original"
+                      ? "Original"
+                      : "Legacy"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="grouped">
+                  Grouped
+                </SelectItem>
+                <SelectItem hideIndicator value="original">
+                  Original
+                </SelectItem>
+                <SelectItem hideIndicator value="legacy">
+                  Legacy
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
         <SettingsRow
           {...searchableSetting("project-grouping")}
           description="Combine matching repositories across environments."
