@@ -449,6 +449,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const taskDetailAsLabel =
     isTaskActivity &&
     !taskSummary &&
+    !title &&
     typeof payload?.detail === "string" &&
     payload.detail.length > 0
       ? payload.detail
@@ -499,7 +500,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
         toolName: data?.toolName,
         data,
       });
-    if (detail && !repeatsCommand) entry.detail = detail;
+    if (detail && detail !== title && !repeatsCommand) entry.detail = detail;
   }
   if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
     entry.detail = payload.error;
@@ -1110,6 +1111,9 @@ function extractWorkLogToolLifecycleStatus(
   payload: Record<string, unknown> | null,
 ): WorkLogToolLifecycleStatus | undefined {
   const status = payload?.status;
+  // The parent turn ended, so batch tracking is inactive. The detail explains
+  // that child status is unavailable; do not retain the earlier running marker.
+  if (status === "idle" && payload?.taskType === "subagent_batch") return "stopped";
   if (status === "pending" || status === "running" || status === "waiting") return "inProgress";
   if (status === "cancelled" || status === "interrupted") return "stopped";
   if (
@@ -1371,9 +1375,6 @@ function deriveThreadFeedTurnFolds(
       pendingUserBoundary = entry.message.createdAt;
       continue;
     }
-    if (entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) {
-      continue;
-    }
     const turnId =
       entry.type === "message" && entry.message.role === "assistant"
         ? entry.message.turnId
@@ -1417,6 +1418,16 @@ function deriveThreadFeedTurnFolds(
         .map((entry) => entry.id),
     );
     if (hiddenEntryIds.size === 0) {
+      continue;
+    }
+    // A lone compaction row stays visible on its own; it only folds away as
+    // part of a turn that already folds other work.
+    const hidesNonCompactionWork = entries.some(
+      (entry) =>
+        hiddenEntryIds.has(entry.id) &&
+        !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
+    );
+    if (!hidesNonCompactionWork) {
       continue;
     }
 

@@ -68,6 +68,7 @@ const clientSettings: ClientSettings = {
   sidebarSectionOrderMode: "manual",
   sidebarSectionOrder: ["environment:environment-2", "environment:environment-1"],
   legacySidebarEnabled: false,
+  sidebarExperience: "grouped",
   timestampFormat: "24-hour",
   wordWrap: true,
 };
