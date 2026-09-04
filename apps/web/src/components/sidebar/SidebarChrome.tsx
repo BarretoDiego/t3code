@@ -3,13 +3,18 @@ import {
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   LayoutDashboardIcon,
+  PanelsTopLeftIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
-import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
+import {
+  persistClientSettingsPatch,
+  useEnvironmentIdentificationMode,
+  useSidebarExperience,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
@@ -31,6 +36,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -132,6 +138,57 @@ function SidebarUtilityItem({
   );
 }
 
+const SIDEBAR_EXPERIENCES = [
+  { value: "grouped", label: "Grouped" },
+  { value: "original", label: "Original" },
+  { value: "legacy", label: "Legacy" },
+] as const;
+
+function SidebarExperienceSelector() {
+  const sidebarExperience = useSidebarExperience();
+
+  return (
+    <SidebarMenuItem className="shrink-0">
+      <Menu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                aria-label="Choose sidebar layout"
+                className="flex size-8 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-hidden transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              />
+            }
+          >
+            <PanelsTopLeftIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Sidebar layout: {sidebarExperience}</TooltipPopup>
+        </Tooltip>
+        <MenuPopup align="start" side="top" className="min-w-40">
+          <MenuGroup>
+            <MenuRadioGroup
+              value={sidebarExperience}
+              onValueChange={(value) => {
+                const experience = SIDEBAR_EXPERIENCES.find((option) => option.value === value);
+                if (!experience) return;
+                persistClientSettingsPatch({
+                  sidebarExperience: experience.value,
+                  legacySidebarEnabled: experience.value === "legacy",
+                });
+              }}
+            >
+              {SIDEBAR_EXPERIENCES.map((experience) => (
+                <MenuRadioItem key={experience.value} value={experience.value}>
+                  {experience.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuGroup>
+        </MenuPopup>
+      </Menu>
+    </SidebarMenuItem>
+  );
+}
+
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -209,6 +266,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
+          <SidebarExperienceSelector />
           <SidebarUtilityItem
             icon={<LayoutDashboardIcon />}
             label="Agent Operations"
