@@ -24,7 +24,6 @@ import { useEnvironments } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useWorkspaceState } from "../../state/workspace";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 
 const COLUMNS = [
@@ -77,7 +76,6 @@ export function AgentBoardRouteScreen() {
   const archive = useAtomCommand(threadEnvironment.archive, { reportFailure: false });
   const settle = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
   const unsettle = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
-  const iconColor = useUniwindTheme()["--color-icon"];
 
   const environmentIdsWithShells = useMemo(
     () => new Set(threads.map((thread) => thread.environmentId)),
@@ -241,7 +239,12 @@ export function AgentBoardRouteScreen() {
 
         {disconnected ? (
           <View className="flex-row items-start gap-2 rounded-2xl border border-border bg-subtle p-3">
-            <SymbolView name="wifi.slash" size={15} tintColor={iconColor} type="monochrome" />
+            <SymbolView
+              name="wifi.slash"
+              size={15}
+              tintColorClassName="accent-icon"
+              type="monochrome"
+            />
             <Text className="min-w-0 flex-1 text-xs text-foreground-muted">
               Cached cards stay in place while environments reconnect. Connectivity does not change
               agent state.

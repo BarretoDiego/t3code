@@ -24,6 +24,7 @@ import {
 import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { ProviderRateLimits } from "./providerRateLimits.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 
@@ -185,6 +186,9 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+export const ServerProviderRateLimitsRefreshMode = Schema.Literal("active-session-required");
+export type ServerProviderRateLimitsRefreshMode = typeof ServerProviderRateLimitsRefreshMode.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -230,6 +234,13 @@ export const ServerProvider = Schema.Struct({
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   // Absent when the driver has no notion of subscription usage.
   usageLimits: Schema.optional(ServerProviderUsageLimits),
+  // Declares whether the provider can answer an explicit plan-limit refresh.
+  // `active-session-required` means usage is exposed by its live protocol
+  // connection instead of a standalone account API.
+  rateLimitsRefresh: Schema.optionalKey(ServerProviderRateLimitsRefreshMode),
+  // Last plan rate-limit observation for this instance, absent until the
+  // provider reports one (and always absent for providers that never do).
+  rateLimits: Schema.optionalKey(ProviderRateLimits),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 });

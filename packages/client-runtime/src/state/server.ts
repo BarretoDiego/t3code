@@ -807,6 +807,27 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:settings:${environmentId}`),
     ),
   );
+  const usagePricesAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => {
+      const overrides = get(settingsValueAtom(environmentId))?.usagePriceOverrides ?? {};
+      // Only changed prices should trigger another transcript scan. Settings
+      // snapshots can recreate the same mapping in a different property order.
+      return JSON.stringify(
+        Object.keys(overrides)
+          .sort()
+          .map((model) => {
+            const price = overrides[model]!;
+            return [
+              model,
+              price.inputCostPerMillionTokens,
+              price.outputCostPerMillionTokens,
+              price.cacheReadCostPerMillionTokens,
+              price.cacheWriteCostPerMillionTokens,
+            ];
+          }),
+      );
+    }).pipe(Atom.withLabel(`environment-data:server:usage-prices:${environmentId}`)),
+  );
   const providersValueAtom = Atom.family((environmentId: EnvironmentId) =>
     Atom.make((get) => get(configValueAtom(environmentId))?.providers ?? null).pipe(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
@@ -892,6 +913,7 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:usage-summary",
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
+      refreshTrigger: ({ environmentId }) => usagePricesAtom(environmentId),
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
@@ -925,6 +947,14 @@ export function createServerEnvironmentAtoms<R, E>(
           ]),
       },
     }),
+    refreshProviderRateLimits: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:refresh-provider-rate-limits",
+      tag: WS_METHODS.serverRefreshProviderRateLimits,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.instanceId]),
+      },
+    }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,
@@ -947,6 +977,46 @@ export function createServerEnvironmentAtoms<R, E>(
     updateSettings: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-settings",
       tag: WS_METHODS.serverUpdateSettings,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplace: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:marketplace:list",
+      tag: WS_METHODS.marketplaceList,
+      staleTimeMs: 5 * 60_000,
+    }),
+    marketplacePackage: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:marketplace:package",
+      tag: WS_METHODS.marketplaceGetPackage,
+      staleTimeMs: 5 * 60_000,
+    }),
+    marketplaceAddSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:add-source",
+      tag: WS_METHODS.marketplaceAddSource,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceRemoveSource: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:remove-source",
+      tag: WS_METHODS.marketplaceRemoveSource,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceInstall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:install",
+      tag: WS_METHODS.marketplaceInstall,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:update",
+      tag: WS_METHODS.marketplaceUpdate,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    marketplaceUninstall: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:marketplace:uninstall",
+      tag: WS_METHODS.marketplaceUninstall,
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),

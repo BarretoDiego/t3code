@@ -29,7 +29,6 @@ import * as Schema from "effect/Schema";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -433,7 +432,6 @@ function PackageDetailModal(props: {
 
 export function SettingsMarketplaceRouteScreen() {
   const insets = useSafeAreaInsets();
-  const iconColor = useUniwindTheme()["--color-icon"];
   const { environments, isReady } = useEnvironments();
   const [requestedEnvironmentId, setRequestedEnvironmentId] = useState<EnvironmentId | null>(null);
   const environmentId =
@@ -514,12 +512,17 @@ export function SettingsMarketplaceRouteScreen() {
                 onPress={() => setRequestedEnvironmentId(environment.environmentId)}
                 className="flex-row items-center gap-3 border-b border-separator p-4 last:border-b-0 active:opacity-70"
               >
-                <SymbolView name="desktopcomputer" size={20} tintColor={iconColor} />
+                <SymbolView name="desktopcomputer" size={20} tintColorClassName="accent-icon" />
                 <Text className="min-w-0 flex-1 text-base" numberOfLines={1}>
                   {environment.label}
                 </Text>
                 {environment.environmentId === environmentId ? (
-                  <SymbolView name="checkmark" size={16} tintColor={iconColor} weight="semibold" />
+                  <SymbolView
+                    name="checkmark"
+                    size={16}
+                    tintColorClassName="accent-icon"
+                    weight="semibold"
+                  />
                 ) : null}
               </Pressable>
             ))}
@@ -563,7 +566,7 @@ export function SettingsMarketplaceRouteScreen() {
               onLongPress={source.removable ? () => handleRemoveSource(source.id) : undefined}
               className="flex-row items-center gap-3 border-t border-separator p-4 active:opacity-70"
             >
-              <SymbolView name="shippingbox" size={20} tintColor={iconColor} />
+              <SymbolView name="shippingbox" size={20} tintColorClassName="accent-icon" />
               <View className="min-w-0 flex-1">
                 <Text className="font-t3-medium" numberOfLines={1}>
                   {source.name}
@@ -578,7 +581,7 @@ export function SettingsMarketplaceRouteScreen() {
                   onPress={() => handleRemoveSource(source.id)}
                   className="size-9 items-center justify-center"
                 >
-                  <SymbolView name="trash" size={16} tintColor={iconColor} />
+                  <SymbolView name="trash" size={16} tintColorClassName="accent-icon" />
                 </Pressable>
               ) : null}
             </Pressable>
@@ -611,7 +614,7 @@ export function SettingsMarketplaceRouteScreen() {
                 className="flex-row items-center gap-4 border-b border-separator p-4 last:border-b-0 active:opacity-70"
               >
                 <View className="size-10 items-center justify-center rounded-xl bg-fill-secondary">
-                  <SymbolView name="shippingbox" size={20} tintColor={iconColor} />
+                  <SymbolView name="shippingbox" size={20} tintColorClassName="accent-icon" />
                 </View>
                 <View className="min-w-0 flex-1 gap-0.5">
                   <Text className="font-t3-medium" numberOfLines={1}>
