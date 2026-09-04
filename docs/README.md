@@ -8,6 +8,7 @@
 - [Organizing threads](./user/thread-sidebar.md)
 - [Working with multiple threads](./user/thread-workspace.md)
 - [Review usage](./user/usage.md)
+- [Anonymous usage data](./user/telemetry.md)
 - [Customize a project icon](./user/project-settings.md)
 - [Sync projects between environments](./user/project-sync.md)
 - [Mobile appearance](./user/mobile-appearance.md)
