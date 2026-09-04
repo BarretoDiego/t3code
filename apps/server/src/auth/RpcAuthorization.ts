@@ -105,6 +105,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.projectsSearchContents]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsSearchEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsWriteFile]: AuthOrchestrationOperateScope,
+  // A manifest and an export URL only ever read the workspace, so they sit
+  // with projects.readFile. Import URLs and deletions write it, so they sit
+  // with projects.writeFile.
+  [WS_METHODS.projectSyncManifest]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectSyncCreateExportUrl]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectSyncCreateImportUrl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.projectSyncApplyDeletions]: AuthOrchestrationOperateScope,
   [WS_METHODS.shellOpenInEditor]: AuthOrchestrationOperateScope,
   [WS_METHODS.filesystemBrowse]: AuthOrchestrationReadScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,

@@ -554,6 +554,10 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   token: string,
   relativePath: string,
 ) {
+  // Deliberately not `verifySignedClaims` (auth/utils.ts), which the attachment
+  // upload and project sync tokens share: this one tolerates extra
+  // dot-separated segments and rewrites `expiresAt` for favicon claims, so
+  // adopting the shared check would change what it accepts.
   const [encodedPayload, signature] = token.split(".");
   if (!encodedPayload || !signature) return null;
 

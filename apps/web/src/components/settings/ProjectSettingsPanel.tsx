@@ -7,6 +7,10 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  isProjectSyncEnvironmentEligible,
+  selectProjectSyncEnvironmentOptions,
+} from "@t3tools/client-runtime/operations/project-sync-flow";
 import { AsyncResult } from "effect/unstable/reactivity";
 import {
   deriveProjectGroupingOverrideKey,
@@ -26,7 +30,14 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  FolderSyncIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -78,6 +89,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { SyncProjectDialog } from "../SyncProjectDialog";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -308,6 +320,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     group.memberProjects.find(
       (member) => member.environmentId === group.environmentId && member.id === group.id,
     ) ?? group.memberProjects[0]!;
+  const { environments } = useEnvironments();
   const settings = usePrimarySettings();
   // Provider instances and model options belong to the environment that runs
   // the project's threads. The hosted app has no primary environment, so
@@ -485,6 +498,23 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     [updateAllMembers],
   );
 
+  // ----- sync -----
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const syncEnvironmentCandidates = useMemo(
+    () =>
+      environments.map((environment) => ({
+        environmentId: environment.environmentId,
+        label: environment.label,
+        connected: environment.connection.phase === "connected",
+        projectSyncCapable: environment.serverConfig?.environment.capabilities.projectSync === true,
+      })),
+    [environments],
+  );
+  const projectSyncCapableEnvironments = useMemo(
+    () => selectProjectSyncEnvironmentOptions(syncEnvironmentCandidates),
+    [syncEnvironmentCandidates],
+  );
+
   // ----- project icon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -514,6 +544,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
   const keybindings = selectedServerConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
+  // Both ends have to support sync: this checkout is the origin, so an old or
+  // disconnected server here rules the flow out no matter what else is around.
+  const canSyncFromSelectedCheckout =
+    isProjectSyncEnvironmentEligible(syncEnvironmentCandidates, selectedCheckout.environmentId) &&
+    projectSyncCapableEnvironments.length > 0;
   const scripts = selectedCheckout.scripts;
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   // Script writes replace the whole array, so two overlapping writes computed
@@ -1236,6 +1271,28 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           ) : null}
         </SettingsSection>
 
+        <SettingsSection title="Sync">
+          <SettingsRow
+            title="Sync to another environment"
+            description={
+              canSyncFromSelectedCheckout
+                ? "Send this checkout's files to another environment as a new project, or keep an existing project there in sync with it."
+                : "Project sync needs this checkout's environment and at least one other environment to be connected and running a server that supports it."
+            }
+            control={
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={!canSyncFromSelectedCheckout}
+                onClick={() => setSyncDialogOpen(true)}
+              >
+                <FolderSyncIcon className="size-3.5" />
+                Sync…
+              </Button>
+            }
+          />
+        </SettingsSection>
+
         <SettingsSection title="Danger">
           <SettingsRow
             title={
@@ -1289,6 +1346,14 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           />
         </Suspense>
       ) : null}
+      <SyncProjectDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        initialSource={{
+          environmentId: representative.environmentId,
+          projectId: representative.id,
+        }}
+      />
     </>
   );
 }

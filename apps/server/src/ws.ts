@@ -46,6 +46,8 @@ import {
   ProjectReadFileError,
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
+  ProjectSyncIoError,
+  ProjectSyncProjectNotFoundError,
   ProjectWriteFileError,
   ProviderUploadFeedbackError,
   ServerProviderRateLimitsRefreshError,
@@ -112,6 +114,12 @@ import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/Atta
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import { applyProjectSyncDeletions } from "./workspace/ProjectSyncApply.ts";
+import { buildProjectSyncManifest } from "./workspace/ProjectSyncManifest.ts";
+import {
+  issueProjectSyncExportUrl,
+  issueProjectSyncImportUrl,
+} from "./workspace/ProjectSyncTransfer.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -655,6 +663,26 @@ const makeWsRpcLayer = (
           authorizeEffect(requiredScopeForRpcMethod(method), effect),
           traceAttributes,
         );
+      // Project sync always addresses a project by id and works from the
+      // workspace root the projection holds, so a deleted or unknown project
+      // fails before any filesystem work starts.
+      const resolveProjectSyncWorkspaceRoot = Effect.fn("ws.resolveProjectSyncWorkspaceRoot")(
+        function* (projectId: ProjectId) {
+          const project = yield* projectionSnapshotQuery.getProjectShellById(projectId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectSyncIoError({
+                  message: `Failed to look up project '${projectId}'.`,
+                  cause,
+                }),
+            ),
+          );
+          if (Option.isNone(project)) {
+            return yield* new ProjectSyncProjectNotFoundError({ projectId });
+          }
+          return project.value.workspaceRoot;
+        },
+      );
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
           ? cause
@@ -2241,6 +2269,56 @@ const makeWsRpcLayer = (
                   }),
               ),
             ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectSyncManifest]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectSyncManifest,
+            Effect.gen(function* () {
+              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
+              const entries = yield* buildProjectSyncManifest({
+                workspaceRoot,
+                includeGit: input.includeGit,
+                extraIgnores: input.extraIgnores,
+              });
+              return { workspaceRoot, entries, generatedAt: yield* nowIso };
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectSyncCreateExportUrl]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectSyncCreateExportUrl,
+            Effect.gen(function* () {
+              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
+              return yield* issueProjectSyncExportUrl({
+                projectId: input.projectId,
+                workspaceRoot,
+                entries: input.entries,
+              });
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectSyncCreateImportUrl]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectSyncCreateImportUrl,
+            Effect.gen(function* () {
+              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
+              return yield* issueProjectSyncImportUrl({
+                projectId: input.projectId,
+                workspaceRoot,
+                fileCount: input.fileCount,
+                totalBytes: input.totalBytes,
+              });
+            }),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectSyncApplyDeletions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectSyncApplyDeletions,
+            Effect.gen(function* () {
+              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
+              return yield* applyProjectSyncDeletions({ workspaceRoot, paths: input.paths });
+            }),
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.shellOpenInEditor]: (input) =>

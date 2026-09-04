@@ -138,6 +138,11 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       desktop servers whose app predates the remote trigger, where clients
       must keep telling the user to update the app on that machine. */
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server exposes the project sync manifest/export/import/deletion RPCs and
+      HTTP routes used to copy a project between environments. Absent on
+      servers from before project sync shipped, so clients must not offer the
+      sync flow or probe these RPCs under version skew. */
+  projectSync: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

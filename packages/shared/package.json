@@ -258,6 +258,10 @@
     "./nodeSqliteClient": {
       "types": "./src/nodeSqliteClient.ts",
       "import": "./src/nodeSqliteClient.ts"
+    },
+    "./projectSyncFraming": {
+      "types": "./src/projectSyncFraming.ts",
+      "import": "./src/projectSyncFraming.ts"
     }
   },
   "scripts": {

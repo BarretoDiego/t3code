@@ -63,6 +63,14 @@
       "types": "./src/operations/projects.ts",
       "default": "./src/operations/projects.ts"
     },
+    "./operations/project-sync": {
+      "types": "./src/operations/projectSync.ts",
+      "default": "./src/operations/projectSync.ts"
+    },
+    "./operations/project-sync-flow": {
+      "types": "./src/operations/projectSyncFlow.ts",
+      "default": "./src/operations/projectSyncFlow.ts"
+    },
     "./platform": {
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"
@@ -126,6 +134,10 @@
     "./state/projects": {
       "types": "./src/state/projects.ts",
       "default": "./src/state/projects.ts"
+    },
+    "./state/project-sync": {
+      "types": "./src/state/projectSync.ts",
+      "default": "./src/state/projectSync.ts"
     },
     "./state/pull-requests": {
       "types": "./src/state/pullRequests.ts",

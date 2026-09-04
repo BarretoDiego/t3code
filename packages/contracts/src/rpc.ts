@@ -155,6 +155,16 @@ import {
   ProjectWriteFileResult,
 } from "./project.ts";
 import {
+  ProjectSyncApplyDeletionsInput,
+  ProjectSyncApplyDeletionsResult,
+  ProjectSyncCreateExportUrlInput,
+  ProjectSyncCreateImportUrlInput,
+  ProjectSyncCreateUrlResult,
+  ProjectSyncError,
+  ProjectSyncManifestInput,
+  ProjectSyncManifestResult,
+} from "./projectSync.ts";
+import {
   TerminalAttachInput,
   TerminalAttachStreamEvent,
   TerminalClearInput,
@@ -244,6 +254,12 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+
+  // Project sync methods
+  projectSyncManifest: "projectSync.manifest",
+  projectSyncCreateExportUrl: "projectSync.createExportUrl",
+  projectSyncCreateImportUrl: "projectSync.createImportUrl",
+  projectSyncApplyDeletions: "projectSync.applyDeletions",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -887,6 +903,30 @@ export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectSyncManifestRpc = Rpc.make(WS_METHODS.projectSyncManifest, {
+  payload: ProjectSyncManifestInput,
+  success: ProjectSyncManifestResult,
+  error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectSyncCreateExportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateExportUrl, {
+  payload: ProjectSyncCreateExportUrlInput,
+  success: ProjectSyncCreateUrlResult,
+  error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectSyncCreateImportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateImportUrl, {
+  payload: ProjectSyncCreateImportUrlInput,
+  success: ProjectSyncCreateUrlResult,
+  error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectSyncApplyDeletionsRpc = Rpc.make(WS_METHODS.projectSyncApplyDeletions, {
+  payload: ProjectSyncApplyDeletionsInput,
+  success: ProjectSyncApplyDeletionsResult,
+  error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1320,6 +1360,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
+  WsProjectSyncManifestRpc,
+  WsProjectSyncCreateExportUrlRpc,
+  WsProjectSyncCreateImportUrlRpc,
+  WsProjectSyncApplyDeletionsRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

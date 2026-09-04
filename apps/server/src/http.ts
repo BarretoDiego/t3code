@@ -3,9 +3,15 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  PROJECT_SYNC_EXPORT_ROUTE_PREFIX,
+  PROJECT_SYNC_IMPORT_ROUTE_PREFIX,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
+import {
+  createProjectSyncFrameDecoder,
+  encodeProjectSyncRecords,
+} from "@t3tools/shared/projectSyncFraming";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -46,6 +52,12 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
+import { applyProjectSyncRecords } from "./workspace/ProjectSyncApply.ts";
+import {
+  projectSyncExportRecords,
+  resolveProjectSyncExportToken,
+  resolveProjectSyncImportToken,
+} from "./workspace/ProjectSyncTransfer.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -434,6 +446,108 @@ export const attachmentUploadRouteLayer = HttpRouter.add(
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
+  }),
+);
+
+class ProjectSyncExportStreamError extends Data.TaggedError("ProjectSyncExportStreamError")<{
+  readonly cause: unknown;
+}> {}
+
+function projectSyncToken(pathname: string, prefix: string): string | null {
+  const token = pathname.slice(`${prefix}/`.length);
+  return token.length > 0 && !token.includes("/") ? token : null;
+}
+
+/**
+ * Streams the origin side of a project sync transfer.
+ *
+ * Authorization lives entirely in the signed token: it names the workspace
+ * root and the request id whose path list the issuing RPC parked, both bound
+ * to the same 10-minute TTL. That mirrors the asset download route beside it,
+ * and keeps the route free of the projection read model.
+ */
+export const projectSyncExportRouteLayer = HttpRouter.add(
+  "GET",
+  `${PROJECT_SYNC_EXPORT_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_EXPORT_ROUTE_PREFIX);
+    if (!token) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    const resolved = yield* resolveProjectSyncExportToken(token);
+    if (!resolved) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    return HttpServerResponse.stream(
+      Stream.fromAsyncIterable(
+        encodeProjectSyncRecords(
+          projectSyncExportRecords({
+            workspaceRoot: resolved.claims.workspaceRoot,
+            entries: resolved.entries,
+            requestId: resolved.claims.requestId,
+          }),
+        ),
+        (cause) => new ProjectSyncExportStreamError({ cause }),
+      ),
+      { status: 200, contentType: "application/octet-stream" },
+    );
+  }),
+);
+
+/**
+ * Applies the destination side of a project sync transfer, decoding the
+ * request body as it arrives so a multi-gigabyte project never lands in
+ * memory. The signed byte budget is enforced while decoding, not from
+ * `Content-Length`, because the body also carries framing headers.
+ */
+export const projectSyncImportRouteLayer = HttpRouter.add(
+  "POST",
+  `${PROJECT_SYNC_IMPORT_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_IMPORT_ROUTE_PREFIX);
+    if (!token) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    const claims = yield* resolveProjectSyncImportToken(token);
+    if (!claims) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+
+    return yield* applyProjectSyncRecords({
+      workspaceRoot: claims.workspaceRoot,
+      records: createProjectSyncFrameDecoder(Stream.toAsyncIterable(request.stream)),
+      maxContentBytes: claims.totalBytes,
+      maxRecordCount: claims.fileCount,
+    }).pipe(
+      Effect.map((result) =>
+        HttpServerResponse.jsonUnsafe({ applied: result.applied, bytes: result.bytes }),
+      ),
+      Effect.catchTags({
+        ProjectSyncPathViolationError: (error) =>
+          Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
+        ProjectSyncImportLimitError: (error) =>
+          Effect.succeed(HttpServerResponse.text(error.message, { status: 413 })),
+        ProjectSyncIoError: (error) =>
+          Effect.logError("Project sync import failed.", { error }).pipe(
+            Effect.as(HttpServerResponse.text("Failed to apply the import.", { status: 500 })),
+          ),
+      }),
+    );
   }),
 );
 
