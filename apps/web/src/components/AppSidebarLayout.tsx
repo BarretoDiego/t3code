@@ -16,9 +16,9 @@ import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useSidebarExperience } from "../hooks/useSettings";
 import { usePanelAnimationSettings } from "../panelAnimations";
+import GroupedThreadSidebar from "./GroupedSidebar";
 import LegacyThreadSidebar from "./LegacySidebar";
 import OriginalThreadSidebar from "./OriginalSidebar";
-import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
@@ -246,7 +246,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         ) : sidebarExperience === "original" ? (
           <OriginalThreadSidebar />
         ) : (
-          <ThreadSidebar />
+          <GroupedThreadSidebar />
         )}
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
