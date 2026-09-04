@@ -2,6 +2,7 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
+  LayoutDashboardIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -154,7 +155,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             ? "usage"
             : location.pathname === "/pull-requests"
               ? "pull-requests"
-              : null,
+              : location.pathname === "/board"
+                ? "board"
+                : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -173,6 +176,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
       to: "/pull-requests",
       search: readPullRequestListPreferences(),
     });
+  }, [closeMobileSidebar, navigate]);
+  const handleBoardClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/board" });
   }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
@@ -210,6 +217,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             icon={<SettingsIcon />}
             label="Settings"
             onClick={handleSettingsClick}
+          />
+          <SidebarUtilityItem
+            icon={<LayoutDashboardIcon />}
+            label="Agent Operations"
+            onClick={handleBoardClick}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
