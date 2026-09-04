@@ -124,7 +124,12 @@ async function hydrateClientSettings(): Promise<void> {
         return;
       }
       if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+        // If a user updates any client setting before hydration finishes (for example
+        // while the settings page is open at startup), keep the in-memory values
+        // to avoid reverting the UI immediately after the write.
+        if (getClientSettingsSnapshot() === DEFAULT_CLIENT_SETTINGS) {
+          replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+        }
       }
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, {
@@ -344,10 +349,9 @@ export function useLegacySidebarEnabled(): boolean {
  * Old installations only have `legacySidebarEnabled`; honour it ahead of the
  * new selector so their previous choice is not lost during the migration.
  */
+/** Resolves the selected sidebar without waiting for persisted settings hydration. */
 export function useSidebarExperience(): ClientSettings["sidebarExperience"] {
-  const settingsHydrated = useClientSettingsHydrated();
   const settings = useClientSettingsValue();
-  if (!settingsHydrated) return "grouped";
   return settings.legacySidebarEnabled ? "legacy" : settings.sidebarExperience;
 }
 
