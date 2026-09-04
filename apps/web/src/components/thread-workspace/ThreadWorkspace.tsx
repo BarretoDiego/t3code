@@ -28,6 +28,7 @@ import {
   BookmarkIcon,
   BookmarkPlusIcon,
   Columns2Icon,
+  GripVerticalIcon,
   LayoutGridIcon,
   MessageSquareIcon,
   Rows2Icon,
@@ -553,6 +554,7 @@ function ThreadPaneTabs(props: {
   readonly routedTargetKey: string;
   readonly onActivateTab: (target: ThreadWorkspaceTarget) => void;
   readonly onCloseTab: (target: ThreadWorkspaceTarget) => void;
+  readonly onSplit: (axis: "horizontal" | "vertical") => void;
 }) {
   return (
     <div
@@ -591,11 +593,66 @@ function ThreadPaneTabs(props: {
         </SortableContext>
       </div>
       {props.active ? (
-        <div className="ml-1 hidden shrink-0 items-center md:flex">
+        <div className="ml-1 flex shrink-0 items-center">
+          <SplitPaneDragHandle onSplit={props.onSplit} />
           <ThreadLayoutMenu layout={props.layout} />
         </div>
       ) : null}
     </div>
+  );
+}
+
+function SplitPaneDragHandle(props: {
+  readonly onSplit: (axis: "horizontal" | "vertical") => void;
+}) {
+  const originRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  const splitOnPointerUpRef = useRef(false);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-label="Drag to split this pane"
+            className="mr-0.5 size-6 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            size="icon-xs"
+            variant="ghost"
+            onClick={(event) => {
+              if (splitOnPointerUpRef.current) {
+                splitOnPointerUpRef.current = false;
+                return;
+              }
+              event.preventDefault();
+              props.onSplit("horizontal");
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              originRef.current = { x: event.clientX, y: event.clientY };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerUp={(event) => {
+              const origin = originRef.current;
+              originRef.current = null;
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }
+              if (!origin) return;
+              const deltaX = event.clientX - origin.x;
+              const deltaY = event.clientY - origin.y;
+              if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 12) return;
+              splitOnPointerUpRef.current = true;
+              props.onSplit(Math.abs(deltaX) >= Math.abs(deltaY) ? "horizontal" : "vertical");
+            }}
+            onPointerCancel={() => {
+              originRef.current = null;
+            }}
+          >
+            <GripVerticalIcon className="size-3.5" />
+          </Button>
+        }
+      />
+      <TooltipPopup side="bottom">Drag sideways for columns, up or down for rows</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -788,6 +845,7 @@ export function ThreadWorkspace({
     root,
     pruneTargets,
     setSplitRatio,
+    splitActivePane,
     activatePane,
     activateTab,
   } = useThreadWorkspaceStore(
@@ -803,6 +861,7 @@ export function ThreadWorkspace({
       root: state.root,
       pruneTargets: state.pruneTargets,
       setSplitRatio: state.setSplitRatio,
+      splitActivePane: state.splitActivePane,
     })),
   );
   const routedTargetKey = threadWorkspaceTargetKey(routedTarget);
@@ -1012,6 +1071,10 @@ export function ThreadWorkspace({
           routedTargetKey={routedTargetKey}
           onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
           onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
+          onSplit={(axis) => {
+            activatePane(pane.id);
+            splitActivePane(axis);
+          }}
         />
         <ThreadPaneContent
           active={active}
