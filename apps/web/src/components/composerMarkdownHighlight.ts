@@ -10,6 +10,7 @@ import {
   type TextFormatType,
 } from "lexical";
 
+import { $isComposerCodeBlockNode } from "./ComposerCodeBlockNode";
 import {
   scanComposerMarkdown,
   type ComposerMarkdownMark,
@@ -148,6 +149,12 @@ function collectComposerText(root: ElementNode): { text: string; entries: TextEn
       }
       if ($isLineBreakNode(child)) {
         text += "\n";
+        continue;
+      }
+      if ($isComposerCodeBlockNode(child)) {
+        // Everything inside a block is code; markdown there is literal.
+        if (text.length > 0) text += "\n";
+        text += INLINE_TOKEN_PLACEHOLDER.repeat(child.getChildren().length > 0 ? 1 : 0);
         continue;
       }
       if ($isElementNode(child)) {

@@ -1758,6 +1758,34 @@ code {
   font-size: 0.75rem;
 }
 
+/* The fenced code container in the prompt composer. One surface wrapping every
+   line, so a pasted block reads as a block instead of ragged highlighted runs.
+   Padding and radius live on the container, never on the inline runs, so the
+   caret keeps landing exactly where the glyphs are. */
+.composer-code-block {
+  position: relative;
+  margin: 0.35rem 0;
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.4rem 0.6rem;
+  color: var(--code-foreground);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The language hint is drawn, never edited: keeping it out of the DOM flow
+   means it cannot be selected, deleted, or land in the prompt. */
+.composer-code-block[data-language]::after {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.4rem;
+  opacity: 0.55;
+  content: attr(data-language);
+  font-size: 0.625rem;
+  user-select: none;
+}
+
 /* Code painted live inside the prompt composer. Deliberately lighter than the
    rendered `.chat-markdown` variant: no border, no padding, and no font-size
    change, so the caret and the line boxes never shift as the user types. */
