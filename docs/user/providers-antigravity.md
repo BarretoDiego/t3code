@@ -139,6 +139,18 @@ T3 Code keeps thread history and file diffs. Antigravity does not support conver
 so reverting a thread or editing and resubmitting an earlier turn is unavailable. Send a
 follow-up message or start a new thread instead.
 
+### Subagents
+
+Subagent launches appear as **Antigravity subagent batch** in **Agents** on web and desktop,
+and in the work log on mobile. One launch can start several agents. The batch stays active
+after launch while the parent turn runs. When that turn ends, the entry becomes idle and
+states that individual agent status is unavailable. Launch errors remain visible.
+
+The official ACP agent does not send individual child status, names, models, token usage,
+or reply ownership. T3 Code cannot show separate child entries or separate child replies
+from the parent conversation. The launch description is not a child result. Batch entries
+cannot be opened or controlled as separate threads.
+
 ## Accounts and removal
 
 Each Antigravity provider instance has its own Google sign-in on its environment. Use

@@ -24,7 +24,7 @@ import {
 import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
-import { ProviderRateLimits } from "./providerRateLimits.ts";
+import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
@@ -185,9 +185,6 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
-export const ServerProviderRateLimitsRefreshMode = Schema.Literal("active-session-required");
-export type ServerProviderRateLimitsRefreshMode = typeof ServerProviderRateLimitsRefreshMode.Type;
-
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -197,12 +194,6 @@ export const ServerProvider = Schema.Struct({
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
-  /**
-   * Optional client-side icon registry key chosen for this instance. Purely
-   * presentational; clients fall back to the driver icon when absent or
-   * unknown.
-   */
-  icon: Schema.optional(TrimmedNonEmptyString),
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
@@ -237,15 +228,10 @@ export const ServerProvider = Schema.Struct({
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
+  // Absent when the driver has no notion of subscription usage.
+  usageLimits: Schema.optional(ServerProviderUsageLimits),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
-  // Declares whether the provider can answer an explicit plan-limit refresh.
-  // `active-session-required` means usage is exposed by its live protocol
-  // connection instead of a standalone account API.
-  rateLimitsRefresh: Schema.optionalKey(ServerProviderRateLimitsRefreshMode),
-  // Last plan rate-limit observation for this instance, absent until the
-  // provider reports one (and always absent for providers that never do).
-  rateLimits: Schema.optionalKey(ProviderRateLimits),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
@@ -598,6 +584,12 @@ export const ServerConfig = Schema.Struct({
    * and it stays absent for subscribers that did not opt in.
    */
   environmentThemes: Schema.optional(Schema.Array(EnvironmentTheme)),
+  /**
+   * Quota reported by configured `usageLimitSources`. Like themes, never in
+   * a snapshot: the source stream emits the current set on subscribe, and it
+   * stays absent for subscribers that did not opt in.
+   */
+  usageLimitSources: Schema.optional(UsageLimitSourceSnapshots),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
@@ -709,12 +701,28 @@ export const ServerConfigStreamEnvironmentThemesUpdatedEvent = Schema.Struct({
 export type ServerConfigStreamEnvironmentThemesUpdatedEvent =
   typeof ServerConfigStreamEnvironmentThemesUpdatedEvent.Type;
 
+export const ServerConfigUsageLimitSourcesUpdatedPayload = Schema.Struct({
+  /** The full set; empty once no source is configured. */
+  sources: UsageLimitSourceSnapshots,
+});
+export type ServerConfigUsageLimitSourcesUpdatedPayload =
+  typeof ServerConfigUsageLimitSourcesUpdatedPayload.Type;
+
+export const ServerConfigStreamUsageLimitSourcesUpdatedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("usageLimitSourcesUpdated"),
+  payload: ServerConfigUsageLimitSourcesUpdatedPayload,
+});
+export type ServerConfigStreamUsageLimitSourcesUpdatedEvent =
+  typeof ServerConfigStreamUsageLimitSourcesUpdatedEvent.Type;
+
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
   ServerConfigStreamProviderStatusesEvent,
   ServerConfigStreamSettingsUpdatedEvent,
   ServerConfigStreamEnvironmentThemesUpdatedEvent,
+  ServerConfigStreamUsageLimitSourcesUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 
@@ -788,18 +796,6 @@ export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerPro
 ) {
   override get message(): string {
     return `Provider update failed for ${this.provider}: ${this.reason}`;
-  }
-}
-
-export class ServerProviderRateLimitsRefreshError extends Schema.TaggedErrorClass<ServerProviderRateLimitsRefreshError>()(
-  "ServerProviderRateLimitsRefreshError",
-  {
-    instanceId: ProviderInstanceId,
-    reason: TrimmedNonEmptyString,
-  },
-) {
-  override get message(): string {
-    return `Could not refresh plan limits for ${this.instanceId}: ${this.reason}`;
   }
 }
 

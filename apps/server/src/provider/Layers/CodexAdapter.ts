@@ -8,6 +8,7 @@
  * @module CodexAdapterLive
  */
 import {
+  EventId,
   type CanonicalItemType,
   type CanonicalRequestType,
   type CodexSettings,
@@ -32,7 +33,6 @@ import {
 import * as Effect from "effect/Effect";
 import * as NodeCrypto from "node:crypto";
 import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -70,7 +70,7 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
-import { normalizeCodexRateLimits, normalizeCodexRateLimitsRead } from "../providerRateLimits.ts";
+import { codexRateLimitsToUpdate } from "./codexUsageLimits.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1447,6 +1447,27 @@ function mapToRuntimeEvents(
     if (!item) {
       return [];
     }
+    if (item.type === "agentMessage" && item.delivery === "async" && item.questions?.length) {
+      return [
+        {
+          ...runtimeEventBase(event, canonicalThreadId),
+          type: "user-input.requested",
+          requestId: RuntimeRequestId.make(`codex-async:${canonicalThreadId}:${item.id}`),
+          eventId: EventId.make(`codex-async:${canonicalThreadId}:${item.id}`),
+          payload: {
+            responseMode: "message",
+            questions: item.questions.map((question, index) => ({
+              id: String(index),
+              header: "Question",
+              question: question.title,
+              options: (question.options ?? []).map((label) => ({ label, description: "" })),
+              allowCustomAnswer: true,
+              multiSelect: false,
+            })),
+          },
+        },
+      ];
+    }
     const itemType = toCanonicalItemType(item.type);
     if (itemType === "plan") {
       const detail = itemDetail(itemType, item);
@@ -1464,7 +1485,18 @@ function mapToRuntimeEvents(
       ];
     }
     const completed = mapItemLifecycle(event, canonicalThreadId, "item.completed");
-    return completed ? [completed] : [];
+    if (!completed || itemType !== "context_compaction") {
+      return completed ? [completed] : [];
+    }
+    return [
+      completed,
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        eventId: EventId.make(`${event.id}:thread-compacted`),
+        type: "thread.state.changed",
+        payload: { state: "compacted" },
+      },
+    ];
   }
 
   if (
@@ -1731,22 +1763,15 @@ function mapToRuntimeEvents(
       EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
       event.payload,
     );
-    if (!payload) {
+    const limits = payload ? codexRateLimitsToUpdate(payload.rateLimits) : undefined;
+    if (!limits) {
       return [];
     }
-    const base = runtimeEventBase(event, canonicalThreadId);
-    const snapshot = normalizeCodexRateLimits({
-      rateLimits: payload.rateLimits,
-      observedAt: base.createdAt,
-    });
     return [
       {
         type: "account.rate-limits.updated",
-        ...base,
-        payload: {
-          rateLimits: event.payload ?? {},
-          ...(snapshot ? { snapshot } : {}),
-        },
+        ...runtimeEventBase(event, canonicalThreadId),
+        payload: { limits },
       },
     ];
   }
@@ -2202,6 +2227,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       ),
     );
 
+  const compactThread: NonNullable<CodexAdapterShape["compactThread"]> = Effect.fn("compactThread")(
+    function* (threadId) {
+      const session = yield* requireSession(threadId);
+      yield* session.runtime.compactThread.pipe(
+        Effect.mapError((cause) => mapCodexRuntimeError(threadId, "thread/compact/start", cause)),
+      );
+    },
+  );
+
   const readThread: CodexAdapterShape["readThread"] = (threadId) =>
     requireSession(threadId).pipe(
       Effect.flatMap((session) => session.runtime.readThread),
@@ -2315,28 +2349,6 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const hasSession: CodexAdapterShape["hasSession"] = (threadId) =>
     Effect.succeed(Boolean(sessions.get(threadId) && !sessions.get(threadId)?.stopped));
 
-  const refreshRateLimits: NonNullable<CodexAdapterShape["refreshRateLimits"]> = Effect.fn(
-    "refreshRateLimits",
-  )(function* () {
-    const session = Array.from(sessions.values())
-      .toReversed()
-      .find((candidate) => !candidate.stopped);
-    if (!session) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "account/rateLimits/read",
-        detail: "An active Codex session is required to refresh plan limits.",
-      });
-    }
-    const response = yield* session.runtime.readRateLimits.pipe(
-      Effect.mapError((cause) =>
-        mapCodexRuntimeError(session.threadId, "account/rateLimits/read", cause),
-      ),
-    );
-    const observedAt = DateTime.formatIso(yield* DateTime.now);
-    return normalizeCodexRateLimitsRead({ response, observedAt });
-  });
-
   const stopAll: CodexAdapterShape["stopAll"] = () =>
     Effect.forEach(Array.from(sessions.values()), stopSessionInternal, {
       concurrency: 1,
@@ -2359,6 +2371,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     },
     startSession,
     sendTurn,
+    compactThread,
     interruptTurn,
     readThread,
     rollbackThread,
@@ -2368,7 +2381,6 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
-    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

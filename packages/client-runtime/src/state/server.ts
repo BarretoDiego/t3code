@@ -353,8 +353,13 @@ const cachedConfigSnapshotEvent = (config: ServerConfig): ServerConfigStreamEven
   config,
 });
 
+export interface ServerConfigSubscriptionOptions {
+  readonly environmentThemes?: boolean;
+  readonly usageLimitSources?: boolean;
+}
+
 export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
-  function* (environmentThemes?: boolean) {
+  function* (subscription: ServerConfigSubscriptionOptions) {
     const supervisor = yield* EnvironmentSupervisor;
     const cache = yield* EnvironmentCacheStore;
     const environmentId = supervisor.target.environmentId;
@@ -415,10 +420,10 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       Effect.forkScoped,
     );
 
-    yield* subscribe(
-      WS_METHODS.subscribeServerConfig,
-      environmentThemes === true ? { environmentThemes: true } : {},
-    ).pipe(
+    yield* subscribe(WS_METHODS.subscribeServerConfig, {
+      ...(subscription.environmentThemes === true ? { environmentThemes: true } : {}),
+      ...(subscription.usageLimitSources === true ? { usageLimitSources: true } : {}),
+    }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);
@@ -450,12 +455,12 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
 
 export function serverConfigStateChanges(
   environmentId: EnvironmentId,
-  environmentThemes?: boolean,
+  subscription: ServerConfigSubscriptionOptions,
 ) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
-      makeEnvironmentServerConfigState(environmentThemes).pipe(
+      makeEnvironmentServerConfigState(subscription).pipe(
         Effect.map((state) =>
           SubscriptionRef.changes(state).pipe(
             Stream.filterMap((projection) =>
@@ -514,6 +519,8 @@ export function createServerEnvironmentAtoms<R, E>(
      * receives the payload.
      */
     readonly environmentThemes?: boolean;
+    /** Whether this surface renders quota from configured usage-limit sources. */
+    readonly usageLimitSources?: boolean;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -525,7 +532,12 @@ export function createServerEnvironmentAtoms<R, E>(
   };
   const configProjectionFamily = Atom.family((environmentId: EnvironmentId) =>
     runtime
-      .atom(serverConfigStateChanges(environmentId, options.environmentThemes))
+      .atom(
+        serverConfigStateChanges(environmentId, {
+          ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
+          ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+        }),
+      )
       .pipe(
         Atom.setIdleTTL(5 * 60_000),
         Atom.withLabel(`environment-data:server:config-projection:${environmentId}`),
@@ -890,6 +902,15 @@ export function createServerEnvironmentAtoms<R, E>(
           Stream.mapAccum(Option.none<ServerLifecycleWelcomePayload>, projectServerWelcome),
         ),
     }),
+    consumeResetCredit: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:consume-reset-credit",
+      tag: WS_METHODS.providerConsumeResetCredit,
+      concurrency: {
+        mode: "singleFlight",
+        // Both ids are free-form strings; a delimiter could collide.
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.instanceId]),
+      },
+    }),
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,
@@ -902,14 +923,6 @@ export function createServerEnvironmentAtoms<R, E>(
             input.cwd ?? null,
             input.refreshModels ?? false,
           ]),
-      },
-    }),
-    refreshProviderRateLimits: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:refresh-provider-rate-limits",
-      tag: WS_METHODS.serverRefreshProviderRateLimits,
-      concurrency: {
-        mode: "singleFlight",
-        key: ({ environmentId, input }) => `${environmentId}:${input.instanceId}`,
       },
     }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
@@ -934,58 +947,6 @@ export function createServerEnvironmentAtoms<R, E>(
     updateSettings: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-settings",
       tag: WS_METHODS.serverUpdateSettings,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplace: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:marketplace:list",
-      tag: WS_METHODS.marketplaceList,
-      staleTimeMs: 5 * 60_000,
-    }),
-    marketplacePackage: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:marketplace:package",
-      tag: WS_METHODS.marketplaceGetPackage,
-      staleTimeMs: 5 * 60_000,
-    }),
-    marketplaceAddSource: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:add-source",
-      tag: WS_METHODS.marketplaceAddSource,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceRemoveSource: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:remove-source",
-      tag: WS_METHODS.marketplaceRemoveSource,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceInstall: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:install",
-      tag: WS_METHODS.marketplaceInstall,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceUpdate: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:update",
-      tag: WS_METHODS.marketplaceUpdate,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceUninstall: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:uninstall",
-      tag: WS_METHODS.marketplaceUninstall,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceSetAutoUpdate: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:set-auto-update",
-      tag: WS_METHODS.marketplaceSetAutoUpdate,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    marketplaceExportTemplate: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:marketplace:export-template",
-      tag: WS_METHODS.marketplaceExportProviderTemplate,
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
