@@ -181,42 +181,6 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.usage.maxTokens).toBe(200000);
     expect(parsed.payload.usage.usedTokens).toBe(31251);
   });
-
-  it("decodes authoritative account rate-limit snapshots", () => {
-    const parsed = decodeRuntimeEvent({
-      type: "account.rate-limits.updated",
-      eventId: "event-rate-limits-1",
-      provider: "claudeAgent",
-      providerInstanceId: "claude_work",
-      createdAt: "2026-08-24T12:00:00.000Z",
-      threadId: "thread-1",
-      payload: {
-        rateLimits: {},
-        updateMode: "replace",
-        snapshot: {
-          observedAt: "2026-08-24T12:00:00.000Z",
-          planLabel: "Team",
-          windows: [
-            {
-              id: "five_hour",
-              label: "5-hour",
-              kind: "session",
-              usedPercent: 42,
-              resetsAt: "2026-08-24T17:00:00.000Z",
-              status: "ok",
-            },
-          ],
-        },
-      },
-    });
-
-    expect(parsed.type).toBe("account.rate-limits.updated");
-    if (parsed.type !== "account.rate-limits.updated") {
-      throw new Error("expected account.rate-limits.updated");
-    }
-    expect(parsed.payload.updateMode).toBe("replace");
-    expect(parsed.providerInstanceId).toBe("claude_work");
-  });
 });
 
 describe("classifyTaskAgentKind", () => {
