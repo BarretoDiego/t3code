@@ -71,6 +71,11 @@ export interface ProviderAdapterShape<TError> {
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, TError>;
 
+  readonly compactThread?: (
+    threadId: ThreadId,
+    modelSelection?: ProviderSendTurnInput["modelSelection"],
+  ) => Effect.Effect<void, TError>;
+
   /**
    * Interrupt an active turn.
    */

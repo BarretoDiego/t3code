@@ -71,19 +71,6 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
-  MarketplaceError,
-  MarketplaceExportedTemplate,
-  MarketplaceExportProviderTemplateInput,
-  MarketplaceId,
-  MarketplaceInstallationId,
-  MarketplaceInstallInput,
-  MarketplacePackageDetail,
-  MarketplacePackageId,
-  MarketplaceSetAutoUpdateInput,
-  MarketplaceSnapshot,
-  MarketplaceUpdateInput,
-} from "./marketplace.ts";
-import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -194,7 +181,6 @@ import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
   ServerConfig,
-  ServerProviderRateLimitsRefreshError,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
   ServerLifecycleStreamEvent,
@@ -220,6 +206,10 @@ import {
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
+import {
+  ProviderConsumeResetCreditInput,
+  ProviderConsumeResetCreditResult,
+} from "./providerUsageLimits.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
@@ -257,6 +247,7 @@ export const WS_METHODS = {
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
+  providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
   providerAuthCancel: "provider.auth.cancel",
   providerAuthLogout: "provider.auth.logout",
@@ -265,17 +256,6 @@ export const WS_METHODS = {
   providerInstallCancel: "provider.install.cancel",
   providerInstallSubscribe: "provider.install.subscribe",
   providerInstallRemove: "provider.install.remove",
-
-  // Marketplace methods
-  marketplaceList: "marketplace.list",
-  marketplaceGetPackage: "marketplace.getPackage",
-  marketplaceAddSource: "marketplace.addSource",
-  marketplaceRemoveSource: "marketplace.removeSource",
-  marketplaceInstall: "marketplace.install",
-  marketplaceUpdate: "marketplace.update",
-  marketplaceUninstall: "marketplace.uninstall",
-  marketplaceSetAutoUpdate: "marketplace.setAutoUpdate",
-  marketplaceExportProviderTemplate: "marketplace.exportProviderTemplate",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -321,7 +301,6 @@ export const WS_METHODS = {
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
-  serverRefreshProviderRateLimits: "server.refreshProviderRateLimits",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
@@ -428,17 +407,6 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   error: Schema.Union([EnvironmentAuthorizationError, ProviderSetupError]),
 });
 
-export const WsServerRefreshProviderRateLimitsRpc = Rpc.make(
-  WS_METHODS.serverRefreshProviderRateLimits,
-  {
-    payload: Schema.Struct({
-      instanceId: ProviderInstanceId,
-    }),
-    success: ServerProviderUpdatedPayload,
-    error: Schema.Union([ServerProviderRateLimitsRefreshError, EnvironmentAuthorizationError]),
-  },
-);
-
 export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   payload: ServerProviderUpdateInput,
   success: ServerProviderUpdatedPayload,
@@ -446,6 +414,12 @@ export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvide
 });
 
 const ProviderSetupRpcError = Schema.Union([ProviderSetupError, EnvironmentAuthorizationError]);
+
+export const WsProviderConsumeResetCreditRpc = Rpc.make(WS_METHODS.providerConsumeResetCredit, {
+  payload: ProviderConsumeResetCreditInput,
+  success: ProviderConsumeResetCreditResult,
+  error: ProviderSetupRpcError,
+});
 
 export const WsProviderAuthStartRpc = Rpc.make(WS_METHODS.providerAuthStart, {
   payload: ProviderSetupInput,
@@ -536,66 +510,6 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
-
-export const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
-  payload: Schema.Struct({}),
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceGetPackageRpc = Rpc.make(WS_METHODS.marketplaceGetPackage, {
-  payload: Schema.Struct({
-    sourceId: MarketplaceId,
-    packageId: MarketplacePackageId,
-  }),
-  success: MarketplacePackageDetail,
-  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceAddSourceRpc = Rpc.make(WS_METHODS.marketplaceAddSource, {
-  payload: Schema.Struct({ url: Schema.String }),
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceRemoveSourceRpc = Rpc.make(WS_METHODS.marketplaceRemoveSource, {
-  payload: Schema.Struct({ sourceId: MarketplaceId }),
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceInstallRpc = Rpc.make(WS_METHODS.marketplaceInstall, {
-  payload: MarketplaceInstallInput,
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceUpdateRpc = Rpc.make(WS_METHODS.marketplaceUpdate, {
-  payload: MarketplaceUpdateInput,
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceUninstallRpc = Rpc.make(WS_METHODS.marketplaceUninstall, {
-  payload: Schema.Struct({ installationId: MarketplaceInstallationId }),
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceSetAutoUpdateRpc = Rpc.make(WS_METHODS.marketplaceSetAutoUpdate, {
-  payload: MarketplaceSetAutoUpdateInput,
-  success: MarketplaceSnapshot,
-  error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-});
-
-export const WsMarketplaceExportProviderTemplateRpc = Rpc.make(
-  WS_METHODS.marketplaceExportProviderTemplate,
-  {
-    payload: MarketplaceExportProviderTemplateInput,
-    success: MarketplaceExportedTemplate,
-    error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
-  },
-);
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   payload: Schema.Struct({}),
@@ -1213,6 +1127,8 @@ export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerCon
      * dropped by old servers.
      */
     environmentThemes: Schema.optional(Schema.Boolean),
+    /** Whether this client understands `usageLimitSourcesUpdated` events. */
+    usageLimitSources: Schema.optional(Schema.Boolean),
   }),
   success: ServerConfigStreamEvent,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),
@@ -1251,8 +1167,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
-  WsServerRefreshProviderRateLimitsRpc,
   WsServerUpdateProviderRpc,
+  WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
   WsProviderAuthCompleteRpc,
   WsProviderAuthCancelRpc,
@@ -1269,15 +1185,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
-  WsMarketplaceListRpc,
-  WsMarketplaceGetPackageRpc,
-  WsMarketplaceAddSourceRpc,
-  WsMarketplaceRemoveSourceRpc,
-  WsMarketplaceInstallRpc,
-  WsMarketplaceUpdateRpc,
-  WsMarketplaceUninstallRpc,
-  WsMarketplaceSetAutoUpdateRpc,
-  WsMarketplaceExportProviderTemplateRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

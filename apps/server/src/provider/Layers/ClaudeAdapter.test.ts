@@ -4,7 +4,6 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { FetchHttpClient } from "effect/unstable/http";
 import type {
   Options as ClaudeQueryOptions,
   PermissionMode,
@@ -29,6 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Random from "effect/Random";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -45,6 +45,7 @@ import {
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -164,8 +165,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
-  readonly environment?: NodeJS.ProcessEnv;
-  readonly fetch?: typeof globalThis.fetch;
+  readonly scopedLimitNames?: ClaudeAdapterLiveOptions["scopedLimitNames"];
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -177,8 +177,8 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.scopedLimitNames ? { scopedLimitNames: config.scopedLimitNames } : {}),
     modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
-    ...(config?.environment ? { environment: config.environment } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -211,13 +211,6 @@ function makeHarness(config?: {
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(
-        config?.fetch
-          ? FetchHttpClient.layer.pipe(
-              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, config.fetch)),
-            )
-          : FetchHttpClient.layer,
-      ),
     ),
     query,
     getLastCreateQueryInput: () => createInput,
@@ -358,7 +351,6 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -1245,6 +1237,84 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "completed");
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("places overage-included rate-limit events on the bucket the probe named", () => {
+    const scopedLimitNames = Ref.makeUnsafe<ClaudeScopedLimitNames>({ overageIncluded: undefined });
+    const harness = makeHarness({ scopedLimitNames });
+    const rateLimitEvent = (utilization: number): SDKMessage =>
+      ({
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          rateLimitType: "seven_day_overage_included",
+          utilization,
+        },
+        uuid: `rate-limit-${utilization}`,
+        session_id: "sdk-session-1",
+      }) as unknown as SDKMessage;
+    const resultMessage = (uuid: string): SDKMessage =>
+      ({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 1,
+        session_id: "sdk-session-1",
+        uuid,
+      }) as unknown as SDKMessage;
+    const limitsUpdates = (events: Iterable<ProviderRuntimeEvent>) =>
+      Array.from(events).flatMap((event) =>
+        event.type === "account.rate-limits.updated" ? [event.payload.limits] : [],
+      );
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      // Before any probe names the bucket the event has nowhere to land.
+      // Collecting through the turn's completion proves the SDK message was
+      // handled, not merely still queued.
+      const firstTurnFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "hello", attachments: [] });
+      harness.query.emit(rateLimitEvent(0.2));
+      harness.query.emit(resultMessage("result-1"));
+      assert.deepStrictEqual(limitsUpdates(yield* Fiber.join(firstTurnFiber)), []);
+
+      // The status probe reads `get_usage` and records the model it saw.
+      yield* Ref.set(scopedLimitNames, { overageIncluded: "Fable" });
+      const secondTurnFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "again", attachments: [] });
+      harness.query.emit(rateLimitEvent(0.4));
+      harness.query.emit(resultMessage("result-2"));
+      assert.deepStrictEqual(limitsUpdates(yield* Fiber.join(secondTurnFiber)), [
+        {
+          windows: [
+            {
+              id: "seven_day_fable",
+              kind: "weekly",
+              label: "Weekly · Fable",
+              usedPercent: 40,
+              windowDurationMins: 10_080,
+            },
+          ],
+        },
+      ]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
@@ -2146,7 +2216,6 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -2301,7 +2370,7 @@ describe("ClaudeAdapterLive", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 11).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -2342,6 +2411,13 @@ describe("ClaudeAdapterLive", () => {
         uuid: "compact-boundary-usage",
       } as unknown as SDKMessage);
       harness.query.emit({
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { post_tokens: 40 },
+        session_id: "sdk-session-compacted-usage",
+        uuid: "compact-boundary-post-usage",
+      } as unknown as SDKMessage);
+      harness.query.emit({
         type: "result",
         subtype: "success",
         is_error: false,
@@ -2364,6 +2440,14 @@ describe("ClaudeAdapterLive", () => {
       } as unknown as SDKMessage);
 
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const compactionEvents = runtimeEvents.filter(
+        (event): event is Extract<ProviderRuntimeEvent, { type: "thread.state.changed" }> =>
+          event.type === "thread.state.changed" && event.payload.state === "compacted",
+      );
+      assert.equal(compactionEvents[0]?.payload.beforeTokens, 200);
+      assert.equal(compactionEvents[0]?.payload.afterTokens, 40);
+      assert.equal(compactionEvents[1]?.payload.beforeTokens, undefined);
+      assert.equal(compactionEvents[1]?.payload.afterTokens, 40);
       const finalUsageEvent = runtimeEvents.findLast(
         (event) => event.type === "thread.token-usage.updated",
       );
@@ -2371,7 +2455,6 @@ describe("ClaudeAdapterLive", () => {
       if (finalUsageEvent?.type === "thread.token-usage.updated") {
         assert.deepEqual(finalUsageEvent.payload.usage, {
           usedTokens: 40,
-          lastUsedTokens: 200,
           totalProcessedTokens: 450,
           maxTokens: 200000,
         });
@@ -2765,7 +2848,6 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -2857,7 +2939,6 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(FetchHttpClient.layer),
     );
 
     return Effect.gen(function* () {
@@ -3274,305 +3355,6 @@ describe("ClaudeAdapterLive", () => {
           },
         });
       }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("reads authoritative Claude plan limits when a turn completes", () => {
-    const harness = makeHarness();
-    Object.assign(harness.query, {
-      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
-        subscription_type: "max",
-        rate_limits_available: true,
-        rate_limits: {
-          five_hour: {
-            utilization: 42,
-            resets_at: "2026-08-24T17:00:00.000Z",
-          },
-          seven_day: {
-            utilization: 18,
-            resets_at: "2026-08-28T12:00:00.000Z",
-          },
-          seven_day_opus: {
-            utilization: 64,
-            resets_at: null,
-          },
-        },
-      }),
-    });
-
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      yield* adapter.sendTurn({
-        threadId: THREAD_ID,
-        input: "hello",
-        attachments: [],
-      });
-
-      harness.query.emit({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        duration_ms: 1234,
-        duration_api_ms: 1200,
-        num_turns: 1,
-        result: "done",
-        stop_reason: "end_turn",
-        session_id: "sdk-session-result-rate-limits",
-        usage: {
-          input_tokens: 4,
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0,
-          output_tokens: 8,
-        },
-        modelUsage: {},
-      } as unknown as SDKMessage);
-      harness.query.finish();
-
-      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const rateLimitsEvent = runtimeEvents.find(
-        (event) => event.type === "account.rate-limits.updated",
-      );
-      assert.equal(rateLimitsEvent?.type, "account.rate-limits.updated");
-      if (rateLimitsEvent?.type === "account.rate-limits.updated") {
-        assert.strictEqual(rateLimitsEvent.payload.updateMode, "replace");
-        assert.strictEqual(rateLimitsEvent.payload.snapshot?.planLabel, "Max");
-        assert.deepStrictEqual(
-          rateLimitsEvent.payload.snapshot?.windows.map((window) => [
-            window.id,
-            window.usedPercent,
-          ]),
-          [
-            ["five_hour", 42],
-            ["seven_day", 18],
-            ["seven_day_opus", 64],
-          ],
-        );
-      }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("refreshes Claude plan limits without starting another turn", () => {
-    const harness = makeHarness();
-    Object.assign(harness.query, {
-      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
-        subscription_type: "team",
-        rate_limits_available: true,
-        rate_limits: {
-          five_hour: { utilization: 21, resets_at: null },
-          seven_day: { utilization: 32, resets_at: null },
-          seven_day_opus: { utilization: 43, resets_at: null },
-          seven_day_sonnet: { utilization: 54, resets_at: null },
-          seven_day_oauth_apps: { utilization: 65, resets_at: null },
-          model_scoped: [{ display_name: "Fable", utilization: 76, resets_at: null }],
-        },
-      }),
-    });
-
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      const snapshot = yield* adapter.refreshRateLimits!();
-
-      assert.strictEqual(snapshot.planLabel, "Team");
-      assert.deepStrictEqual(
-        snapshot.windows.map((window) => [window.id, window.usedPercent]),
-        [
-          ["five_hour", 21],
-          ["seven_day", 32],
-          ["seven_day_opus", 43],
-          ["seven_day_sonnet", 54],
-          ["seven_day_oauth_apps", 65],
-          ["model_scoped:fable-5", 76],
-        ],
-      );
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("requires an active session to refresh Claude plan limits", () => {
-    const harness = makeHarness();
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
-
-      if (result._tag !== "Failure") {
-        assert.fail("Expected refreshRateLimits to fail without an active Claude session");
-      }
-      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
-      assert.match(result.failure.message, /active Claude session/i);
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  const KIMI_USAGE_PAYLOAD = {
-    user: { membership: { level: "LEVEL_ADVANCED" } },
-    usage: { limit: "100", used: "4", remaining: "96", resetTime: "2026-09-03T13:09:01.801116Z" },
-    limits: [
-      {
-        window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
-        detail: {
-          limit: "100",
-          used: "22",
-          remaining: "78",
-          resetTime: "2026-08-27T18:09:01.801116Z",
-        },
-      },
-    ],
-  } as const;
-
-  const makeKimiHarness = (options?: {
-    readonly onFetch?: (input: unknown) => void;
-    readonly status?: number;
-  }) =>
-    makeHarness({
-      environment: {
-        ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
-        ANTHROPIC_API_KEY: "sk-kimi-test",
-      },
-      fetch: ((input: unknown, _init?: unknown) => {
-        options?.onFetch?.(input);
-        const status = options?.status ?? 200;
-        return Promise.resolve(
-          new Response(JSON.stringify(KIMI_USAGE_PAYLOAD), {
-            status,
-            headers: { "content-type": "application/json" },
-          }),
-        );
-      }) as unknown as typeof globalThis.fetch,
-    });
-
-  it.effect("reads Kimi For Coding plan limits over HTTP without a session", () => {
-    let fetchedUrl: string | undefined;
-    const harness = makeKimiHarness({
-      onFetch: (input) => {
-        fetchedUrl = String(input);
-      },
-    });
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-
-      const snapshot = yield* adapter.refreshRateLimits!();
-
-      assert.strictEqual(fetchedUrl, "https://api.kimi.com/coding/v1/usages");
-      assert.strictEqual(snapshot.planLabel, "Advanced");
-      assert.deepStrictEqual(
-        snapshot.windows.map((window) => [window.id, window.usedPercent]),
-        [
-          ["window_300", 22],
-          ["weekly", 4],
-        ],
-      );
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("emits Kimi plan limits after a turn completes", () => {
-    const harness = makeKimiHarness();
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      yield* adapter.sendTurn({
-        threadId: THREAD_ID,
-        input: "hello",
-        attachments: [],
-      });
-
-      harness.query.emit({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        duration_ms: 100,
-        duration_api_ms: 90,
-        num_turns: 1,
-        result: "done",
-        stop_reason: "end_turn",
-        session_id: "sdk-session-result-kimi-rate-limits",
-        usage: {
-          input_tokens: 4,
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0,
-          output_tokens: 8,
-        },
-        modelUsage: {},
-      } as unknown as SDKMessage);
-      harness.query.finish();
-
-      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const rateLimitsEvent = runtimeEvents.find(
-        (event) => event.type === "account.rate-limits.updated",
-      );
-      assert.equal(rateLimitsEvent?.type, "account.rate-limits.updated");
-      if (rateLimitsEvent?.type === "account.rate-limits.updated") {
-        assert.strictEqual(rateLimitsEvent.payload.updateMode, "replace");
-        assert.strictEqual(rateLimitsEvent.payload.snapshot?.planLabel, "Advanced");
-        assert.deepStrictEqual(
-          rateLimitsEvent.payload.snapshot?.windows.map((window) => [
-            window.id,
-            window.usedPercent,
-          ]),
-          [
-            ["window_300", 22],
-            ["weekly", 4],
-          ],
-        );
-      }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("fails the Kimi refresh when the usage endpoint rejects the key", () => {
-    const harness = makeKimiHarness({ status: 401 });
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      const result = yield* adapter.refreshRateLimits!().pipe(Effect.result);
-
-      if (result._tag !== "Failure") {
-        assert.fail("Expected refreshRateLimits to fail when Kimi rejects the key");
-      }
-      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
-      assert.match(result.failure.message, /rejected the instance API key/i);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

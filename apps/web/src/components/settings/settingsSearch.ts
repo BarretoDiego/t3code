@@ -6,7 +6,6 @@ export type SettingsPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/providers"
-  | "/settings/marketplace"
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
@@ -52,7 +51,6 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
-  "/settings/marketplace": "Marketplace",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
@@ -107,7 +105,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
     searchTerms: ["dev nightly artwork pill label hide none"],
     // The setting is stage-dependent, so its parent section is the stable destination.
-    targetId: "appearance",
+    targetId: "appearance-interface",
   },
   {
     id: "interface-font",
@@ -334,21 +332,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
-    id: "marketplace",
-    title: "Marketplace",
-    to: "/settings/marketplace",
-  },
-  {
-    id: "marketplace-sources",
-    title: "Marketplace repositories",
-    to: "/settings/marketplace",
-  },
-  {
-    id: "marketplace-packages",
-    title: "Marketplace packages",
-    to: "/settings/marketplace",
-  },
-  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
@@ -400,12 +383,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Auto-show floating preview",
     to: "/settings/integrations",
     searchTerms: ["agent opens browser pop into view hide"],
-  },
-  {
-    id: "pet-companion",
-    title: "Pet companion",
-    to: "/settings/integrations",
-    searchTerms: ["agent question notification assistant always on top desktop"],
   },
   {
     id: "source-control",
