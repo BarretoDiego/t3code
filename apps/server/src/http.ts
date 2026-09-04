@@ -3,21 +3,16 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
-  PROJECT_SYNC_EXPORT_ROUTE_PREFIX,
-  PROJECT_SYNC_IMPORT_ROUTE_PREFIX,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
-import {
-  createProjectSyncFrameDecoder,
-  encodeProjectSyncRecords,
-} from "@t3tools/shared/projectSyncFraming";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
@@ -52,12 +47,6 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
-import { applyProjectSyncRecords } from "./workspace/ProjectSyncApply.ts";
-import {
-  projectSyncExportRecords,
-  resolveProjectSyncExportToken,
-  resolveProjectSyncImportToken,
-} from "./workspace/ProjectSyncTransfer.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -449,112 +438,66 @@ export const attachmentUploadRouteLayer = HttpRouter.add(
   }),
 );
 
-class ProjectSyncExportStreamError extends Data.TaggedError("ProjectSyncExportStreamError")<{
-  readonly cause: unknown;
-}> {}
-
-function projectSyncToken(pathname: string, prefix: string): string | null {
-  const token = pathname.slice(`${prefix}/`.length);
-  return token.length > 0 && !token.includes("/") ? token : null;
-}
-
-/**
- * Streams the origin side of a project sync transfer.
- *
- * Authorization lives entirely in the signed token: it names the workspace
- * root and the request id whose path list the issuing RPC parked, both bound
- * to the same 10-minute TTL. That mirrors the asset download route beside it,
- * and keeps the route free of the projection read model.
- */
-export const projectSyncExportRouteLayer = HttpRouter.add(
-  "GET",
-  `${PROJECT_SYNC_EXPORT_ROUTE_PREFIX}/*`,
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
-
-    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_EXPORT_ROUTE_PREFIX);
-    if (!token) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    const resolved = yield* resolveProjectSyncExportToken(token);
-    if (!resolved) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    return HttpServerResponse.stream(
-      Stream.fromAsyncIterable(
-        encodeProjectSyncRecords(
-          projectSyncExportRecords({
-            workspaceRoot: resolved.claims.workspaceRoot,
-            entries: resolved.entries,
-            requestId: resolved.claims.requestId,
-          }),
-        ),
-        (cause) => new ProjectSyncExportStreamError({ cause }),
-      ),
-      { status: 200, contentType: "application/octet-stream" },
-    );
-  }),
-);
-
-/**
- * Applies the destination side of a project sync transfer, decoding the
- * request body as it arrives so a multi-gigabyte project never lands in
- * memory. The signed byte budget is enforced while decoding, not from
- * `Content-Length`, because the body also carries framing headers.
- */
-export const projectSyncImportRouteLayer = HttpRouter.add(
-  "POST",
-  `${PROJECT_SYNC_IMPORT_ROUTE_PREFIX}/*`,
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
-
-    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_IMPORT_ROUTE_PREFIX);
-    if (!token) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    const claims = yield* resolveProjectSyncImportToken(token);
-    if (!claims) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    return yield* applyProjectSyncRecords({
-      workspaceRoot: claims.workspaceRoot,
-      records: createProjectSyncFrameDecoder(Stream.toAsyncIterable(request.stream)),
-      maxContentBytes: claims.totalBytes,
-      maxRecordCount: claims.fileCount,
-    }).pipe(
-      Effect.map((result) =>
-        HttpServerResponse.jsonUnsafe({ applied: result.applied, bytes: result.bytes }),
-      ),
-      Effect.catchTags({
-        ProjectSyncPathViolationError: (error) =>
-          Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
-        ProjectSyncImportLimitError: (error) =>
-          Effect.succeed(HttpServerResponse.text(error.message, { status: 413 })),
-        ProjectSyncIoError: (error) =>
-          Effect.logError("Project sync import failed.", { error }).pipe(
-            Effect.as(HttpServerResponse.text("Failed to apply the import.", { status: 500 })),
-          ),
+const decodeBuildManifest = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        file: Schema.String,
+        css: Schema.optional(Schema.Array(Schema.String)),
+        assets: Schema.optional(Schema.Array(Schema.String)),
       }),
-    );
-  }),
+    ),
+  ),
 );
 
-export const staticAndDevRouteLayer = HttpRouter.add(
-  "GET",
-  "*",
-  Effect.gen(function* () {
+const loadImmutableBuildAssets = Effect.gen(function* () {
+  const config = yield* ServerConfig.ServerConfig;
+  const staticDir =
+    config.staticDir ?? (config.devUrl ? yield* ServerConfig.resolveStaticDir() : undefined);
+  if (!staticDir) return new Set<string>();
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return yield* fileSystem.readFileString(path.join(staticDir, ".vite", "manifest.json")).pipe(
+    Effect.flatMap(decodeBuildManifest),
+    Effect.map(
+      (manifest) =>
+        new Set(
+          Object.values(manifest).flatMap((entry) => [
+            entry.file,
+            ...(entry.css ?? []),
+            ...(entry.assets ?? []),
+          ]),
+        ),
+    ),
+    Effect.orElseSucceed(() => new Set<string>()),
+  );
+});
+
+const openStaticFile = Effect.fn("openStaticFile")(function* (filePath: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  // Reject directories and special files before opening. Response metadata comes from the handle.
+  const pathInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
+  if (pathInfo?.type !== "File") return null;
+  const file = yield* fileSystem.open(filePath, { flag: "r" });
+  const info = yield* file.stat;
+  return info.type === "File" ? { file, info } : null;
+});
+
+const streamStaticFile = (file: FileSystem.File, size: bigint) =>
+  Stream.unfold(
+    0n,
+    Effect.fnUntraced(function* (offset: bigint) {
+      if (offset >= size) return;
+      const remaining = size - offset;
+      const bytes = yield* file.readAlloc(remaining < 65_536n ? remaining : 65_536n);
+      if (Option.isNone(bytes)) return;
+      return [bytes.value, offset + BigInt(bytes.value.byteLength)] as const;
+    }),
+  );
+
+const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
+  function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
 
@@ -581,7 +524,6 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       });
     }
 
-    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const staticRoot = path.resolve(staticDir);
     const staticRequestPath = url.value.pathname === "/" ? "/index.html" : url.value.pathname;
@@ -615,30 +557,76 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       }
     }
 
-    const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!fileInfo || fileInfo.type !== "File") {
-      const indexPath = path.resolve(staticRoot, "index.html");
-      const indexData = yield* fileSystem
-        .readFile(indexPath)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (!indexData) {
+    let opened = yield* openStaticFile(filePath);
+    if (!opened) {
+      filePath = path.resolve(staticRoot, "index.html");
+      opened = yield* openStaticFile(filePath);
+      if (!opened) {
         return HttpServerResponse.text("Not Found", { status: 404 });
       }
-      return HttpServerResponse.uint8Array(indexData, {
-        status: 200,
-        contentType: "text/html; charset=utf-8",
+    }
+    const fileInfo = opened.info;
+
+    // A hash-like name is not enough: custom static files can use the same naming pattern.
+    const relativePath = path.relative(staticRoot, filePath).replaceAll("\\", "/");
+    const immutable =
+      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) && immutableBuildAssets.has(relativePath);
+    const headers: Record<string, string> = {
+      "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    };
+    const modifiedAt = Option.getOrUndefined(fileInfo.mtime);
+    const etag = modifiedAt
+      ? `W/"${fileInfo.size.toString(16)}-${modifiedAt.getTime().toString(16)}"`
+      : undefined;
+    if (etag !== undefined && modifiedAt !== undefined) {
+      headers.ETag = etag;
+      headers["Last-Modified"] = modifiedAt.toUTCString();
+    }
+
+    // If-None-Match takes precedence over dates and uses weak comparison for
+    // GET/HEAD, including when compression changes the transferred bytes.
+    const ifNoneMatch = request.headers["if-none-match"];
+    const ifModifiedSince = request.headers["if-modified-since"];
+    const unchanged =
+      ifNoneMatch !== undefined
+        ? ifNoneMatch.split(",").some((value) => {
+            const candidate = value.trim();
+            return (
+              candidate === "*" ||
+              (etag !== undefined && candidate.replace(/^W\//i, "") === etag.slice(2))
+            );
+          })
+        : ifModifiedSince !== undefined &&
+          modifiedAt !== undefined &&
+          Date.parse(modifiedAt.toUTCString()) <= Date.parse(ifModifiedSince);
+    if (unchanged) {
+      return HttpServerResponse.empty({
+        status: 304,
+        headers: { ...headers, Vary: "Accept-Encoding" },
       });
     }
 
-    const contentType = Mime.getType(filePath) ?? "application/octet-stream";
-    const data = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!data) {
-      return HttpServerResponse.text("Internal Server Error", { status: 500 });
-    }
-
-    return HttpServerResponse.uint8Array(data, {
-      status: 200,
+    const contentType =
+      path.extname(filePath) === ".html"
+        ? "text/html; charset=utf-8"
+        : (Mime.getType(filePath) ?? "application/octet-stream");
+    // The request scope closes the handle for GET, HEAD, 304, errors, and cancellation.
+    // HEAD still passes through compression, which selects headers without reading the stream.
+    return HttpServerResponse.stream(streamStaticFile(opened.file, fileInfo.size), {
+      headers,
       contentType,
+      contentLength: Number(fileInfo.size),
     });
+  },
+  Effect.catchTags({
+    PlatformError: () =>
+      Effect.succeed(HttpServerResponse.text("Internal Server Error", { status: 500 })),
   }),
+);
+
+// Read the installed build's manifest once. Unknown files use revalidation.
+export const staticAndDevRouteLayer = Layer.unwrap(
+  loadImmutableBuildAssets.pipe(
+    Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
+  ),
 );
