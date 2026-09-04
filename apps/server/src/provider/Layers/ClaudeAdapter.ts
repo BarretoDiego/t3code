@@ -14,7 +14,6 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type SDKMessage,
-  type SDKControlGetUsageResponse,
   type SDKResultMessage,
   type SettingSource,
   type SDKUserMessage,
@@ -22,6 +21,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { type ClaudeScopedLimitNames, claudeRateLimitEventToUpdate } from "./claudeUsageLimits.ts";
 import {
   ApprovalRequestId,
   type CanonicalItemType,
@@ -70,13 +70,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient } from "effect/unstable/http";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -107,16 +105,6 @@ import {
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
-import {
-  type ClaudeRateLimitEventPayload,
-  normalizeClaudeRateLimitEvent,
-  normalizeClaudeUsageRateLimits,
-} from "../providerRateLimits.ts";
-import {
-  fetchKimiCodeUsage,
-  normalizeKimiCodeUsage,
-  resolveKimiCodeUsageSource,
-} from "../kimiCodeUsage.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -199,12 +187,10 @@ function toSessionPermissionUpdates(
   toolName: string,
   suggestions: ReadonlyArray<PermissionUpdate> | undefined,
 ): Array<PermissionUpdate> {
-  const sessionScoped = (suggestions ?? []).map(
-    (suggestion): PermissionUpdate => ({
-      ...suggestion,
-      destination: "session",
-    }),
-  );
+  const sessionScoped = (suggestions ?? []).map((suggestion): PermissionUpdate => ({
+    ...suggestion,
+    destination: "session",
+  }));
   if (sessionScoped.length > 0) {
     return sessionScoped;
   }
@@ -344,7 +330,6 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
-  readonly usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<SDKControlGetUsageResponse>;
   readonly close: () => void;
 }
 
@@ -358,6 +343,8 @@ export interface ClaudeAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
+  /** Scoped-bucket names the driver's status probe last saw; see `claudeUsageLimits`. */
+  readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
 }
 
 function isUuid(value: string): boolean {
@@ -637,12 +624,17 @@ function compactBoundaryTokenUsageSnapshot(
   }
 
   const preTokens = finiteNonNegativeInteger(compactMetadata.pre_tokens);
-  return makeClaudeTokenUsageSnapshot({
+  const snapshot = makeClaudeTokenUsageSnapshot({
     activeTokens: postTokens,
     ...(preTokens !== undefined ? { lastUsedTokens: preTokens } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(totalProcessedTokens !== undefined ? { totalProcessedTokens } : {}),
   });
+  if (snapshot === undefined || preTokens !== undefined) {
+    return snapshot;
+  }
+  const { lastUsedTokens: _lastUsedTokens, ...snapshotWithoutBeforeTokens } = snapshot;
+  return snapshotWithoutBeforeTokens;
 }
 
 function normalizeClaudeTaskProgressTokenUsage(
@@ -1749,13 +1741,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
   );
-  // Instances pointed at Kimi For Coding (ANTHROPIC_BASE_URL=api.kimi.com/coding/…)
-  // never emit `rate_limit_event`s and the SDK usage API reports
-  // `rate_limits_available: false` for third-party backends. Their plan limits
-  // come from Kimi's own `/usages` account endpoint instead. The client is
-  // captured here so adapter methods keep their service-free signatures.
-  const kimiCodeUsageSource = resolveKimiCodeUsageSource(claudeEnvironment);
-  const kimiCodeUsageHttpClient = yield* HttpClient.HttpClient;
   const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
     claudeSettings.binaryPath,
     claudeEnvironment,
@@ -2185,117 +2170,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
-  const readKimiCodePlanRateLimits = Effect.fn("readKimiCodePlanRateLimits")(function* () {
-    const source = kimiCodeUsageSource;
-    if (!source) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "kimi/usages",
-        detail: "This Claude instance is not configured against Kimi For Coding.",
-      });
-    }
-    const payload = yield* fetchKimiCodeUsage(source).pipe(
-      Effect.provideService(HttpClient.HttpClient, kimiCodeUsageHttpClient),
-      Effect.mapError(
-        (cause) =>
-          new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "kimi/usages",
-            detail: cause.message,
-            cause,
-          }),
-      ),
-    );
-    const stamp = yield* makeEventStamp();
-    return {
-      rateLimits: payload,
-      snapshot: normalizeKimiCodeUsage({ payload, observedAt: stamp.createdAt }),
-      stamp,
-    };
-  });
-
-  const readCurrentPlanRateLimits = Effect.fn("readCurrentPlanRateLimits")(function* (
-    context: ClaudeSessionContext,
-  ) {
-    if (kimiCodeUsageSource) {
-      return yield* readKimiCodePlanRateLimits();
-    }
-    const readUsage = context.query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
-    if (!readUsage) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "claude/control/get_usage",
-        detail: "This Claude session does not expose plan usage.",
-      });
-    }
-
-    const usage = yield* Effect.tryPromise({
-      try: () => readUsage.call(context.query),
-      catch: (cause) =>
-        new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "claude/control/get_usage",
-          detail: "Claude did not return plan usage.",
-          cause,
-        }),
-    }).pipe(Effect.timeoutOption("2 seconds"));
-    if (Option.isNone(usage)) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "claude/control/get_usage",
-        detail: "Timed out while reading Claude plan usage.",
-      });
-    }
-
-    // The control response also contains session cost and local behavioral
-    // attribution. Neither belongs in a plan-limit event; retaining only the
-    // provider account fields keeps runtime events small and avoids exposing
-    // unrelated local usage metadata downstream.
-    const rateLimits = {
-      subscription_type: usage.value.subscription_type,
-      rate_limits_available: usage.value.rate_limits_available,
-      rate_limits: usage.value.rate_limits,
-    };
-    const stamp = yield* makeEventStamp();
-    return {
-      rateLimits,
-      snapshot: normalizeClaudeUsageRateLimits({
-        usage: rateLimits,
-        observedAt: stamp.createdAt,
-      }),
-      stamp,
-    };
-  });
-
-  const queryCurrentPlanRateLimits = Effect.fn("queryCurrentPlanRateLimits")(function* (
-    context: ClaudeSessionContext,
-  ) {
-    const observation = yield* readCurrentPlanRateLimits(context).pipe(Effect.option);
-    if (Option.isNone(observation)) {
-      return;
-    }
-    const { rateLimits, snapshot, stamp } = observation.value;
-    yield* offerRuntimeEvent({
-      type: "account.rate-limits.updated",
-      eventId: stamp.eventId,
-      provider: PROVIDER,
-      createdAt: stamp.createdAt,
-      threadId: context.session.threadId,
-      ...(context.turnState ? { turnId: context.turnState.turnId } : {}),
-      payload: {
-        rateLimits,
-        snapshot,
-        updateMode: "replace",
-      },
-      providerRefs: nativeProviderRefs(context),
-      raw: {
-        source: "claude.sdk.message",
-        method: "claude/control/get_usage",
-        payload: rateLimits,
-      },
-    });
-  });
-
   const emitProposedPlanCompleted = Effect.fn("emitProposedPlanCompleted")(function* (
     context: ClaudeSessionContext,
     input: {
@@ -2396,7 +2270,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.lastKnownTotalProcessedTokens = accumulatedTotalProcessedTokens;
     }
 
-    yield* queryCurrentPlanRateLimits(context);
+    // Avoid getContextUsage because its token-count fallback can make extra model requests.
     const resultUsageRecord =
       result?.usage && typeof result.usage === "object" && !Array.isArray(result.usage)
         ? (result.usage as Record<string, unknown>)
@@ -3334,32 +3208,36 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
-      case "compact_boundary":
+      case "compact_boundary": {
         if (context.turnState) {
           context.turnState.latestAssistantUsage = undefined;
           context.turnState.compactedSinceLatestAssistantUsage = true;
         }
-        yield* emitThreadTokenUsage(
-          context,
-          compactBoundaryTokenUsageSnapshot(
-            message as unknown as Record<string, unknown>,
-            context.lastKnownContextWindow,
-            context.lastKnownTotalProcessedTokens,
-          ),
-          {
-            rawMethod: "claude/system/compact_boundary",
-            rawPayload: message,
-          },
+        const compactedUsage = compactBoundaryTokenUsageSnapshot(
+          message as unknown as Record<string, unknown>,
+          context.lastKnownContextWindow,
+          context.lastKnownTotalProcessedTokens,
         );
+        yield* emitThreadTokenUsage(context, compactedUsage, {
+          rawMethod: "claude/system/compact_boundary",
+          rawPayload: message,
+        });
         yield* offerRuntimeEvent({
           ...base,
           type: "thread.state.changed",
           payload: {
             state: "compacted",
+            ...(compactedUsage?.lastUsedTokens !== undefined
+              ? { beforeTokens: compactedUsage.lastUsedTokens }
+              : {}),
+            ...(compactedUsage?.usedTokens !== undefined
+              ? { afterTokens: compactedUsage.usedTokens }
+              : {}),
             detail: message,
           },
         });
         return;
+      }
       case "hook_started":
         yield* offerRuntimeEvent({
           ...base,
@@ -3729,17 +3607,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (message.type === "rate_limit_event") {
-      const snapshot = normalizeClaudeRateLimitEvent({
-        event: message.rate_limit_info as ClaudeRateLimitEventPayload,
-        observedAt: base.createdAt,
-      });
+      const names = options?.scopedLimitNames
+        ? yield* Ref.get(options.scopedLimitNames)
+        : { overageIncluded: undefined };
+      const limits = claudeRateLimitEventToUpdate(message.rate_limit_info, names);
+      if (!limits) return;
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
-        payload: {
-          rateLimits: message,
-          ...(snapshot ? { snapshot } : {}),
-        },
+        payload: { limits },
       });
       return;
     }
@@ -3923,7 +3799,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     // Same reason as the approvals above: a request nobody can answer any more
     // must not stay open, or the thread can never be settled.
-    for (const pending of [...context.pendingUserInputs.values()]) {
+    for (const pending of context.pendingUserInputs.values()) {
       yield* pending.cancel;
     }
 
@@ -4910,26 +4786,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return context !== undefined && !context.stopped;
     });
 
-  const refreshRateLimits: NonNullable<ClaudeAdapterShape["refreshRateLimits"]> = Effect.fn(
-    "refreshRateLimits",
-  )(function* () {
-    // Kimi-backed instances read a standalone account endpoint: no session needed.
-    if (kimiCodeUsageSource) {
-      return (yield* readKimiCodePlanRateLimits()).snapshot;
-    }
-    const context = Array.from(sessions.values())
-      .toReversed()
-      .find((candidate) => !candidate.stopped);
-    if (!context) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "claude/control/get_usage",
-        detail: "An active Claude session is required to refresh plan limits.",
-      });
-    }
-    return (yield* readCurrentPlanRateLimits(context)).snapshot;
-  });
-
   const stopSessions = Effect.fn("stopSessions")(function* (
     contexts: ReadonlyArray<ClaudeSessionContext>,
     emitExitEvent: boolean,
@@ -4973,7 +4829,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     stopSession,
     listSessions,
     hasSession,
-    refreshRateLimits,
     stopAll,
     get streamEvents() {
       return Stream.fromQueue(runtimeEventQueue);

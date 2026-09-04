@@ -7,6 +7,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 ## Table of contents
 
 - [Project and workspace](#project-and-workspace)
+- [Project sync](#project-sync)
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
@@ -29,6 +30,32 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 #### Worktree
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
+
+### Project sync
+
+Copying a project's workspace between two environments, driven entirely by the client: there is no
+server-to-server communication. See [project-sync.md][30].
+
+#### Project sync manifest
+
+A flat, sorted, hash-addressed description of a project's workspace tree — files with a sha256
+digest, empty directories, and symlinks with their raw target. Built by [`ProjectSyncManifest.ts`][31]
+and defined on the wire in [the project sync contracts][32]. The client diffs the origin and
+destination manifests to decide what a sync needs to copy or delete; it is never used for anything
+else.
+
+#### Send mode
+
+The project sync mode that creates a new project on the destination environment and copies
+everything into it. Never deletes destination entries, since the destination did not exist before
+the sync started. See [`operations/projectSync.ts`][33].
+
+#### Sync mode
+
+The project sync mode that mirrors an existing destination project against the source: entries
+missing or changed on the destination are copied, and destination entries absent from the source
+manifest are deleted. Unlike Send, Sync can delete destination files — the client surfaces that as
+an explicit confirmation before it runs. See [`operations/projectSync.ts`][33].
 
 ### Thread timeline
 
@@ -126,6 +153,14 @@ One metered period inside a plan rate-limit observation: a label, a used percent
 
 A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
 
+#### Usage limits
+
+The rolling subscription quota windows a provider reports for its signed-in account, such as Claude's five-hour and weekly windows or Codex's primary and secondary allowances. Each driver decides in its own `checkProvider` whether it has any and returns them on the snapshot as `usageLimits`; drivers with no notion of subscription usage leave the field absent. Adapters that receive rate-limit telemetry during a turn normalise it into a `ProviderUsageLimitsUpdate` at the boundary, and `ProviderUsageLimitsIngestion` folds it onto the owning instance's snapshot through `ServerProviderShape.applyUsageLimits`, so no central service needs to know a driver kind. See [providerUsageLimits.ts](../../packages/contracts/src/providerUsageLimits.ts) and [makeManagedServerProvider.ts](../../apps/server/src/provider/makeManagedServerProvider.ts).
+
+#### Usage limit source
+
+A read-only quota feed outside this environment's provider CLIs, configured under `settings.usageLimitSources`. The only kind today is a CLIProxyAPI hub, whose `quota-scheduler/status` reports the windows of every pooled account. `UsageLimitSources` polls each source on the provider health interval and publishes `UsageLimitSourceSnapshot`s over the config stream as `usageLimitSourcesUpdated`, gated by a client capability flag the way environment themes are. The management key round-trips through the secret store with a redaction marker on disk. See [UsageLimitSources.ts](../../apps/server/src/usage/UsageLimitSources.ts).
+
 #### Model manifest
 
 The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
@@ -209,6 +244,7 @@ ships T3 Code already matching it.
 - [Provider architecture][16]
 - [Permission modes][18]
 - [Workspace layout][2]
+- [Project sync architecture][30]
 
 [1]: ../../packages/contracts/src/orchestration.ts
 [2]: ./workspace-layout.md
@@ -239,3 +275,7 @@ ships T3 Code already matching it.
 [27]: ./marketplace.md
 [28]: ../../apps/server/src/provider/providerRateLimits.ts
 [29]: ../../apps/server/src/orchestration/Layers/ProviderRateLimitsReactor.ts
+[30]: ./project-sync.md
+[31]: ../../apps/server/src/workspace/ProjectSyncManifest.ts
+[32]: ../../packages/contracts/src/projectSync.ts
+[33]: ../../packages/client-runtime/src/operations/projectSync.ts

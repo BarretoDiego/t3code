@@ -156,11 +156,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
 @theme inline {
   --color-zinc-25: oklch(99.2% 0 0);
-  --animate-skeleton: skeleton 2s infinite linear;
+  --animate-skeleton: skeleton 2.4s infinite;
   /* Duty-cycled indicator animations: long holds with stepped ramps, so the
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;
-  --animate-ghost-pulse: ghost-pulse 2.4s infinite;
   --animate-status-ping: status-ping 2s infinite;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
@@ -218,20 +217,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   @keyframes skeleton {
-    /* Transform-only so the highlight sweep stays on the compositor, then a
-       long hold with the band parked off-screen instead of a constant shimmer. */
-    0% {
-      transform: translateX(-100%);
-    }
-    60%,
-    100% {
-      transform: translateX(100%);
-    }
-  }
-  @keyframes ghost-pulse {
-    /* The loading ghosts' breath. Stepped like the status indicators, so however many bars a
-       ghost holds, the compositor draws a handful of discrete frames per cycle rather than one
-       per vsync — which on a 120Hz display is the difference between ~14 and ~288 updates. */
+    /* The single loading-bar breath used by every skeleton: one opacity pulse
+       per container, stepped so however many bars sit under it, the compositor
+       draws a handful of discrete frames per cycle rather than one per vsync —
+       which on a 120Hz display is the difference between ~14 and ~288 updates. */
     0%,
     42% {
       opacity: 1;
@@ -1767,6 +1756,34 @@ code {
   padding: 0.1rem 0.35rem;
   color: var(--contrast-foreground);
   font-size: 0.75rem;
+}
+
+/* The fenced code container in the prompt composer. One surface wrapping every
+   line, so a pasted block reads as a block instead of ragged highlighted runs.
+   Padding and radius live on the container, never on the inline runs, so the
+   caret keeps landing exactly where the glyphs are. */
+.composer-code-block {
+  position: relative;
+  margin: 0.35rem 0;
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.4rem 0.6rem;
+  color: var(--code-foreground);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The language hint is drawn, never edited: keeping it out of the DOM flow
+   means it cannot be selected, deleted, or land in the prompt. */
+.composer-code-block[data-language]::after {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.4rem;
+  opacity: 0.55;
+  content: attr(data-language);
+  font-size: 0.625rem;
+  user-select: none;
 }
 
 /* Code painted live inside the prompt composer. Deliberately lighter than the

@@ -78,7 +78,7 @@ import {
 } from "~/threadWorkspaceStore";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
-import { ChatViewWithoutDiffWorkerPool } from "../ChatView";
+import ChatView from "../ChatView";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { Button } from "../ui/button";
 import {
@@ -683,13 +683,12 @@ function ServerThreadPane({
   });
 
   return (
-    <ChatViewWithoutDiffWorkerPool
+    <ChatView
       environmentId={target.environmentId}
       threadId={target.threadId}
       routeKind="server"
       threadSyncPhase={threadSyncPhase}
       reserveTitleBarControlInset={reserveNativeControlsInset}
-      workspace={{ active, rightPanelHost, onRightPanelMaximizedChange }}
     />
   );
 }
@@ -708,13 +707,12 @@ function DraftThreadPane({
   readonly target: Extract<ThreadWorkspaceTarget, { routeKind: "draft" }>;
 }) {
   return (
-    <ChatViewWithoutDiffWorkerPool
+    <ChatView
       draftId={target.draftId}
       environmentId={target.environmentId}
       threadId={target.threadId}
       routeKind="draft"
       reserveTitleBarControlInset={reserveNativeControlsInset}
-      workspace={{ active, rightPanelHost, onRightPanelMaximizedChange }}
     />
   );
 }

@@ -2,6 +2,7 @@ import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
+  LayoutDashboardIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -29,17 +30,10 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "../ui/sidebar";
-import { Separator } from "../ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
-import { SidebarPinnedRateLimitsDock } from "./SidebarPinnedRateLimitsDock";
-import { SidebarRateLimitsMeter } from "./SidebarRateLimitsMeter";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
-import {
-  useSidebarRateLimitsMonitor,
-  type SidebarRateLimitsMonitor,
-} from "./useSidebarRateLimitsMonitor";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -93,19 +87,21 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <T3Wordmark aria-label="T3" className="h-2.5 w-auto shrink-0" />
-      <span
-        className={cn(
-          "truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Code
+      <span className="inline-flex min-w-0 items-baseline gap-1">
+        <T3Wordmark aria-label="T3" className="h-2.5 w-auto shrink-0" />
+        <span
+          className={cn(
+            "truncate text-sm font-medium tracking-tight",
+            onBackdrop ? "text-white/70" : "text-muted-foreground",
+          )}
+        >
+          Code
+        </span>
       </span>
     </Link>
   );
@@ -136,11 +132,7 @@ function SidebarUtilityItem({
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
-  rateLimitsMonitor,
-}: {
-  rateLimitsMonitor: SidebarRateLimitsMonitor;
-}) {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -154,7 +146,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             ? "usage"
             : location.pathname === "/pull-requests"
               ? "pull-requests"
-              : null,
+              : location.pathname === "/board"
+                ? "board"
+                : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -173,6 +167,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
       to: "/pull-requests",
       search: readPullRequestListPreferences(),
     });
+  }, [closeMobileSidebar, navigate]);
+  const handleBoardClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/board" });
   }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
@@ -211,6 +209,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             label="Settings"
             onClick={handleSettingsClick}
           />
+          <SidebarUtilityItem
+            icon={<LayoutDashboardIcon />}
+            label="Agent Operations"
+            onClick={handleBoardClick}
+          />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<GitPullRequestIcon />}
@@ -223,8 +226,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             label="Usage"
             onClick={handleUsageClick}
           />
-          <Separator className="mx-0.5 h-4 self-center" orientation="vertical" />
-          <SidebarRateLimitsMeter monitor={rateLimitsMonitor} />
         </>
       )}
       <SidebarUpdatePill />
@@ -233,14 +234,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
 });
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
-  const rateLimitsMonitor = useSidebarRateLimitsMonitor();
-
   return (
     <SidebarFooter className="p-[var(--sidebar-content-inset)]">
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarPinnedRateLimitsDock monitor={rateLimitsMonitor} />
-      <SidebarUtilityMenu rateLimitsMonitor={rateLimitsMonitor} />
+      <SidebarUtilityMenu />
     </SidebarFooter>
   );
 });

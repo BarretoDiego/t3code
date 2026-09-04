@@ -6,6 +6,7 @@ import type {
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as NodeCrypto from "node:crypto";
 import * as Encoding from "effect/Encoding";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
@@ -100,6 +101,40 @@ export function timingSafeEqualBase64Url(left: string, right: string): boolean {
     return false;
   }
   return NodeCrypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+/**
+ * Verifies one `<base64url claims>.<hmac signature>` bearer token and returns
+ * its claims, or `null` for any token that is malformed, unsigned, signed with
+ * the wrong key, undecodable, or expired.
+ *
+ * Every family of URL-borne token the server issues (attachment uploads,
+ * project sync export/import) shares this shape, and each hand-rolled copy of
+ * the check is one place for the families to drift apart on what counts as
+ * valid. `secret` is nullable so callers can pass the result of a signing-key
+ * load that failed: no key means no valid token.
+ */
+export function verifySignedClaims<A extends { readonly expiresAt: number }>(input: {
+  readonly token: string;
+  readonly secret: Uint8Array | null;
+  readonly nowMs: number;
+  readonly decode: (encoded: unknown) => Option.Option<A>;
+}): A | null {
+  const [payload, signature, unexpectedSegment] = input.token.split(".");
+  if (!payload || !signature || unexpectedSegment !== undefined) {
+    return null;
+  }
+  if (!input.secret || !timingSafeEqualBase64Url(signature, signPayload(payload, input.secret))) {
+    return null;
+  }
+
+  let claims: A | null;
+  try {
+    claims = Option.getOrNull(input.decode(base64UrlDecodeUtf8(payload)));
+  } catch {
+    return null;
+  }
+  return claims && claims.expiresAt > input.nowMs ? claims : null;
 }
 
 function normalizeNonEmptyString(value: string | null | undefined): string | undefined {

@@ -221,11 +221,13 @@ export const make = Effect.gen(function* () {
       threadAutoSettlement: true,
       threadSnooze: true,
       environmentThemes: true,
+      usageLimitSources: true,
       threadPinning: true,
       threadPinReorder: true,
       threadTitleRegeneration: true,
       threadPullRequestLinking: true,
       environmentIcon: true,
+      projectSync: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {
