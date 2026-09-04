@@ -786,6 +786,20 @@ export const ServerProviderUpdateInput = Schema.Struct({
 });
 export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
 
+/** A requested subscription-limit refresh could not complete for this provider instance. */
+export class ServerProviderRateLimitsRefreshError extends Schema.TaggedErrorClass<ServerProviderRateLimitsRefreshError>()(
+  "ServerProviderRateLimitsRefreshError",
+  {
+    instanceId: ProviderInstanceId,
+    reason: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider rate-limit refresh failed for ${this.instanceId}: ${this.reason}`;
+  }
+}
+
 export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerProviderUpdateError>()(
   "ServerProviderUpdateError",
   {

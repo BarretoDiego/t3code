@@ -151,6 +151,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
+    id: "sidebar-style",
+    title: "Sidebar style",
+    to: "/settings/general",
+    searchTerms: ["grouped original legacy threads projects flat tree"],
+  },
+  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/general",
@@ -303,12 +309,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Stream token by token (legacy)",
     to: "/settings/general",
     searchTerms: ["response output old compatibility"],
-  },
-  {
-    id: "legacy-sidebar",
-    title: "Sidebar (legacy)",
-    to: "/settings/general",
-    searchTerms: ["project thread tree old flat list"],
   },
   {
     id: "keybindings",
