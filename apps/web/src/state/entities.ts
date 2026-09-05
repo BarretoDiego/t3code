@@ -15,7 +15,11 @@ import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
-import { allEnvironmentShellsBootstrappedAtom, threadWorkspacePruneScopeAtom } from "./shell";
+import {
+  allEnvironmentProjectSnapshotsReadyAtom,
+  allEnvironmentShellsBootstrappedAtom,
+  threadWorkspacePruneScopeAtom,
+} from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
@@ -84,6 +88,10 @@ export function useThreadWorkspacePruneScope(): {
   readonly loaded: ReadonlySet<EnvironmentId>;
 } | null {
   return useAtomValue(threadWorkspacePruneScopeAtom);
+}
+
+export function useAllEnvironmentProjectSnapshotsReady(): boolean {
+  return useAtomValue(allEnvironmentProjectSnapshotsReadyAtom);
 }
 
 export function useThreadShellsForProjectRefs(

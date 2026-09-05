@@ -274,6 +274,10 @@
     "./projectSyncFraming": {
       "types": "./src/projectSyncFraming.ts",
       "import": "./src/projectSyncFraming.ts"
+    },
+    "./hostClassification": {
+      "types": "./src/hostClassification.ts",
+      "import": "./src/hostClassification.ts"
     }
   },
   "scripts": {
