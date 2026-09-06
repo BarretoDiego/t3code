@@ -6,6 +6,7 @@ import {
   isUsageLimitsCommand,
 } from "@t3tools/shared/usageLimits";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
+import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
 import {
   type AssistantCitation,
   type ApprovalRequestId,
@@ -23,6 +24,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
+  type ThreadLinkedPullRequest,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
@@ -106,8 +108,6 @@ import {
 } from "../composer-logic";
 import {
   createMessageAttachmentPreviewProjector,
-  derivePendingApprovals,
-  derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntriesWithState,
   deriveActiveWorkStartedAt,
@@ -153,16 +153,15 @@ import {
   isImageAttachment,
   type SessionPhase,
   type Thread,
-  type TurnDiffSummary,
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
+  pullRequestSurface,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -190,7 +189,7 @@ import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
-import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
+import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
@@ -339,11 +338,6 @@ import {
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
-import {
-  resolveDisplayedThreadPr,
-  threadChangeRequestSnapshotsAtom,
-  useLinkedThreadPullRequest,
-} from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import {
@@ -367,7 +361,6 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildLoadingThreadFromShell,
-  buildRevertTurnCountByUserMessageId,
   buildThreadTurnInterruptInput,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
@@ -383,6 +376,7 @@ import {
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldOpenProactivePullRequest,
+  shouldRetargetThreadPullRequestPanel,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
   getStartedThreadModelChangeBlockReason,
@@ -399,6 +393,7 @@ import {
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   resolveDraftHeroState,
+  observeProactivePanelUserChoice,
   resolveProactiveTurnDiffAction,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
@@ -1850,7 +1845,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
-  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
     readonly messageId: MessageId | null;
@@ -1869,10 +1863,6 @@ export default function ChatView(props: ChatViewProps) {
   const activeRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
-  const refreshVcsStatus = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
-  const sidebarPrRefreshKeyRef = useRef<string | null>(null);
-  const threadPrRelinkKeysRef = useRef(new Map<string, string>());
-  const threadPrRelinkWriteRef = useRef(Promise.resolve());
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewServerEpoch = activePreviewState.serverEpoch;
   const resolvePreviewRuntimeTabId = useMemo(
@@ -2590,12 +2580,8 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [agentSessionLive, threadActivities],
   );
-  const pendingApprovals = useMemo(
-    () => derivePendingApprovals(threadActivities),
-    [threadActivities],
-  );
-  const pendingUserInputs = useMemo(
-    () => derivePendingUserInputs(threadActivities),
+  const { approvals: pendingApprovals, userInputs: pendingUserInputs } = useMemo(
+    () => derivePendingRequests(threadActivities),
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -3104,35 +3090,6 @@ export default function ChatView(props: ChatViewProps) {
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
   ] = useDraftHeroLayoutTransition(isDraftHeroState);
-  const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
-    useTurnDiffSummaries(activeThread);
-  const turnDiffSummaryByAssistantMessageId = useMemo(() => {
-    const byMessageId = new Map<MessageId, TurnDiffSummary>();
-    for (const summary of turnDiffSummaries) {
-      if (!summary.assistantMessageId) continue;
-      byMessageId.set(summary.assistantMessageId, summary);
-    }
-    return byMessageId;
-  }, [turnDiffSummaries]);
-  const lastRevertTurnCountRef = useRef<Map<MessageId, number> | null>(null);
-  const revertTurnCountByUserMessageId = useMemo(() => {
-    const next = buildRevertTurnCountByUserMessageId(
-      {
-        supportsConversationRollback,
-        timelineEntries,
-        turnDiffSummaryByAssistantMessageId,
-        inferredCheckpointTurnCountByTurnId,
-      },
-      lastRevertTurnCountRef.current,
-    );
-    lastRevertTurnCountRef.current = next;
-    return next;
-  }, [
-    supportsConversationRollback,
-    inferredCheckpointTurnCountByTurnId,
-    timelineEntries,
-    turnDiffSummaryByAssistantMessageId,
-  ]);
 
   const gitCwd = activeProject
     ? projectScriptCwd({
@@ -4008,52 +3965,11 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeProject, activeThreadRef],
   );
-  // The thread's own change request, placed against the project it belongs to. Without a
-  // project there is nothing to resolve it against, so the caller falls back to the browser.
-  const persistedLinkedThreadPullRequest = isServerThread
-    ? (activeThreadShell?.linkedPullRequest ?? activeThread?.linkedPullRequest ?? null)
-    : (activeThread?.linkedPullRequest ?? null);
-  const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
-  const persistedLinkedThreadPullRequestStatus = useLinkedThreadPullRequest(
-    activeThreadRef?.environmentId ?? null,
-    persistedLinkedThreadPullRequest,
-  );
-  const replacementLinkedThreadPullRequest = useMemo(() => {
-    const detected = gitStatusQuery.data?.pr;
-    const threadBranch = activeThread?.branch;
-    const projectId = activeProject?.id;
-    if (
-      persistedLinkedThreadPullRequest === null ||
-      (persistedLinkedThreadPullRequestStatus?.pr.state !== "merged" &&
-        persistedLinkedThreadPullRequestStatus?.pr.state !== "closed") ||
-      gitStatusQuery.data?.refName !== threadBranch ||
-      detected?.state !== "open" ||
-      detected.headRef !== threadBranch ||
-      projectId === undefined ||
-      activeProjectRepository === null ||
-      (persistedLinkedThreadPullRequest.projectId === projectId &&
-        persistedLinkedThreadPullRequest.repository.toLowerCase() ===
-          activeProjectRepository.toLowerCase() &&
-        persistedLinkedThreadPullRequest.number === detected.number)
-    ) {
-      return null;
-    }
-    return {
-      projectId,
-      repository: activeProjectRepository,
-      number: detected.number,
-      url: detected.url,
-    };
-  }, [
-    activeProject?.id,
-    activeProjectRepository,
-    activeThread?.branch,
-    gitStatusQuery.data,
-    persistedLinkedThreadPullRequest,
-    persistedLinkedThreadPullRequestStatus?.pr.state,
-  ]);
+  // The shell carries server PR updates even while thread detail is still loading.
+  const activeThreadMetadata = activeThreadShell ?? activeThread;
   const linkedThreadPullRequest =
-    replacementLinkedThreadPullRequest ?? persistedLinkedThreadPullRequest;
+    activeThreadMetadata?.linkedPullRequest ?? activeThreadMetadata?.branchPullRequest ?? null;
+  const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
   const linkedThreadPullRequestKey = linkedThreadPullRequest
     ? JSON.stringify([
         linkedThreadPullRequest.projectId,
@@ -4061,86 +3977,10 @@ export default function ChatView(props: ChatViewProps) {
         linkedThreadPullRequest.number,
       ])
     : null;
-  const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
-  const openThreadPullRequest = useCallback(
-    (number: number) => {
-      if (!supportsPullRequests || !activeThreadRef) {
-        return;
-      }
-      const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
-      const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
-      if (projectId === undefined || repository === null) return;
-      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
-        projectId,
-        repository,
-        number,
-      });
-    },
-    [
-      activeProject,
-      activeProjectRepository,
-      activeThreadRef,
-      linkedThreadPullRequest,
-      supportsPullRequests,
-    ],
-  );
-  useEffect(() => {
-    if (!isServerThread || activeThreadKey === null || activeThreadRef === null) {
-      return;
-    }
-    if (replacementLinkedThreadPullRequest === null) {
-      threadPrRelinkKeysRef.current.delete(activeThreadKey);
-      return;
-    }
-    const relinkKey = `${replacementLinkedThreadPullRequest.projectId}:${replacementLinkedThreadPullRequest.repository}#${replacementLinkedThreadPullRequest.number}`;
-    if (threadPrRelinkKeysRef.current.get(activeThreadKey) === relinkKey) return;
-    threadPrRelinkKeysRef.current.set(activeThreadKey, relinkKey);
-    const openSurface = selectActiveRightPanelSurface(
-      useRightPanelStore.getState().byThreadKey,
-      activeThreadRef,
-    );
-    if (
-      openSurface?.kind === "pull-request" &&
-      persistedLinkedThreadPullRequest !== null &&
-      openSurface.projectId === persistedLinkedThreadPullRequest.projectId &&
-      openSurface.repository.toLowerCase() ===
-        persistedLinkedThreadPullRequest.repository.toLowerCase() &&
-      openSurface.number === persistedLinkedThreadPullRequest.number
-    ) {
-      useRightPanelStore
-        .getState()
-        .openPullRequest(activeThreadRef, replacementLinkedThreadPullRequest);
-    }
-
-    threadPrRelinkWriteRef.current = threadPrRelinkWriteRef.current.then(async () => {
-      if (threadPrRelinkKeysRef.current.get(activeThreadKey) !== relinkKey) return;
-      const result = await updateThreadMetadata({
-        environmentId: activeThreadRef.environmentId,
-        input: {
-          threadId: activeThreadRef.threadId,
-          linkedPullRequest: replacementLinkedThreadPullRequest,
-        },
-      });
-      if (threadPrRelinkKeysRef.current.get(activeThreadKey) !== relinkKey) return;
-      if (result._tag !== "Failure") return;
-      threadPrRelinkKeysRef.current.delete(activeThreadKey);
-      if (isAtomCommandInterrupted(result)) return;
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to update the thread pull request",
-          description: chatActionErrorMessage(squashAtomCommandFailure(result)),
-        }),
-      );
-    });
-  }, [
-    activeThreadKey,
-    activeThreadRef,
-    isServerThread,
-    persistedLinkedThreadPullRequest,
-    replacementLinkedThreadPullRequest,
-    updateThreadMetadata,
-  ]);
+  const observedThreadPullRequestRef = useRef<{
+    readonly threadKey: string;
+    readonly reference: ThreadLinkedPullRequest | null;
+  } | null>(null);
   const openProjectPullRequest = useCallback(
     (number: number) => {
       if (
@@ -4159,29 +3999,52 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
   );
-  const proactiveTurnObservationRef = useRef<{
-    threadKey: string;
-    runningTurnId: TurnId | null;
-  } | null>(null);
-  const proactivePullRequestObservationRef = useRef<{
-    threadKey: string;
-    targetKey: string | null;
-  } | null>(null);
+  const proactivePanelObservationRef = useRef<ReturnType<
+    typeof observeProactivePanelUserChoice
+  > | null>(null);
 
   useEffect(() => {
     if (!isServerThread || activeThreadKey === null || activeThreadRef === null) {
-      proactiveTurnObservationRef.current = null;
+      proactivePanelObservationRef.current = null;
+      observedThreadPullRequestRef.current = null;
       return;
     }
-    if (!clientSettingsHydrated || threadDetailLoading) {
-      return;
+    const panels = useRightPanelStore.getState();
+    const observation = observeProactivePanelUserChoice(proactivePanelObservationRef.current, {
+      threadKey: activeThreadKey,
+      runningTurnId: activeRunningTurnId,
+      userActionRevision: panels.getUserActionRevision(activeThreadRef),
+    });
+    proactivePanelObservationRef.current = observation;
+    const {
+      runningTurnId: previousRunningTurnId,
+      targetKey: previousTargetKey,
+      userActionRevision,
+    } = observation;
+    const openSurface = selectActiveRightPanelSurface(panels.byThreadKey, activeThreadRef);
+    const previousPullRequest = observedThreadPullRequestRef.current;
+    observedThreadPullRequestRef.current = {
+      threadKey: activeThreadKey,
+      reference: linkedThreadPullRequest,
+    };
+    const followSelectedPullRequest =
+      previousPullRequest?.threadKey === activeThreadKey &&
+      shouldRetargetThreadPullRequestPanel(
+        previousPullRequest.reference,
+        linkedThreadPullRequest,
+        openSurface,
+      );
+    // Following the selected linked PR does not open an unrelated panel, so it
+    // remains available with proactive panels off. It still respects a later choice.
+    if (followSelectedPullRequest && linkedThreadPullRequest !== null) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
     }
+    if (!clientSettingsHydrated || threadDetailLoading) return;
 
-    const previousObservation = proactiveTurnObservationRef.current;
-    const observingSameThread = previousObservation?.threadKey === activeThreadKey;
-    const previousRunningTurnId = observingSameThread
-      ? previousObservation.runningTurnId
-      : undefined;
     const settledTurnId = latestTurnSettled ? (activeLatestTurn?.turnId ?? null) : null;
     const newlyCompletedTurnId = shouldOpenProactiveTurnDiff({
       previousRunningTurnId,
@@ -4191,8 +4054,8 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? settledTurnId
       : null;
-    const eligibleCompletion =
-      settings.proactivePanelsEnabled && !shouldUseRightPanelSheet && newlyCompletedTurnId !== null;
+    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUseRightPanelSheet;
+    const eligibleCompletion = proactivePanelsEnabled && newlyCompletedTurnId !== null;
     const completedCheckpoint = eligibleCompletion
       ? activeThread?.checkpoints.find((checkpoint) => checkpoint.turnId === newlyCompletedTurnId)
       : undefined;
@@ -4200,17 +4063,36 @@ export default function ChatView(props: ChatViewProps) {
       ? resolveProactiveTurnDiffAction({
           checkpoint: completedCheckpoint,
           isGitRepo: gitStatusQuery.data?.isRepo,
-          activeSurfaceKind: activeRightPanelSurface?.kind ?? null,
         })
       : "ignore";
-    proactiveTurnObservationRef.current = {
-      threadKey: activeThreadKey,
+    const eligibleLink =
+      proactivePanelsEnabled &&
+      shouldOpenProactivePullRequest(previousTargetKey, linkedThreadPullRequestKey);
+    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
+    proactivePanelObservationRef.current = {
+      ...observation,
       runningTurnId: diffAction === "defer" ? (previousRunningTurnId ?? null) : activeRunningTurnId,
+      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
     };
-    if (diffAction !== "open" || newlyCompletedTurnId === null) return;
 
+    if (
+      !followSelectedPullRequest &&
+      eligibleLink &&
+      pullRequestsCapabilityKnown &&
+      supportsPullRequests &&
+      linkedThreadPullRequest !== null
+    ) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
+    }
+    if (diffAction !== "open" || newlyCompletedTurnId === null) return;
+    if (!panels.openProactive(activeThreadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
+      return;
+    }
     useDiffPanelStore.getState().selectTurn(activeThreadRef, newlyCompletedTurnId);
-    useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();
   }, [
     activeThread?.checkpoints,
@@ -4219,55 +4101,13 @@ export default function ChatView(props: ChatViewProps) {
     activeRunningTurnId,
     activeThreadKey,
     activeThreadRef,
-    activeRightPanelSurface?.kind,
     clientSettingsHydrated,
     gitStatusQuery.data?.isRepo,
     isServerThread,
     latestTurnSettled,
-    onDiffPanelOpen,
-    settings.proactivePanelsEnabled,
-    shouldUseRightPanelSheet,
-    threadDetailLoading,
-  ]);
-
-  useEffect(() => {
-    if (!isServerThread || activeThreadKey === null || activeThreadRef === null) {
-      proactivePullRequestObservationRef.current = null;
-      return;
-    }
-    if (!clientSettingsHydrated || threadDetailLoading) {
-      return;
-    }
-
-    const previousObservation = proactivePullRequestObservationRef.current;
-    const observingSameThread = previousObservation?.threadKey === activeThreadKey;
-    const previousTargetKey = observingSameThread ? previousObservation.targetKey : undefined;
-    const newlyLinkedPullRequest = shouldOpenProactivePullRequest(
-      previousTargetKey,
-      linkedThreadPullRequestKey,
-    );
-    const eligibleLink =
-      settings.proactivePanelsEnabled && !shouldUseRightPanelSheet && newlyLinkedPullRequest;
-    const shouldOpenLink =
-      eligibleLink &&
-      pullRequestsCapabilityKnown &&
-      supportsPullRequests &&
-      linkedThreadPullRequest !== null;
-    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
-    proactivePullRequestObservationRef.current = {
-      threadKey: activeThreadKey,
-      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
-    };
-    if (!shouldOpenLink || linkedThreadPullRequest === null) return;
-
-    useRightPanelStore.getState().openPullRequest(activeThreadRef, linkedThreadPullRequest);
-  }, [
-    activeThreadKey,
-    activeThreadRef,
-    clientSettingsHydrated,
-    isServerThread,
     linkedThreadPullRequest,
     linkedThreadPullRequestKey,
+    onDiffPanelOpen,
     pullRequestsCapabilityKnown,
     settings.proactivePanelsEnabled,
     shouldUseRightPanelSheet,
@@ -5282,50 +5122,6 @@ export default function ChatView(props: ChatViewProps) {
       resizeObserver.disconnect();
     };
   }, [composerOverlayElement, publishComposerOverlayHeight]);
-  const activeThreadPr =
-    replacementLinkedThreadPullRequest !== null
-      ? (gitStatusQuery.data?.pr ?? null)
-      : resolveDisplayedThreadPr({
-          threadBranch: activeThread?.branch ?? null,
-          gitStatus: gitStatusQuery.data ?? null,
-          snapshot: activeThreadKey ? changeRequestSnapshotByKey.get(activeThreadKey) : undefined,
-          retainTerminalOnBranchMismatch: activeThread?.worktreePath === null,
-          linkedPullRequest: linkedThreadPullRequest,
-          linkedPullRequestStatus: persistedLinkedThreadPullRequestStatus,
-        });
-  const handlePullRequestTabStatusChange = useCallback(
-    (status: Pick<PullRequestTabStatus, "repository" | "number" | "state">) => {
-      if (
-        threadRepository?.toLowerCase() !== status.repository.toLowerCase() ||
-        activeThreadPr?.number !== status.number ||
-        activeThreadPr.state === status.state
-      ) {
-        sidebarPrRefreshKeyRef.current = null;
-        return;
-      }
-      const refreshKey = `${activeThreadKey}:vcs:${status.repository}#${status.number}:${status.state}`;
-      if (sidebarPrRefreshKeyRef.current === refreshKey) return;
-      sidebarPrRefreshKeyRef.current = refreshKey;
-      if (activeThreadRef === null || gitCwd === null) return;
-      void refreshVcsStatus({
-        environmentId: activeThreadRef.environmentId,
-        input: { cwd: gitCwd },
-      }).then(() => {
-        if (sidebarPrRefreshKeyRef.current === refreshKey) {
-          sidebarPrRefreshKeyRef.current = null;
-        }
-      });
-    },
-    [
-      activeThreadKey,
-      activeThreadPr?.number,
-      activeThreadPr?.state,
-      activeThreadRef,
-      gitCwd,
-      refreshVcsStatus,
-      threadRepository,
-    ],
-  );
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
   const activeThreadReferenceCopyTarget = useMemo(
     () =>
@@ -5335,15 +5131,8 @@ export default function ChatView(props: ChatViewProps) {
             threadId: activeThreadId,
             openPanelPullRequestUrl,
             linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
-            detectedPullRequestUrl: activeThreadPr?.url ?? null,
           }),
-    [
-      activeThreadId,
-      activeThreadPr?.url,
-      isServerThread,
-      linkedThreadPullRequest?.url,
-      openPanelPullRequestUrl,
-    ],
+    [activeThreadId, isServerThread, linkedThreadPullRequest?.url, openPanelPullRequestUrl],
   );
   const copyActiveThreadReference = useCallback(() => {
     const target = activeThreadReferenceCopyTarget;
@@ -5369,14 +5158,12 @@ export default function ChatView(props: ChatViewProps) {
       },
     );
   }, [activeThreadReferenceCopyTarget]);
-  // The right panel offers the thread's own change request, so it can only offer it once the
-  // branch has one; until then the picker says so rather than opening an empty panel.
   const addPullRequestSurface = useCallback(() => {
-    if (activeThreadPr === null) return;
-    openThreadPullRequest(activeThreadPr.number);
-  }, [activeThreadPr, openThreadPullRequest]);
-  const pullRequestSurfaceAvailable =
-    supportsPullRequests && activeThreadPr !== null && threadRepository !== null;
+    if (!supportsPullRequests || activeThreadRef === null || linkedThreadPullRequest === null)
+      return;
+    useRightPanelStore.getState().openPullRequest(activeThreadRef, linkedThreadPullRequest);
+  }, [activeThreadRef, linkedThreadPullRequest, supportsPullRequests]);
+  const pullRequestSurfaceAvailable = supportsPullRequests && linkedThreadPullRequest !== null;
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
@@ -7788,17 +7575,11 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeThreadRef, isServerThread, onDiffPanelOpen],
   );
-  // Both the Map and the revert handler are read from refs at call-time so
-  // the callback reference is fully stable and never busts context identity.
-  const revertTurnCountRef = useRef(revertTurnCountByUserMessageId);
-  revertTurnCountRef.current = revertTurnCountByUserMessageId;
+  // The revert handler is read from a ref at call-time so the callback
+  // reference is fully stable and never busts TimelineRowCtx identity.
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
-  const onRevertUserMessage = useCallback((messageId: MessageId) => {
-    const targetTurnCount = revertTurnCountRef.current.get(messageId);
-    if (typeof targetTurnCount !== "number") {
-      return;
-    }
+  const onRevertTimelineTurn = useCallback((targetTurnCount: number) => {
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
 
@@ -7921,9 +7702,9 @@ export default function ChatView(props: ChatViewProps) {
         context={
           isThreadOwnPullRequest(
             {
-              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
-              repository: threadRepository,
-              number: activeThreadPr?.number ?? null,
+              projectId: linkedThreadPullRequest?.projectId ?? null,
+              repository: linkedThreadPullRequest?.repository ?? null,
+              number: linkedThreadPullRequest?.number ?? null,
             },
             {
               projectId: renderedRightPanelSurface.projectId,
@@ -7935,9 +7716,6 @@ export default function ChatView(props: ChatViewProps) {
             : "page"
         }
         composerDraftTarget={composerDraftTarget}
-        {...(linkedThreadPullRequest === null
-          ? { onStateChange: handlePullRequestTabStatusChange }
-          : {})}
       />
     ) : renderedRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
@@ -8114,12 +7892,12 @@ export default function ChatView(props: ChatViewProps) {
                 timelineEntries={timelineEntries}
                 latestTurn={activeLatestTurn}
                 runningTurnId={activeRunningTurnId}
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                turnDiffSummaries={activeThread.checkpoints}
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
+                supportsConversationRollback={supportsConversationRollback}
+                onRevertToTurnCount={onRevertTimelineTurn}
                 onUseArtifactTemplate={useArtifactTemplate}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
