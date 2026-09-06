@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -1226,6 +1227,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
 
       // The library survives outside the defaults-stripping write path.
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const persisted = JSON.parse(
         yield* fileSystem.readFileString(serverConfig.settingsPath),
       ) as Record<string, unknown>;

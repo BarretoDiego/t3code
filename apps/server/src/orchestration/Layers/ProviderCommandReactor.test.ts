@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 import {
   ModelSelection,
@@ -918,10 +918,10 @@ describe("ProviderCommandReactor", () => {
     ) =>
       harness.engine.dispatch({
         type: "thread.turn.start",
-        commandId: CommandId.make(`cmd-turn-start-${randomUUID()}`),
+        commandId: CommandId.make(`cmd-turn-start-${NodeCrypto.randomUUID()}`),
         threadId: ThreadId.make("thread-1"),
         message: {
-          messageId: asMessageId(`user-message-${randomUUID()}`),
+          messageId: asMessageId(`user-message-${NodeCrypto.randomUUID()}`),
           role: "user",
           text: input.text,
           attachments: [],
@@ -932,129 +932,151 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       });
 
-    it("injects thread-scope snapshots into the first turn and keeps the transcript clean", async () => {
-      const harness = await createHarness({ threadMiniSkills: [workspaceSnapshot] });
+    effectIt.effect(
+      "injects thread-scope snapshots into the first turn and keeps the transcript clean",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({ threadMiniSkills: [workspaceSnapshot] }),
+          );
 
-      await Effect.runPromise(dispatchTurnStart(harness, { text: "Implement pagination." }));
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+          yield* dispatchTurnStart(harness, { text: "Implement pagination." });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
 
-      const input = sendTurnInputAt(harness, 0);
-      expect(input).toContain('<user_preferences scope="thread">');
-      expect(input).toContain(
-        "### Create Isolated Feature Workspace\n\nCreate a dedicated Git worktree for this feature.",
-      );
-      expect(input?.endsWith("Implement pagination.")).toBe(true);
+          const input = sendTurnInputAt(harness, 0);
+          expect(input).toContain('<user_preferences scope="thread">');
+          expect(input).toContain(
+            "### Create Isolated Feature Workspace\n\nCreate a dedicated Git worktree for this feature.",
+          );
+          expect(input?.endsWith("Implement pagination.")).toBe(true);
 
-      // The persisted user message stays exactly what the user typed.
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      expect(thread?.messages.map((message) => message.text)).toEqual(["Implement pagination."]);
-      expect(thread?.miniSkills).toEqual([workspaceSnapshot]);
-    });
+          // The persisted user message stays exactly what the user typed.
+          const readModel = yield* Effect.promise(() => harness.readModel());
+          const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+          expect(thread?.messages.map((message) => message.text)).toEqual([
+            "Implement pagination.",
+          ]);
+          expect(thread?.miniSkills).toEqual([workspaceSnapshot]);
+        }),
+    );
 
-    it("does not repeat thread-scope snapshots on later turns", async () => {
-      const harness = await createHarness({ threadMiniSkills: [workspaceSnapshot] });
+    effectIt.effect("does not repeat thread-scope snapshots on later turns", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({ threadMiniSkills: [workspaceSnapshot] }),
+        );
 
-      await Effect.runPromise(dispatchTurnStart(harness, { text: "First message." }));
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-      await harness.drain();
+        yield* dispatchTurnStart(harness, { text: "First message." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+        yield* Effect.promise(() => harness.drain());
 
-      await Effect.runPromise(dispatchTurnStart(harness, { text: "Second message." }));
-      await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+        yield* dispatchTurnStart(harness, { text: "Second message." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
 
-      expect(sendTurnInputAt(harness, 1)).toBe("Second message.");
-    });
+        expect(sendTurnInputAt(harness, 1)).toBe("Second message.");
+      }),
+    );
 
-    it("resolves request-scope skills from the library and skips unknown ids", async () => {
-      const harness = await createHarness({
-        serverSettingsOverrides: { miniSkills: [commitSkill, pullRequestSkill] },
-      });
+    effectIt.effect("resolves request-scope skills from the library and skips unknown ids", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            serverSettingsOverrides: { miniSkills: [commitSkill, pullRequestSkill] },
+          }),
+        );
 
-      await Effect.runPromise(
-        dispatchTurnStart(harness, {
+        yield* dispatchTurnStart(harness, {
           text: "Implement pagination.",
           miniSkillIds: [commitSkill.id, pullRequestSkill.id, MiniSkillId.make("deleted-skill")],
-        }),
-      );
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+        });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
 
-      const input = sendTurnInputAt(harness, 0);
-      expect(input).toContain('<user_preferences scope="request">');
-      expect(input).toContain(
-        "### Commit Changes\n\nReview the complete diff before creating commits.",
-      );
-      expect(input).toContain(
-        "### Create Pull Request\n\nCreate a pull request from the implementation branch.",
-      );
-      expect(input).not.toContain('<user_preferences scope="thread">');
-      expect(input?.endsWith("Implement pagination.")).toBe(true);
-    });
+        const input = sendTurnInputAt(harness, 0);
+        expect(input).toContain('<user_preferences scope="request">');
+        expect(input).toContain(
+          "### Commit Changes\n\nReview the complete diff before creating commits.",
+        );
+        expect(input).toContain(
+          "### Create Pull Request\n\nCreate a pull request from the implementation branch.",
+        );
+        expect(input).not.toContain('<user_preferences scope="thread">');
+        expect(input?.endsWith("Implement pagination.")).toBe(true);
+      }),
+    );
 
-    it("emits no request wrapper when every selected id is unknown", async () => {
-      const harness = await createHarness();
+    effectIt.effect("emits no request wrapper when every selected id is unknown", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
 
-      await Effect.runPromise(
-        dispatchTurnStart(harness, {
+        yield* dispatchTurnStart(harness, {
           text: "Implement pagination.",
           miniSkillIds: [MiniSkillId.make("deleted-skill")],
-        }),
-      );
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+        });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
 
-      expect(sendTurnInputAt(harness, 0)).toBe("Implement pagination.");
-    });
+        expect(sendTurnInputAt(harness, 0)).toBe("Implement pagination.");
+      }),
+    );
 
-    it("keeps the thread snapshot when the library skill changes underneath it", async () => {
-      const harness = await createHarness({
-        threadMiniSkills: [workspaceSnapshot],
-        serverSettingsOverrides: {
-          miniSkills: [
-            {
-              ...commitSkill,
-              id: workspaceSnapshot.skillId,
-              name: workspaceSnapshot.name,
-              content: "Edited library version that must not leak into old threads.",
+    effectIt.effect("keeps the thread snapshot when the library skill changes underneath it", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            threadMiniSkills: [workspaceSnapshot],
+            serverSettingsOverrides: {
+              miniSkills: [
+                {
+                  ...commitSkill,
+                  id: workspaceSnapshot.skillId,
+                  name: workspaceSnapshot.name,
+                  content: "Edited library version that must not leak into old threads.",
+                },
+              ],
             },
-          ],
-        },
-      });
+          }),
+        );
 
-      await Effect.runPromise(dispatchTurnStart(harness, { text: "Implement pagination." }));
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+        yield* dispatchTurnStart(harness, { text: "Implement pagination." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
 
-      const input = sendTurnInputAt(harness, 0);
-      expect(input).toContain("Create a dedicated Git worktree for this feature.");
-      expect(input).not.toContain("Edited library version");
-    });
+        const input = sendTurnInputAt(harness, 0);
+        expect(input).toContain("Create a dedicated Git worktree for this feature.");
+        expect(input).not.toContain("Edited library version");
+      }),
+    );
 
-    it("lets an explicit request selection win over the same skill's thread snapshot", async () => {
-      const harness = await createHarness({
-        threadMiniSkills: [{ ...workspaceSnapshot, content: "Stale snapshot content." }],
-        serverSettingsOverrides: {
-          miniSkills: [
-            {
-              ...commitSkill,
-              id: workspaceSnapshot.skillId,
-              name: workspaceSnapshot.name,
-              content: "Fresh library content.",
-            },
-          ],
-        },
-      });
+    effectIt.effect(
+      "lets an explicit request selection win over the same skill's thread snapshot",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              threadMiniSkills: [{ ...workspaceSnapshot, content: "Stale snapshot content." }],
+              serverSettingsOverrides: {
+                miniSkills: [
+                  {
+                    ...commitSkill,
+                    id: workspaceSnapshot.skillId,
+                    name: workspaceSnapshot.name,
+                    content: "Fresh library content.",
+                  },
+                ],
+              },
+            }),
+          );
 
-      await Effect.runPromise(
-        dispatchTurnStart(harness, {
-          text: "Implement pagination.",
-          miniSkillIds: [workspaceSnapshot.skillId],
+          yield* dispatchTurnStart(harness, {
+            text: "Implement pagination.",
+            miniSkillIds: [workspaceSnapshot.skillId],
+          });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+          const input = sendTurnInputAt(harness, 0);
+          expect(input).toContain("Fresh library content.");
+          expect(input).not.toContain("Stale snapshot content.");
+          expect(input?.match(/### Create Isolated Feature Workspace/g)).toHaveLength(1);
         }),
-      );
-      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-
-      const input = sendTurnInputAt(harness, 0);
-      expect(input).toContain("Fresh library content.");
-      expect(input).not.toContain("Stale snapshot content.");
-      expect(input?.match(/### Create Isolated Feature Workspace/g)).toHaveLength(1);
-    });
+    );
   });
 
   effectIt.effect("retains a turn dispatched immediately after start until activation", () =>
