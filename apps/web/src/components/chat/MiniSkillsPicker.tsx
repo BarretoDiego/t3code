@@ -129,7 +129,11 @@ export const MiniSkillsPicker = memo(function MiniSkillsPicker(props: {
         <ComposerControlIcon icon={SparklesIcon} size={size} />
         {selectedCount > 0 ? <span>{selectedCount}</span> : null}
       </MenuTrigger>
-      <MenuPopup align="start" {...composerFloatingLayerProps}>
+      <MenuPopup
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)]"
+        {...composerFloatingLayerProps}
+      >
         <MiniSkillsMenuContent
           composerDraftTarget={props.composerDraftTarget}
           environmentId={props.environmentId}

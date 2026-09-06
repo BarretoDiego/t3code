@@ -1,4 +1,9 @@
-import type { AiRuntime, AiRuntimeConfig, EnvironmentId } from "@t3tools/contracts";
+import type {
+  AiRuntime,
+  AiRuntimeConfig,
+  AiRuntimeBindInput,
+  EnvironmentId,
+} from "@t3tools/contracts";
 
 /** Connection health wins over a cached successful runtime probe. */
 export function runtimeAvailability(runtime: AiRuntime, nodeConnected: boolean) {
@@ -37,4 +42,24 @@ export function runtimeIdentity(
   environmentId: EnvironmentId,
 ) {
   return `${environmentId}/${runtime.id}`;
+}
+
+/** Keep forms valid when a refresh removes a model or an edit changes compatibility. */
+export function runtimeBindingSelection(
+  runtime: Pick<AiRuntime, "protocol" | "models">,
+  selected: Pick<AiRuntimeBindInput, "driver" | "model">,
+) {
+  const drivers: ReadonlyArray<AiRuntimeBindInput["driver"]> =
+    runtime.protocol === "ollama"
+      ? ["opencode", "codex", "claudeAgent"]
+      : runtime.protocol === "openai"
+        ? ["opencode", "codex"]
+        : runtime.protocol === "anthropic"
+          ? ["claudeAgent"]
+          : [];
+  return {
+    drivers,
+    driver: drivers.find((driver) => driver === selected.driver) ?? drivers[0],
+    model: runtime.models.some((model) => model.id === selected.model) ? selected.model : "",
+  };
 }

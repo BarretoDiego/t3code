@@ -1,6 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, type AiRuntime } from "@t3tools/contracts";
-import { runtimeAvailability, runtimeForConsumer, runtimeIdentity } from "./aiRuntimes.ts";
+import {
+  runtimeAvailability,
+  runtimeForConsumer,
+  runtimeIdentity,
+  runtimeBindingSelection,
+} from "./aiRuntimes.ts";
 const runtime: AiRuntime = {
   id: "ollama-local",
   environmentId: EnvironmentId.make("gpu"),
@@ -22,6 +27,18 @@ const runtime: AiRuntime = {
   operation: null,
 };
 describe("network runtime projection", () => {
+  it("invalidates stale model selections and adapts the harness after compatibility changes", () => {
+    const models = [{ id: "qwen", capabilities: [], capabilitiesKnown: false }];
+    const selected = { driver: "opencode" as const, model: "qwen" };
+    expect(runtimeBindingSelection({ ...runtime, models }, selected).model).toBe("qwen");
+    expect(runtimeBindingSelection({ ...runtime, models: [] }, selected).model).toBe("");
+    expect(
+      runtimeBindingSelection({ ...runtime, protocol: "anthropic", models }, selected).driver,
+    ).toBe("claudeAgent");
+    expect(
+      runtimeBindingSelection({ ...runtime, protocol: "custom", models }, selected).driver,
+    ).toBeUndefined();
+  });
   it("makes cached runtimes unavailable when their node disconnects and available on reconnect", () => {
     expect(runtimeAvailability(runtime, true)).toEqual({ available: true, label: "Local only" });
     expect(runtimeAvailability(runtime, false).available).toBe(false);

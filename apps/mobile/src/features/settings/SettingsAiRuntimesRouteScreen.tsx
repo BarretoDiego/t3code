@@ -1,6 +1,18 @@
-import { runtimeAvailability, runtimeForConsumer } from "@t3tools/client-runtime/ai-runtimes";
+import {
+  runtimeAvailability,
+  runtimeForConsumer,
+  runtimeBindingSelection,
+} from "@t3tools/client-runtime/ai-runtimes";
 import { useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AiRuntimeConfig,
@@ -29,19 +41,26 @@ function Button({
   label,
   disabled,
   onPress,
+  primary = false,
 }: {
   label: string;
   disabled?: boolean;
+  primary?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={onPress}
-      className="rounded-full bg-primary px-4 py-2.5 disabled:opacity-40"
+      className={`min-h-11 justify-center rounded-xl px-4 py-2.5 disabled:opacity-40 ${primary ? "bg-primary" : "bg-muted"}`}
     >
-      <Text className="text-sm text-center font-t3-medium text-primary-foreground">{label}</Text>
+      <Text
+        className={`text-sm text-center font-t3-medium ${primary ? "text-primary-foreground" : "text-foreground"}`}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -94,126 +113,148 @@ function RuntimeEditor({
   const save = useAtomCommand(serverEnvironment.aiRuntimesSave);
   const insets = useSafeAreaInsets();
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <ScrollView
+    <Modal
+      visible
+      animationType="slide"
+      onRequestClose={() => {
+        if (!busy) onClose();
+      }}
+    >
+      <KeyboardAvoidingView
         className="flex-1 bg-background"
-        contentContainerStyle={{
-          padding: 20,
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 20,
-          gap: 16,
-        }}
-        keyboardShouldPersistTaps="handled"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text className="text-xl font-t3-bold text-foreground">Configure AI Runtime</Text>
-        <Field label="Name" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-        <Field
-          label="Runtime type"
-          value={draft.runtimeKind}
-          onChange={(runtimeKind) => setDraft({ ...draft, runtimeKind })}
-        />
-        <Text className="text-sm text-foreground-muted">Compatibility</Text>
-        <View className="flex-row flex-wrap gap-2">
-          {(["ollama", "openai", "anthropic", "transcription", "custom"] as const).map(
-            (protocol) => (
-              <Button
-                key={protocol}
-                label={`${draft.protocol === protocol ? "✓ " : ""}${protocol}`}
-                onPress={() => setDraft({ ...draft, protocol })}
-              />
-            ),
-          )}
+        <View style={{ paddingTop: insets.top + 16 }} className="px-5 pb-4 border-b border-border">
+          <Text className="text-xl font-t3-bold text-foreground">Configure AI Runtime</Text>
         </View>
-        <Field
-          label="Base URL"
-          value={draft.baseUrl}
-          onChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
-        />
-        <Field
-          label="Network base URL (optional)"
-          value={draft.networkBaseUrl ?? ""}
-          onChange={(value) => {
-            const { networkBaseUrl: _, ...rest } = draft;
-            setDraft(value ? { ...rest, networkBaseUrl: value } : rest);
+        <ScrollView
+          className="flex-1 bg-background"
+          contentContainerStyle={{
+            padding: 20,
+            paddingBottom: 20,
+            gap: 16,
           }}
-        />
-        <Text className="text-xs text-foreground-muted">
-          Use an explicitly configured Tailnet or private address. Listening stays local unless
-          explicitly enabled.
-        </Text>
-        {draft.id === "ollama-local" && (
-          <>
-            <Button
-              label={
-                draft.listenOnTailnet
-                  ? "✓ Allow managed Tailnet listening"
-                  : "Allow managed Tailnet listening"
-              }
-              onPress={() => setDraft({ ...draft, listenOnTailnet: !draft.listenOnTailnet })}
-            />
-            <Text className="text-xs text-foreground-muted">
-              Explicitly binds this node's Tailscale IPv4 address on port 11434 on next start.
-              Tailnet ACLs control access; Ollama has no API authentication.
-            </Text>
-          </>
-        )}
-        <View className="flex-row flex-wrap gap-2">
-          {(["none", "bearer", "api-key"] as const).map((authentication) => (
-            <Button
-              key={authentication}
-              label={`${draft.authentication === authentication ? "✓ " : ""}${authentication}`}
-              onPress={() => setDraft({ ...draft, authentication })}
-            />
-          ))}
-        </View>
-        {draft.authentication !== "none" && (
+          keyboardShouldPersistTaps="handled"
+        >
           <Field
-            label="API key (untouched preserves saved key)"
-            value={key}
-            secret
+            label="Name"
+            value={draft.name}
+            onChange={(name) => setDraft({ ...draft, name })}
+          />
+          <Field
+            label="Runtime type"
+            value={draft.runtimeKind}
+            onChange={(runtimeKind) => setDraft({ ...draft, runtimeKind })}
+          />
+          <Text className="text-sm text-foreground-muted">Compatibility</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {(["ollama", "openai", "anthropic", "transcription", "custom"] as const).map(
+              (protocol) => (
+                <Button
+                  key={protocol}
+                  label={`${draft.protocol === protocol ? "✓ " : ""}${protocol}`}
+                  onPress={() => setDraft({ ...draft, protocol })}
+                />
+              ),
+            )}
+          </View>
+          <Field
+            label="Base URL"
+            value={draft.baseUrl}
+            onChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
+          />
+          <Field
+            label="Network base URL (optional)"
+            value={draft.networkBaseUrl ?? ""}
             onChange={(value) => {
-              setKeyTouched(true);
-              setKey(value);
+              const { networkBaseUrl: _, ...rest } = draft;
+              setDraft(value ? { ...rest, networkBaseUrl: value } : rest);
             }}
           />
-        )}
-        {(draft.protocol === "custom" || draft.protocol === "transcription") && (
-          <Field
-            label="Model IDs (comma separated; availability unverified)"
-            value={draft.configuredModels.join(", ")}
-            onChange={(value) =>
-              setDraft({
-                ...draft,
-                configuredModels: value
-                  .split(",")
-                  .map((v) => v.trim())
-                  .filter(Boolean),
-              })
-            }
-          />
-        )}
-        <Button
-          label={busy ? "Saving…" : "Save and test endpoint"}
-          disabled={busy || !isRuntimeConfig(draft)}
-          onPress={async () => {
-            setBusy(true);
-            try {
-              if (
-                check(
-                  await save({
-                    environmentId,
-                    input: { runtime: draft, ...(keyTouched ? { apiKey: key } : {}) },
-                  }),
+          <Text className="text-xs text-foreground-muted">
+            Use an explicitly configured Tailnet or private address. Listening stays local unless
+            explicitly enabled.
+          </Text>
+          {draft.id === "ollama-local" && (
+            <>
+              <Button
+                label={
+                  draft.listenOnTailnet
+                    ? "✓ Allow managed Tailnet listening"
+                    : "Allow managed Tailnet listening"
+                }
+                onPress={() => setDraft({ ...draft, listenOnTailnet: !draft.listenOnTailnet })}
+              />
+              <Text className="text-xs text-foreground-muted">
+                Explicitly binds this node's Tailscale IPv4 address on port 11434 on next start.
+                Tailnet ACLs control access; Ollama has no API authentication.
+              </Text>
+            </>
+          )}
+          <View className="flex-row flex-wrap gap-2">
+            {(["none", "bearer", "api-key"] as const).map((authentication) => (
+              <Button
+                key={authentication}
+                label={`${draft.authentication === authentication ? "✓ " : ""}${authentication}`}
+                onPress={() => setDraft({ ...draft, authentication })}
+              />
+            ))}
+          </View>
+          {draft.authentication !== "none" && (
+            <Field
+              label="API key (untouched preserves saved key)"
+              value={key}
+              secret
+              onChange={(value) => {
+                setKeyTouched(true);
+                setKey(value);
+              }}
+            />
+          )}
+          {(draft.protocol === "custom" || draft.protocol === "transcription") && (
+            <Field
+              label="Model IDs (comma separated; availability unverified)"
+              value={draft.configuredModels.join(", ")}
+              onChange={(value) =>
+                setDraft({
+                  ...draft,
+                  configuredModels: value
+                    .split(",")
+                    .map((v) => v.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          )}
+        </ScrollView>
+        <View
+          className="gap-2 border-t border-border px-5 pt-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+        >
+          <Button
+            primary
+            label={busy ? "Saving…" : "Save and test endpoint"}
+            disabled={busy || !isRuntimeConfig(draft)}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                if (
+                  check(
+                    await save({
+                      environmentId,
+                      input: { runtime: draft, ...(keyTouched ? { apiKey: key } : {}) },
+                    }),
+                  )
                 )
-              )
-                onClose();
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-        <Button label="Cancel" onPress={onClose} />
-      </ScrollView>
+                  onClose();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+          <Button label="Cancel" disabled={busy} onPress={onClose} />
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -238,8 +279,14 @@ function RuntimeRow({
     runtime.protocol === "anthropic" ? "claudeAgent" : "opencode",
   );
   const [model, setModel] = useState("");
+  const {
+    drivers,
+    driver: effectiveDriver,
+    model: effectiveModel,
+  } = runtimeBindingSelection(runtime, { driver, model });
+  const [binding, setBinding] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const busy = !online || runtime.operation?.phase === "running";
+  const busy = !online || binding || runtime.operation?.phase === "running";
   const run = async (next: AiRuntimeActionInput["action"], selectedModel?: string) => {
     check(
       await action({
@@ -255,18 +302,30 @@ function RuntimeRow({
   };
   return (
     <View className="gap-3 p-4 border-b border-border">
-      <View className="flex-row justify-between">
-        <Text className="font-t3-bold text-foreground">{runtime.name}</Text>
+      <View className="flex-row justify-between gap-3">
+        <Text className="min-w-0 flex-1 font-t3-bold text-foreground">{runtime.name}</Text>
         <Text className="text-xs text-foreground-muted">
-          {!online ? "Node offline" : runtime.status}
+          {!online
+            ? "Node offline"
+            : runtime.status === "available"
+              ? "Running"
+              : runtime.status === "authentication-required"
+                ? "Authentication required"
+                : runtime.installation === "absent"
+                  ? "Not detected"
+                  : "Unavailable"}
         </Text>
       </View>
       <Text selectable className="text-xs text-foreground-muted">
         {runtime.baseUrl}
       </Text>
       <Text className="text-xs text-foreground-muted">
-        {runtime.installation} {runtime.version ?? ""} ·{" "}
-        {runtimeAvailability(runtime, online).label}
+        {runtime.installation === "managed"
+          ? "T3-managed"
+          : runtime.installation === "external"
+            ? "Existing installation / endpoint"
+            : "No installation detected"}{" "}
+        {runtime.version ?? ""} · {runtimeAvailability(runtime, online).label}
       </Text>
       <View className="flex-row flex-wrap gap-2">
         <Button label="Configure" disabled={busy} onPress={onEdit} />
@@ -274,6 +333,7 @@ function RuntimeRow({
           <>
             {runtime.installation === "absent" && (
               <Button
+                primary
                 label="Install Ollama"
                 disabled={busy}
                 onPress={() => {
@@ -362,15 +422,22 @@ function RuntimeRow({
       />
       {expanded && (
         <View className="gap-3">
+          {runtime.models.length === 0 && (
+            <Text className="text-sm text-foreground-muted">
+              {runtime.status === "available"
+                ? "No models discovered. Refresh the catalog or pull an Ollama model."
+                : "Connect to the runtime to discover its models."}
+            </Text>
+          )}
           {runtime.models.map((item) => (
             <View key={item.id} className="gap-2">
               <Text className="text-sm text-foreground">{item.id}</Text>
               <Text className="text-xs text-foreground-muted">
                 {item.capabilitiesKnown ? item.capabilities.join(", ") : "Capabilities unknown"}
               </Text>
-              <View className="flex-row gap-2">
+              <View className="flex-row flex-wrap gap-2">
                 <Button
-                  label={model === item.id ? "Selected" : "Select"}
+                  label={effectiveModel === item.id ? "Selected" : "Select"}
                   disabled={busy || runtime.status !== "available"}
                   onPress={() => setModel(item.id)}
                 />
@@ -409,46 +476,52 @@ function RuntimeRow({
           )}
           <Text className="text-sm font-t3-bold text-foreground">Agent binding</Text>
           <View className="flex-row flex-wrap gap-2">
-            {(["opencode", "codex", "claudeAgent"] as const)
-              .filter(
-                (item) =>
-                  runtime.protocol === "ollama" ||
-                  (runtime.protocol === "openai" && item !== "claudeAgent") ||
-                  (runtime.protocol === "anthropic" && item === "claudeAgent"),
-              )
-              .map((item) => (
-                <Button
-                  key={item}
-                  label={`${driver === item ? "✓ " : ""}${item}`}
-                  onPress={() => setDriver(item)}
-                />
-              ))}
+            {drivers.map((item) => (
+              <Button
+                key={item}
+                label={`${effectiveDriver === item ? "✓ " : ""}${item === "claudeAgent" ? "Claude Code" : item === "opencode" ? "OpenCode" : "Codex"}`}
+                onPress={() => setDriver(item)}
+              />
+            ))}
           </View>
           <Text className="text-xs text-foreground-muted">
             Codex requires Responses API. Claude Code requires Anthropic Messages.
           </Text>
           <Field label="New provider instance ID" value={instanceId} onChange={setInstanceId} />
           <Button
-            label="Create agent binding"
-            disabled={busy || !model || !isProviderId(instanceId) || runtime.status !== "available"}
+            primary
+            label={binding ? "Configuring…" : "Create agent binding"}
+            disabled={
+              busy ||
+              !effectiveModel ||
+              !effectiveDriver ||
+              !isProviderId(instanceId) ||
+              runtime.status !== "available"
+            }
             onPress={async () => {
-              if (
-                check(
-                  await bind({
-                    environmentId: runtime.environmentId,
-                    input: {
-                      runtimeId: runtime.id,
-                      instanceId: ProviderInstanceId.make(instanceId),
-                      driver,
-                      model,
-                    },
-                  }),
+              if (busy || !effectiveDriver || !effectiveModel) return;
+              setBinding(true);
+              try {
+                if (
+                  check(
+                    await bind({
+                      environmentId: runtime.environmentId,
+                      input: {
+                        runtimeId: runtime.id,
+                        instanceId: ProviderInstanceId.make(instanceId),
+                        driver: effectiveDriver,
+                        model: effectiveModel,
+                      },
+                    }),
+                  )
                 )
-              )
-                Alert.alert(
-                  "Agent binding created",
-                  "Choose the new provider and model in the chat selector.",
-                );
+                  Alert.alert(
+                    "Agent binding created",
+                    "Choose the new provider and model in the chat selector.",
+                  );
+              } finally {
+                setBinding(false);
+              }
             }}
           />
         </View>
@@ -477,7 +550,7 @@ function EnvironmentRuntimes({
   return (
     <SettingsSection title={`${environment.label} · ${online ? "Online" : "Offline"}`} card>
       <View className="p-4 gap-3">
-        <View className="flex-row gap-2">
+        <View className="flex-row flex-wrap gap-2">
           <Button
             label="Refresh"
             disabled={!online || !supported}
@@ -512,6 +585,11 @@ function EnvironmentRuntimes({
           </Text>
         )}
         {query.error && <Text className="text-destructive">{query.error}</Text>}
+        {supported && !query.data && !query.error && (
+          <Text className="text-sm text-foreground-muted">
+            {online ? "Discovering local runtimes…" : "Connect to this node to load its runtimes."}
+          </Text>
+        )}
       </View>
       {query.data?.runtimes.map((runtime) => (
         <RuntimeRow

@@ -85,7 +85,11 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(props: {
           {selectedProfile ? selectedProfile.name : "Custom"}
         </span>
       </MenuTrigger>
-      <MenuPopup align="start" className="min-w-64" {...composerFloatingLayerProps}>
+      <MenuPopup
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)]"
+        {...composerFloatingLayerProps}
+      >
         <MenuRadioGroup value={effectiveValue} onValueChange={selectProfile}>
           <MenuGroup>
             <MenuRadioItem value="" hideIndicator closeOnClick>
@@ -104,7 +108,7 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(props: {
                 <span className="flex w-full min-w-0 flex-col">
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 truncate">{profile.name}</span>
-                    <span className="shrink-0 text-muted-foreground/70 text-xs">
+                    <span className="max-w-28 shrink-0 truncate text-muted-foreground/70 text-xs">
                       #{profile.slug}
                     </span>
                   </span>

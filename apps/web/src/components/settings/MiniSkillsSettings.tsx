@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import {
   DEFAULT_MINI_SKILL_PROMPT_WRAPPERS,
@@ -27,6 +27,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogPopup,
+  DialogPanel,
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -74,6 +75,7 @@ function MiniSkillEditorDialogContent(props: {
   readonly onSave: (draft: MiniSkillDraft, existing: MiniSkill | null) => void;
 }) {
   const { existing } = props;
+  const formId = useId();
   const [draft, setDraft] = useState<MiniSkillDraft>(() =>
     existing === null
       ? EMPTY_SKILL_DRAFT
@@ -94,63 +96,69 @@ function MiniSkillEditorDialogContent(props: {
         if (!open) props.onClose();
       }}
     >
-      <DialogPopup className="max-w-2xl">
-        <DialogHeader>
+      <DialogPopup className="max-h-[min(calc(100dvh-4rem),56rem)] max-w-2xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{existing === null ? "New Mini Skill" : "Edit Mini Skill"}</DialogTitle>
           <DialogDescription>
             A reusable block of Markdown instructions you can attach to threads and requests.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
-          <label className="grid gap-1.5">
-            <span className="font-medium text-sm">Name</span>
-            <Input
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder="Create Isolated Feature Workspace"
-            />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="font-medium text-sm">Description</span>
-            <Input
-              value={draft.description}
-              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              placeholder="What this instruction does, in one line"
-            />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="font-medium text-sm">Content</span>
-            <Textarea
-              value={draft.content}
-              onChange={(event) => setDraft({ ...draft, content: event.target.value })}
-              rows={10}
-              placeholder="Markdown instructions for the agent."
-              className="font-mono text-xs"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span className="grid gap-0.5">
-              <span className="font-medium text-sm">Enable by default for new threads</span>
-              <span className="text-muted-foreground text-xs">
-                A snapshot of this skill is attached to every new thread. Existing threads keep the
-                version they were created with.
-              </span>
-            </span>
-            <Switch
-              checked={draft.enabledByDefaultForNewThreads}
-              onCheckedChange={(checked) =>
-                setDraft({ ...draft, enabledByDefaultForNewThreads: Boolean(checked) })
-              }
-              aria-label="Enable by default for new threads"
-            />
-          </label>
-        </div>
-        <DialogFooter>
-          <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-          <Button
-            disabled={nameInvalid || contentInvalid}
-            onClick={() => props.onSave(draft, existing)}
+        <DialogPanel>
+          <form
+            id={formId}
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!nameInvalid && !contentInvalid) props.onSave(draft, existing);
+            }}
           >
+            <label className="grid gap-1.5">
+              <span className="font-medium text-sm">Name</span>
+              <Input
+                value={draft.name}
+                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                placeholder="Create Isolated Feature Workspace"
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="font-medium text-sm">Description</span>
+              <Input
+                value={draft.description}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                placeholder="What this instruction does, in one line"
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="font-medium text-sm">Content</span>
+              <Textarea
+                value={draft.content}
+                onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+                rows={10}
+                placeholder="Markdown instructions for the agent."
+                className="font-mono text-xs"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-4">
+              <span className="grid gap-0.5">
+                <span className="font-medium text-sm">Enable by default for new threads</span>
+                <span className="text-muted-foreground text-xs">
+                  A snapshot of this skill is attached to every new thread. Existing threads keep
+                  the version they were created with.
+                </span>
+              </span>
+              <Switch
+                checked={draft.enabledByDefaultForNewThreads}
+                onCheckedChange={(checked) =>
+                  setDraft({ ...draft, enabledByDefaultForNewThreads: Boolean(checked) })
+                }
+                aria-label="Enable by default for new threads"
+              />
+            </label>
+          </form>
+        </DialogPanel>
+        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+          <Button disabled={nameInvalid || contentInvalid} type="submit" form={formId}>
             Save
           </Button>
         </DialogFooter>
@@ -166,8 +174,9 @@ function PromptWrapperEditor(props: {
 }) {
   const updateSettings = useUpdatePrimarySettings();
   const defaultWrapper = DEFAULT_MINI_SKILL_PROMPT_WRAPPERS[props.scope];
-  const [text, setText] = useState(props.value);
+  const [draftText, setText] = useState(props.value);
   const [touched, setTouched] = useState(false);
+  const text = touched ? draftText : props.value;
   const missingPlaceholder = !hasMiniSkillsPlaceholder(text);
   const isDirty = text !== props.value;
 
@@ -307,8 +316,11 @@ export function MiniSkillsSettingsPanel() {
         ) : (
           <ul className="divide-y divide-border/60">
             {miniSkills.map((skill) => (
-              <li key={skill.id} className="group/row flex items-center gap-4 px-3 py-3 sm:px-4">
-                <div className="grid min-w-0 flex-1 gap-0.5">
+              <li
+                key={skill.id}
+                className="group/row flex flex-wrap items-center gap-3 px-3 py-3 sm:px-4"
+              >
+                <div className="grid min-w-0 flex-1 basis-40 gap-0.5">
                   <span className="truncate font-medium text-sm">{skill.name}</span>
                   {skill.description.length > 0 ? (
                     <span className="truncate text-muted-foreground text-xs">
@@ -380,7 +392,9 @@ export function MiniSkillsSettingsPanel() {
       >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{deletingSkill?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              Delete "{deletingSkill?.name}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This removes the Mini Skill from your library. Threads that already use it keep the
               snapshot captured when they were created.

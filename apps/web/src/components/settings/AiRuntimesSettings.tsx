@@ -1,6 +1,10 @@
-import { runtimeAvailability, runtimeForConsumer } from "@t3tools/client-runtime/ai-runtimes";
+import {
+  runtimeAvailability,
+  runtimeForConsumer,
+  runtimeBindingSelection,
+} from "@t3tools/client-runtime/ai-runtimes";
 import { randomUUID } from "../../lib/utils";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   type AiRuntime,
   type AiRuntimeConfig,
@@ -16,11 +20,67 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  AlertDialog,
+  AlertDialogPopup,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogClose,
+} from "../ui/alert-dialog";
+import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
-import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogPanel,
+  DialogFooter,
+} from "../ui/dialog";
 import { SettingsPageContainer } from "./settingsLayout";
 
-const selectClass = "h-9 rounded-md border bg-background px-2 text-sm";
+function RuntimeSelect<Value extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder,
+  disabled = false,
+}: {
+  label: string;
+  value: Value | "";
+  options: ReadonlyArray<{ value: Value; label: string; disabled?: boolean }>;
+  onChange: (value: Value) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      disabled={disabled || options.length === 0}
+      value={value || null}
+      items={options}
+      onValueChange={(value) => {
+        const option = options.find((option) => option.value === value);
+        if (option && !option.disabled) onChange(option.value);
+      }}
+    >
+      <SelectTrigger aria-label={label} className="min-w-0">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectPopup alignItemWithTrigger={false}>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
+  );
+}
 const blankRuntime = (): AiRuntimeConfig => ({
   id: `runtime-${randomUUID()}`,
   name: "",
@@ -36,12 +96,15 @@ function RuntimeEditor({
   onClose,
   onSave,
   error,
+  environmentName,
 }: {
   error?: string | null;
+  environmentName: string;
   initial: AiRuntimeConfig;
   onClose: () => void;
   onSave: (runtime: AiRuntimeConfig, key?: string) => Promise<boolean>;
 }) {
+  const formId = useId();
   const [draft, setDraft] = useState(initial);
   const [key, setKey] = useState("");
   const [changeKey, setChangeKey] = useState(false);
@@ -50,161 +113,175 @@ function RuntimeEditor({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !pending) onClose();
       }}
     >
-      <DialogPopup className="max-w-lg">
-        <DialogHeader>
+      <DialogPopup
+        className="max-h-[min(calc(100dvh-4rem),56rem)] max-w-xl"
+        showCloseButton={!pending}
+      >
+        <DialogHeader className="shrink-0">
           <DialogTitle>Configure AI Runtime</DialogTitle>
           <DialogDescription>
-            The selected environment tests this endpoint. Network access must already be configured
-            on the runtime.
+            {environmentName} tests and uses this endpoint. Network access must already be
+            configured on the runtime.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="grid gap-4"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setPending(true);
-            try {
-              if (await onSave(draft, changeKey ? key : undefined)) onClose();
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          <label className="grid gap-1 text-sm">
-            Name
-            <Input
-              required
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            Runtime type
-            <Input
-              required
-              value={draft.runtimeKind}
-              onChange={(e) => setDraft({ ...draft, runtimeKind: e.target.value })}
-              placeholder="ollama, vllm, lm-studio…"
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            Compatibility
-            <select
-              className={selectClass}
-              value={draft.protocol}
-              onChange={(e) =>
-                setDraft({ ...draft, protocol: e.target.value as AiRuntimeConfig["protocol"] })
+        <DialogPanel>
+          <form
+            id={formId}
+            className="grid gap-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (pending) return;
+              setPending(true);
+              try {
+                if (await onSave(draft, changeKey ? key : undefined)) onClose();
+              } finally {
+                setPending(false);
               }
-            >
-              <option value="ollama">Ollama native</option>
-              <option value="openai">OpenAI compatible</option>
-              <option value="anthropic">Anthropic compatible</option>
-              <option value="transcription">Whisper / OpenAI transcription</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            Base URL
-            <Input
-              required
-              type="url"
-              value={draft.baseUrl}
-              onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
-              placeholder="http://127.0.0.1:11434 or https://host/v1"
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            Network base URL (optional)
-            <Input
-              type="url"
-              value={draft.networkBaseUrl ?? ""}
-              onChange={(e) => {
-                const { networkBaseUrl: _, ...rest } = draft;
-                setDraft(e.target.value ? { ...rest, networkBaseUrl: e.target.value } : rest);
-              }}
-              placeholder="http://gpu-server.tailnet:11434"
-            />
-            <span className="text-xs text-muted-foreground">
-              Explicit address for other environments. Listening stays local unless enabled below.
-            </span>
-          </label>
-          {draft.id === "ollama-local" && (
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.listenOnTailnet ?? false}
-                onChange={(event) => setDraft({ ...draft, listenOnTailnet: event.target.checked })}
-              />
-              <span>
-                Allow managed Ollama to listen on this node's Tailscale IPv4 address on next start.
-                Use port 11434 above. Tailnet ACLs control access; Ollama has no API authentication.
-              </span>
-            </label>
-          )}
-          <label className="grid gap-1 text-sm">
-            Authentication
-            <select
-              className={selectClass}
-              value={draft.authentication}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  authentication: e.target.value as AiRuntimeConfig["authentication"],
-                })
-              }
-            >
-              <option value="none">None</option>
-              <option value="bearer">Bearer token</option>
-              <option value="api-key">API key header</option>
-            </select>
-          </label>
-          {draft.authentication !== "none" && (
-            <label className="grid gap-1 text-sm">
-              API key
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={key}
-                onChange={(e) => {
-                  setChangeKey(true);
-                  setKey(e.target.value);
-                }}
-                placeholder="Leave untouched to preserve saved key"
-              />
-            </label>
-          )}
-          {(draft.protocol === "custom" || draft.protocol === "transcription") && (
-            <label className="grid gap-1 text-sm">
-              Model IDs (comma separated)
-              <Input
-                value={draft.configuredModels.join(", ")}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    configuredModels: e.target.value
-                      .split(",")
-                      .map((v) => v.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-              <span className="text-xs text-muted-foreground">
-                No standard discovery API; availability remains unverified.
-              </span>
-            </label>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <Button type="submit" disabled={pending}>
+            }}
+          >
+            <fieldset disabled={pending} className="grid min-w-0 gap-4">
+              <label className="grid gap-1 text-sm">
+                Name
+                <Input
+                  required
+                  value={draft.name}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Runtime type
+                <Input
+                  required
+                  value={draft.runtimeKind}
+                  onChange={(e) => setDraft({ ...draft, runtimeKind: e.target.value })}
+                  placeholder="ollama, vllm, lm-studio…"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Compatibility
+                <RuntimeSelect
+                  disabled={pending || draft.id === "ollama-local"}
+                  label="Compatibility"
+                  value={draft.protocol}
+                  onChange={(protocol) => setDraft({ ...draft, protocol })}
+                  options={[
+                    { value: "ollama", label: "Ollama native" },
+                    { value: "openai", label: "OpenAI compatible" },
+                    { value: "anthropic", label: "Anthropic compatible" },
+                    { value: "transcription", label: "Whisper / OpenAI transcription" },
+                    { value: "custom", label: "Custom" },
+                  ]}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Base URL
+                <Input
+                  required
+                  type="url"
+                  readOnly={draft.id === "ollama-local"}
+                  value={draft.baseUrl}
+                  onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
+                  placeholder="http://127.0.0.1:11434 or https://host/v1"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Network base URL (optional)
+                <Input
+                  type="url"
+                  value={draft.networkBaseUrl ?? ""}
+                  onChange={(e) => {
+                    const { networkBaseUrl: _, ...rest } = draft;
+                    setDraft(e.target.value ? { ...rest, networkBaseUrl: e.target.value } : rest);
+                  }}
+                  placeholder="http://gpu-server.tailnet:11434"
+                />
+                <span className="text-xs text-muted-foreground">
+                  Explicit address for other environments. Listening stays local unless enabled
+                  below.
+                </span>
+              </label>
+              {draft.id === "ollama-local" && (
+                <label className="flex items-start gap-2 text-sm">
+                  <Switch
+                    aria-label="Allow managed Tailnet listening"
+                    checked={draft.listenOnTailnet ?? false}
+                    onCheckedChange={(checked) => setDraft({ ...draft, listenOnTailnet: checked })}
+                  />
+                  <span>
+                    Allow managed Ollama to listen on this node's Tailscale IPv4 address on next
+                    start. Use port 11434 above. Tailnet ACLs control access; Ollama has no API
+                    authentication.
+                  </span>
+                </label>
+              )}
+              <label className="grid gap-1 text-sm">
+                Authentication
+                <RuntimeSelect
+                  disabled={pending}
+                  label="Authentication"
+                  value={draft.authentication}
+                  onChange={(authentication) => setDraft({ ...draft, authentication })}
+                  options={[
+                    { value: "none", label: "None" },
+                    { value: "bearer", label: "Bearer token" },
+                    { value: "api-key", label: "API key header" },
+                  ]}
+                />
+              </label>
+              {draft.authentication !== "none" && (
+                <label className="grid gap-1 text-sm">
+                  API key
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={key}
+                    onChange={(e) => {
+                      setChangeKey(true);
+                      setKey(e.target.value);
+                    }}
+                    placeholder="Leave untouched to preserve saved key"
+                  />
+                </label>
+              )}
+              {(draft.protocol === "custom" || draft.protocol === "transcription") && (
+                <label className="grid gap-1 text-sm">
+                  Model IDs (comma separated)
+                  <Input
+                    value={draft.configuredModels.join(", ")}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        configuredModels: e.target.value
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    No standard discovery API; availability remains unverified.
+                  </span>
+                </label>
+              )}
+            </fieldset>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </form>
+        </DialogPanel>
+        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <Button variant="ghost" disabled={pending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} disabled={pending}>
             {pending ? "Saving…" : "Save and test endpoint"}
           </Button>
-        </form>
+        </DialogFooter>
       </DialogPopup>
     </Dialog>
   );
@@ -221,7 +298,7 @@ function RuntimeCard({
 }: {
   runtime: AiRuntime;
   online: boolean;
-  onAction: (input: AiRuntimeActionInput) => void;
+  onAction: (input: AiRuntimeActionInput) => Promise<boolean>;
   onEdit: () => void;
   onRemove: () => void;
   onBind: (
@@ -236,11 +313,33 @@ function RuntimeCard({
   const [driver, setDriver] = useState<AiRuntimeBindInput["driver"]>(
     runtime.protocol === "anthropic" ? "claudeAgent" : "opencode",
   );
+  const {
+    drivers,
+    driver: effectiveDriver,
+    model: effectiveModel,
+  } = runtimeBindingSelection(runtime, { driver, model });
   const [instanceId, setInstanceId] = useState("");
   const [binding, setBinding] = useState(false);
-  const busy = !online || runtime.operation?.phase === "running";
-  const act = (action: AiRuntimeActionInput["action"], selectedModel?: string) =>
-    onAction({ runtimeId: runtime.id, action, ...(selectedModel ? { model: selectedModel } : {}) });
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    description: string;
+    run: () => void;
+  } | null>(null);
+  const busy = !online || submitting || binding || runtime.operation?.phase === "running";
+  const act = async (action: AiRuntimeActionInput["action"], selectedModel?: string) => {
+    if (busy) return;
+    setSubmitting(true);
+    try {
+      await onAction({
+        runtimeId: runtime.id,
+        action,
+        ...(selectedModel ? { model: selectedModel } : {}),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
   const access = runtimeAvailability(runtime, online);
   const status = !online
     ? "Unavailable · node offline"
@@ -306,7 +405,16 @@ function RuntimeCard({
                   size="sm"
                   variant="outline"
                   disabled={busy || runtime.ownedProcess}
-                  onClick={() => act("remove-installation")}
+                  onClick={() =>
+                    setConfirmation({
+                      title: "Remove managed installation?",
+                      description:
+                        "Only the T3-managed Ollama installation will be removed. Downloaded models are kept.",
+                      run: () => {
+                        void act("remove-installation");
+                      },
+                    })
+                  }
                 >
                   Remove managed installation
                 </Button>
@@ -320,7 +428,19 @@ function RuntimeCard({
           </Button>
         )}
         {runtime.source === "configured" && (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() =>
+              setConfirmation({
+                title: "Forget endpoint?",
+                description:
+                  "This removes its saved configuration and credential from this environment. The runtime itself is kept.",
+                run: onRemove,
+              })
+            }
+          >
             Forget endpoint
           </Button>
         )}
@@ -362,10 +482,17 @@ function RuntimeCard({
           Models · {runtime.models.length}
         </summary>
         <div className="mt-3 space-y-2">
+          {runtime.models.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              {runtime.status === "available"
+                ? "No models discovered. Refresh the catalog or pull an Ollama model."
+                : "Connect to the runtime to discover its models."}
+            </p>
+          )}
           {runtime.models.map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-3 border-b pb-2">
               <div>
-                <p className="text-sm font-mono">{item.id}</p>
+                <p className="break-all text-sm font-mono">{item.id}</p>
                 <p className="text-xs text-muted-foreground">
                   {!online || runtime.status !== "available" ? "Unavailable (cached)" : "Available"}{" "}
                   ·{" "}
@@ -379,7 +506,16 @@ function RuntimeCard({
                   size="sm"
                   variant="ghost"
                   disabled={busy || runtime.status !== "available"}
-                  onClick={() => act("remove-model", item.id)}
+                  onClick={() =>
+                    setConfirmation({
+                      title: `Remove ${item.id}?`,
+                      description:
+                        "This model will be deleted from the runtime. You can pull it again later.",
+                      run: () => {
+                        void act("remove-model", item.id);
+                      },
+                    })
+                  }
                 >
                   Remove
                 </Button>
@@ -388,7 +524,7 @@ function RuntimeCard({
           ))}
           {runtime.protocol === "ollama" && (
             <form
-              className="flex gap-2"
+              className="flex flex-wrap gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 act("pull", pull);
@@ -417,9 +553,14 @@ function RuntimeCard({
           className="mt-3 grid gap-3"
           onSubmit={async (e) => {
             e.preventDefault();
+            if (busy || !effectiveDriver || !effectiveModel) return;
             setBinding(true);
             try {
-              if (await onBind(driver, model, instanceId)) {
+              if (
+                effectiveDriver &&
+                effectiveModel &&
+                (await onBind(effectiveDriver, effectiveModel, instanceId))
+              ) {
                 setInstanceId("");
               }
             } finally {
@@ -433,36 +574,31 @@ function RuntimeCard({
           </p>
           <label className="grid gap-1 text-sm">
             Agent
-            <select
-              className={selectClass}
-              value={driver}
-              onChange={(e) => setDriver(e.target.value as AiRuntimeBindInput["driver"])}
-            >
-              <option value="opencode" disabled={runtime.protocol === "anthropic"}>
-                OpenCode
-              </option>
-              <option value="codex" disabled={runtime.protocol === "anthropic"}>
-                Codex (Responses API required)
-              </option>
-              <option value="claudeAgent" disabled={runtime.protocol === "openai"}>
-                Claude Code (Anthropic API required)
-              </option>
-            </select>
+            <RuntimeSelect
+              label="Agent"
+              value={effectiveDriver ?? ""}
+              onChange={setDriver}
+              placeholder="No compatible agent"
+              options={drivers.map((value) => ({
+                value,
+                label:
+                  value === "opencode"
+                    ? "OpenCode"
+                    : value === "codex"
+                      ? "Codex (Responses API required)"
+                      : "Claude Code (Anthropic API required)",
+              }))}
+            />
           </label>
           <label className="grid gap-1 text-sm">
             Model
-            <select
-              className={selectClass}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              <option value="">Select model</option>
-              {runtime.models.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.id}
-                </option>
-              ))}
-            </select>
+            <RuntimeSelect
+              label="Model"
+              value={effectiveModel}
+              onChange={setModel}
+              placeholder="Select model"
+              options={runtime.models.map((item) => ({ value: item.id, label: item.id }))}
+            />
           </label>
           <label className="grid gap-1 text-sm">
             New provider instance ID
@@ -480,7 +616,8 @@ function RuntimeCard({
               busy ||
               binding ||
               runtime.status !== "available" ||
-              !model ||
+              !effectiveModel ||
+              !effectiveDriver ||
               !instanceId ||
               !["ollama", "openai", "anthropic"].includes(runtime.protocol)
             }
@@ -489,6 +626,32 @@ function RuntimeCard({
           </Button>
         </form>
       </details>
+      <AlertDialog
+        open={confirmation !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmation(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="break-words">{confirmation?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmation?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                confirmation?.run();
+                setConfirmation(null);
+              }}
+            >
+              Remove
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </article>
   );
 }
@@ -510,6 +673,7 @@ function EnvironmentRuntimes({
   const [editor, setEditor] = useState<AiRuntimeConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const refresh = useAtomCommand(serverEnvironment.aiRuntimesList);
   const save = useAtomCommand(serverEnvironment.aiRuntimesSave);
   const remove = useAtomCommand(serverEnvironment.aiRuntimesRemove);
@@ -527,29 +691,38 @@ function EnvironmentRuntimes({
   const target = { environmentId: environment.environmentId };
   return (
     <section className="space-y-3">
-      <div className="flex justify-between items-center gap-3 border-b pb-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap justify-between items-center gap-3 border-b pb-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <ServerIcon className="size-4 text-muted-foreground" />
-          <h2 className="font-medium">{environment.label}</h2>
+          <h2 className="min-w-0 break-words font-medium">{environment.label}</h2>
           <span className="text-xs text-muted-foreground">{online ? "Online" : "Offline"}</span>
         </div>
         <div className="flex gap-2">
           <Button
             size="sm"
             variant="ghost"
-            disabled={!online || !supported}
+            disabled={!online || !supported || refreshing}
             onClick={async () => {
-              result(await refresh({ ...target, input: { refresh: true } }));
+              if (refreshing) return;
+              setRefreshing(true);
+              try {
+                result(await refresh({ ...target, input: { refresh: true } }));
+              } finally {
+                setRefreshing(false);
+              }
             }}
           >
             <RefreshCwIcon className="size-3.5" />
-            Refresh
+            {refreshing ? "Refreshing…" : "Refresh"}
           </Button>
           <Button
             size="sm"
             variant="outline"
             disabled={!online || !supported}
-            onClick={() => setEditor(blankRuntime())}
+            onClick={() => {
+              setError(null);
+              setEditor(blankRuntime());
+            }}
           >
             <PlusIcon className="size-3.5" />
             Add runtime
@@ -573,18 +746,21 @@ function EnvironmentRuntimes({
           {notice}
         </p>
       )}
-      {supported && !query.data && (
-        <p className="text-sm text-muted-foreground">Discovering local runtimes…</p>
+      {supported && !query.data && !query.error && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {online ? "Discovering local runtimes…" : "Connect to this node to load its runtimes."}
+        </p>
       )}
       {query.data?.runtimes.map((runtime) => (
         <RuntimeCard
           key={runtime.id}
           runtime={runtime}
           online={online}
-          onAction={async (input) => {
-            result(await action({ ...target, input }));
+          onAction={async (input) => result(await action({ ...target, input }))}
+          onEdit={() => {
+            setError(null);
+            setEditor(runtime);
           }}
-          onEdit={() => setEditor(runtime)}
           onRemove={async () => {
             result(await remove({ ...target, input: { runtimeId: runtime.id } }));
           }}
@@ -612,6 +788,7 @@ function EnvironmentRuntimes({
       {editor && (
         <RuntimeEditor
           initial={editor}
+          environmentName={environment.label}
           error={error}
           onClose={() => setEditor(null)}
           onSave={async (runtime, apiKey) =>
@@ -632,6 +809,7 @@ export function AiRuntimesSettingsPanel() {
   const { environments } = useEnvironments();
   const [remote, setRemote] = useState<AiRuntime | null>(null);
   const [targetId, setTargetId] = useState("");
+  const [importId, setImportId] = useState("");
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const save = useAtomCommand(serverEnvironment.aiRuntimesSave);
   const target = environments.find((item) => item.environmentId === targetId);
@@ -650,6 +828,7 @@ export function AiRuntimesSettingsPanel() {
             environment={environment}
             onRemote={(runtime) => {
               setTargetId("");
+              setImportId(`remote-${randomUUID()}`);
               setRemoteError(null);
               setRemote(runtime);
             }}
@@ -675,26 +854,37 @@ export function AiRuntimesSettingsPanel() {
                   stays in that environment's secret store.
                 </DialogDescription>
               </DialogHeader>
-              <select
-                aria-label="Consuming node"
-                className={`${selectClass} w-full`}
-                value={targetId}
-                onChange={(e) => setTargetId(e.target.value)}
-              >
-                <option value="">Select consuming node</option>
-                {environments
-                  .filter(
-                    (item) =>
-                      item.environmentId !== remote.environmentId &&
-                      item.connection.phase === "connected" &&
-                      item.serverConfig?.environment.capabilities.aiRuntimes,
-                  )
-                  .map((item) => (
-                    <option key={item.environmentId} value={item.environmentId}>
-                      {item.label}
-                    </option>
-                  ))}
-              </select>
+              <DialogPanel className="space-y-3">
+                <RuntimeSelect
+                  label="Consuming node"
+                  value={targetId}
+                  onChange={setTargetId}
+                  placeholder="Select consuming node"
+                  options={environments
+                    .filter(
+                      (item) =>
+                        item.environmentId !== remote.environmentId &&
+                        item.connection.phase === "connected" &&
+                        item.serverConfig?.environment.capabilities.aiRuntimes,
+                    )
+                    .map((item) => ({ value: item.environmentId, label: item.label }))}
+                />
+                {!environments.some(
+                  (item) =>
+                    item.environmentId !== remote.environmentId &&
+                    item.connection.phase === "connected" &&
+                    item.serverConfig?.environment.capabilities.aiRuntimes,
+                ) && (
+                  <p className="text-sm text-muted-foreground">
+                    Connect another environment with AI Runtimes enabled in Settings → Connections.
+                  </p>
+                )}
+              </DialogPanel>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setRemote(null)}>
+                  Cancel
+                </Button>
+              </DialogFooter>
             </DialogPopup>
           </Dialog>
         )}
@@ -708,7 +898,8 @@ export function AiRuntimesSettingsPanel() {
             )}
             <RuntimeEditor
               error={remoteError}
-              initial={runtimeForConsumer(remote, `remote-${randomUUID()}`)}
+              initial={runtimeForConsumer(remote, importId)}
+              environmentName={target.label}
               onClose={() => setRemote(null)}
               onSave={async (runtime, apiKey) => {
                 const outcome = await save({
