@@ -1,3 +1,11 @@
+import {
+  AiRuntimeSnapshot,
+  AiRuntimeError,
+  AiRuntimeId,
+  AiRuntimeSaveInput,
+  AiRuntimeActionInput,
+  AiRuntimeBindInput,
+} from "./aiRuntime.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -269,6 +277,12 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
 
+  aiRuntimesList: "aiRuntimes.list",
+  aiRuntimesSubscribe: "aiRuntimes.subscribe",
+  aiRuntimesSave: "aiRuntimes.save",
+  aiRuntimesRemove: "aiRuntimes.remove",
+  aiRuntimesAction: "aiRuntimes.action",
+  aiRuntimesBind: "aiRuntimes.bind",
   // Marketplace methods
   marketplaceList: "marketplace.list",
   marketplaceGetPackage: "marketplace.getPackage",
@@ -480,6 +494,37 @@ const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   error: Schema.Union([ServerProviderUpdateError, EnvironmentAuthorizationError]),
 });
 
+export const WsAiRuntimesListRpc = Rpc.make(WS_METHODS.aiRuntimesList, {
+  payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
+export const WsAiRuntimesSubscribeRpc = Rpc.make(WS_METHODS.aiRuntimesSubscribe, {
+  payload: Schema.Struct({}),
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+export const WsAiRuntimesSaveRpc = Rpc.make(WS_METHODS.aiRuntimesSave, {
+  payload: AiRuntimeSaveInput,
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
+export const WsAiRuntimesRemoveRpc = Rpc.make(WS_METHODS.aiRuntimesRemove, {
+  payload: Schema.Struct({ runtimeId: AiRuntimeId }),
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
+export const WsAiRuntimesActionRpc = Rpc.make(WS_METHODS.aiRuntimesAction, {
+  payload: AiRuntimeActionInput,
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
+export const WsAiRuntimesBindRpc = Rpc.make(WS_METHODS.aiRuntimesBind, {
+  payload: AiRuntimeBindInput,
+  success: AiRuntimeSnapshot,
+  error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
 export const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
   payload: Schema.Struct({}),
   success: MarketplaceSnapshot,
@@ -1323,6 +1368,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRefreshProvidersRpc,
   WsServerRefreshProviderRateLimitsRpc,
   WsServerUpdateProviderRpc,
+  WsAiRuntimesListRpc,
+  WsAiRuntimesSubscribeRpc,
+  WsAiRuntimesSaveRpc,
+  WsAiRuntimesRemoveRpc,
+  WsAiRuntimesActionRpc,
+  WsAiRuntimesBindRpc,
   WsMarketplaceListRpc,
   WsMarketplaceGetPackageRpc,
   WsMarketplaceAddSourceRpc,

@@ -6,6 +6,7 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
+  | "/settings/ai-runtimes"
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
@@ -55,6 +56,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Projects",
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
+  "/settings/ai-runtimes": "AI Runtimes",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/mini-skills": "Mini Skills",
@@ -69,6 +71,12 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "ai-runtimes",
+    title: "AI Runtimes",
+    to: "/settings/ai-runtimes",
+    searchTerms: ["ollama local models endpoint network inference install pull"],
+  },
   {
     id: "project-defaults",
     title: "Project defaults and overrides",

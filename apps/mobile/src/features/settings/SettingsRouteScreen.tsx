@@ -138,6 +138,7 @@ function LocalSettingsRouteScreen() {
             target="SettingsEnvironments"
           />
           <SettingsRow icon="shippingbox" label="Marketplace" target="SettingsMarketplace" />
+          <SettingsRow icon="server.rack" label="AI Runtimes" target="SettingsAiRuntimes" />
         </SettingsSection>
 
         <GeneralSettingsSection />
@@ -487,6 +488,7 @@ function ConfiguredSettingsRouteScreen() {
             target="SettingsEnvironments"
           />
           <SettingsRow icon="shippingbox" label="Marketplace" target="SettingsMarketplace" />
+          <SettingsRow icon="server.rack" label="AI Runtimes" target="SettingsAiRuntimes" />
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"

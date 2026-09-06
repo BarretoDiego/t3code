@@ -1,3 +1,4 @@
+import { downloadVerifiedRuntime } from "./managedRuntimeDownload.ts";
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest or free-space query.
 import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
@@ -6,7 +7,6 @@ import {
   HostProcessEnvironment,
   HostProcessPlatform,
 } from "@t3tools/shared/hostProcess";
-import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -22,9 +22,8 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient } from "effect/unstable/http";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
-import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import type * as NodeStream from "node:stream";
 import * as Yauzl from "yauzl";
@@ -41,7 +40,6 @@ import {
 } from "./antigravityRelease.ts";
 
 const DRIVER = ProviderDriverKind.make("antigravity");
-const DOWNLOAD_TIMEOUT = "45 minutes";
 const VALIDATION_TIMEOUT = "90 seconds";
 const FREE_SPACE_MARGIN = 256 * 1024 * 1024;
 const RECORD_MAX_BYTES = 8 * 1024;
@@ -595,59 +593,24 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const archivePath = path.join(staging, "download.zip");
       const pairDirectory = path.join(staging, "runtime");
       yield* fs.makeDirectory(pairDirectory);
-      const hash = NodeCrypto.createHash("sha256");
-      let downloadedBytes = 0;
-      let lastProgressAt = yield* Clock.currentTimeMillis;
-      yield* Effect.gen(function* () {
-        const response = yield* http
-          .execute(HttpClientRequest.get(asset.url))
-          .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
-        // dl.google.com gzips the zip when the client accepts it, so
-        // `content-length` is the encoded size. The decoded stream is still
-        // checked against the pinned byte count and hash below.
-        const contentLength = response.headers["content-length"];
-        const contentEncoding = response.headers["content-encoding"]?.trim().toLowerCase();
-        const identityBody = contentEncoding === undefined || contentEncoding === "identity";
-        if (
-          identityBody &&
-          contentLength !== undefined &&
-          Number(contentLength) !== asset.archiveBytes
-        ) {
-          return yield* installationError(
+      yield* downloadVerifiedRuntime({
+        url: asset.url,
+        destination: archivePath,
+        bytes: asset.archiveBytes,
+        sha256: asset.sha256,
+        progress: (downloadedBytes) =>
+          SubscriptionRef.update(state, (current) => ({ ...current, downloadedBytes })),
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(HttpClient.HttpClient, http),
+        Effect.mapError((cause) =>
+          installationError(
             "download",
-            "The Antigravity download size did not match the pinned release.",
-          );
-        }
-        yield* response.stream.pipe(
-          Stream.tap((chunk) =>
-            Effect.gen(function* () {
-              downloadedBytes += chunk.byteLength;
-              if (downloadedBytes > asset.archiveBytes) {
-                return yield* installationError(
-                  "download",
-                  "The Antigravity download exceeded the pinned release size.",
-                );
-              }
-              hash.update(chunk);
-              const now = yield* Clock.currentTimeMillis;
-              if (now - lastProgressAt >= 250 || downloadedBytes === asset.archiveBytes) {
-                lastProgressAt = now;
-                yield* SubscriptionRef.update(state, (current) => ({
-                  ...current,
-                  downloadedBytes,
-                }));
-              }
-            }),
+            "The Antigravity download failed its size or SHA-256 check. Nothing was installed.",
+            cause,
           ),
-          Stream.run(fs.sink(archivePath, { flag: "wx", mode: 0o600 })),
-        );
-      }).pipe(Effect.timeout(DOWNLOAD_TIMEOUT));
-      if (downloadedBytes !== asset.archiveBytes || hash.digest("hex") !== asset.sha256) {
-        return yield* installationError(
-          "download",
-          "The Antigravity download failed its size or SHA-256 check. Nothing was installed.",
-        );
-      }
+        ),
+      );
 
       yield* report("extracting", "Extracting the verified runtime.");
       yield* Effect.gen(function* () {

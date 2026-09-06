@@ -35,7 +35,7 @@
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const PROVIDER_SLUG_MAX_CHARS = 64;
 /**
@@ -121,7 +121,15 @@ export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Typ
  * envelopes for unknown drivers are preserved verbatim so they round-trip
  * across version changes without data loss.
  */
+export const AiRuntimeBinding = Schema.Struct({
+  environmentId: EnvironmentId,
+  runtimeId: TrimmedNonEmptyString,
+  model: TrimmedNonEmptyString,
+});
+export type AiRuntimeBinding = typeof AiRuntimeBinding.Type;
+
 export const ProviderInstanceConfig = Schema.Struct({
+  runtimeBinding: Schema.optionalKey(AiRuntimeBinding),
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
