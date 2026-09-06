@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  type MiniSkillId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -10,10 +11,12 @@ import {
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
+  type ThreadMiniSkillSnapshot,
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+import { composeTurnPromptWithMiniSkills } from "@t3tools/shared/miniSkills";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -846,6 +849,14 @@ const make = Effect.gen(function* () {
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
+    /**
+     * Thread-scope mini skill snapshots, passed only on the thread's first
+     * user turn: provider sessions carry context forward, so re-injecting on
+     * later turns would repeat the block on every message.
+     */
+    readonly threadMiniSkills?: ReadonlyArray<ThreadMiniSkillSnapshot>;
+    /** Request-scope mini skill ids, resolved against the library below. */
+    readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
@@ -861,7 +872,25 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    // Mini skills compose here — after the message is persisted verbatim and
+    // before any provider adapter sees the turn — so the transcript shows the
+    // user's text while every provider receives the same effective prompt.
+    const threadMiniSkills = input.threadMiniSkills ?? [];
+    const miniSkillIds = input.miniSkillIds ?? [];
+    let messageText = input.messageText;
+    if (threadMiniSkills.length > 0 || miniSkillIds.length > 0) {
+      const settings = yield* serverSettingsService.getSettings;
+      const requestSkills = miniSkillIds.flatMap((skillId) =>
+        settings.miniSkills.filter((skill) => skill.id === skillId),
+      );
+      messageText = composeTurnPromptWithMiniSkills({
+        message: input.messageText,
+        threadSkills: threadMiniSkills,
+        requestSkills,
+        wrappers: settings.miniSkillPromptWrappers,
+      });
+    }
+    const normalizedInput = toNonEmptyProviderInput(messageText);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -1424,6 +1453,8 @@ const make = Effect.gen(function* () {
         "Wait for context compaction to finish before sending another message.",
       );
     }
+    const threadMiniSkills = thread.miniSkills ?? [];
+    const requestMiniSkillIds = event.payload.miniSkillIds ?? [];
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageText: message.text,
@@ -1432,6 +1463,10 @@ const make = Effect.gen(function* () {
         ? { modelSelection: event.payload.modelSelection }
         : {}),
       interactionMode: event.payload.interactionMode,
+      ...(nonCompactUserMessageCount === 1 && threadMiniSkills.length > 0
+        ? { threadMiniSkills }
+        : {}),
+      ...(requestMiniSkillIds.length > 0 ? { miniSkillIds: requestMiniSkillIds } : {}),
       createdAt: event.payload.createdAt,
     }).pipe(
       Effect.map(Option.some),

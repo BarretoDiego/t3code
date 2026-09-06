@@ -361,6 +361,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(command.miniSkills !== undefined && command.miniSkills.length > 0
+            ? { miniSkills: command.miniSkills }
+            : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -982,6 +985,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           runtimeMode: targetThread.runtimeMode,
           interactionMode: targetThread.interactionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
+          ...(command.miniSkillIds !== undefined && command.miniSkillIds.length > 0
+            ? { miniSkillIds: command.miniSkillIds }
+            : {}),
           createdAt: command.createdAt,
         },
       };

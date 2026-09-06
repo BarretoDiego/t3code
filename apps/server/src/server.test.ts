@@ -341,6 +341,7 @@ const makeDefaultOrchestrationReadModel = () => {
         activities: [],
         proposedPlans: [],
         checkpoints: [],
+        miniSkills: [],
         deletedAt: null,
       },
     ],
