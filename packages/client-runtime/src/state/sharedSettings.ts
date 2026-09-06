@@ -24,7 +24,6 @@ const SHARED_SERVER_SETTING_KEYS = [
   "continueThreadsAfterServerUpdate",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
-  "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
   // The mini skill library and its prompt wrappers are user content, not

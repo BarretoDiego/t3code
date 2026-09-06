@@ -16,7 +16,13 @@ T3-managed OpenCode chat uses one server per thread. Its MCP registrations are d
 
 OpenCode also stores persistent approval grants per directory. Automatic full-access replies use `once` so they cannot widen a supervised thread's permissions on a shared external server. See the [adapter](../../apps/server/src/provider/Layers/OpenCodeAdapter.ts).
 
-Antigravity separates account profiles per instance while sharing installed executables across the environment. It forces file-based credential storage because the native macOS keychain entry would otherwise be shared across instances. The launch environment removes ambient Google credentials, so an instance cannot silently use another account or billing project. See [profile isolation](../../apps/server/src/provider/antigravityAuthSupport.ts).
+Antigravity separates account profiles per instance while sharing installed executables across the
+environment. It forces file-based credential storage because the native macOS keychain entry would
+otherwise be shared across instances. The launch environment removes ambient Google credentials,
+so an instance cannot silently use another account or billing project. The agent also resolves
+its user-global skill directories under that profile, so the profile links those two directories
+back to the user's real `~/.gemini`; MCP servers, hooks, and rules there stay out of the profile.
+See [profile isolation](../../apps/server/src/provider/antigravityAuthSupport.ts).
 
 The [Antigravity installer](../../apps/server/src/provider/AntigravityInstallation.ts) outlives client connections and provider-instance rebuilds. Releases are immutable, with an atomic pointer selecting the version for new processes. Running processes hold leases on their version. Updates and removal must respect those leases instead of replacing executables under a running agent.
 
