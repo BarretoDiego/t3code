@@ -153,6 +153,7 @@ export function applyServerSettingsPatch(
     usagePriceOverrides: usagePriceOverridesPatch,
     // Whole-library replacement; deepMerge would merge arrays by index.
     miniSkills: miniSkillsPatch,
+    agentProfiles: agentProfilesPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -229,6 +230,7 @@ export function applyServerSettingsPatch(
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
     ...(miniSkillsPatch !== undefined ? { miniSkills: miniSkillsPatch } : {}),
+    ...(agentProfilesPatch !== undefined ? { agentProfiles: agentProfilesPatch } : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };

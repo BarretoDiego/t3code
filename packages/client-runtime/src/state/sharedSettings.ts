@@ -31,6 +31,9 @@ const SHARED_SERVER_SETTING_KEYS = [
   // machine state: they roam to every sync-eligible environment.
   "miniSkills",
   "miniSkillPromptWrappers",
+  // Agent profiles roam for the same reason.
+  "agentProfiles",
+  "agentProfileDefaultWrapper",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];

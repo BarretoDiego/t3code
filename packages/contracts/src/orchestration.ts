@@ -24,6 +24,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { MiniSkillId, ThreadMiniSkillSnapshot } from "./miniSkills.ts";
+import { TurnAgentProfileContext } from "./agentProfiles.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -994,6 +995,13 @@ export const ThreadTurnStartCommand = Schema.Struct({
    * skipped. Never persisted into the user-visible message text.
    */
   miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
+  /**
+   * The composer-resolved agent profile for this turn, when one was active.
+   * Carries everything prompt composition needs (instructions, template) plus
+   * history metadata; the thread's messages never change when the profile is
+   * edited later.
+   */
+  agentProfile: Schema.optionalKey(TurnAgentProfileContext),
   createdAt: IsoDateTime,
 });
 
@@ -1014,6 +1022,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
+  agentProfile: Schema.optionalKey(TurnAgentProfileContext),
   createdAt: IsoDateTime,
 });
 
@@ -1435,6 +1444,9 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   // Request-scoped mini skill selections riding this turn; resolved against
   // the library at dispatch time. Optional for pre-feature events.
   miniSkillIds: Schema.optional(Schema.Array(MiniSkillId)),
+  // Active agent profile snapshot for this turn. Optional for pre-feature
+  // events; present turns keep it even if the profile is edited or deleted.
+  agentProfile: Schema.optional(TurnAgentProfileContext),
   createdAt: IsoDateTime,
 });
 
