@@ -16,6 +16,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   type MiniSkillId,
+  type AgentProfileId,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -23,7 +24,16 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  createModelSelection,
+  getProviderOptionDescriptors,
+  normalizeModelSlug,
+} from "@t3tools/shared/model";
+import {
+  mergeProfileMiniSkillIds,
+  resolveAgentProfile,
+  type AgentProfileResolution,
+} from "@t3tools/shared/agentProfiles";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   Fragment,
@@ -170,6 +180,9 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { MiniSkillsMenuContent, MiniSkillsPicker } from "./MiniSkillsPicker";
+import { AgentProfilePicker } from "./AgentProfilePicker";
+import { searchAgentProfiles } from "../../agentProfileSearch";
+import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -1158,6 +1171,18 @@ export interface ChatComposerHandle {
     interactionMode: ProviderInteractionMode;
     interactionModeEnabled: boolean;
     selectedMiniSkillIds: MiniSkillId[];
+    /** Profile skills to merge into the request (empty in Custom mode). */
+    profileMiniSkillIds: ReadonlyArray<MiniSkillId>;
+    /** Resolved profile snapshot for the turn, when a profile is active. */
+    agentProfileTurnContext: {
+      profileId: AgentProfileId;
+      profileName: string;
+      instructions: string;
+      promptTemplate: string;
+      fallbackIndex?: number;
+    } | null;
+    /** Set when the active profile cannot resolve on the current provider. */
+    profileSendBlockReason: string | null;
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
@@ -1492,6 +1517,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const setSelectedProfileId = useComposerDraftStore((store) => store.setSelectedProfileId);
 
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown) {
@@ -1751,6 +1777,68 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
+
+  // ── Agent profile resolution ─────────────────────────────────────
+  // The profile never mutates the draft's custom state: resolution derives
+  // the effective execution config, so returning to Custom restores exactly
+  // what the user had before.
+  const selectedProfileId = composerDraft.selectedProfileId;
+  const selectedAgentProfile = useMemo(
+    () =>
+      selectedProfileId === null
+        ? null
+        : (settings.agentProfiles.find(
+            (profile) => profile.id === selectedProfileId && profile.enabled,
+          ) ?? null),
+    [settings.agentProfiles, selectedProfileId],
+  );
+  const agentProfileResolution = useMemo<AgentProfileResolution | null>(() => {
+    if (!selectedAgentProfile) return null;
+    return resolveAgentProfile({
+      profile: selectedAgentProfile,
+      instanceId: selectedInstanceId,
+      availableModelSlugs: selectedProviderModels.map((model) => model.slug),
+      currentModelSelection: selectedModelSelection,
+      currentReasoningEffort: selectedPromptEffort,
+      getSupportedReasoningEfforts: (modelSlug) => {
+        // Unknown model (not in the instance catalog): accept the effort.
+        if (!selectedProviderModels.some((model) => model.slug === modelSlug)) return null;
+        const caps = getProviderModelCapabilities(
+          selectedProviderModels,
+          modelSlug,
+          selectedProvider,
+          planModeUiEnabled,
+        );
+        const descriptor = getProviderOptionDescriptors({ caps, selections: null }).find(
+          (candidate) => candidate.type === "select" && candidate.id === "reasoningEffort",
+        );
+        // No effort descriptor: the model does not take reasoning effort.
+        if (!descriptor || descriptor.type !== "select") return [];
+        const promptInjected = new Set(descriptor.promptInjectedValues ?? []);
+        return descriptor.options
+          .map((option) => option.id)
+          .filter((id) => !promptInjected.has(id));
+      },
+      defaultWrapper: settings.agentProfileDefaultWrapper,
+      knownMiniSkillIds: settings.miniSkills.map((skill) => skill.id),
+    });
+  }, [
+    planModeUiEnabled,
+    selectedAgentProfile,
+    selectedInstanceId,
+    selectedModelSelection,
+    selectedPromptEffort,
+    selectedProvider,
+    selectedProviderModels,
+    settings.agentProfileDefaultWrapper,
+    settings.miniSkills,
+  ]);
+  const resolvedProfile =
+    agentProfileResolution?.status === "resolved" ? agentProfileResolution : null;
+  const profileSendBlockReason =
+    agentProfileResolution?.status === "unavailable" ? agentProfileResolution.reason : null;
+  const effectiveModelSelection = resolvedProfile?.modelSelection ?? selectedModelSelection;
+  const effectiveModel = effectiveModelSelection.model;
   const selectedModelForPicker = selectedModel;
   // Instance-keyed option list so the picker can show each configured
   // instance (built-in + custom) as a first-class sidebar entry. The
@@ -2006,6 +2094,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
       }));
     }
+    if (composerTrigger.kind === "profile") {
+      return searchAgentProfiles(settings.agentProfiles, composerTrigger.query).map((profile) => ({
+        id: `profile:${profile.id}`,
+        type: "profile" as const,
+        profileId: profile.id,
+        label: `#${profile.slug}`,
+        description: `${profile.name}${profile.description ? ` — ${profile.description}` : ""}`,
+      }));
+    }
     return [];
   }, [
     compactSlashCommandAvailable,
@@ -2015,6 +2112,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderSkills,
     selectedProviderSlashCommands,
     selectedProviderStatus,
+    settings.agentProfiles,
     settings.showSkillsInSlashMenu,
     workspaceEntries.entries,
   ]);
@@ -2124,6 +2222,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPromptChange: setPromptFromTraits,
     planModeEnabled: settings.planModeEnabled,
   });
+  // In Profile Mode the profile owns reasoning and model options; the
+  // resolved values surface in the profile picker instead.
+  const effectiveTraitsMenuContent =
+    resolvedProfile !== null ? undefined : providerTraitsMenuContent;
   const providerTraitsPickerInput = {
     provider: selectedProvider,
     instanceId: selectedInstanceId,
@@ -2787,6 +2889,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      if (item.type === "profile") {
+        // The shortcut becomes composer state, not text: strip the token and
+        // keep the rest of the message exactly as typed.
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          setSelectedProfileId(composerDraftTarget, item.profileId);
+        }
+        return;
+      }
     },
     [
       applyPromptReplacement,
@@ -2794,6 +2908,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       planModeUiEnabled,
       onUsageLimitsCommand,
       resolveActiveComposerTrigger,
+      composerDraftTarget,
+      setSelectedProfileId,
     ],
   );
 
@@ -3920,7 +4036,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     />
   );
   const restingBlockDefs = [
-    ...(providerTraitsPicker
+    {
+      id: "profile",
+      content: (
+        <>
+          <ComposerControlSeparator size={composerControlsInStrip ? "xs" : "sm"} />
+          <AgentProfilePicker
+            composerDraftTarget={composerDraftTarget}
+            environmentId={environmentId}
+            resolution={agentProfileResolution}
+            size={composerControlsInStrip ? "xs" : "sm"}
+            hidden={composerControlsHidden || restingHiddenBlockCount > 3}
+          />
+        </>
+      ),
+    },
+    // Profile Mode owns reasoning and model options, so the traits block
+    // drops out of the strip entirely rather than showing stale values.
+    ...(providerTraitsPicker && resolvedProfile === null
       ? [
           {
             id: "traits",
@@ -3995,7 +4128,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         isComposerOwned
         compact={composerControlsCompact}
         activeInstanceId={selectedInstanceId}
-        model={selectedModelForPickerWithCustomFallback}
+        model={resolvedProfile ? effectiveModel : selectedModelForPickerWithCustomFallback}
+        // In Profile Mode the profile owns the model: the picker shows the
+        // resolved value and stays inert, leaving the underlying Custom
+        // selection untouched.
+        disabled={resolvedProfile !== null}
         lockedProvider={lockedProvider}
         lockedContinuationGroupKey={lockedContinuationGroupKey}
         instanceEntries={providerInstanceEntries}
@@ -4030,15 +4167,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       />
 
       {composerControlsCompact ? (
-        <CompactComposerControlsMenu
-          interactionMode={interactionMode}
-          runtimeMode={runtimeMode}
-          showInteractionModeToggle={planModeUiEnabled}
-          traitsMenuContent={providerTraitsMenuContent}
-          miniSkillsMenuContent={miniSkillsMenuContent}
-          onToggleInteractionMode={toggleInteractionMode}
-          onRuntimeModeChange={handleRuntimeModeChange}
-        />
+        <>
+          {/* The profile picker survives compact mode: it is the execution
+              mode switch, not just another option. */}
+          <AgentProfilePicker
+            composerDraftTarget={composerDraftTarget}
+            environmentId={environmentId}
+            resolution={agentProfileResolution}
+            size="xs"
+          />
+          <CompactComposerControlsMenu
+            interactionMode={interactionMode}
+            runtimeMode={runtimeMode}
+            showInteractionModeToggle={planModeUiEnabled}
+            traitsMenuContent={effectiveTraitsMenuContent}
+            miniSkillsMenuContent={miniSkillsMenuContent}
+            onToggleInteractionMode={toggleInteractionMode}
+            onRuntimeModeChange={handleRuntimeModeChange}
+          />
+        </>
       ) : (
         <>
           {restingBlockDefs.map((def, index) => {
@@ -4080,7 +4227,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   planModeUiEnabled && hiddenRestingBlockIds.includes("mode")
                 }
                 traitsMenuContent={
-                  hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
+                  hiddenRestingBlockIds.includes("traits") ? effectiveTraitsMenuContent : undefined
                 }
                 miniSkillsMenuContent={
                   hiddenRestingBlockIds.includes("mini-skills") ? miniSkillsMenuContent : undefined
@@ -4737,16 +4884,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         reviewComments: composerReviewComments,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
-        selectedModelSelection,
+        selectedModelSelection: effectiveModelSelection,
         providerAvailable: !noProviderAvailable && providerSendBlockReason === null,
         selectedProvider,
-        selectedModel,
+        selectedModel: effectiveModel,
         selectedProviderModels,
         interactionMode,
         interactionModeEnabled: planModeUiEnabled,
         selectedMiniSkillIds:
           useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
             ?.selectedMiniSkillIds ?? [],
+        profileMiniSkillIds: resolvedProfile?.miniSkillIds ?? [],
+        agentProfileTurnContext: resolvedProfile
+          ? {
+              profileId: resolvedProfile.profileId,
+              profileName: resolvedProfile.profileName,
+              instructions: resolvedProfile.instructions,
+              promptTemplate: resolvedProfile.promptTemplate,
+              ...(resolvedProfile.diagnostics.fallbackIndex !== null
+                ? { fallbackIndex: resolvedProfile.diagnostics.fallbackIndex }
+                : {}),
+            }
+          : null,
+        profileSendBlockReason,
       }),
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
@@ -4788,6 +4948,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
+      effectiveModelSelection,
+      effectiveModel,
+      resolvedProfile,
+      profileSendBlockReason,
       noProviderAvailable,
       providerSendBlockReason,
       selectedPromptEffort,

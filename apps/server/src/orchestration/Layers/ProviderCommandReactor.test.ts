@@ -16,11 +16,13 @@ import { createModelSelection } from "@t3tools/shared/model";
 import {
   ApprovalRequestId,
   CommandId,
+  DEFAULT_AGENT_PROFILE_WRAPPER,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
   EventId,
   MessageId,
   MiniSkillId,
+  AgentProfileId,
   ProjectId,
   ThreadId,
   type ThreadMiniSkillSnapshot,
@@ -1075,6 +1077,137 @@ describe("ProviderCommandReactor", () => {
           expect(input).toContain("Fresh library content.");
           expect(input).not.toContain("Stale snapshot content.");
           expect(input?.match(/### Create Isolated Feature Workspace/g)).toHaveLength(1);
+        }),
+    );
+  });
+
+  describe("agent profiles", () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const reviewerTurnProfile = {
+      profileId: AgentProfileId.make("default-reviewer"),
+      profileName: "Reviewer Pre-Commit",
+      instructions: "Act as a pre-commit reviewer.",
+      promptTemplate: DEFAULT_AGENT_PROFILE_WRAPPER,
+    };
+
+    const dispatchProfileTurn = (
+      harness: Awaited<ReturnType<typeof createHarness>>,
+      input: {
+        readonly text: string;
+        readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
+        readonly agentProfile?: typeof reviewerTurnProfile;
+      },
+    ) =>
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`cmd-turn-start-${NodeCrypto.randomUUID()}`),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId(`user-message-${NodeCrypto.randomUUID()}`),
+          role: "user",
+          text: input.text,
+          attachments: [],
+        },
+        ...(input.miniSkillIds !== undefined ? { miniSkillIds: [...input.miniSkillIds] } : {}),
+        ...(input.agentProfile !== undefined ? { agentProfile: input.agentProfile } : {}),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+    effectIt.effect(
+      "composes profile instructions and mini skills through the profile template",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              serverSettingsOverrides: {
+                miniSkills: [
+                  {
+                    id: MiniSkillId.make("default-commit-changes"),
+                    name: "Commit Changes",
+                    description: "",
+                    content: "Review the complete diff before creating commits.",
+                    enabledByDefaultForNewThreads: false,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                ],
+              },
+            }),
+          );
+
+          yield* dispatchProfileTurn(harness, {
+            text: "Review these changes.",
+            miniSkillIds: [MiniSkillId.make("default-commit-changes")],
+            agentProfile: reviewerTurnProfile,
+          });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+          const call = harness.sendTurn.mock.calls[0]?.[0] as
+            | { readonly input?: string }
+            | undefined;
+          const input = call?.input;
+          expect(input).toContain('<user_profile_preferences profile="Reviewer Pre-Commit">');
+          expect(input).toContain("Act as a pre-commit reviewer.");
+          expect(input).toContain(
+            "### Commit Changes\n\nReview the complete diff before creating commits.",
+          );
+          // The profile template owns the skills slot: no second wrapper.
+          expect(input).not.toContain('<user_preferences scope="request">');
+          expect(input?.endsWith("Review these changes.")).toBe(true);
+
+          // Transcript stays clean and the turn keeps the profile snapshot.
+          const readModel = yield* Effect.promise(() => harness.readModel());
+          const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+          expect(thread?.messages.map((message) => message.text)).toEqual([
+            "Review these changes.",
+          ]);
+          const events = yield* Stream.runCollect(harness.engine.readEvents(0));
+          const turnStart = [...events].find(
+            (event) => event.type === "thread.turn-start-requested",
+          );
+          expect(turnStart?.payload).toMatchObject({
+            agentProfile: { profileId: "default-reviewer" },
+          });
+        }),
+    );
+
+    effectIt.effect("renders a custom profile template around the user message", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+
+        yield* dispatchProfileTurn(harness, {
+          text: "Ship it.",
+          agentProfile: {
+            ...reviewerTurnProfile,
+            instructions: "",
+            promptTemplate: "<task>\n{{user_message}}\n</task>",
+          },
+        });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+        const call = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string } | undefined;
+        expect(call?.input).toBe("<task>\nShip it.\n</task>");
+      }),
+    );
+
+    effectIt.effect(
+      "leaves the message untouched for a routing-only profile on the default template",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() => createHarness());
+
+          yield* dispatchProfileTurn(harness, {
+            text: "Just do it.",
+            agentProfile: { ...reviewerTurnProfile, instructions: "" },
+          });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+          const call = harness.sendTurn.mock.calls[0]?.[0] as
+            | { readonly input?: string }
+            | undefined;
+          expect(call?.input).toBe("Just do it.");
         }),
     );
   });

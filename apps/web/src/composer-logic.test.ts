@@ -122,6 +122,41 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("detects #profile shortcut only at the start of the message", () => {
+    const text = "#reviewer look at this";
+    const trigger = detectComposerTrigger(text, "#reviewer".length);
+
+    expect(trigger).toEqual({
+      kind: "profile",
+      query: "reviewer",
+      rangeStart: 0,
+      rangeEnd: 9,
+    });
+  });
+
+  it("opens the profile menu on a bare # at message start", () => {
+    expect(detectComposerTrigger("#", 1)).toEqual({
+      kind: "profile",
+      query: "",
+      rangeStart: 0,
+      rangeEnd: 1,
+    });
+  });
+
+  it("never treats issue references or mid-text hashtags as profile shortcuts", () => {
+    const issue = "Fix #123";
+    expect(detectComposerTrigger(issue, issue.length)).toBeNull();
+    expect(detectComposerTrigger("#123", 4)).toBeNull();
+    const midText = "The issue #reviewer is unrelated";
+    expect(detectComposerTrigger(midText, midText.length)).toBeNull();
+  });
+
+  it("does not trigger inside code blocks", () => {
+    const text = "```\n#reviewer\n```";
+    const trigger = detectComposerTrigger(text, 10);
+    expect(trigger).toBeNull();
+  });
+
   it("detects slash command token while typing command name", () => {
     const text = "/mo";
     const trigger = detectComposerTrigger(text, text.length);

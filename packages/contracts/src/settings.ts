@@ -14,6 +14,7 @@ import {
   MiniSkill,
   MiniSkillPromptWrappers,
 } from "./miniSkills.ts";
+import { AgentProfile, DEFAULT_AGENT_PROFILE_WRAPPER } from "./agentProfiles.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode } from "./environment.ts";
 import {
@@ -1116,6 +1117,24 @@ export const ServerSettings = Schema.Struct({
   miniSkillsSeededAt: Schema.NullOr(IsoDateTime).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /**
+   * Reusable agent execution profiles. Global user configuration: available
+   * in every project and synced to every shared-settings environment. The
+   * composer references a profile by id per thread; turns record the resolved
+   * snapshot, so edits never rewrite history.
+   */
+  agentProfiles: Schema.Array(AgentProfile).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /**
+   * Wrapper used by profiles without a custom template. Must keep the
+   * `{{user_message}}` placeholder; validated in the settings UI.
+   */
+  agentProfileDefaultWrapper: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_PROFILE_WRAPPER)),
+  ),
+  /** One-time seed marker for the built-in profiles; see `miniSkillsSeededAt`. */
+  agentProfilesSeededAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1356,6 +1375,10 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   // Server-internal seed marker; clients never write it directly.
   miniSkillsSeededAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
+  // Whole-library replacement, same rationale as `miniSkills`.
+  agentProfiles: Schema.optionalKey(Schema.Array(AgentProfile)),
+  agentProfileDefaultWrapper: Schema.optionalKey(Schema.String),
+  agentProfilesSeededAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

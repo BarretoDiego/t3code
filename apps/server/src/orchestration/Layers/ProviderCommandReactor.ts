@@ -12,11 +12,12 @@ import {
   type ProviderSession,
   type RuntimeMode,
   type ThreadMiniSkillSnapshot,
+  type TurnAgentProfileContext,
   type TurnId,
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
-import { composeTurnPromptWithMiniSkills } from "@t3tools/shared/miniSkills";
+import { composeTurnPromptWithAgentProfile } from "@t3tools/shared/agentProfiles";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -857,6 +858,8 @@ const make = Effect.gen(function* () {
     readonly threadMiniSkills?: ReadonlyArray<ThreadMiniSkillSnapshot>;
     /** Request-scope mini skill ids, resolved against the library below. */
     readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
+    /** Active agent profile snapshot for this turn, when the composer had one. */
+    readonly agentProfile?: TurnAgentProfileContext;
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
@@ -872,22 +875,34 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    // Mini skills compose here — after the message is persisted verbatim and
-    // before any provider adapter sees the turn — so the transcript shows the
-    // user's text while every provider receives the same effective prompt.
+    // Mini skills and agent profiles compose here — after the message is
+    // persisted verbatim and before any provider adapter sees the turn — so
+    // the transcript shows the user's text while every provider receives the
+    // same effective prompt.
     const threadMiniSkills = input.threadMiniSkills ?? [];
     const miniSkillIds = input.miniSkillIds ?? [];
+    const agentProfile = input.agentProfile;
     let messageText = input.messageText;
-    if (threadMiniSkills.length > 0 || miniSkillIds.length > 0) {
+    if (threadMiniSkills.length > 0 || miniSkillIds.length > 0 || agentProfile !== undefined) {
       const settings = yield* serverSettingsService.getSettings;
       const requestSkills = miniSkillIds.flatMap((skillId) =>
         settings.miniSkills.filter((skill) => skill.id === skillId),
       );
-      messageText = composeTurnPromptWithMiniSkills({
+      messageText = composeTurnPromptWithAgentProfile({
         message: input.messageText,
         threadSkills: threadMiniSkills,
         requestSkills,
         wrappers: settings.miniSkillPromptWrappers,
+        defaultAgentProfileWrapper: settings.agentProfileDefaultWrapper,
+        ...(agentProfile !== undefined
+          ? {
+              agentProfile: {
+                name: agentProfile.profileName,
+                instructions: agentProfile.instructions,
+                template: agentProfile.promptTemplate,
+              },
+            }
+          : {}),
       });
     }
     const normalizedInput = toNonEmptyProviderInput(messageText);
@@ -1468,6 +1483,9 @@ const make = Effect.gen(function* () {
         ? { threadMiniSkills }
         : {}),
       ...(requestMiniSkillIds.length > 0 ? { miniSkillIds: requestMiniSkillIds } : {}),
+      ...(event.payload.agentProfile !== undefined
+        ? { agentProfile: event.payload.agentProfile }
+        : {}),
       createdAt: event.payload.createdAt,
     }).pipe(
       Effect.map(Option.some),
