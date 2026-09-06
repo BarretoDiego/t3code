@@ -78,6 +78,7 @@ import {
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { mergeProfileMiniSkillIds } from "@t3tools/shared/agentProfiles";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { useShallow } from "zustand/react/shallow";
@@ -6267,6 +6268,10 @@ export default function ChatView(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    if (sendCtx.profileSendBlockReason !== null) {
+      setThreadError(activeThread.id, sendCtx.profileSendBlockReason);
+      return;
+    }
     const {
       images: sendContextImages,
       files: composerFiles,
@@ -6282,6 +6287,8 @@ export default function ChatView(props: ChatViewProps) {
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
       selectedMiniSkillIds: ctxSelectedMiniSkillIds,
+      profileMiniSkillIds: ctxProfileMiniSkillIds,
+      agentProfileTurnContext: ctxAgentProfileTurnContext,
     } = sendCtx;
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
@@ -6502,6 +6509,12 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const threadIdForSend = activeThread.id;
+    // Profile skills merge with the manual selection (deduped by id); only
+    // the manual selection clears after a successful send.
+    const effectiveMiniSkillIds = mergeProfileMiniSkillIds(
+      ctxProfileMiniSkillIds,
+      ctxSelectedMiniSkillIds,
+    );
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
@@ -6851,7 +6864,8 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
-          ...(ctxSelectedMiniSkillIds.length > 0 ? { miniSkillIds: ctxSelectedMiniSkillIds } : {}),
+          ...(effectiveMiniSkillIds.length > 0 ? { miniSkillIds: effectiveMiniSkillIds } : {}),
+          ...(ctxAgentProfileTurnContext ? { agentProfile: ctxAgentProfileTurnContext } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },

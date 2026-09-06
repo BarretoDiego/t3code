@@ -307,7 +307,7 @@ export function MiniSkillsSettingsPanel() {
         ) : (
           <ul className="divide-y divide-border/60">
             {miniSkills.map((skill) => (
-              <li key={skill.id} className="flex items-center gap-4 px-4 py-3">
+              <li key={skill.id} className="group/row flex items-center gap-4 px-3 py-3 sm:px-4">
                 <div className="grid min-w-0 flex-1 gap-0.5">
                   <span className="truncate font-medium text-sm">{skill.name}</span>
                   {skill.description.length > 0 ? (
@@ -324,7 +324,7 @@ export function MiniSkillsSettingsPanel() {
                     aria-label={`Enable ${skill.name} by default for new threads`}
                   />
                 </label>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
                   <Button
                     size="icon-sm"
                     variant="ghost"

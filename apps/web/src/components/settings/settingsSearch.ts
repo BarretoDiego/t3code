@@ -9,6 +9,7 @@ export type SettingsPath =
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/mini-skills"
+  | "/settings/agent-profiles"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -55,6 +56,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/mini-skills": "Mini Skills",
+  "/settings/agent-profiles": "Agent Profiles",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
@@ -453,6 +455,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Prompt Wrappers",
     to: "/settings/mini-skills",
     searchTerms: ["mini skill user preferences scope thread request template placeholder skills"],
+    primaryOnly: true,
+  },
+  {
+    id: "agent-profiles",
+    title: "Agent Profiles",
+    to: "/settings/agent-profiles",
+    searchTerms: [
+      "execution profiles presets composer model routing reasoning effort fallback shortcut custom",
+    ],
+    primaryOnly: true,
+  },
+  {
+    id: "agent-profiles-default-wrapper",
+    title: "Profile wrapper",
+    to: "/settings/agent-profiles",
+    searchTerms: ["profile prompt template user_message placeholder preferences"],
     primaryOnly: true,
   },
   {

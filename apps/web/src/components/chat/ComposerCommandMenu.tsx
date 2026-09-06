@@ -4,6 +4,7 @@ import {
   type ProviderSkillSourceKind,
 } from "@t3tools/client-runtime/providerSkills";
 import {
+  type AgentProfileId,
   type ProjectEntry,
   type ProviderDriverKind,
   type ServerProviderSkill,
@@ -55,6 +56,13 @@ export type ComposerCommandItem =
       type: "skill";
       provider: ProviderDriverKind;
       skill: ServerProviderSkill;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "profile";
+      profileId: AgentProfileId;
       label: string;
       description: string;
     };

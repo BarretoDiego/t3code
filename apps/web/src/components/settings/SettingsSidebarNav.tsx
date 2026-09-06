@@ -21,6 +21,7 @@ import {
   SearchIcon,
   Settings2Icon,
   SparklesIcon,
+  UserCogIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -78,6 +79,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/mini-skills": SparklesIcon,
+  "/settings/agent-profiles": UserCogIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };
@@ -117,6 +119,10 @@ const SETTINGS_PAGE_SECTIONS: Partial<
   "/settings/mini-skills": [
     { label: "Library", targetId: "mini-skills" },
     { label: "Prompt wrappers", targetId: "mini-skills-prompt-wrappers" },
+  ],
+  "/settings/agent-profiles": [
+    { label: "Profiles", targetId: "agent-profiles" },
+    { label: "Default wrapper", targetId: "agent-profiles-default-wrapper" },
   ],
   "/settings/connections": [
     { label: "This environment", targetId: "connections-environment" },

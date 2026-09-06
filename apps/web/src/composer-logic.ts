@@ -10,7 +10,7 @@ import {
 import { findComposerCodeBlocks } from "./composerCodeBlocks";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "skill";
+export type ComposerTriggerKind = "path" | "slash-command" | "skill" | "profile";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 export type ComposerSubmissionIntent = "foreground" | "background";
 
@@ -288,6 +288,17 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
+  // "#profile-slug" only triggers at the very start of the message, and only
+  // with a letter after '#': issue references like "Fix #123" and mid-text
+  // hashtags never open the profile menu.
+  if (tokenStart === 0 && /^#(?:[a-z][a-z0-9-]*)?$/i.test(token)) {
+    return {
+      kind: "profile",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   if (token.startsWith("$")) {
     return {
       kind: "skill",
