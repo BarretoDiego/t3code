@@ -26,6 +26,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
+  ThreadMiniSkillSnapshot,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Option from "effect/Option";
@@ -224,6 +225,7 @@ export interface ProjectionSnapshotQueryShape {
     Option.Option<{
       readonly message: OrchestrationMessage;
       readonly hasOtherUserMessages: boolean;
+      readonly threadMiniSkills: ReadonlyArray<ThreadMiniSkillSnapshot>;
     }>,
     ProjectionRepositoryError
   >;
