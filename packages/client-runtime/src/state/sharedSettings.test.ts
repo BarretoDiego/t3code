@@ -61,6 +61,8 @@ describe("pickSharedServerSettings", () => {
     ).toEqual([
       "continueThreadsAfterServerUpdate",
       "defaultThreadEnvMode",
+      "miniSkillPromptWrappers",
+      "miniSkills",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",

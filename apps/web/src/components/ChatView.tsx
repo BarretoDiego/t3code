@@ -1536,6 +1536,9 @@ export default function ChatView(props: ChatViewProps) {
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
   );
+  const setComposerDraftSelectedMiniSkillIds = useComposerDraftStore(
+    (store) => store.setSelectedMiniSkillIds,
+  );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
@@ -6278,6 +6281,7 @@ export default function ChatView(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
+      selectedMiniSkillIds: ctxSelectedMiniSkillIds,
     } = sendCtx;
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
@@ -6847,6 +6851,7 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
+          ...(ctxSelectedMiniSkillIds.length > 0 ? { miniSkillIds: ctxSelectedMiniSkillIds } : {}),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -6858,6 +6863,11 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        // Request-scoped mini skills are single-use: the selection only
+        // survives a failed send, never a successful one.
+        if (ctxSelectedMiniSkillIds.length > 0) {
+          setComposerDraftSelectedMiniSkillIds(composerDraftTarget, []);
+        }
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.

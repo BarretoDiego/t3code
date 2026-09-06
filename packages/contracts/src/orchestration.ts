@@ -23,6 +23,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { MiniSkillId, ThreadMiniSkillSnapshot } from "./miniSkills.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -524,6 +525,13 @@ export const OrchestrationThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  /**
+   * Mini skills snapshotted onto this thread at creation (the library skills
+   * enabled by default at that moment). Immutable afterwards: later library
+   * edits or deletions never rewrite it. Optional so threads created before
+   * mini skills existed still decode.
+   */
+  miniSkills: Schema.optional(Schema.Array(ThreadMiniSkillSnapshot)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -801,6 +809,12 @@ const ThreadCreateCommand = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   historyImport: Schema.optional(Schema.Literal(true)),
+  /**
+   * Mini skill snapshots to attach at creation. Optional: servers fill this
+   * from the skills enabled by default when the client omits it, and history
+   * imports never carry it.
+   */
+  miniSkills: Schema.optionalKey(Schema.Array(ThreadMiniSkillSnapshot)),
 });
 
 const ThreadDeleteCommand = Schema.Struct({
@@ -937,6 +951,8 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
+  // See ThreadCreateCommand.miniSkills; same server-side default fill.
+  miniSkills: Schema.optionalKey(Schema.Array(ThreadMiniSkillSnapshot)),
 });
 
 const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
@@ -972,6 +988,12 @@ export const ThreadTurnStartCommand = Schema.Struct({
   ),
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  /**
+   * Library mini skills selected in the composer for this request only.
+   * Resolved against server settings at turn dispatch; unknown ids are
+   * skipped. Never persisted into the user-visible message text.
+   */
+  miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
   createdAt: IsoDateTime,
 });
 
@@ -991,6 +1013,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
   createdAt: IsoDateTime,
 });
 
@@ -1284,6 +1307,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Snapshot of the mini skills applied to this thread at creation. Optional
+  // so events persisted before mini skills existed still decode.
+  miniSkills: Schema.optional(Schema.Array(ThreadMiniSkillSnapshot)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1406,6 +1432,9 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  // Request-scoped mini skill selections riding this turn; resolved against
+  // the library at dispatch time. Optional for pre-feature events.
+  miniSkillIds: Schema.optional(Schema.Array(MiniSkillId)),
   createdAt: IsoDateTime,
 });
 

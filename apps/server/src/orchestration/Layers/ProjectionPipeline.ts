@@ -650,6 +650,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
+            miniSkills: event.payload.miniSkills ?? [],
             deletedAt: null,
           });
           return;

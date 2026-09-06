@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeCrypto from "node:crypto";
 
 import {
   ModelSelection,
@@ -19,8 +20,10 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  MiniSkillId,
   ProjectId,
   ThreadId,
+  type ThreadMiniSkillSnapshot,
   TurnId,
 } from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
@@ -168,6 +171,8 @@ describe("ProviderCommandReactor", () => {
   async function createHarness(input?: {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
+    readonly threadMiniSkills?: ReadonlyArray<ThreadMiniSkillSnapshot>;
+    readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly unreadableHistory?: boolean;
@@ -476,7 +481,7 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(ServerSettingsService.layerTest(input?.serverSettingsOverrides)),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
@@ -511,6 +516,9 @@ describe("ProviderCommandReactor", () => {
         runtimeMode: "approval-required",
         branch: null,
         worktreePath: null,
+        ...(input?.threadMiniSkills !== undefined
+          ? { miniSkills: [...input.threadMiniSkills] }
+          : {}),
         createdAt: now,
       }),
     );
@@ -869,6 +877,206 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  describe("mini skills", () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const workspaceSnapshot: ThreadMiniSkillSnapshot = {
+      skillId: MiniSkillId.make("default-isolated-feature-workspace"),
+      name: "Create Isolated Feature Workspace",
+      content: "Create a dedicated Git worktree for this feature.",
+      appliedAt: now,
+    };
+    const commitSkill = {
+      id: MiniSkillId.make("default-commit-changes"),
+      name: "Commit Changes",
+      description: "",
+      content: "Review the complete diff before creating commits.",
+      enabledByDefaultForNewThreads: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const pullRequestSkill = {
+      id: MiniSkillId.make("default-create-pull-request"),
+      name: "Create Pull Request",
+      description: "",
+      content: "Create a pull request from the implementation branch.",
+      enabledByDefaultForNewThreads: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const sendTurnInputAt = (
+      harness: Awaited<ReturnType<typeof createHarness>>,
+      index: number,
+    ): string | undefined =>
+      (harness.sendTurn.mock.calls[index]?.[0] as { readonly input?: string } | undefined)?.input;
+
+    const dispatchTurnStart = (
+      harness: Awaited<ReturnType<typeof createHarness>>,
+      input: { readonly text: string; readonly miniSkillIds?: ReadonlyArray<MiniSkillId> },
+    ) =>
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`cmd-turn-start-${NodeCrypto.randomUUID()}`),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId(`user-message-${NodeCrypto.randomUUID()}`),
+          role: "user",
+          text: input.text,
+          attachments: [],
+        },
+        ...(input.miniSkillIds !== undefined ? { miniSkillIds: [...input.miniSkillIds] } : {}),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+    effectIt.effect(
+      "injects thread-scope snapshots into the first turn and keeps the transcript clean",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({ threadMiniSkills: [workspaceSnapshot] }),
+          );
+
+          yield* dispatchTurnStart(harness, { text: "Implement pagination." });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+          const input = sendTurnInputAt(harness, 0);
+          expect(input).toContain('<user_preferences scope="thread">');
+          expect(input).toContain(
+            "### Create Isolated Feature Workspace\n\nCreate a dedicated Git worktree for this feature.",
+          );
+          expect(input?.endsWith("Implement pagination.")).toBe(true);
+
+          // The persisted user message stays exactly what the user typed.
+          const readModel = yield* Effect.promise(() => harness.readModel());
+          const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+          expect(thread?.messages.map((message) => message.text)).toEqual([
+            "Implement pagination.",
+          ]);
+          expect(thread?.miniSkills).toEqual([workspaceSnapshot]);
+        }),
+    );
+
+    effectIt.effect("does not repeat thread-scope snapshots on later turns", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({ threadMiniSkills: [workspaceSnapshot] }),
+        );
+
+        yield* dispatchTurnStart(harness, { text: "First message." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+        yield* Effect.promise(() => harness.drain());
+
+        yield* dispatchTurnStart(harness, { text: "Second message." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
+
+        expect(sendTurnInputAt(harness, 1)).toBe("Second message.");
+      }),
+    );
+
+    effectIt.effect("resolves request-scope skills from the library and skips unknown ids", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            serverSettingsOverrides: { miniSkills: [commitSkill, pullRequestSkill] },
+          }),
+        );
+
+        yield* dispatchTurnStart(harness, {
+          text: "Implement pagination.",
+          miniSkillIds: [commitSkill.id, pullRequestSkill.id, MiniSkillId.make("deleted-skill")],
+        });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+        const input = sendTurnInputAt(harness, 0);
+        expect(input).toContain('<user_preferences scope="request">');
+        expect(input).toContain(
+          "### Commit Changes\n\nReview the complete diff before creating commits.",
+        );
+        expect(input).toContain(
+          "### Create Pull Request\n\nCreate a pull request from the implementation branch.",
+        );
+        expect(input).not.toContain('<user_preferences scope="thread">');
+        expect(input?.endsWith("Implement pagination.")).toBe(true);
+      }),
+    );
+
+    effectIt.effect("emits no request wrapper when every selected id is unknown", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+
+        yield* dispatchTurnStart(harness, {
+          text: "Implement pagination.",
+          miniSkillIds: [MiniSkillId.make("deleted-skill")],
+        });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+        expect(sendTurnInputAt(harness, 0)).toBe("Implement pagination.");
+      }),
+    );
+
+    effectIt.effect("keeps the thread snapshot when the library skill changes underneath it", () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            threadMiniSkills: [workspaceSnapshot],
+            serverSettingsOverrides: {
+              miniSkills: [
+                {
+                  ...commitSkill,
+                  id: workspaceSnapshot.skillId,
+                  name: workspaceSnapshot.name,
+                  content: "Edited library version that must not leak into old threads.",
+                },
+              ],
+            },
+          }),
+        );
+
+        yield* dispatchTurnStart(harness, { text: "Implement pagination." });
+        yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+        const input = sendTurnInputAt(harness, 0);
+        expect(input).toContain("Create a dedicated Git worktree for this feature.");
+        expect(input).not.toContain("Edited library version");
+      }),
+    );
+
+    effectIt.effect(
+      "lets an explicit request selection win over the same skill's thread snapshot",
+      () =>
+        Effect.gen(function* () {
+          const harness = yield* Effect.promise(() =>
+            createHarness({
+              threadMiniSkills: [{ ...workspaceSnapshot, content: "Stale snapshot content." }],
+              serverSettingsOverrides: {
+                miniSkills: [
+                  {
+                    ...commitSkill,
+                    id: workspaceSnapshot.skillId,
+                    name: workspaceSnapshot.name,
+                    content: "Fresh library content.",
+                  },
+                ],
+              },
+            }),
+          );
+
+          yield* dispatchTurnStart(harness, {
+            text: "Implement pagination.",
+            miniSkillIds: [workspaceSnapshot.skillId],
+          });
+          yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+          const input = sendTurnInputAt(harness, 0);
+          expect(input).toContain("Fresh library content.");
+          expect(input).not.toContain("Stale snapshot content.");
+          expect(input?.match(/### Create Isolated Feature Workspace/g)).toHaveLength(1);
+        }),
+    );
   });
 
   effectIt.effect("retains a turn dispatched immediately after start until activation", () =>

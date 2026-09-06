@@ -15,6 +15,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   ThreadLinkedPullRequest,
+  ThreadMiniSkillSnapshot,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -52,6 +53,9 @@ export const ProjectionThread = Schema.Struct({
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
+  // Mini skills snapshotted at thread creation; written once, never updated.
+  // Reads coalesce a missing column to an empty list.
+  miniSkills: Schema.Array(ThreadMiniSkillSnapshot),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

@@ -1,6 +1,15 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import {
+  DEFAULT_MINI_SKILLS,
+  DEFAULT_MINI_SKILLS_SEEDED_AT,
+  DEFAULT_REQUEST_MINI_SKILL_WRAPPER,
   DEFAULT_SERVER_SETTINGS,
+  MiniSkillId,
+  type MiniSkill,
   ProviderDriverKind,
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
@@ -1137,6 +1146,92 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.match(environment.CODEX_HOME ?? "", /[\\/][.]codex-terminal$/);
       assert.notInclude(persisted, "sk-terminal-secret");
       assert.include(persisted, '"valueRedacted": true');
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("seeds the built-in mini skills on first start", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+      yield* serverSettings.start;
+      const settings = yield* serverSettings.getSettings;
+
+      assert.deepEqual(settings.miniSkills, [...DEFAULT_MINI_SKILLS]);
+      assert.strictEqual(settings.miniSkillsSeededAt, DEFAULT_MINI_SKILLS_SEEDED_AT);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("does not reseed mini skills the user deleted, across restarts", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3code-mini-skills-seed-test-"),
+      );
+      const makeRestartableLayer = () =>
+        ServerSettingsModule.layer.pipe(
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+        );
+
+      const deletedId = DEFAULT_MINI_SKILLS[0]!.id;
+      yield* Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* serverSettings.start;
+        const seeded = yield* serverSettings.getSettings;
+        assert.strictEqual(seeded.miniSkills.length, DEFAULT_MINI_SKILLS.length);
+
+        yield* serverSettings.updateSettings({
+          miniSkills: seeded.miniSkills.filter((skill) => skill.id !== deletedId),
+        });
+      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
+
+      // A fresh service over the same state directory simulates a restart.
+      yield* Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* serverSettings.start;
+        const settings = yield* serverSettings.getSettings;
+
+        assert.strictEqual(settings.miniSkills.length, DEFAULT_MINI_SKILLS.length - 1);
+        assert.isFalse(settings.miniSkills.some((skill) => skill.id === deletedId));
+      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
+    }),
+  );
+
+  it.effect("replaces the mini skill library wholesale and merges wrapper patches", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const skill: MiniSkill = {
+        id: MiniSkillId.make("skill-always-run-tests"),
+        name: "Always Run Tests",
+        description: "Run the test suite before finishing.",
+        content: "Run the relevant tests before declaring the task done.",
+        enabledByDefaultForNewThreads: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+
+      yield* serverSettings.updateSettings({ miniSkills: [skill] });
+      yield* serverSettings.updateSettings({
+        miniSkillPromptWrappers: { thread: "THREAD PREFS\n\n{{skills}}" },
+      });
+
+      const settings = yield* serverSettings.getSettings;
+      assert.deepEqual(settings.miniSkills, [skill]);
+      assert.strictEqual(settings.miniSkillPromptWrappers.thread, "THREAD PREFS\n\n{{skills}}");
+      // Untouched sibling wrapper keeps its current value.
+      assert.strictEqual(
+        settings.miniSkillPromptWrappers.request,
+        DEFAULT_REQUEST_MINI_SKILL_WRAPPER,
+      );
+
+      // The library survives outside the defaults-stripping write path.
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      const persisted = JSON.parse(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+      ) as Record<string, unknown>;
+      assert.deepEqual(persisted.miniSkills, [skill]);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });

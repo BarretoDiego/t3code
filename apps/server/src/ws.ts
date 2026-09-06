@@ -68,6 +68,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
+  type ThreadMiniSkillSnapshot,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
@@ -981,6 +982,39 @@ const makeWsRpcLayer = (
           return output;
         });
 
+      /**
+       * Snapshot the library mini skills enabled by default onto a command
+       * that creates a thread. The snapshot (not the skill id) travels with
+       * the thread, so later library edits never rewrite existing threads.
+       * A settings read failure degrades to no skills rather than failing
+       * thread creation.
+       */
+      const getDefaultMiniSkillSnapshots = (): Effect.Effect<
+        ReadonlyArray<ThreadMiniSkillSnapshot>
+      > =>
+        Effect.gen(function* () {
+          const settings = yield* serverSettings.getSettings;
+          const defaults = settings.miniSkills.filter(
+            (skill) => skill.enabledByDefaultForNewThreads,
+          );
+          if (defaults.length === 0) {
+            return [];
+          }
+          const appliedAt = yield* nowIso;
+          return defaults.map((skill) => ({
+            skillId: skill.id,
+            name: skill.name,
+            content: skill.content,
+            appliedAt,
+          }));
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("failed to resolve default mini skills for new thread", {
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as([] as ReadonlyArray<ThreadMiniSkillSnapshot>)),
+          ),
+        );
+
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
@@ -1123,6 +1157,8 @@ const makeWsRpcLayer = (
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
+              const miniSkills =
+                bootstrap.createThread.miniSkills ?? (yield* getDefaultMiniSkillSnapshots());
               const created = yield* dispatchFromClient({
                 type: "thread.create",
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
@@ -1134,6 +1170,7 @@ const makeWsRpcLayer = (
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                ...(miniSkills.length > 0 ? { miniSkills: [...miniSkills] } : {}),
                 createdAt: bootstrap.createThread.createdAt,
               });
               // The successful create is a fence in the engine command queue:
@@ -1233,7 +1270,22 @@ const makeWsRpcLayer = (
         const dispatchEffect =
           normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
             ? dispatchBootstrapTurnStart(normalizedCommand)
-            : dispatchFromClient(normalizedCommand).pipe(
+            : Effect.gen(function* () {
+                if (
+                  normalizedCommand.type === "thread.create" &&
+                  normalizedCommand.miniSkills === undefined &&
+                  normalizedCommand.historyImport !== true
+                ) {
+                  const miniSkills = yield* getDefaultMiniSkillSnapshots();
+                  if (miniSkills.length > 0) {
+                    return yield* dispatchFromClient({
+                      ...normalizedCommand,
+                      miniSkills: [...miniSkills],
+                    });
+                  }
+                }
+                return yield* dispatchFromClient(normalizedCommand);
+              }).pipe(
                 Effect.tap(({ sequence }) =>
                   // Returning from thread.create is the handoff point at which
                   // clients may start resources for the new incarnation. Use

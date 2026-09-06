@@ -8,6 +8,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
+  | "/settings/mini-skills"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -53,6 +54,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
+  "/settings/mini-skills": "Mini Skills",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
@@ -435,6 +437,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "override generated commit change request pr titles descriptions branch bookmark",
     ],
+    primaryOnly: true,
+  },
+  {
+    id: "mini-skills",
+    title: "Mini Skills",
+    to: "/settings/mini-skills",
+    searchTerms: [
+      "library reusable instructions snippets prompts templates attach thread request default new threads",
+    ],
+    primaryOnly: true,
+  },
+  {
+    id: "mini-skills-prompt-wrappers",
+    title: "Prompt Wrappers",
+    to: "/settings/mini-skills",
+    searchTerms: ["mini skill user preferences scope thread request template placeholder skills"],
     primaryOnly: true,
   },
   {

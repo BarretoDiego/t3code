@@ -9,6 +9,7 @@ import {
   defaultInstanceIdForDriver,
   EnvironmentId,
   MessageId,
+  MiniSkillId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -348,6 +349,42 @@ describe("composerDraftStore clearComposerContent", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft).toBeUndefined();
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:optimistic");
+  });
+});
+
+describe("composerDraftStore mini skill selection", () => {
+  const threadId = ThreadId.make("thread-mini-skills");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const skillA = MiniSkillId.make("skill-a");
+  const skillB = MiniSkillId.make("skill-b");
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("stores, dedupes, and clears the request-scoped selection", () => {
+    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, [skillA, skillB, skillA]);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedMiniSkillIds,
+    ).toEqual([skillA, skillB]);
+
+    // The selection alone is an execution parameter, not user content.
+    expect(
+      composerDraftHasUserContent(useComposerDraftStore.getState().getComposerDraft(threadRef)),
+    ).toBe(false);
+
+    // A cleared selection removes an otherwise-empty draft.
+    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, []);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("persists the selection with the draft and hydrates it back", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "implement the feature");
+    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, [skillA, skillB]);
+
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+    const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(persisted.draftsByThreadKey[key]?.selectedMiniSkillIds).toEqual([skillA, skillB]);
   });
 });
 

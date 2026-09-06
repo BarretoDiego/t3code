@@ -11,6 +11,8 @@
  * @module ServerSettings
  */
 import {
+  DEFAULT_MINI_SKILLS,
+  DEFAULT_MINI_SKILLS_SEEDED_AT,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
@@ -791,6 +793,23 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const updateSettings: ServerSettingsService["Service"]["updateSettings"] = (patch) =>
+    writeSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* getSettingsFromCache;
+        const nextPersisted = yield* persistProviderEnvironmentSecrets(
+          current,
+          applyServerSettingsPatch(current, patch),
+        );
+        const next = yield* normalizeServerSettings(nextPersisted);
+        yield* writeSettingsAtomically(next);
+        yield* Cache.set(settingsCache, cacheKey, next);
+        yield* emitChange(next);
+        const materialized = yield* materializeProviderEnvironmentSecrets(next);
+        return resolveTextGenerationProvider(materialized);
+      }),
+    );
+
   const start = Effect.gen(function* () {
     const shouldStart = yield* Ref.modify(startedRef, (started) => [!started, true]);
     if (!shouldStart) {
@@ -800,7 +819,16 @@ const make = Effect.gen(function* () {
     const startup = Effect.gen(function* () {
       yield* startWatcher;
       yield* Cache.invalidate(settingsCache, cacheKey);
-      yield* getSettingsFromCache;
+      const settings = yield* getSettingsFromCache;
+      // One-time seed of the built-in mini skills. The marker (not the
+      // library contents) distinguishes "never initialized" from "user
+      // deleted the defaults", so deleted seeds stay deleted.
+      if (settings.miniSkillsSeededAt === null) {
+        yield* updateSettings({
+          miniSkills: [...DEFAULT_MINI_SKILLS],
+          miniSkillsSeededAt: DEFAULT_MINI_SKILLS_SEEDED_AT,
+        });
+      }
     });
 
     const startupExit = yield* Effect.exit(startup);
@@ -819,22 +847,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap(materializeProviderEnvironmentSecrets),
       Effect.map(resolveTextGenerationProvider),
     ),
-    updateSettings: (patch) =>
-      writeSemaphore.withPermits(1)(
-        Effect.gen(function* () {
-          const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
-            current,
-            applyServerSettingsPatch(current, patch),
-          );
-          const next = yield* normalizeServerSettings(nextPersisted);
-          yield* writeSettingsAtomically(next);
-          yield* Cache.set(settingsCache, cacheKey, next);
-          yield* emitChange(next);
-          const materialized = yield* materializeProviderEnvironmentSecrets(next);
-          return resolveTextGenerationProvider(materialized);
-        }),
-      ),
+    updateSettings,
     get streamChanges() {
       return materializeChanges(Stream.fromPubSub(changesPubSub));
     },

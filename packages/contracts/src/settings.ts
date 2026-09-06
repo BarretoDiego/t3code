@@ -2,7 +2,17 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { ForwardCompatibleNullable, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import {
+  ForwardCompatibleNullable,
+  IsoDateTime,
+  TrimmedNonEmptyString,
+  TrimmedString,
+} from "./baseSchemas.ts";
+import {
+  DEFAULT_MINI_SKILL_PROMPT_WRAPPERS,
+  MiniSkill,
+  MiniSkillPromptWrappers,
+} from "./miniSkills.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode } from "./environment.ts";
 import {
@@ -1062,6 +1072,26 @@ export const ServerSettings = Schema.Struct({
   usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  /**
+   * User-authored reusable instruction snippets ("Mini Skills"). The whole
+   * library lives in settings so it roams with shared-settings sync and is
+   * available to every project on this environment. Threads snapshot the
+   * skills applied to them, so editing or deleting an entry here never
+   * rewrites an existing thread's instructions.
+   */
+  miniSkills: Schema.Array(MiniSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /** Prompt wrappers surrounding rendered mini skills; `{{skills}}` marks the insertion point. */
+  miniSkillPromptWrappers: MiniSkillPromptWrappers.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MINI_SKILL_PROMPT_WRAPPERS)),
+  ),
+  /**
+   * Set once the built-in mini skills have been seeded. Distinguishes "never
+   * initialized" from "user deleted the defaults", so a deleted seed is never
+   * silently recreated on startup.
+   */
+  miniSkillsSeededAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1278,6 +1308,18 @@ export const ServerSettingsPatch = Schema.Struct({
   usagePriceOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(UsageModelPriceOverride)),
   ),
+  // Whole-library replacement, like `providerInstances`: the settings UI
+  // always sends the fully-formed list, and per-entry patching would race
+  // another client's edit that has not echoed back yet.
+  miniSkills: Schema.optionalKey(Schema.Array(MiniSkill)),
+  miniSkillPromptWrappers: Schema.optionalKey(
+    Schema.Struct({
+      thread: Schema.optionalKey(Schema.String),
+      request: Schema.optionalKey(Schema.String),
+    }),
+  ),
+  // Server-internal seed marker; clients never write it directly.
+  miniSkillsSeededAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
