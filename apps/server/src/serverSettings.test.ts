@@ -4,6 +4,8 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import {
+  DEFAULT_AGENT_PROFILES,
+  DEFAULT_AGENT_PROFILES_SEEDED_AT,
   DEFAULT_MINI_SKILLS,
   DEFAULT_MINI_SKILLS_SEEDED_AT,
   DEFAULT_REQUEST_MINI_SKILL_WRAPPER,
@@ -1159,6 +1161,43 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.deepEqual(settings.miniSkills, [...DEFAULT_MINI_SKILLS]);
       assert.strictEqual(settings.miniSkillsSeededAt, DEFAULT_MINI_SKILLS_SEEDED_AT);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("seeds the built-in agent profiles on first start and never reseeds deletions", () =>
+    Effect.gen(function* () {
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "t3code-agent-profiles-seed-test-"),
+      );
+      const makeRestartableLayer = () =>
+        ServerSettingsModule.layer.pipe(
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+        );
+
+      const deletedId = DEFAULT_AGENT_PROFILES[0]!.id;
+      yield* Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* serverSettings.start;
+        const seeded = yield* serverSettings.getSettings;
+        assert.deepEqual(seeded.agentProfiles, [...DEFAULT_AGENT_PROFILES]);
+        assert.strictEqual(seeded.agentProfilesSeededAt, DEFAULT_AGENT_PROFILES_SEEDED_AT);
+
+        yield* serverSettings.updateSettings({
+          agentProfiles: seeded.agentProfiles.filter((profile) => profile.id !== deletedId),
+        });
+      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
+
+      // A fresh service over the same state directory simulates a restart.
+      yield* Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* serverSettings.start;
+        const settings = yield* serverSettings.getSettings;
+
+        assert.strictEqual(settings.agentProfiles.length, DEFAULT_AGENT_PROFILES.length - 1);
+        assert.isFalse(settings.agentProfiles.some((profile) => profile.id === deletedId));
+      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
+    }),
   );
 
   it.effect("does not reseed mini skills the user deleted, across restarts", () =>
