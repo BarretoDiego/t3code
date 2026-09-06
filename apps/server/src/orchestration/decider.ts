@@ -988,6 +988,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.miniSkillIds !== undefined && command.miniSkillIds.length > 0
             ? { miniSkillIds: command.miniSkillIds }
             : {}),
+          ...(command.agentProfile !== undefined ? { agentProfile: command.agentProfile } : {}),
           createdAt: command.createdAt,
         },
       };

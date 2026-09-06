@@ -7,6 +7,7 @@ import {
 import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
+  AgentProfileId,
   EnvironmentId,
   MessageId,
   MiniSkillId,
@@ -385,6 +386,51 @@ describe("composerDraftStore mini skill selection", () => {
     const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
     const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
     expect(persisted.draftsByThreadKey[key]?.selectedMiniSkillIds).toEqual([skillA, skillB]);
+  });
+});
+
+describe("composerDraftStore agent profile selection", () => {
+  const threadId = ThreadId.make("thread-agent-profiles");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const profileA = AgentProfileId.make("profile-a");
+  const profileB = AgentProfileId.make("profile-b");
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("keeps the selected profile per thread and survives content clears", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "review this diff");
+    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileA);
+
+    // Sending clears content, not the profile: the profile is a per-thread mode.
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedProfileId).toBe(
+      profileA,
+    );
+
+    const otherThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-other"));
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(otherThreadRef)?.selectedProfileId ?? null,
+    ).toBeNull();
+
+    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileB);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedProfileId).toBe(
+      profileB,
+    );
+
+    // Back to Custom removes an otherwise-empty draft.
+    useComposerDraftStore.getState().setSelectedProfileId(threadRef, null);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("persists the selected profile with the draft", () => {
+    useComposerDraftStore.getState().setPrompt(threadRef, "review this diff");
+    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileA);
+
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+    const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(persisted.draftsByThreadKey[key]?.selectedProfileId).toBe(profileA);
   });
 });
 

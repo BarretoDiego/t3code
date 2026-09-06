@@ -11,6 +11,8 @@
  * @module ServerSettings
  */
 import {
+  DEFAULT_AGENT_PROFILES,
+  DEFAULT_AGENT_PROFILES_SEEDED_AT,
   DEFAULT_MINI_SKILLS,
   DEFAULT_MINI_SKILLS_SEEDED_AT,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -827,6 +829,13 @@ const make = Effect.gen(function* () {
         yield* updateSettings({
           miniSkills: [...DEFAULT_MINI_SKILLS],
           miniSkillsSeededAt: DEFAULT_MINI_SKILLS_SEEDED_AT,
+        });
+      }
+      // Same one-time seeding for the built-in agent profiles.
+      if (settings.agentProfilesSeededAt === null) {
+        yield* updateSettings({
+          agentProfiles: [...DEFAULT_AGENT_PROFILES],
+          agentProfilesSeededAt: DEFAULT_AGENT_PROFILES_SEEDED_AT,
         });
       }
     });

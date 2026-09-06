@@ -5,6 +5,7 @@
 - [Install T3 Code](./user/install.md)
 - [Messages and context](./user/composer.md)
 - [Mini Skills](./user/mini-skills.md)
+- [Agent Profiles](./user/agent-profiles.md)
 - [Working with threads](./user/thread-sidebar.md)
 - [Permission modes](./user/permission-modes.md)
 - [Terminal history](./user/terminal.md)

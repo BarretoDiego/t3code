@@ -2,6 +2,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  AgentProfileId,
   EnvironmentId,
   MiniSkillId,
   ModelSelection,
@@ -258,6 +259,9 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   // draft so a reload mid-edit keeps the selection; cleared after a
   // successful send.
   selectedMiniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
+  // Active agent profile. Unlike `selectedMiniSkillIds` this survives sends:
+  // a profile is a per-thread mode, not a one-shot request parameter.
+  selectedProfileId: Schema.optionalKey(Schema.NullOr(AgentProfileId)),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -401,6 +405,11 @@ export interface ComposerThreadDraftState {
    * content, and a successful send clears it.
    */
   selectedMiniSkillIds: MiniSkillId[];
+  /**
+   * Active agent profile for this thread/draft, null = Custom mode. Persisted
+   * across sends; a deleted profile id reads as Custom at resolution time.
+   */
+  selectedProfileId: AgentProfileId | null;
 }
 
 /**
@@ -614,6 +623,11 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     miniSkillIds: ReadonlyArray<MiniSkillId>,
   ) => void;
+  /**
+   * Set the active agent profile (null = Custom). Persists across sends —
+   * profiles are a per-thread mode, not a one-shot parameter.
+   */
+  setSelectedProfileId: (threadRef: ComposerThreadTarget, profileId: AgentProfileId | null) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
@@ -790,6 +804,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   runtimeMode: null,
   interactionMode: null,
   selectedMiniSkillIds: EMPTY_MINI_SKILL_IDS,
+  selectedProfileId: null,
 });
 
 /**
@@ -814,6 +829,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     runtimeMode: null,
     interactionMode: null,
     selectedMiniSkillIds: [],
+    selectedProfileId: null,
   };
 }
 
@@ -908,7 +924,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
     draft.interactionMode === null &&
-    draft.selectedMiniSkillIds.length === 0
+    draft.selectedMiniSkillIds.length === 0 &&
+    draft.selectedProfileId === null
   );
 }
 
@@ -2145,7 +2162,8 @@ export function partializeComposerDraftStoreState(
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null &&
-      draft.selectedMiniSkillIds.length === 0
+      draft.selectedMiniSkillIds.length === 0 &&
+      draft.selectedProfileId === null
     ) {
       continue;
     }
@@ -2227,6 +2245,7 @@ export function partializeComposerDraftStoreState(
       ...(draft.selectedMiniSkillIds.length > 0
         ? { selectedMiniSkillIds: [...draft.selectedMiniSkillIds] }
         : {}),
+      ...(draft.selectedProfileId !== null ? { selectedProfileId: draft.selectedProfileId } : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2490,6 +2509,7 @@ function toHydratedThreadDraft(
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
     selectedMiniSkillIds: [...(persistedDraft.selectedMiniSkillIds ?? [])],
+    selectedProfileId: persistedDraft.selectedProfileId ?? null,
   };
 }
 
@@ -3304,6 +3324,33 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               selectedMiniSkillIds: nextSelectedIds,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setSelectedProfileId: (threadRef, profileId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && profileId === null) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            if (base.selectedProfileId === profileId) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              selectedProfileId: profileId,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
