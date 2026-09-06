@@ -1,6 +1,6 @@
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 
-export const DIFF_THEME_NAMES = {
+const DIFF_THEME_NAMES = {
   light: "pierre-light",
   dark: "pierre-dark",
 } as const;
@@ -80,7 +80,7 @@ interface RenderablePatchOptions {
   compactPartialHunkOffsets?: boolean;
 }
 
-export function compactPartialHunkOffsets(file: FileDiffMetadata): FileDiffMetadata {
+function compactPartialHunkOffsets(file: FileDiffMetadata): FileDiffMetadata {
   if (!file.isPartial) return file;
 
   let splitLineStart = 0;
