@@ -15,6 +15,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  type MiniSkillId,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -168,6 +169,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { MiniSkillsMenuContent, MiniSkillsPicker } from "./MiniSkillsPicker";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -1155,6 +1157,7 @@ export interface ChatComposerHandle {
     selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
     interactionMode: ProviderInteractionMode;
     interactionModeEnabled: boolean;
+    selectedMiniSkillIds: MiniSkillId[];
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
@@ -3910,6 +3913,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     size: "xs",
     hidden: composerControlsHidden || restingHiddenBlockCount > 1,
   });
+  const miniSkillsMenuContent = (
+    <MiniSkillsMenuContent
+      composerDraftTarget={composerDraftTarget}
+      environmentId={environmentId}
+    />
+  );
   const restingBlockDefs = [
     ...(providerTraitsPicker
       ? [
@@ -3924,6 +3933,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           },
         ]
       : []),
+    {
+      id: "mini-skills",
+      content: (
+        <>
+          <ComposerControlSeparator size={composerControlsInStrip ? "xs" : "sm"} />
+          <MiniSkillsPicker
+            composerDraftTarget={composerDraftTarget}
+            environmentId={environmentId}
+            size={composerControlsInStrip ? "xs" : "sm"}
+            hidden={composerControlsHidden || restingHiddenBlockCount > 1}
+          />
+        </>
+      ),
+    },
     {
       id: "mode",
       content: (
@@ -4012,6 +4035,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           runtimeMode={runtimeMode}
           showInteractionModeToggle={planModeUiEnabled}
           traitsMenuContent={providerTraitsMenuContent}
+          miniSkillsMenuContent={miniSkillsMenuContent}
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
@@ -4057,6 +4081,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 traitsMenuContent={
                   hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
+                }
+                miniSkillsMenuContent={
+                  hiddenRestingBlockIds.includes("mini-skills") ? miniSkillsMenuContent : undefined
                 }
                 onToggleInteractionMode={toggleInteractionMode}
                 onRuntimeModeChange={handleRuntimeModeChange}
@@ -4717,6 +4744,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedProviderModels,
         interactionMode,
         interactionModeEnabled: planModeUiEnabled,
+        selectedMiniSkillIds:
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
+            ?.selectedMiniSkillIds ?? [],
       }),
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
