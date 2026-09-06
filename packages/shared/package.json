@@ -91,6 +91,10 @@
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"
     },
+    "./miniSkills": {
+      "types": "./src/miniSkills.ts",
+      "import": "./src/miniSkills.ts"
+    },
     "./backgroundActivitySettings": {
       "types": "./src/backgroundActivitySettings.ts",
       "import": "./src/backgroundActivitySettings.ts"

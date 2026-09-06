@@ -27,6 +27,10 @@ const SHARED_SERVER_SETTING_KEYS = [
   "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
+  // The mini skill library and its prompt wrappers are user content, not
+  // machine state: they roam to every sync-eligible environment.
+  "miniSkills",
+  "miniSkillPromptWrappers",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];

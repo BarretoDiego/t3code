@@ -20,6 +20,7 @@ export * from "./usageLimitSourceId.ts";
 export * from "./model.ts";
 export * from "./marketplace.ts";
 export * from "./keybindings.ts";
+export * from "./miniSkills.ts";
 export * from "./server.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
