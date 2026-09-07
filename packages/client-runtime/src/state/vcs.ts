@@ -290,6 +290,13 @@ export function createVcsEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    fetch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:fetch",
+      tag: WS_METHODS.vcsFetch,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     pull: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:pull",
       tag: WS_METHODS.vcsPull,

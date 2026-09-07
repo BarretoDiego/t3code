@@ -3,6 +3,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
+import { makeBitbucketRepositoryBrowser } from "./BitbucketRepositoryBrowser.ts";
+import { SourceControlAccounts } from "./SourceControlAccounts.ts";
 import * as BitbucketApi from "./BitbucketApi.ts";
 import type { NormalizedBitbucketPullRequestRecord } from "./bitbucketPullRequests.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
@@ -33,9 +35,18 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
 
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
+  const accounts = yield* Effect.serviceOption(SourceControlAccounts);
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "bitbucket",
+    repositories: makeBitbucketRepositoryBrowser(
+      bitbucket,
+      Option.isSome(accounts)
+        ? accounts.value
+            .credential("bitbucket")
+            .pipe(Effect.map((account) => account?.workspace ?? ""))
+        : Effect.succeed(""),
+    ),
     listChangeRequests: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
       return bitbucket

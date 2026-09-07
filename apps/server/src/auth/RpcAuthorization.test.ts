@@ -2,6 +2,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
+  AuthReviewWriteScope,
   AuthRelayWriteScope,
   WS_METHODS,
   WsRpcGroup,
@@ -70,4 +71,19 @@ describe("RPC authorization scopes", () => {
       );
     }
   });
+});
+
+it("separates Hub reads, review execution, publication and manual merge", () => {
+  expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlHubPullRequest)).toBe(
+    AuthOrchestrationReadScope,
+  );
+  expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlHubReviewStart)).toBe(
+    AuthOrchestrationOperateScope,
+  );
+  expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlHubReviewPublish)).toBe(
+    AuthReviewWriteScope,
+  );
+  expect(requiredScopeForRpcMethod(WS_METHODS.sourceControlHubMerge)).toBe(
+    AuthOrchestrationOperateScope,
+  );
 });

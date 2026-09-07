@@ -356,6 +356,7 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "automaticGitFetchInterval",
   "providerHealthRefreshInterval",
   "sourceControlWriterModelSelection",
+  "sourceControlReview",
   "textGenerationModelSelection",
 ]);
 

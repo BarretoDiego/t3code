@@ -1,3 +1,4 @@
+import { SourceControlAccounts } from "./SourceControlAccounts.ts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -340,19 +341,35 @@ function deriveRepositoryCloneUrlsFromCreateOutput(
 
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
+  const accounts = yield* Effect.serviceOption(SourceControlAccounts);
 
   const execute: GitHubCli["Service"]["execute"] = (input) =>
-    process
-      .run({
-        operation: "GitHubCli.execute",
-        command: "gh",
-        args: input.args,
-        cwd: input.cwd,
-        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
-        ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
-      })
-      .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
+    Effect.gen(function* () {
+      const account = Option.isSome(accounts)
+        ? yield* accounts.value
+            .credential("github")
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new GitHubCliAuthenticationError({ command: "gh", cwd: input.cwd, cause }),
+              ),
+            )
+        : undefined;
+      return yield* process
+        .run({
+          operation: "GitHubCli.execute",
+          command: "gh",
+          args: input.args,
+          ...(account?.token
+            ? { env: { ...globalThis.process.env, GH_TOKEN: account.token } }
+            : {}),
+          cwd: input.cwd,
+          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
+          ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
+        })
+        .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
+    });
 
   return GitHubCli.of({
     execute,

@@ -68,12 +68,12 @@ describe("pickSharedServerSettings", () => {
       "agentProfileDefaultWrapper",
       "agentProfiles",
       "continueThreadsAfterServerUpdate",
-      "defaultThreadEnvMode",
       "miniSkillPromptWrappers",
       "miniSkills",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
+      "sourceControlReview",
       "sourceControlWritingStyle",
     ]);
   });

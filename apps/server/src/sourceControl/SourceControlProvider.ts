@@ -1,3 +1,4 @@
+import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type {
@@ -83,6 +84,7 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    readonly repositories?: SourceControlRepositoryBrowser;
     readonly listChangeRequests: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;

@@ -1,3 +1,8 @@
+import * as RemotePullRequestService from "./sourceControl/RemotePullRequestService.ts";
+import * as PullRequestReviewService from "./aiReview/PullRequestReviewService.ts";
+import * as ReviewAgentExecutor from "./aiReview/ReviewAgentExecutor.ts";
+import * as SourceControlHubService from "./sourceControl/SourceControlHubService.ts";
+import * as SourceControlAccounts from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -311,16 +316,22 @@ const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
+const SourceControlAccountsLive = SourceControlAccounts.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+);
+
 const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provide(
     Layer.mergeAll(AzureDevOpsCli.layer, BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer),
   ),
+  Layer.provideMerge(SourceControlAccountsLive),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
 );
 
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   Layer.provide(PullRequestProviderRegistry.layer),
+  Layer.provide(SourceControlAccountsLive),
   Layer.provide(SourceControlProviderRegistryLayerLive),
   Layer.provide(SourceControlRateLimit.layer),
 );
@@ -559,6 +570,27 @@ export const makeRoutesLayer = Layer.mergeAll(
 ).pipe(
   Layer.provide(MarketplaceService.layer),
   Layer.provide(AiRuntimeService.layer),
+  Layer.provide(
+    PullRequestReviewService.layer.pipe(
+      Layer.provide(ReviewAgentExecutor.layer),
+      Layer.provide(GitVcsDriver.layer),
+    ),
+  ),
+  Layer.provide(
+    RemotePullRequestService.layer.pipe(
+      Layer.provide(PullRequestProviderRegistry.layer),
+      Layer.provide(SourceControlAccountsLive),
+      Layer.provide(SourceControlRateLimit.layer),
+    ),
+  ),
+  Layer.provide(
+    SourceControlHubService.layer.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(GitVcsDriver.layer),
+      Layer.provide(VcsDriverRegistryLayerLive),
+    ),
+  ),
+  Layer.provide(SourceControlAccountsLive),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),

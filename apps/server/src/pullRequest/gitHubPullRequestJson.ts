@@ -942,6 +942,7 @@ export function encodeGraphQlRequestJson(input: {
 
 /** The body of `POST /repos/{owner}/{repo}/pulls/{number}/reviews`, which sends a review whole. */
 const ReviewSubmissionSchema = Schema.Struct({
+  commit_id: Schema.optional(Schema.String),
   event: Schema.Literals(["COMMENT", "APPROVE", "REQUEST_CHANGES"]),
   body: Schema.String,
   comments: Schema.Array(
@@ -995,11 +996,13 @@ function gitHubReviewPosition(position: PullRequestReviewPosition): {
 
 /** The whole review as one request body, which is how GitHub keeps it invisible until sent. */
 export function buildReviewSubmissionJson(input: {
+  readonly expectedHeadSha?: string;
   readonly verdict: PullRequestReviewVerdict;
   readonly body: string;
   readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
 }): string {
   return encodeReviewSubmission({
+    ...(input.expectedHeadSha === undefined ? {} : { commit_id: input.expectedHeadSha }),
     event: REVIEW_EVENTS[input.verdict],
     body: input.body,
     comments: input.comments.map((comment) => ({
@@ -1339,18 +1342,16 @@ function toComments(raw: {
   readonly comments?: ReadonlyArray<Schema.Schema.Type<typeof RawCommentSchema>> | undefined;
   readonly reviews?: ReadonlyArray<Schema.Schema.Type<typeof RawReviewSchema>> | undefined;
 }): ReadonlyArray<PullRequestComment> {
-  const issueComments = (raw.comments ?? []).map(
-    (comment): PullRequestComment => ({
-      id: comment.id,
-      kind: "issue-comment",
-      author: toActor(comment.author),
-      body: comment.body ?? "",
-      createdAt: comment.createdAt,
-      url: trimmed(comment.url),
-      path: null,
-      reviewState: null,
-    }),
-  );
+  const issueComments = (raw.comments ?? []).map((comment): PullRequestComment => ({
+    id: comment.id,
+    kind: "issue-comment",
+    author: toActor(comment.author),
+    body: comment.body ?? "",
+    createdAt: comment.createdAt,
+    url: trimmed(comment.url),
+    path: null,
+    reviewState: null,
+  }));
   // A review with no body is kept only when its state is the event itself — an approval, a
   // request for changes, a dismissal. GitHub also opens a bodiless `COMMENTED` review as the
   // container for line comments, and those comments are read from the review threads, so
@@ -1743,19 +1744,17 @@ export function reviewThreadConversation(
   threads: ReadonlyArray<PullRequestReviewThread>,
 ): ReadonlyArray<PullRequestComment> {
   return threads.flatMap((thread) =>
-    thread.comments.map(
-      (comment): PullRequestComment => ({
-        id: comment.id,
-        kind: "review-comment",
-        author: comment.author,
-        body: comment.body,
-        createdAt: comment.createdAt,
-        url: comment.url,
-        path: thread.path,
-        reviewState: null,
-        reactions: comment.reactions ?? [],
-      }),
-    ),
+    thread.comments.map((comment): PullRequestComment => ({
+      id: comment.id,
+      kind: "review-comment",
+      author: comment.author,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      url: comment.url,
+      path: thread.path,
+      reviewState: null,
+      reactions: comment.reactions ?? [],
+    })),
   );
 }
 

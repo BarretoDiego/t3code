@@ -2775,6 +2775,44 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect(
+    "previews a commit using a temporary index without staging or committing user changes",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-commit-preview-");
+        yield* initRepo(repoDir);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "staged version\n");
+        yield* runGit(repoDir, ["add", "README.md"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "unstaged version\n");
+        NodeFS.writeFileSync(NodePath.join(repoDir, "unselected.txt"), "leave me alone\n");
+        const beforeIndex = (yield* runGit(repoDir, ["diff", "--cached"])).stdout;
+        const beforeHead = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout;
+        let generation: TextGeneration.CommitMessageGenerationInput | undefined;
+        const { manager } = yield* makeManager({
+          textGeneration: {
+            generateCommitMessage: (input) => {
+              generation = input;
+              return Effect.succeed({
+                subject: "docs: update README",
+                body: "Explain the change.",
+              });
+            },
+          },
+        });
+        const preview = yield* manager.previewCommitMessage({
+          cwd: repoDir,
+          filePaths: ["README.md"],
+        });
+        expect(preview.message).toBe("docs: update README\n\nExplain the change.");
+        expect(generation?.stagedPatch).toContain("unstaged version");
+        expect(generation?.stagedPatch).not.toContain("leave me alone");
+        expect((yield* runGit(repoDir, ["diff", "--cached"])).stdout).toBe(beforeIndex);
+        expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout).toBe(beforeHead);
+        yield* manager.previewCommitMessage({ cwd: repoDir, filePaths: [] }).pipe(Effect.flip);
+        expect((yield* runGit(repoDir, ["diff", "--cached"])).stdout).toBe(beforeIndex);
+      }),
+  );
+
   it.effect("creates a commit when working tree is dirty", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

@@ -683,3 +683,22 @@ describe("ServerSettings environment icon", () => {
     expect(encodeServerSettings(settings).environmentIcon).toBe("laptop");
   });
 });
+
+describe("Source Control AI review defaults", () => {
+  it("keeps existing settings valid and requires draft-first publication", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.sourceControlReview).toEqual({
+      tier: "standard",
+      profileId: null,
+      severityThreshold: "minor",
+      includeExistingComments: true,
+      includeGenerated: false,
+      publication: "draft",
+    });
+    expect(() =>
+      decodeServerSettingsPatch({
+        sourceControlReview: { ...settings.sourceControlReview, publication: "automatic" },
+      }),
+    ).toThrow();
+  });
+});

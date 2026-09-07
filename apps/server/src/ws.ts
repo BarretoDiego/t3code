@@ -1,3 +1,7 @@
+import { RemotePullRequestService } from "./sourceControl/RemotePullRequestService.ts";
+import { PullRequestReviewService } from "./aiReview/PullRequestReviewService.ts";
+import { SourceControlHubService } from "./sourceControl/SourceControlHubService.ts";
+import { SourceControlAccounts } from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import {
   sameUsageLimitCommandCoverage,
@@ -484,6 +488,10 @@ const makeWsRpcLayer = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   marketplace: MarketplaceService.MarketplaceService["Service"],
   aiRuntimes: AiRuntimeService["Service"],
+  remotePrs: RemotePullRequestService["Service"],
+  reviews: PullRequestReviewService["Service"],
+  hub: SourceControlHubService["Service"],
+  accounts: SourceControlAccounts["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2106,6 +2114,47 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.sourceControlHubAccounts]: () => accounts.list,
+        [WS_METHODS.sourceControlHubSaveAccount]: (input) =>
+          accounts
+            .save(input)
+            .pipe(
+              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
+            ),
+        [WS_METHODS.sourceControlHubRemoveAccount]: (input) =>
+          accounts
+            .remove(input.provider)
+            .pipe(
+              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
+            ),
+        [WS_METHODS.sourceControlHubRepositories]: (input) => hub.repositories(input),
+        [WS_METHODS.sourceControlHubRefs]: (input) => hub.refs(input),
+        [WS_METHODS.sourceControlHubClones]: () => hub.clones,
+        [WS_METHODS.sourceControlHubCloneState]: (input) => hub.cloneState(input.projectId),
+        [WS_METHODS.sourceControlHubRefresh]: () =>
+          Effect.all([hub.refresh, remotePrs.refresh], { discard: true }),
+        [WS_METHODS.sourceControlHubCreatePullRequest]: (input) =>
+          hub.browser(input.provider).pipe(
+            Effect.flatMap((browser) => browser.createPullRequest(input)),
+            Effect.tap(() => remotePrs.refresh),
+          ),
+        [WS_METHODS.sourceControlHubPullRequests]: (input) => remotePrs.list(input),
+        [WS_METHODS.sourceControlHubPullRequest]: (input) => remotePrs.detail(input),
+        [WS_METHODS.sourceControlHubActivity]: (input) => remotePrs.activity(input),
+        [WS_METHODS.sourceControlHubDiff]: (input) => remotePrs.diff(input),
+        [WS_METHODS.sourceControlHubRevisions]: (input) =>
+          hub.browser(input.provider).pipe(Effect.flatMap((browser) => browser.revisions(input))),
+        [WS_METHODS.sourceControlHubSubmitReview]: (input) => remotePrs.review(input),
+        [WS_METHODS.sourceControlHubMerge]: (input) => remotePrs.merge(input),
+        [WS_METHODS.sourceControlHubReviewStart]: (input) => reviews.start(input),
+        [WS_METHODS.sourceControlHubReviewHistory]: (input) => reviews.history(input),
+        [WS_METHODS.sourceControlHubReviewEdit]: (input) => reviews.edit(input),
+        [WS_METHODS.sourceControlHubReviewPublish]: (input) => reviews.publish(input),
+        [WS_METHODS.sourceControlHubReviewCancel]: (input) => reviews.cancel(input.id),
+        [WS_METHODS.sourceControlHubReviewSubscribe]: () => reviews.changes,
+        [WS_METHODS.sourceControlHubMapRepository]: (input) => hub.mapRepository(input),
+        [WS_METHODS.sourceControlHubCommitPreview]: (input) =>
+          gitWorkflow.previewCommitMessage(input),
         [WS_METHODS.aiRuntimesList]: ({ refresh }) => aiRuntimes.list(refresh),
         [WS_METHODS.aiRuntimesSubscribe]: () => aiRuntimes.changes,
         [WS_METHODS.aiRuntimesSave]: (input) => aiRuntimes.save(input),
@@ -2679,6 +2728,7 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "vcs",
             },
           ),
+        [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
         [WS_METHODS.vcsPull]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsPull,
@@ -3132,6 +3182,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const pullRequests = yield* PullRequestService.PullRequestService;
     const marketplace = yield* MarketplaceService.MarketplaceService;
     const aiRuntimes = yield* AiRuntimeService;
+    const remotePrs = yield* RemotePullRequestService;
+    const reviews = yield* PullRequestReviewService;
+    const hub = yield* SourceControlHubService;
+    const accounts = yield* SourceControlAccounts;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3166,6 +3220,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               previewAutomationBroker,
               marketplace,
               aiRuntimes,
+              remotePrs,
+              reviews,
+              hub,
+              accounts,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(AgentSessionScanner.layer),

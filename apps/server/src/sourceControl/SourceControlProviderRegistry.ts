@@ -160,6 +160,7 @@ function bindProviderContext(
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: provider.kind,
+    ...(provider.repositories ? { repositories: provider.repositories } : {}),
     listChangeRequests: (input) =>
       provider.listChangeRequests({
         ...input,
