@@ -1,3 +1,4 @@
+import ChatMarkdown from "../ChatMarkdown";
 import type { CodeViewHandle } from "@pierre/diffs/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
@@ -185,28 +186,43 @@ export function RemotePullRequestPanel({
           <div className="space-y-5 p-4 sm:p-6">
             {tab === "overview" && pr && (
               <>
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {pr.body || "No description."}
-                </p>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                  <dt className="text-muted-foreground">Author</dt>
-                  <dd>{pr.author?.login ?? "Unknown"}</dd>
-                  <dt className="text-muted-foreground">Reviewers</dt>
-                  <dd>{pr.reviewers.map((reviewer) => reviewer.login).join(", ") || "None"}</dd>
-                  <dt className="text-muted-foreground">Mergeability</dt>
-                  <dd>{pr.mergeability}</dd>
-                  <dt className="text-muted-foreground">Created</dt>
-                  <dd>{pr.createdAt}</dd>
-                  <dt className="text-muted-foreground">Updated</dt>
-                  <dd>{pr.updatedAt}</dd>
-                </dl>
-                <section className="space-y-2">
+                <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                  <section className="min-w-0 rounded-lg border">
+                    <h2 className="border-b bg-muted/20 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Description
+                    </h2>
+                    <div className="min-w-0 p-4 text-sm">
+                      <ChatMarkdown
+                        text={pr.body || "No description."}
+                        cwd={undefined}
+                        environmentId={environmentId}
+                      />
+                    </div>
+                  </section>
+                  <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-lg border bg-muted/10 p-4 text-xs [&_dd]:break-words">
+                    <dt className="text-muted-foreground">Author</dt>
+                    <dd>{pr.author?.login ?? "Unknown"}</dd>
+                    <dt className="text-muted-foreground">Reviewers</dt>
+                    <dd>{pr.reviewers.map((reviewer) => reviewer.login).join(", ") || "None"}</dd>
+                    <dt className="text-muted-foreground">Mergeability</dt>
+                    <dd>{pr.mergeability}</dd>
+                    <dt className="text-muted-foreground">Created</dt>
+                    <dd>{new Date(pr.createdAt).toLocaleString()}</dd>
+                    <dt className="text-muted-foreground">Updated</dt>
+                    <dd>{new Date(pr.updatedAt).toLocaleString()}</dd>
+                  </dl>
+                </div>
+                <section className="space-y-3 rounded-lg border p-4">
                   <h2 className="font-medium">Checks</h2>
                   {pr.checks.length ? (
                     pr.checks.map((check) => (
-                      <p key={check.url ?? check.name} className="text-sm">
-                        {check.name} · {check.status}
-                      </p>
+                      <div
+                        key={check.url ?? check.name}
+                        className="flex items-center justify-between gap-3 rounded-md bg-muted/30 px-3 py-2 text-sm"
+                      >
+                        <span>{check.name}</span>
+                        <span className="text-xs text-muted-foreground">{check.status}</span>
+                      </div>
                     ))
                   ) : (
                     <p className="text-sm text-muted-foreground">No checks reported.</p>
@@ -261,7 +277,11 @@ export function RemotePullRequestPanel({
                       {comment.author?.login ?? "Unknown"} · {comment.createdAt}{" "}
                       {comment.reviewState}
                     </p>
-                    <p className="whitespace-pre-wrap break-words text-sm">{comment.body}</p>
+                    <ChatMarkdown
+                      text={comment.body}
+                      cwd={undefined}
+                      environmentId={environmentId}
+                    />
                     {comment.path && (
                       <Button
                         size="xs"

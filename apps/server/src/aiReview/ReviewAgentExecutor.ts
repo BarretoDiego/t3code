@@ -1,8 +1,10 @@
 import {
+  isToolLifecycleItemType,
   ApprovalRequestId,
   ThreadId,
   SourceControlHubError,
   type ModelSelection,
+  type AiReviewActivity,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -19,6 +21,7 @@ export class ReviewAgentExecutor extends Context.Service<
       readonly cwd: string;
       readonly prompt: string;
       readonly modelSelection: ModelSelection;
+      readonly onActivity?: (activity: AiReviewActivity) => Effect.Effect<void>;
     }) => Effect.Effect<string, SourceControlHubError>;
   }
 >()("t3/aiReview/ReviewAgentExecutor") {}
@@ -41,11 +44,88 @@ export const make = Effect.gen(function* () {
             Stream.filter((event) => event.threadId === threadId),
             Stream.runForEach((event) =>
               Effect.gen(function* () {
+                const emit = input.onActivity ?? (() => Effect.void);
+                if (
+                  event.type === "task.started" ||
+                  event.type === "task.progress" ||
+                  event.type === "task.updated" ||
+                  event.type === "task.completed"
+                ) {
+                  const payload = event.payload;
+                  yield* emit({
+                    id: payload.taskId,
+                    kind: "task",
+                    label:
+                      payload.title ??
+                      ("description" in payload ? payload.description : undefined) ??
+                      "Agent task",
+                    status:
+                      "status" in payload && payload.status === "failed"
+                        ? "failed"
+                        : "status" in payload &&
+                            (payload.status === "stopped" ||
+                              payload.status === "cancelled" ||
+                              payload.status === "interrupted")
+                          ? "cancelled"
+                          : "status" in payload && payload.status === "completed"
+                            ? "completed"
+                            : "running",
+                    text: "summary" in payload ? (payload.summary ?? "") : "",
+                  });
+                }
+                if (
+                  (event.type === "item.started" ||
+                    event.type === "item.updated" ||
+                    event.type === "item.completed") &&
+                  isToolLifecycleItemType(event.payload.itemType)
+                ) {
+                  yield* emit({
+                    id: event.itemId ?? event.payload.itemType,
+                    kind: "tool",
+                    label: event.payload.title ?? event.payload.itemType.replaceAll("_", " "),
+                    text: event.payload.detail ?? "",
+                    status:
+                      event.payload.status === "failed"
+                        ? "failed"
+                        : event.payload.status === "declined"
+                          ? "cancelled"
+                          : event.type === "item.completed"
+                            ? "completed"
+                            : "running",
+                  });
+                }
+                if (event.type === "tool.progress") {
+                  yield* emit({
+                    id: event.payload.toolUseId ?? "tool",
+                    kind: "tool",
+                    label: event.payload.toolName ?? "Inspecting repository",
+                    status: "running",
+                    text: event.payload.summary ?? "",
+                  });
+                }
+                if (event.type === "tool.summary") {
+                  for (const id of event.payload.precedingToolUseIds ?? ["tool"]) {
+                    yield* emit({
+                      id,
+                      kind: "tool",
+                      label: "Repository inspection",
+                      status: "completed",
+                      text: event.payload.summary,
+                    });
+                  }
+                }
                 if (
                   event.type === "content.delta" &&
                   event.payload.streamKind === "assistant_text"
                 ) {
                   text += event.payload.delta;
+                  yield* emit({
+                    id: "output",
+                    kind: "agent",
+                    label: "Reviewer",
+                    status: "running",
+                    text: text.slice(-32_000),
+                  });
                   if (text.length > 500_000)
                     yield* Deferred.fail(
                       completed,
@@ -59,8 +139,16 @@ export const make = Effect.gen(function* () {
                     .respondToRequest(threadId, ApprovalRequestId.make(event.requestId), "decline")
                     .pipe(Effect.ignore);
                 if (event.type === "turn.completed") {
-                  if (event.payload.state === "completed") yield* Deferred.succeed(completed, text);
-                  else
+                  if (event.payload.state === "completed") {
+                    yield* emit({
+                      id: "output",
+                      kind: "agent",
+                      label: "Reviewer",
+                      status: "completed",
+                      text: text.slice(-32_000),
+                    });
+                    yield* Deferred.succeed(completed, text);
+                  } else
                     yield* Deferred.fail(
                       completed,
                       new SourceControlHubError({

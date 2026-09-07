@@ -1,3 +1,4 @@
+import { SourceControlNavigation } from "../components/sourceControl/SourceControlNavigation";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -1874,6 +1875,7 @@ function PullRequestsRouteView() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+      <SourceControlNavigation section="pull-requests" />
       <div className="relative flex min-h-0 flex-1">
         {pullRequestsSupported && rightPanelPresent ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />

@@ -1,3 +1,4 @@
+import { ReviewActivityTimeline } from "./ReviewActivityTimeline";
 import { resolveAgentProfile } from "@t3tools/shared/agentProfiles";
 import { useEffect, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -113,7 +114,19 @@ export function AiReviewPanel({
         clone.repository.toLowerCase() === reference.repository.toLowerCase(),
     ) ?? [];
   const localClone = localClones.find((clone) => clone.projectId === projectId) ?? localClones[0];
-  const run = history.data?.find((run) => run.id === runId) ?? history.data?.[0];
+  const persistedRun = history.data?.find((run) => run.id === runId) ?? history.data?.[0];
+  const matchesUpdate =
+    update.data?.reference.provider === reference.provider &&
+    update.data.reference.host === reference.host &&
+    update.data.reference.repository === reference.repository &&
+    update.data.reference.number === reference.number;
+  const run =
+    matchesUpdate &&
+    update.data &&
+    !["draft", "failed", "cancelled"].includes(update.data.stage) &&
+    (!runId || update.data.id === runId)
+      ? update.data
+      : persistedRun;
   const needsClone =
     scope !== "metadata" &&
     scope !== "commits" &&
@@ -125,7 +138,8 @@ export function AiReviewPanel({
       update.data?.reference.provider === reference.provider &&
       update.data.reference.host === reference.host &&
       update.data.reference.repository === reference.repository &&
-      update.data.reference.number === reference.number
+      update.data.reference.number === reference.number &&
+      ["draft", "failed", "cancelled"].includes(update.data.stage)
     )
       refreshHistory();
   }, [
@@ -173,179 +187,213 @@ export function AiReviewPanel({
     groups.set(key, [...(groups.get(key) ?? []), finding]);
   }
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <HubSelect
-          label="Review tier"
-          value={tier}
-          options={["quick", "standard", "deep", "exhaustive"].map((value) => ({
-            value: value as AiReviewTier,
-            label: `${value[0]?.toUpperCase()}${value.slice(1)}`,
-          }))}
-          onChange={(value) => {
-            setTier(value);
-            setScope(value === "deep" || value === "exhaustive" ? "full-context" : "changed-files");
-          }}
-        />
-        <HubSelect
-          label="Review mode"
-          value={mode}
-          options={[
-            { value: "full", label: "Full review" },
-            { value: "incremental", label: "Incremental review" },
-          ]}
-          onChange={setMode}
-        />
-        <HubSelect
-          label="Scope"
-          value={scope}
-          options={[
-            { value: "metadata", label: "PR metadata only" },
-            { value: "commits", label: "Commit messages" },
-            { value: "changed-files", label: "Changed files" },
-            { value: "full-context", label: "Full context" },
-          ]}
-          onChange={setScope}
-        />
-        <HubSelect
-          label="Agent profile"
-          value={profileId}
-          options={[
-            { value: "", label: "Custom" },
-            ...settings.agentProfiles
-              .filter((profile) => profile.enabled)
-              .map((profile) => ({
-                value: profile.id,
-                label: profile.name,
-              })),
-          ]}
-          onChange={setProfileId}
-        />
-        <HubSelect
-          label="Agent harness"
-          value={provider?.instanceId ?? ""}
-          options={providers
-            .filter((provider) => provider.enabled)
-            .map((provider) => ({
-              value: provider.instanceId,
-              label: provider.displayName ?? provider.driver,
-            }))}
-          onChange={(value) => {
-            setInstanceId(value);
-            setModel("");
-            setReasoning("");
-          }}
-        />
-        <HubSelect
-          label="Model"
-          value={selectedModel?.slug ?? ""}
-          options={
-            provider?.models.map((model) => ({ value: model.slug, label: model.name })) ?? []
-          }
-          onChange={setModel}
-        />
-        {efforts?.type === "select" && (
-          <HubSelect
-            label="Reasoning effort"
-            value={reasoning}
-            options={[
-              { value: "", label: "Default reasoning" },
-              ...efforts.options.map((option) => ({ value: option.id, label: option.label })),
-            ]}
-            onChange={setReasoning}
-          />
-        )}
-        {needsClone && (
-          <HubSelect
-            label="Local clone for review worktree"
-            value={localClone?.projectId ?? ""}
-            options={localClones.map((clone) => ({ value: clone.projectId, label: clone.title }))}
-            onChange={setProjectId}
-          />
-        )}
-      </div>
-      {resolvedProfile && (
-        <p className="text-sm text-muted-foreground">
-          {resolvedProfile.status === "unavailable"
-            ? resolvedProfile.reason
-            : `Resolved: ${provider?.displayName ?? provider?.driver} · ${resolvedProfile.modelSelection.model} · reasoning ${resolvedProfile.diagnostics.requestedReasoningEffort ?? "default"} · ${new Set([...resolvedProfile.miniSkillIds, ...skills]).size} Mini Skills`}
+    <div className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6">
+      <header>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          AI-assisted review
         </p>
-      )}
-      <details>
-        <summary className="cursor-pointer text-sm">Request Mini Skills</summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {settings.miniSkills.map((skill) => (
-            <label key={skill.id} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={skills.includes(skill.id)}
-                onCheckedChange={(checked) =>
-                  setSkills((current) =>
-                    checked ? [...current, skill.id] : current.filter((id) => id !== skill.id),
-                  )
-                }
+        <h2 className="mt-1 text-lg font-semibold">Inspect first. Publish when ready.</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Follow the agent's activity, review its findings, and choose which comments to publish.
+        </p>
+      </header>
+      <details open={!run} className="group rounded-lg border bg-muted/10">
+        <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
+          <span>Review setup</span>
+          <span className="truncate text-xs font-normal capitalize text-muted-foreground">
+            {tier} ·{" "}
+            {settings.agentProfiles.find((profile) => profile.id === profileId)?.name ??
+              "Custom agent"}
+          </span>
+        </summary>
+        <div className="space-y-4 border-t p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <HubSelect
+              showLabel
+              label="Review tier"
+              value={tier}
+              options={["quick", "standard", "deep", "exhaustive"].map((value) => ({
+                value: value as AiReviewTier,
+                label: `${value[0]?.toUpperCase()}${value.slice(1)}`,
+              }))}
+              onChange={(value) => {
+                setTier(value);
+                setScope(
+                  value === "deep" || value === "exhaustive" ? "full-context" : "changed-files",
+                );
+              }}
+            />
+            <HubSelect
+              showLabel
+              label="Review mode"
+              value={mode}
+              options={[
+                { value: "full", label: "Full review" },
+                { value: "incremental", label: "Incremental review" },
+              ]}
+              onChange={setMode}
+            />
+            <HubSelect
+              showLabel
+              label="Scope"
+              value={scope}
+              options={[
+                { value: "metadata", label: "PR metadata only" },
+                { value: "commits", label: "Commit messages" },
+                { value: "changed-files", label: "Changed files" },
+                { value: "full-context", label: "Full context" },
+              ]}
+              onChange={setScope}
+            />
+            <HubSelect
+              showLabel
+              label="Agent profile"
+              value={profileId}
+              options={[
+                { value: "", label: "Custom" },
+                ...settings.agentProfiles
+                  .filter((profile) => profile.enabled)
+                  .map((profile) => ({
+                    value: profile.id,
+                    label: profile.name,
+                  })),
+              ]}
+              onChange={setProfileId}
+            />
+            <HubSelect
+              showLabel
+              label="Agent harness"
+              value={provider?.instanceId ?? ""}
+              options={providers
+                .filter((provider) => provider.enabled)
+                .map((provider) => ({
+                  value: provider.instanceId,
+                  label: provider.displayName ?? provider.driver,
+                }))}
+              onChange={(value) => {
+                setInstanceId(value);
+                setModel("");
+                setReasoning("");
+              }}
+            />
+            <HubSelect
+              showLabel
+              label="Model"
+              value={selectedModel?.slug ?? ""}
+              options={
+                provider?.models.map((model) => ({ value: model.slug, label: model.name })) ?? []
+              }
+              onChange={setModel}
+            />
+            {efforts?.type === "select" && (
+              <HubSelect
+                showLabel
+                label="Reasoning effort"
+                value={reasoning}
+                options={[
+                  { value: "", label: "Default reasoning" },
+                  ...efforts.options.map((option) => ({ value: option.id, label: option.label })),
+                ]}
+                onChange={setReasoning}
               />
-              {skill.name}
-            </label>
-          ))}
+            )}
+            {needsClone && (
+              <HubSelect
+                showLabel
+                label="Local clone for review worktree"
+                value={localClone?.projectId ?? ""}
+                options={localClones.map((clone) => ({
+                  value: clone.projectId,
+                  label: clone.title,
+                }))}
+                onChange={setProjectId}
+              />
+            )}
+          </div>
+          {resolvedProfile && (
+            <p className="text-sm text-muted-foreground">
+              {resolvedProfile.status === "unavailable"
+                ? resolvedProfile.reason
+                : `Resolved: ${provider?.displayName ?? provider?.driver} · ${resolvedProfile.modelSelection.model} · reasoning ${resolvedProfile.diagnostics.requestedReasoningEffort ?? "default"} · ${new Set([...resolvedProfile.miniSkillIds, ...skills]).size} Mini Skills`}
+            </p>
+          )}
+          <details>
+            <summary className="cursor-pointer text-sm">Request Mini Skills</summary>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {settings.miniSkills.map((skill) => (
+                <label key={skill.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={skills.includes(skill.id)}
+                    onCheckedChange={(checked) =>
+                      setSkills((current) =>
+                        checked ? [...current, skill.id] : current.filter((id) => id !== skill.id),
+                      )
+                    }
+                  />
+                  {skill.name}
+                </label>
+              ))}
+            </div>
+          </details>
+          <p className="text-xs text-muted-foreground">
+            {tier === "quick"
+              ? "Sampled diffs and metadata for quick triage."
+              : tier === "standard"
+                ? "Changed-file batches and a verification pass for important findings."
+                : "Read-only agent investigation in a separate checkout of the PR head."}{" "}
+            Results stay in a local draft.
+          </p>
+          <Button
+            disabled={
+              pending ||
+              !provider ||
+              !selectedModel ||
+              resolvedProfile?.status === "unavailable" ||
+              (needsClone && !localClone)
+            }
+            onClick={async () => {
+              if (!provider || !selectedModel || pending) return;
+              setPending(true);
+              setError(null);
+              try {
+                const profile = settings.agentProfiles.find((profile) => profile.id === profileId);
+                const result = await start({
+                  environmentId,
+                  input: {
+                    reference,
+                    tier,
+                    mode,
+                    scope,
+                    agent: {
+                      modelSelection: {
+                        instanceId: provider.instanceId,
+                        model: selectedModel.slug,
+                        ...(reasoning
+                          ? { options: [{ id: "reasoningEffort", value: reasoning }] }
+                          : {}),
+                      },
+                      ...(profile ? { profileId: profile.id } : {}),
+                      miniSkillIds: skills,
+                    },
+                    ...(localClone ? { projectId: localClone.projectId } : {}),
+                    includeGenerated: settings.sourceControlReview.includeGenerated,
+                    includeExistingComments: settings.sourceControlReview.includeExistingComments,
+                  },
+                });
+                if (result._tag === "Success") {
+                  setRunId(result.value.id);
+                  setSelected([]);
+                  history.refresh();
+                } else setError("Could not start this review.");
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            Run AI review
+          </Button>
         </div>
       </details>
-      <p className="text-xs text-muted-foreground">
-        {tier === "quick"
-          ? "Sampled diffs and metadata for quick triage."
-          : tier === "standard"
-            ? "Changed-file batches and a verification pass for important findings."
-            : "Read-only agent investigation in a separate checkout of the PR head."}{" "}
-        Results stay in a local draft.
-      </p>
-      <Button
-        disabled={
-          pending ||
-          !provider ||
-          !selectedModel ||
-          resolvedProfile?.status === "unavailable" ||
-          (needsClone && !localClone)
-        }
-        onClick={async () => {
-          if (!provider || !selectedModel || pending) return;
-          setPending(true);
-          setError(null);
-          try {
-            const profile = settings.agentProfiles.find((profile) => profile.id === profileId);
-            const result = await start({
-              environmentId,
-              input: {
-                reference,
-                tier,
-                mode,
-                scope,
-                agent: {
-                  modelSelection: {
-                    instanceId: provider.instanceId,
-                    model: selectedModel.slug,
-                    ...(reasoning
-                      ? { options: [{ id: "reasoningEffort", value: reasoning }] }
-                      : {}),
-                  },
-                  ...(profile ? { profileId: profile.id } : {}),
-                  miniSkillIds: skills,
-                },
-                ...(localClone ? { projectId: localClone.projectId } : {}),
-                includeGenerated: settings.sourceControlReview.includeGenerated,
-                includeExistingComments: settings.sourceControlReview.includeExistingComments,
-              },
-            });
-            if (result._tag === "Success") {
-              setRunId(result.value.id);
-              setSelected([]);
-              history.refresh();
-            } else setError("Could not start this review.");
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        Run AI review
-      </Button>
       {(error || history.error) && (
         <p role="alert" className="text-sm text-destructive">
           {error ?? history.error}
@@ -353,6 +401,7 @@ export function AiReviewPanel({
       )}
       {history.data?.length ? (
         <HubSelect
+          showLabel
           label="Review history"
           value={run?.id ?? ""}
           options={history.data.map((run) => ({
@@ -385,6 +434,7 @@ export function AiReviewPanel({
               </Button>
             )}
           </div>
+          <ReviewActivityTimeline run={run} />
           {run.warnings.map((warning) => (
             <p key={warning} className="break-words text-xs text-muted-foreground">
               {warning}
@@ -398,8 +448,14 @@ export function AiReviewPanel({
               </p>
               <div className="flex flex-wrap gap-3 text-xs">
                 {(["critical", "major", "minor", "suggestion", "info"] as const).map((severity) => (
-                  <span key={severity} className="capitalize">
-                    {severity}: {findings.filter((finding) => finding.severity === severity).length}
+                  <span
+                    key={severity}
+                    className="min-w-20 rounded-md border bg-muted/20 px-3 py-2 capitalize"
+                  >
+                    <span className="block text-lg font-semibold tabular-nums">
+                      {findings.filter((finding) => finding.severity === severity).length}
+                    </span>
+                    <span className="text-muted-foreground">{severity}</span>
                   </span>
                 ))}
               </div>
@@ -447,6 +503,7 @@ export function AiReviewPanel({
                   Deselect all
                 </Button>
                 <HubSelect
+                  showLabel
                   label="Severity threshold"
                   value={threshold}
                   options={["critical", "major", "minor", "suggestion", "info"].map((value) => ({
@@ -456,6 +513,7 @@ export function AiReviewPanel({
                   onChange={setThreshold}
                 />
                 <HubSelect
+                  showLabel
                   label="Group findings"
                   value={group}
                   options={[

@@ -1,3 +1,6 @@
+import { SourceControlAuthWizard } from "./SourceControlAuthWizard";
+import { LocalChangesWorkbench } from "./LocalChangesWorkbench";
+import { SourceControlNavigation } from "./SourceControlNavigation";
 import { Link } from "@tanstack/react-router";
 import { useDebouncedValue } from "../../state/queries";
 import { RepositoryMappingDialog } from "./RepositoryMappingDialog";
@@ -11,7 +14,13 @@ import type {
   SourceControlProviderKind,
   RemotePullRequestRef,
 } from "@t3tools/contracts";
-import { GitBranchIcon, GitForkIcon, RefreshCwIcon } from "lucide-react";
+import {
+  GitBranchIcon,
+  GitForkIcon,
+  RefreshCwIcon,
+  GitPullRequestIcon,
+  FolderGit2Icon,
+} from "lucide-react";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -248,7 +257,13 @@ function RepositoryPage({
       <header className="space-y-3 border-b p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="break-all text-lg font-semibold">{repository.nameWithOwner}</h1>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Repository
+            </p>
+            <h1 className="flex items-center gap-2 break-all text-xl font-semibold">
+              <FolderGit2Icon className="size-5 shrink-0 text-muted-foreground" />
+              {repository.nameWithOwner}
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">{repository.description}</p>
           </div>
           <Button size="sm" onClick={() => setCreate(true)}>
@@ -440,22 +455,39 @@ function RepositoryPullRequests({
         </p>
       )}
       {query.pending && <p className="text-sm text-muted-foreground">Loading pull requests…</p>}
+      {query.data?.items.length === 0 && (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <GitPullRequestIcon className="mx-auto mb-3 size-6 text-muted-foreground" />
+          <p className="text-sm font-medium">No pull requests match these filters</p>
+          <p className="mt-1 text-xs text-muted-foreground">Try another state or search term.</p>
+        </div>
+      )}
       {query.data?.items.map((pr) => (
         <button
           key={pr.number}
           type="button"
-          className="block w-full rounded-lg border p-4 text-left hover:bg-accent focus-visible:outline-ring"
+          className="group flex w-full items-start gap-3 rounded-lg border bg-background p-4 text-left hover:border-foreground/20 hover:bg-muted/30 focus-visible:outline-ring"
           onClick={() => onSelect({ ...reference, number: pr.number })}
         >
-          <p className="break-words font-medium">
-            #{pr.number} {pr.title}
-          </p>
-          <p className="mt-2 break-all text-xs text-muted-foreground">
-            {pr.headBranch} → {pr.baseBranch} · {pr.isDraft ? "Draft" : pr.state}
-          </p>
-          <p className="mt-1 text-xs">
-            +{pr.additions} −{pr.deletions}
-          </p>
+          <GitPullRequestIcon
+            className={`mt-0.5 size-4 shrink-0 ${pr.isDraft ? "text-muted-foreground" : pr.state === "open" ? "text-emerald-600 dark:text-emerald-400" : pr.state === "merged" ? "text-violet-500" : "text-red-500"}`}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-medium group-hover:text-primary">{pr.title}</p>
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span>#{pr.number}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 capitalize">
+                {pr.isDraft ? "Draft" : pr.state}
+              </span>
+            </p>
+            <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+              {pr.headBranch} → {pr.baseBranch}
+            </p>
+          </div>
+          <span className="shrink-0 text-xs tabular-nums">
+            <span className="text-emerald-600 dark:text-emerald-400">+{pr.additions}</span>{" "}
+            <span className="text-red-500">−{pr.deletions}</span>
+          </span>
         </button>
       ))}
       {query.data?.nextCursor && (
@@ -466,7 +498,7 @@ function RepositoryPullRequests({
     </div>
   );
 }
-export function SourceControlHub({
+function RemoteRepositoryHub({
   onOpenReviewPanel,
 }: {
   onOpenReviewPanel?: (environmentId: EnvironmentId, reference: RemotePullRequestRef) => void;
@@ -484,11 +516,11 @@ export function SourceControlHub({
   const [revision, setRevision] = useState(0);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background md:flex-row">
-      <aside className="max-h-[35vh] w-full shrink-0 overflow-auto border-b p-3 md:max-h-none md:w-64 md:border-r md:border-b-0">
+      <aside className="max-h-[35vh] w-full shrink-0 overflow-auto border-b p-3 md:max-h-none md:w-72 md:border-r md:border-b-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="flex items-center gap-2 text-sm font-semibold">
             <GitBranchIcon className="size-4" />
-            Source Control
+            Repositories
           </h1>
           <Button
             size="icon"
@@ -578,6 +610,45 @@ export function SourceControlHub({
           worktrees.
         </div>
       )}
+    </div>
+  );
+}
+
+export function SourceControlHub({
+  onOpenReviewPanel,
+  initialSection = "changes",
+}: {
+  onOpenReviewPanel?: (environmentId: EnvironmentId, reference: RemotePullRequestRef) => void;
+  initialSection?: "changes" | "repositories";
+} = {}) {
+  const [section, setSection] = useState(initialSection);
+  const [visited, setVisited] = useState(new Set([initialSection]));
+  const [accountsRevision, setAccountsRevision] = useState(0);
+  const selectSection = (value: "changes" | "repositories") => {
+    setSection(value);
+    setVisited((current) => new Set([...current, value]));
+  };
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background">
+      <SourceControlNavigation section={section} onSection={selectSection}>
+        <SourceControlAuthWizard
+          onConnected={() => {
+            setAccountsRevision((value) => value + 1);
+            selectSection("repositories");
+          }}
+        />
+      </SourceControlNavigation>
+      <div className={section === "changes" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        {visited.has("changes") && <LocalChangesWorkbench />}
+      </div>
+      <div className={section === "repositories" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+        {visited.has("repositories") && (
+          <RemoteRepositoryHub
+            key={accountsRevision}
+            {...(onOpenReviewPanel ? { onOpenReviewPanel } : {})}
+          />
+        )}
+      </div>
     </div>
   );
 }

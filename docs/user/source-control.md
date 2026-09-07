@@ -94,10 +94,14 @@ reopening a declined pull request.
 
 ## Source Control Hub and AI review
 
-Open **Source control** in the sidebar to browse GitHub or Bitbucket repositories without cloning
-them. In **Settings → Source Control**, save an account token or use the server's existing credentials.
+Open **Source control** in the sidebar. **Changes** shows the selected local project's files and diffs.
+Select files, write or generate a commit message, then confirm the commit. Selected files are staged
+at commit time; committing does not push. **Pull requests** opens your PR inbox, and **Repositories**
+lets you browse GitHub or Bitbucket without cloning. Use **Connect account**, also available in
+**Settings → Source Control**, to verify an API token before saving or reuse environment credentials.
 Tokens belong to the selected environment. GitHub requires GitHub CLI; Bitbucket can use an access
-token or an email and API token. A Bitbucket workspace narrows repository browsing.
+token or an email and API token. A Bitbucket workspace narrows repository browsing. API authentication does not configure SSH keys
+or Git credential helpers for fetch and push.
 
 The repository's **Worktrees** view shows associated projects across connected environments,
 including each checkout's branch and HEAD. Associate a project manually if its remote URL cannot
@@ -110,6 +114,9 @@ files in bounded batches and reads nearby code. Deep adds an isolated checkout a
 Exhaustive adds another architecture, security, and test-coverage pass. Deep and Exhaustive require
 an associated local project when reviewing code. Metadata and commit-message scopes do not require
 a checkout. Important findings are rechecked before the draft is prepared.
+
+During execution, **Review agents** shows public draft text and the tasks and tools reported by the
+harness. Preliminary text is not a validated finding.
 
 Review results stay local until you select findings, edit or dismiss them, and confirm publication.
 Merge is a separate manual action. If the PR changes, run another review before publishing.

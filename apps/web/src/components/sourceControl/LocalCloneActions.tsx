@@ -1,3 +1,5 @@
+import { useGitStackedAction } from "../../lib/sourceControlActions";
+import { randomUUID } from "../../lib/utils";
 import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { vcsEnvironment } from "../../state/vcs";
@@ -26,12 +28,13 @@ export function LocalCloneActions({
   remoteName: string;
   onChanged: () => void;
 }) {
+  const push = useGitStackedAction({ environmentId, cwd });
   const fetch = useAtomCommand(vcsEnvironment.fetch);
   const pull = useAtomCommand(vcsEnvironment.pull);
   const switchRef = useAtomCommand(vcsEnvironment.switchRef);
   const createRef = useAtomCommand(vcsEnvironment.createRef);
   const [open, setOpen] = useState(false);
-  const [action, setAction] = useState<"fetch" | "pull" | "checkout" | "create">("fetch");
+  const [action, setAction] = useState<"fetch" | "pull" | "push" | "checkout" | "create">("fetch");
   const [branch, setBranch] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,16 +62,21 @@ export function LocalCloneActions({
               setError(null);
               try {
                 const result =
-                  action === "fetch"
-                    ? await fetch({ environmentId, input: { cwd, remoteName } })
-                    : action === "pull"
-                      ? await pull({ environmentId, input: { cwd } })
-                      : action === "checkout"
-                        ? await switchRef({ environmentId, input: { cwd, refName: branch.trim() } })
-                        : await createRef({
-                            environmentId,
-                            input: { cwd, refName: branch.trim(), switchRef: true },
-                          });
+                  action === "push"
+                    ? await push.run({ actionId: randomUUID(), action: "push" })
+                    : action === "fetch"
+                      ? await fetch({ environmentId, input: { cwd, remoteName } })
+                      : action === "pull"
+                        ? await pull({ environmentId, input: { cwd } })
+                        : action === "checkout"
+                          ? await switchRef({
+                              environmentId,
+                              input: { cwd, refName: branch.trim() },
+                            })
+                          : await createRef({
+                              environmentId,
+                              input: { cwd, refName: branch.trim(), switchRef: true },
+                            });
                 if (result._tag === "Success") {
                   onChanged();
                   setOpen(false);
@@ -88,6 +96,7 @@ export function LocalCloneActions({
                 options={[
                   { value: "fetch", label: `Fetch ${remoteName}` },
                   { value: "pull", label: "Pull current branch" },
+                  { value: "push", label: "Push current branch" },
                   { value: "checkout", label: "Checkout branch" },
                   { value: "create", label: "Create and checkout branch" },
                 ]}
@@ -106,7 +115,9 @@ export function LocalCloneActions({
               <p className="text-sm text-muted-foreground">
                 {action === "fetch"
                   ? "Updates remote refs in this clone."
-                  : "Applies to this local checkout. Git will preserve or reject conflicting local changes."}
+                  : action === "push"
+                    ? "Pushes committed changes from this branch using its configured remote. Uncommitted changes are not included."
+                    : "Applies to this local checkout. Git will preserve or reject conflicting local changes."}
               </p>
               {error && (
                 <p role="alert" className="text-sm text-destructive">
@@ -129,7 +140,7 @@ export function LocalCloneActions({
                   pending || ((action === "checkout" || action === "create") && !branch.trim())
                 }
               >
-                {pending ? "Working…" : "Run Git action"}
+                {pending ? "Working…" : action === "push" ? "Confirm push" : "Run Git action"}
               </Button>
             </DialogFooter>
           </form>

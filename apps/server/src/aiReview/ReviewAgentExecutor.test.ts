@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import {
+  type AiReviewActivity,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderRuntimeEvent,
@@ -22,6 +23,7 @@ it.effect(
       const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
       const started: ProviderSessionStartInput[] = [];
       const decisions: string[] = [];
+      const activity: AiReviewActivity[] = [];
       const stopped: string[] = [];
       const instanceId = ProviderInstanceId.make("test-reviewer");
       const instance = {
@@ -48,6 +50,26 @@ it.effect(
                 { type: "request.opened", requestId: "approval", payload: {} },
                 {
                   type: "content.delta",
+                  payload: { streamKind: "reasoning_text", delta: "private reasoning" },
+                },
+                {
+                  type: "task.started",
+                  payload: { taskId: "security", description: "Security check" },
+                },
+                {
+                  type: "tool.progress",
+                  payload: { toolUseId: "read", toolName: "Read", summary: "Reading file" },
+                },
+                {
+                  type: "tool.summary",
+                  payload: { precedingToolUseIds: ["read"], summary: "Read complete" },
+                },
+                {
+                  type: "task.completed",
+                  payload: { taskId: "security", status: "failed", summary: "Unavailable context" },
+                },
+                {
+                  type: "content.delta",
                   payload: { streamKind: "assistant_text", delta: "structured output" },
                 },
                 { type: "turn.completed", payload: { state: "completed" } },
@@ -66,6 +88,10 @@ it.effect(
       );
       expect(
         yield* executor.execute({
+          onActivity: (row) =>
+            Effect.sync(() => {
+              activity.push(row);
+            }),
           cwd: "/isolated-review",
           prompt: "Review",
           modelSelection: { instanceId, model: "test-model" },
@@ -77,6 +103,16 @@ it.effect(
         approvalPolicy: "untrusted",
         cwd: "/isolated-review",
       });
+      expect(activity).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "security", status: "running" }),
+          expect.objectContaining({ id: "security", status: "failed" }),
+          expect.objectContaining({ id: "read", status: "completed", text: "Read complete" }),
+          expect.objectContaining({ id: "output", status: "running", text: "structured output" }),
+          expect.objectContaining({ id: "output", status: "completed" }),
+        ]),
+      );
+      expect(activity.some((item) => item.text.includes("private reasoning"))).toBe(false);
       expect(decisions).toEqual(["decline"]);
       expect(stopped).toEqual([started[0]?.threadId]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

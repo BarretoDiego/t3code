@@ -52,6 +52,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetSettings]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateSettings]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlHubAccounts]: AuthOrchestrationReadScope,
+  [WS_METHODS.sourceControlHubConnectAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlHubSaveAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlHubRemoveAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlHubRepositories]: AuthOrchestrationReadScope,
