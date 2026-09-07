@@ -2116,6 +2116,12 @@ const makeWsRpcLayer = (
             },
           ),
         [WS_METHODS.sourceControlHubAccounts]: () => accounts.list,
+        [WS_METHODS.sourceControlHubConnectAccount]: (input) =>
+          accounts
+            .connect(input)
+            .pipe(
+              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
+            ),
         [WS_METHODS.sourceControlHubSaveAccount]: (input) =>
           accounts
             .save(input)

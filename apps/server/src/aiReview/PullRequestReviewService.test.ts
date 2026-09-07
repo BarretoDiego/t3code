@@ -155,7 +155,18 @@ it.effect(
                       },
                     ],
                   });
-                }),
+                }).pipe(
+                  Effect.tap(
+                    () =>
+                      input.onActivity?.({
+                        id: "output",
+                        kind: "agent",
+                        label: "Reviewer",
+                        status: "running",
+                        text: "Public draft",
+                      }) ?? Effect.void,
+                  ),
+                ),
         }),
       ),
     ).pipe(Layer.provideMerge(NodeServices.layer));
@@ -180,6 +191,11 @@ it.effect(
       const first = yield* Queue.take(completed);
       expect(first.stage).toBe("draft");
       expect(first.headSha).toBe(firstHead);
+      expect(first.activity).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "agent", status: "completed", text: "Public draft" }),
+        ]),
+      );
       expect(prompts).toHaveLength(2); // Generation and independent verification.
       expect(publications).toEqual([]);
       head = secondHead;

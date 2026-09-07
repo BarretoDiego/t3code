@@ -1,3 +1,4 @@
+import { verifySourceControlCredential } from "./verifyCredential.ts";
 import {
   SourceControlAccountConfig,
   SourceControlRepositoryMapping,
@@ -25,6 +26,7 @@ const encodeMappings = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Array(SourceControlRepositoryMapping)),
 );
 type Provider = SourceControlAccount["provider"];
+const isHubError = Schema.is(SourceControlHubError);
 const failure = () =>
   new SourceControlHubError({ message: "Could not access source control account settings." });
 
@@ -38,6 +40,9 @@ export class SourceControlAccounts extends Context.Service<
     readonly saveMapping: (
       input: SourceControlRepositoryMappingInput,
     ) => Effect.Effect<void, SourceControlHubError>;
+    readonly connect: (
+      input: SourceControlAccountSaveInput,
+    ) => Effect.Effect<{ accountName: string }, SourceControlHubError>;
     readonly list: Effect.Effect<readonly SourceControlAccount[], SourceControlHubError>;
     readonly save: (
       input: SourceControlAccountSaveInput,
@@ -87,6 +92,24 @@ export const make = Effect.gen(function* () {
         )
         .pipe(Effect.mapError(failure)),
     credential,
+    connect: (input) =>
+      gate
+        .withPermit(
+          Effect.gen(function* () {
+            const previous = yield* credential(input.account.provider);
+            const token = input.token ?? previous?.token ?? "";
+            if (!token)
+              return yield* new SourceControlHubError({
+                message:
+                  "Enter an API token to connect this account, or use existing environment credentials.",
+              });
+            const identity = yield* verifySourceControlCredential(input.account, token);
+            const encoded = yield* encodeStoredAccount({ ...input.account, token });
+            yield* secrets.set(key(input.account.provider), new TextEncoder().encode(encoded));
+            return identity;
+          }),
+        )
+        .pipe(Effect.mapError((error) => (isHubError(error) ? error : failure()))),
     list: Effect.all([credential("github"), credential("bitbucket")]).pipe(
       Effect.map((accounts) =>
         accounts.flatMap((account) =>

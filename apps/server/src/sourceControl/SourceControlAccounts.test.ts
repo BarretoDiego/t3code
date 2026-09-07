@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { expect, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,4 +60,33 @@ it.effect(
       yield* restarted.saveMapping({ ...mapping, reference: null });
       expect(yield* accounts.mappings).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect("only replaces saved credentials after successful provider verification", () =>
+  Effect.gen(function* () {
+    const accounts = yield* make;
+    const account = { provider: "github" as const, label: "Work", username: "", workspace: "" };
+    yield* accounts.save({ account, token: "previous-token" });
+    const originalFetch = globalThis.fetch;
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        globalThis.fetch = originalFetch;
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(new Response("denied", { status: 401 })),
+    );
+    yield* accounts.connect({ account, token: "invalid-token" }).pipe(Effect.flip);
+    expect((yield* accounts.credential("github"))?.token).toBe("previous-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(Response.json({ login: "developer" })),
+    );
+    expect(yield* accounts.connect({ account, token: "new-token" })).toEqual({
+      accountName: "developer",
+    });
+    expect((yield* accounts.credential("github"))?.token).toBe("new-token");
+    expect((yield* accounts.list)[0]).not.toHaveProperty("token");
+  }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

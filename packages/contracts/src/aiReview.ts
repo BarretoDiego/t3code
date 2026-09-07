@@ -57,6 +57,14 @@ export const AiReviewStartInput = Schema.Struct({
   includeExistingComments: Schema.Boolean,
 });
 export type AiReviewStartInput = typeof AiReviewStartInput.Type;
+export const AiReviewActivity = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["agent", "tool", "task"]),
+  label: Schema.String,
+  status: Schema.Literals(["running", "completed", "failed", "cancelled"]),
+  text: Schema.String,
+});
+export type AiReviewActivity = typeof AiReviewActivity.Type;
 export const AiReviewRun = Schema.Struct({
   ...AiReviewStartInput.fields,
   id: TrimmedNonEmptyString,
@@ -77,6 +85,7 @@ export const AiReviewRun = Schema.Struct({
     "cancelled",
   ]),
   progress: Schema.String,
+  activity: Schema.optional(Schema.Array(AiReviewActivity)),
   analysis: Schema.NullOr(AiReviewAnalysis),
   dismissedIds: Schema.Array(Schema.String),
   publishedIds: Schema.Array(Schema.String),

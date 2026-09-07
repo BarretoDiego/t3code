@@ -312,6 +312,7 @@ export const WS_METHODS = {
   projectsWriteFile: "projects.writeFile",
 
   sourceControlHubAccounts: "sourceControlHub.accounts",
+  sourceControlHubConnectAccount: "sourceControlHub.connectAccount",
   sourceControlHubSaveAccount: "sourceControlHub.saveAccount",
   sourceControlHubRemoveAccount: "sourceControlHub.removeAccount",
   sourceControlHubRepositories: "sourceControlHub.repositories",
@@ -558,6 +559,14 @@ export const WsSourceControlHubAccountsRpc = Rpc.make(WS_METHODS.sourceControlHu
   success: Schema.Array(SourceControlAccount),
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
+export const WsSourceControlHubConnectAccountRpc = Rpc.make(
+  WS_METHODS.sourceControlHubConnectAccount,
+  {
+    payload: SourceControlAccountSaveInput,
+    success: Schema.Struct({ accountName: Schema.String }),
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
 export const WsSourceControlHubSaveAccountRpc = Rpc.make(WS_METHODS.sourceControlHubSaveAccount, {
   payload: SourceControlAccountSaveInput,
   success: Schema.Void,
@@ -1604,6 +1613,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlHubReviewPublishRpc,
   WsSourceControlHubReviewCancelRpc,
   WsSourceControlHubAccountsRpc,
+  WsSourceControlHubConnectAccountRpc,
   WsSourceControlHubSaveAccountRpc,
   WsSourceControlHubRemoveAccountRpc,
   WsSourceControlHubRepositoriesRpc,

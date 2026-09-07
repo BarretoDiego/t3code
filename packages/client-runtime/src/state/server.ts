@@ -1116,6 +1116,10 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.sourceControlHubAccounts,
       staleTimeMs: 30_000,
     }),
+    sourceControlHubConnectAccount: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:connect-account",
+      tag: WS_METHODS.sourceControlHubConnectAccount,
+    }),
     sourceControlHubSaveAccount: createEnvironmentRpcCommand(runtime, {
       label: "source-control-hub:SaveAccount",
       tag: WS_METHODS.sourceControlHubSaveAccount,
