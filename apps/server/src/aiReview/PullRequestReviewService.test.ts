@@ -70,7 +70,15 @@ it.effect(
     };
     const dependencies = Layer.mergeAll(
       Config.layerTest(process.cwd(), { prefix: "t3-review-run-test-" }),
-      Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS) }),
+      Layer.mock(ServerSettingsService)({
+        getSettings: Effect.succeed({
+          ...DEFAULT_SERVER_SETTINGS,
+          sourceControlReview: {
+            ...DEFAULT_SERVER_SETTINGS.sourceControlReview,
+            prompt: "Prioritize database migrations and concurrency. No fixed finding quota.",
+          },
+        }),
+      }),
       Layer.mock(ProviderInstanceRegistry)({ getInstance: () => Effect.succeed(instance) }),
       Layer.mock(GitVcsDriver)({
         execute: (input) =>
@@ -196,6 +204,13 @@ it.effect(
           expect.objectContaining({ kind: "agent", status: "completed", text: "Public draft" }),
         ]),
       );
+      expect(
+        prompts.every((prompt) =>
+          prompt.includes(
+            "Prioritize database migrations and concurrency. No fixed finding quota.",
+          ),
+        ),
+      ).toBe(true);
       expect(prompts).toHaveLength(2); // Generation and independent verification.
       expect(publications).toEqual([]);
       head = secondHead;

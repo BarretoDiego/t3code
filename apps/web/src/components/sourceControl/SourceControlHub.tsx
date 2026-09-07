@@ -254,7 +254,7 @@ function RepositoryPage({
   const { environments } = useEnvironments();
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="space-y-3 border-b p-4 sm:p-6">
+      <header className="shrink-0 space-y-3 border-b p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -294,7 +294,7 @@ function RepositoryPage({
           ))}
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div className="min-h-0 flex-1 overflow-auto p-4">
         {tab === "pull-requests" ? (
           <RepositoryPullRequests
             key={repository.nameWithOwner}
@@ -516,7 +516,7 @@ function RemoteRepositoryHub({
   const [revision, setRevision] = useState(0);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background md:flex-row">
-      <aside className="max-h-[35vh] w-full shrink-0 overflow-auto border-b p-3 md:max-h-none md:w-72 md:border-r md:border-b-0">
+      <aside className="max-h-[35vh] w-full shrink-0 overflow-auto border-b p-3 md:max-h-none md:w-60 xl:w-64 md:border-r md:border-b-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="flex items-center gap-2 text-sm font-semibold">
             <GitBranchIcon className="size-4" />

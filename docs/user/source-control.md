@@ -130,3 +130,11 @@ workspace layout. The existing Pull requests and thread Git workflows remain ava
 For commit messages, choose **Generate message with agent** in the commit dialog. The preview uses
 your writing style, Agent Profile, and selected Mini Skills, without changing staging or committing.
 Review and edit the generated text before committing.
+
+### Bitbucket credentials
+
+Use an Atlassian email with an API token, or choose an integration access token in the connection wizard. Integration tokens require a workspace; repository-scoped tokens require the repository slug too. Verification reads repository access without requiring access to the user profile. The desktop app imports `T3CODE_BITBUCKET_EMAIL`, `T3CODE_BITBUCKET_API_TOKEN`, `T3CODE_BITBUCKET_ACCESS_TOKEN` and `T3CODE_BITBUCKET_WORKSPACE` from its login shell on startup. Restart the desktop app after changing these variables. Saved account credentials take precedence over environment credentials.
+
+### Reviewer instructions
+
+Customize the default analysis prompt in **Settings → Source Control → AI review → Reviewer instructions**. New runs use these preferences alongside the selected Agent Profile and Mini Skills. The agent determines the number of actionable findings; publication remains a separate, confirmed action. Findings marked **AI analysis · Draft finding** are local suggestions. Open a finding's file to inspect its explanation alongside the diff, then return to the draft to edit, dismiss or publish it.

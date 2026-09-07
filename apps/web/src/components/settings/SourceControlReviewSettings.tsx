@@ -1,3 +1,7 @@
+import { useState } from "react";
+import { DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT } from "@t3tools/contracts";
+import { Button } from "../ui/button";
+import { Textarea } from "../ui/textarea";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { HubSelect } from "../sourceControl/HubSelect";
 import { Switch } from "../ui/switch";
@@ -7,12 +11,14 @@ export function SourceControlReviewSettingsSection() {
   const settings = usePrimarySettings();
   const update = useUpdatePrimarySettings();
   const review = settings.sourceControlReview;
+  const [promptDraft, setPromptDraft] = useState<string | null>(null);
   const save = (patch: Partial<typeof review>) =>
     update({ sourceControlReview: { ...review, ...patch } });
   return (
     <SettingsSection title="AI review">
       <div className="grid gap-4 sm:grid-cols-2">
         <HubSelect
+          showLabel
           label="Default review tier"
           value={review.tier}
           options={[
@@ -24,6 +30,7 @@ export function SourceControlReviewSettingsSection() {
           onChange={(tier) => save({ tier })}
         />
         <HubSelect
+          showLabel
           label="Default Agent Profile"
           value={review.profileId ?? ""}
           options={[
@@ -40,6 +47,7 @@ export function SourceControlReviewSettingsSection() {
           }
         />
         <HubSelect
+          showLabel
           label="Default severity threshold"
           value={review.severityThreshold}
           options={["critical", "major", "minor", "suggestion", "info"].map((value) => ({
@@ -48,6 +56,37 @@ export function SourceControlReviewSettingsSection() {
           }))}
           onChange={(severityThreshold) => save({ severityThreshold })}
         />
+      </div>
+      <div className="mt-5 space-y-3 rounded-lg border p-4">
+        <label className="grid gap-2 text-sm font-medium">
+          Reviewer instructions
+          <Textarea
+            className="min-h-40 font-mono text-xs font-normal"
+            value={promptDraft ?? review.prompt}
+            maxLength={32_000}
+            onChange={(event) => setPromptDraft(event.target.value)}
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Applied to new review runs. The agent decides how many findings are warranted. Results
+          always remain drafts until you confirm publication.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={promptDraft === null || !promptDraft.trim() || promptDraft === review.prompt}
+            onClick={() => save({ prompt: promptDraft ?? review.prompt })}
+          >
+            Save instructions
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPromptDraft(DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT)}
+          >
+            Restore default
+          </Button>
+        </div>
       </div>
       <div className="mt-4 space-y-3">
         <label className="flex items-center gap-3 text-sm">
