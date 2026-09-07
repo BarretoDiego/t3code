@@ -21,22 +21,13 @@ import { composerFloatingLayerProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
 import { cn } from "~/lib/utils";
 
-/**
- * Composer footer control for the execution profile: Custom (the existing
- * manual behavior) or one of the library profiles. Selection is per-thread
- * draft state and persists across sends; the resolved model/effort details
- * surface in the popup for the active profile.
- */
-export const AgentProfilePicker = memo(function AgentProfilePicker(props: {
+interface AgentProfileMenuProps {
   composerDraftTarget: ComposerThreadTarget;
   environmentId: EnvironmentId;
   resolution: AgentProfileResolution | null;
-  size?: ComposerControlSize;
-  hidden?: boolean;
-}) {
-  const size = props.size ?? "sm";
-  const navigate = useNavigate();
-  const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(props.hidden);
+}
+
+function useProfileSelection(props: AgentProfileMenuProps) {
   const agentProfiles = useEnvironmentSettings(
     props.environmentId,
     (settings) => settings.agentProfiles,
@@ -62,9 +53,83 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(props: {
     [props.composerDraftTarget, setSelectedProfileId],
   );
 
+  return { enabledProfiles, selectedProfile, effectiveValue, selectProfile };
+}
+
+/** Shared selection for the inline picker and the resting strip's overflow menu. */
+export const AgentProfileMenuContent = memo(function AgentProfileMenuContent(
+  props: AgentProfileMenuProps,
+) {
+  const navigate = useNavigate();
+  const { enabledProfiles, selectedProfile, effectiveValue, selectProfile } =
+    useProfileSelection(props);
   const resolution = props.resolution;
   const unavailable = resolution?.status === "unavailable" ? resolution : null;
+  return (
+    <>
+      <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Agent Profile</div>
+      <MenuRadioGroup value={effectiveValue} onValueChange={selectProfile}>
+        <MenuGroup>
+          <MenuRadioItem value="" hideIndicator closeOnClick>
+            <span className="flex w-full min-w-0 flex-col">
+              <span className="min-w-0 truncate">Custom</span>
+              <span className="max-w-64 text-pretty text-muted-foreground/80 text-xs">
+                Manual control over model, effort, and Mini Skills.
+              </span>
+            </span>
+          </MenuRadioItem>
+        </MenuGroup>
+        {enabledProfiles.length > 0 ? <MenuSeparator /> : null}
+        <MenuGroup>
+          {enabledProfiles.map((profile) => (
+            <MenuRadioItem key={profile.id} value={profile.id} hideIndicator closeOnClick>
+              <span className="flex w-full min-w-0 flex-col">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate">{profile.name}</span>
+                  <span className="max-w-28 shrink-0 truncate text-muted-foreground/70 text-xs">
+                    #{profile.slug}
+                  </span>
+                </span>
+                {profile.description.length > 0 ? (
+                  <span className="max-w-64 truncate text-muted-foreground/80 text-xs">
+                    {profile.description}
+                  </span>
+                ) : null}
+              </span>
+            </MenuRadioItem>
+          ))}
+        </MenuGroup>
+      </MenuRadioGroup>
+      {resolution?.status === "resolved" && selectedProfile ? (
+        <>
+          <MenuSeparator />
+          <ResolvedProfileSummary profile={selectedProfile} resolution={resolution} />
+        </>
+      ) : null}
+      {unavailable ? (
+        <>
+          <MenuSeparator />
+          <div className="max-w-64 break-words px-2 py-1.5 text-pretty text-destructive text-xs">
+            {unavailable.reason}
+          </div>
+        </>
+      ) : null}
+      <MenuSeparator />
+      <MenuItem closeOnClick onClick={() => void navigate({ to: "/settings/agent-profiles" })}>
+        Manage Profiles
+      </MenuItem>
+    </>
+  );
+});
 
+/** The trigger stays compact; full profile details are available in the menu. */
+export const AgentProfilePicker = memo(function AgentProfilePicker(
+  props: AgentProfileMenuProps & { size?: ComposerControlSize; hidden?: boolean },
+) {
+  const size = props.size ?? "sm";
+  const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(props.hidden);
+  const { selectedProfile } = useProfileSelection(props);
+  const unavailable = props.resolution?.status === "unavailable";
   return (
     <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <MenuTrigger
@@ -90,56 +155,7 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(props: {
         className="w-72 max-w-[calc(100vw-2rem)]"
         {...composerFloatingLayerProps}
       >
-        <MenuRadioGroup value={effectiveValue} onValueChange={selectProfile}>
-          <MenuGroup>
-            <MenuRadioItem value="" hideIndicator closeOnClick>
-              <span className="flex w-full min-w-0 flex-col">
-                <span className="min-w-0 truncate">Custom</span>
-                <span className="max-w-64 text-pretty text-muted-foreground/80 text-xs">
-                  Manual control over model, effort, and Mini Skills.
-                </span>
-              </span>
-            </MenuRadioItem>
-          </MenuGroup>
-          {enabledProfiles.length > 0 ? <MenuSeparator /> : null}
-          <MenuGroup>
-            {enabledProfiles.map((profile) => (
-              <MenuRadioItem key={profile.id} value={profile.id} hideIndicator closeOnClick>
-                <span className="flex w-full min-w-0 flex-col">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate">{profile.name}</span>
-                    <span className="max-w-28 shrink-0 truncate text-muted-foreground/70 text-xs">
-                      #{profile.slug}
-                    </span>
-                  </span>
-                  {profile.description.length > 0 ? (
-                    <span className="max-w-64 truncate text-muted-foreground/80 text-xs">
-                      {profile.description}
-                    </span>
-                  ) : null}
-                </span>
-              </MenuRadioItem>
-            ))}
-          </MenuGroup>
-        </MenuRadioGroup>
-        {resolution?.status === "resolved" && selectedProfile ? (
-          <>
-            <MenuSeparator />
-            <ResolvedProfileSummary profile={selectedProfile} resolution={resolution} />
-          </>
-        ) : null}
-        {unavailable ? (
-          <>
-            <MenuSeparator />
-            <div className="max-w-64 px-2 py-1.5 text-pretty text-destructive text-xs">
-              {unavailable.reason}
-            </div>
-          </>
-        ) : null}
-        <MenuSeparator />
-        <MenuItem closeOnClick onClick={() => void navigate({ to: "/settings/agent-profiles" })}>
-          Manage Profiles
-        </MenuItem>
+        <AgentProfileMenuContent {...props} />
       </MenuPopup>
     </Menu>
   );
@@ -170,8 +186,8 @@ function ResolvedProfileSummary(props: {
     <div className="grid gap-1 px-2 py-1.5">
       {rows.map((row) => (
         <div key={row.label} className="flex items-baseline justify-between gap-4 text-xs">
-          <span className="text-muted-foreground/80">{row.label}</span>
-          <span className="min-w-0 truncate font-medium">{row.value}</span>
+          <span className="shrink-0 text-muted-foreground/80">{row.label}</span>
+          <span className="min-w-0 break-words text-right font-medium">{row.value}</span>
         </div>
       ))}
       {resolution.diagnostics.fallbackIndex !== null && resolution.diagnostics.fallbackIndex > 0 ? (

@@ -71,6 +71,7 @@ export const MiniSkillsMenuContent = memo(function MiniSkillsMenuContent(props: 
         {miniSkills.map((skill) => (
           <MenuCheckboxItem
             key={skill.id}
+            className="grid-cols-[1rem_minmax(0,1fr)] [&>span]:min-w-0"
             checked={selectedMiniSkillIds.includes(skill.id)}
             onCheckedChange={(checked) => toggleSkill(skill.id, checked === true)}
           >

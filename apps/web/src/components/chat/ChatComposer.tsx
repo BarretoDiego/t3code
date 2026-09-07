@@ -180,7 +180,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { MiniSkillsMenuContent, MiniSkillsPicker } from "./MiniSkillsPicker";
-import { AgentProfilePicker } from "./AgentProfilePicker";
+import { AgentProfileMenuContent, AgentProfilePicker } from "./AgentProfilePicker";
 import { searchAgentProfiles } from "../../agentProfileSearch";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -4024,10 +4024,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const restingHiddenBlockCount = composerControlsInStrip ? restingControlsHiddenBlockCount : 0;
   const composerControlsCompact = !composerControlsInStrip && isComposerFooterCompact;
+  const restingBlockIds = [
+    "profile",
+    ...(providerTraitsPicker && resolvedProfile === null ? ["traits"] : []),
+    "mini-skills",
+    "mode",
+  ];
+  const hiddenRestingBlockIds = restingBlockIds.slice(
+    Math.max(0, restingBlockIds.length - restingHiddenBlockCount),
+  );
   const restingProviderTraitsPicker = renderProviderTraitsPicker({
     ...providerTraitsPickerInput,
     size: "xs",
-    hidden: composerControlsHidden || restingHiddenBlockCount > 1,
+    hidden: composerControlsHidden || hiddenRestingBlockIds.includes("traits"),
   });
   const miniSkillsMenuContent = (
     <MiniSkillsMenuContent
@@ -4046,7 +4055,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             environmentId={environmentId}
             resolution={agentProfileResolution}
             size={composerControlsInStrip ? "xs" : "sm"}
-            hidden={composerControlsHidden || restingHiddenBlockCount > 3}
+            hidden={composerControlsHidden || hiddenRestingBlockIds.includes("profile")}
           />
         </>
       ),
@@ -4075,7 +4084,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             composerDraftTarget={composerDraftTarget}
             environmentId={environmentId}
             size={composerControlsInStrip ? "xs" : "sm"}
-            hidden={composerControlsHidden || restingHiddenBlockCount > 1}
+            hidden={composerControlsHidden || hiddenRestingBlockIds.includes("mini-skills")}
           />
         </>
       ),
@@ -4088,16 +4097,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           interactionMode={interactionMode}
           runtimeMode={runtimeMode}
           size={composerControlsInStrip ? "xs" : "sm"}
-          hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+          hidden={composerControlsHidden || hiddenRestingBlockIds.includes("mode")}
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
       ),
     },
   ];
-  const hiddenRestingBlockIds = restingBlockDefs
-    .slice(restingBlockDefs.length - restingHiddenBlockCount)
-    .map((def) => def.id);
   const composerControls = noProviderAvailable ? (
     <Button
       type="button"
@@ -4231,6 +4237,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 miniSkillsMenuContent={
                   hiddenRestingBlockIds.includes("mini-skills") ? miniSkillsMenuContent : undefined
+                }
+                agentProfileMenuContent={
+                  hiddenRestingBlockIds.includes("profile") ? (
+                    <AgentProfileMenuContent
+                      composerDraftTarget={composerDraftTarget}
+                      environmentId={environmentId}
+                      resolution={agentProfileResolution}
+                    />
+                  ) : undefined
                 }
                 onToggleInteractionMode={toggleInteractionMode}
                 onRuntimeModeChange={handleRuntimeModeChange}

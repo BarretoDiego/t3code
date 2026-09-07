@@ -41,7 +41,7 @@ import {
   DialogPanel,
   DialogFooter,
 } from "../ui/dialog";
-import { SettingsPageContainer } from "./settingsLayout";
+import { SettingsPageContainer, SettingsSearchTarget, SettingsSection } from "./settingsLayout";
 
 function RuntimeSelect<Value extends string>({
   label,
@@ -50,6 +50,7 @@ function RuntimeSelect<Value extends string>({
   onChange,
   placeholder,
   disabled = false,
+  size = "default",
 }: {
   label: string;
   value: Value | "";
@@ -57,6 +58,7 @@ function RuntimeSelect<Value extends string>({
   onChange: (value: Value) => void;
   placeholder?: string;
   disabled?: boolean;
+  size?: "default" | "sm";
 }) {
   return (
     <Select
@@ -68,13 +70,13 @@ function RuntimeSelect<Value extends string>({
         if (option && !option.disabled) onChange(option.value);
       }}
     >
-      <SelectTrigger aria-label={label} className="min-w-0">
+      <SelectTrigger size={size} aria-label={label} className="min-w-0">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false}>
+      <SelectPopup alignItemWithTrigger={false} popupClassName="max-w-[calc(100vw-2rem)]">
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label}
+            <span className="block break-words">{option.label}</span>
           </SelectItem>
         ))}
       </SelectPopup>
@@ -122,7 +124,7 @@ function RuntimeEditor({
       >
         <DialogHeader className="shrink-0">
           <DialogTitle>Configure AI Runtime</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="break-words">
             {environmentName} tests and uses this endpoint. Network access must already be
             configured on the runtime.
           </DialogDescription>
@@ -143,7 +145,7 @@ function RuntimeEditor({
             }}
           >
             <fieldset disabled={pending} className="grid min-w-0 gap-4">
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Name
                 <Input
                   required
@@ -151,7 +153,7 @@ function RuntimeEditor({
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 />
               </label>
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Runtime type
                 <Input
                   required
@@ -160,7 +162,7 @@ function RuntimeEditor({
                   placeholder="ollama, vllm, lm-studio…"
                 />
               </label>
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Compatibility
                 <RuntimeSelect
                   disabled={pending || draft.id === "ollama-local"}
@@ -176,7 +178,7 @@ function RuntimeEditor({
                   ]}
                 />
               </label>
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Base URL
                 <Input
                   required
@@ -187,7 +189,7 @@ function RuntimeEditor({
                   placeholder="http://127.0.0.1:11434 or https://host/v1"
                 />
               </label>
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Network base URL (optional)
                 <Input
                   type="url"
@@ -217,7 +219,7 @@ function RuntimeEditor({
                   </span>
                 </label>
               )}
-              <label className="grid gap-1 text-sm">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 Authentication
                 <RuntimeSelect
                   disabled={pending}
@@ -232,7 +234,7 @@ function RuntimeEditor({
                 />
               </label>
               {draft.authentication !== "none" && (
-                <label className="grid gap-1 text-sm">
+                <label className="grid min-w-0 gap-1.5 text-sm">
                   API key
                   <Input
                     type="password"
@@ -247,7 +249,7 @@ function RuntimeEditor({
                 </label>
               )}
               {(draft.protocol === "custom" || draft.protocol === "transcription") && (
-                <label className="grid gap-1 text-sm">
+                <label className="grid min-w-0 gap-1.5 text-sm">
                   Model IDs (comma separated)
                   <Input
                     value={draft.configuredModels.join(", ")}
@@ -351,15 +353,17 @@ function RuntimeCard({
           ? "Not detected"
           : "Unavailable";
   return (
-    <article className="rounded-lg border bg-card p-4 space-y-4">
+    <article className="min-w-0 space-y-4 rounded-xl border border-border/60 bg-card/40 p-3 shadow-xs/5 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-medium">{runtime.name}</h3>
+        <div className="min-w-0 flex-1 basis-48">
+          <h3 className="break-words text-sm font-medium">{runtime.name}</h3>
           <p className="text-xs text-muted-foreground font-mono break-all mt-1">
             {runtime.baseUrl}
           </p>
         </div>
-        <Badge variant="outline">{status}</Badge>
+        <Badge variant="outline" className="max-w-full whitespace-normal">
+          {status}
+        </Badge>
       </div>
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span>
@@ -376,33 +380,33 @@ function RuntimeCard({
         )}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" disabled={busy} onClick={onEdit}>
+        <Button size="xs" variant="outline" disabled={busy} onClick={onEdit}>
           Configure
         </Button>
         {runtime.id === "ollama-local" && (
           <>
             {runtime.installation === "absent" && (
-              <Button size="sm" disabled={busy} onClick={() => act("install")}>
+              <Button size="xs" disabled={busy} onClick={() => act("install")}>
                 Install Ollama
               </Button>
             )}
             {runtime.installation !== "absent" && runtime.status !== "available" && (
-              <Button size="sm" disabled={busy} onClick={() => act("start")}>
+              <Button size="xs" disabled={busy} onClick={() => act("start")}>
                 Start
               </Button>
             )}
             {runtime.ownedProcess && (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => act("stop")}>
+              <Button size="xs" variant="outline" disabled={busy} onClick={() => act("stop")}>
                 Stop
               </Button>
             )}
             {runtime.installation === "managed" && (
               <>
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => act("update")}>
+                <Button size="xs" variant="outline" disabled={busy} onClick={() => act("update")}>
                   Update
                 </Button>
                 <Button
-                  size="sm"
+                  size="xs"
                   variant="outline"
                   disabled={busy || runtime.ownedProcess}
                   onClick={() =>
@@ -423,13 +427,13 @@ function RuntimeCard({
           </>
         )}
         {runtime.networkBaseUrl && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={onUseRemote}>
+          <Button size="xs" variant="outline" disabled={busy} onClick={onUseRemote}>
             Use on another node
           </Button>
         )}
         {runtime.source === "configured" && (
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             disabled={busy}
             onClick={() =>
@@ -447,8 +451,8 @@ function RuntimeCard({
       </div>
       {runtime.operation && (
         <div className="rounded-md bg-muted p-3 text-xs space-y-2" role="status">
-          <div className="flex justify-between gap-2">
-            <span>{runtime.operation.message}</span>
+          <div className="flex flex-wrap justify-between gap-2">
+            <span className="min-w-0 break-words">{runtime.operation.message}</span>
             <span>{runtime.operation.phase}</span>
           </div>
           {runtime.operation.total !== null && runtime.operation.total > 0 && (
@@ -461,7 +465,7 @@ function RuntimeCard({
           )}
           {runtime.operation.phase === "running" && (
             <Button
-              size="sm"
+              size="xs"
               variant="outline"
               disabled={!online}
               onClick={() =>
@@ -490,8 +494,11 @@ function RuntimeCard({
             </p>
           )}
           {runtime.models.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-3 border-b pb-2">
-              <div>
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-3 border-b border-border/50 pb-2"
+            >
+              <div className="min-w-0 flex-1">
                 <p className="break-all text-sm font-mono">{item.id}</p>
                 <p className="text-xs text-muted-foreground">
                   {!online || runtime.status !== "available" ? "Unavailable (cached)" : "Available"}{" "}
@@ -503,7 +510,7 @@ function RuntimeCard({
               </div>
               {runtime.protocol === "ollama" && (
                 <Button
-                  size="sm"
+                  size="xs"
                   variant="ghost"
                   disabled={busy || runtime.status !== "available"}
                   onClick={() =>
@@ -524,13 +531,15 @@ function RuntimeCard({
           ))}
           {runtime.protocol === "ollama" && (
             <form
-              className="flex flex-wrap gap-2"
+              className="flex flex-col gap-2 sm:flex-row sm:items-center"
               onSubmit={(e) => {
                 e.preventDefault();
                 act("pull", pull);
               }}
             >
               <Input
+                size="sm"
+                className="min-w-0 flex-1"
                 aria-label="Model to pull"
                 placeholder="Model name, e.g. qwen3-coder"
                 value={pull}
@@ -572,9 +581,10 @@ function RuntimeCard({
             Creates a provider instance for the existing chat provider/model selector. Configure
             each consuming node's credentials separately.
           </p>
-          <label className="grid gap-1 text-sm">
+          <label className="grid min-w-0 gap-1.5 text-sm">
             Agent
             <RuntimeSelect
+              size="sm"
               label="Agent"
               value={effectiveDriver ?? ""}
               onChange={setDriver}
@@ -590,9 +600,10 @@ function RuntimeCard({
               }))}
             />
           </label>
-          <label className="grid gap-1 text-sm">
+          <label className="grid min-w-0 gap-1.5 text-sm">
             Model
             <RuntimeSelect
+              size="sm"
               label="Model"
               value={effectiveModel}
               onChange={setModel}
@@ -600,9 +611,10 @@ function RuntimeCard({
               options={runtime.models.map((item) => ({ value: item.id, label: item.id }))}
             />
           </label>
-          <label className="grid gap-1 text-sm">
+          <label className="grid min-w-0 gap-1.5 text-sm">
             New provider instance ID
             <Input
+              size="sm"
               required
               pattern="[a-zA-Z][a-zA-Z0-9_-]{0,63}"
               placeholder="opencode_gpu"
@@ -612,6 +624,8 @@ function RuntimeCard({
           </label>
           <Button
             type="submit"
+            size="sm"
+            className="sm:justify-self-start"
             disabled={
               busy ||
               binding ||
@@ -690,16 +704,15 @@ function EnvironmentRuntimes({
   };
   const target = { environmentId: environment.environmentId };
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap justify-between items-center gap-3 border-b pb-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <ServerIcon className="size-4 text-muted-foreground" />
-          <h2 className="min-w-0 break-words font-medium">{environment.label}</h2>
-          <span className="text-xs text-muted-foreground">{online ? "Online" : "Offline"}</span>
-        </div>
+    <SettingsSection
+      title={environment.label}
+      description={online ? "Online" : "Offline"}
+      icon={<ServerIcon className="size-4 shrink-0 text-muted-foreground" />}
+      variant="plain"
+      headerAction={
         <div className="flex gap-2">
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             disabled={!online || !supported || refreshing}
             onClick={async () => {
@@ -716,7 +729,7 @@ function EnvironmentRuntimes({
             {refreshing ? "Refreshing…" : "Refresh"}
           </Button>
           <Button
-            size="sm"
+            size="xs"
             variant="outline"
             disabled={!online || !supported}
             onClick={() => {
@@ -728,80 +741,83 @@ function EnvironmentRuntimes({
             Add runtime
           </Button>
         </div>
-      </div>
-      {!supported && (
-        <p className="text-sm text-muted-foreground">
-          {online
-            ? "Update this environment to enable AI Runtimes."
-            : "Connect to this node to discover its runtimes."}
-        </p>
-      )}
-      {(error ?? query.error) && (
-        <p role="alert" className="text-sm text-destructive">
-          {error ?? query.error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
-      )}
-      {supported && !query.data && !query.error && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {online ? "Discovering local runtimes…" : "Connect to this node to load its runtimes."}
-        </p>
-      )}
-      {query.data?.runtimes.map((runtime) => (
-        <RuntimeCard
-          key={runtime.id}
-          runtime={runtime}
-          online={online}
-          onAction={async (input) => result(await action({ ...target, input }))}
-          onEdit={() => {
-            setError(null);
-            setEditor(runtime);
-          }}
-          onRemove={async () => {
-            result(await remove({ ...target, input: { runtimeId: runtime.id } }));
-          }}
-          onUseRemote={() => onRemote(runtime)}
-          onBind={async (driver, model, instanceId) => {
-            const ok = result(
-              await bind({
-                ...target,
-                input: {
-                  runtimeId: runtime.id,
-                  driver,
-                  model,
-                  instanceId: ProviderInstanceId.make(instanceId),
-                },
-              }),
-            );
-            if (ok)
-              setNotice(
-                "Agent binding created. Choose it in the chat provider selector; manage or remove it in Settings → Providers.",
+      }
+    >
+      <div className="space-y-3">
+        {!supported && (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4">
+            {online
+              ? "Update this environment to enable AI Runtimes."
+              : "Connect to this node to discover its runtimes."}
+          </p>
+        )}
+        {(error ?? query.error) && (
+          <p role="alert" className="break-words px-3 text-sm text-destructive sm:px-4">
+            {error ?? query.error}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="px-3 text-sm sm:px-4">
+            {notice}
+          </p>
+        )}
+        {supported && !query.data && !query.error && (
+          <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
+            {online ? "Discovering local runtimes…" : "Connect to this node to load its runtimes."}
+          </p>
+        )}
+        {query.data?.runtimes.map((runtime) => (
+          <RuntimeCard
+            key={runtime.id}
+            runtime={runtime}
+            online={online}
+            onAction={async (input) => result(await action({ ...target, input }))}
+            onEdit={() => {
+              setError(null);
+              setEditor(runtime);
+            }}
+            onRemove={async () => {
+              result(await remove({ ...target, input: { runtimeId: runtime.id } }));
+            }}
+            onUseRemote={() => onRemote(runtime)}
+            onBind={async (driver, model, instanceId) => {
+              const ok = result(
+                await bind({
+                  ...target,
+                  input: {
+                    runtimeId: runtime.id,
+                    driver,
+                    model,
+                    instanceId: ProviderInstanceId.make(instanceId),
+                  },
+                }),
               );
-            return ok;
-          }}
-        />
-      ))}
-      {editor && (
-        <RuntimeEditor
-          initial={editor}
-          environmentName={environment.label}
-          error={error}
-          onClose={() => setEditor(null)}
-          onSave={async (runtime, apiKey) =>
-            result(
-              await save({
-                ...target,
-                input: { runtime, ...(apiKey !== undefined ? { apiKey } : {}) },
-              }),
-            )
-          }
-        />
-      )}
-    </section>
+              if (ok)
+                setNotice(
+                  "Agent binding created. Choose it in the chat provider selector; manage or remove it in Settings → Providers.",
+                );
+              return ok;
+            }}
+          />
+        ))}
+        {editor && (
+          <RuntimeEditor
+            initial={editor}
+            environmentName={environment.label}
+            error={error}
+            onClose={() => setEditor(null)}
+            onSave={async (runtime, apiKey) =>
+              result(
+                await save({
+                  ...target,
+                  input: { runtime, ...(apiKey !== undefined ? { apiKey } : {}) },
+                }),
+              )
+            }
+          />
+        )}
+      </div>
+    </SettingsSection>
   );
 }
 
@@ -816,12 +832,12 @@ export function AiRuntimesSettingsPanel() {
   return (
     <SettingsPageContainer>
       <div className="space-y-8">
-        <header>
-          <h1 className="text-lg font-semibold">AI Runtimes</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+        <SettingsSearchTarget id="ai-runtimes" className="px-3 sm:px-4">
+          <h1 className="text-sm font-medium">AI Runtimes</h1>
+          <p className="mt-1 text-[13px] leading-[1.45] text-muted-foreground/80">
             Discover model endpoints on your environments and connect them to agent providers.
           </p>
-        </header>
+        </SettingsSearchTarget>
         {environments.map((environment) => (
           <EnvironmentRuntimes
             key={environment.environmentId}
@@ -847,9 +863,9 @@ export function AiRuntimesSettingsPanel() {
             }}
           >
             <DialogPopup>
-              <DialogHeader>
-                <DialogTitle>Use {remote.name} on another node</DialogTitle>
-                <DialogDescription>
+              <DialogHeader className="shrink-0 pr-12">
+                <DialogTitle className="break-words">Use {remote.name} on another node</DialogTitle>
+                <DialogDescription className="break-words">
                   The consuming environment will test the explicit network address. Its API key
                   stays in that environment's secret store.
                 </DialogDescription>
@@ -880,7 +896,7 @@ export function AiRuntimesSettingsPanel() {
                   </p>
                 )}
               </DialogPanel>
-              <DialogFooter>
+              <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <Button variant="ghost" onClick={() => setRemote(null)}>
                   Cancel
                 </Button>

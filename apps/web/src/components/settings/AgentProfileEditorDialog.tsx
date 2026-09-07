@@ -228,14 +228,14 @@ export function AgentProfileEditorDialog(props: {
         <DialogPanel>
           <form
             id={formId}
-            className="grid gap-6"
+            className="grid min-w-0 gap-6"
             onSubmit={(event) => {
               event.preventDefault();
               if (issues.length === 0) props.onSave(draft, props.existing);
             }}
           >
             <div className="grid gap-4">
-              <label className="grid gap-1.5">
+              <label className="grid min-w-0 gap-1.5">
                 <span className="font-medium text-sm">Name</span>
                 <Input
                   value={draft.name}
@@ -256,14 +256,14 @@ export function AgentProfileEditorDialog(props: {
                 />
               </label>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5">
+                <label className="grid min-w-0 gap-1.5">
                   <span className="font-medium text-sm">Shortcut</span>
                   <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground text-sm">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-muted-foreground text-sm">
                       #
                     </span>
                     <Input
-                      className="pl-7"
+                      className="[&_[data-slot=input]]:pl-7"
                       value={draft.slug}
                       onChange={(event) =>
                         update({
@@ -275,7 +275,7 @@ export function AgentProfileEditorDialog(props: {
                     />
                   </div>
                 </label>
-                <label className="grid gap-1.5">
+                <label className="grid min-w-0 gap-1.5">
                   <span className="font-medium text-sm">Description</span>
                   <Input
                     value={draft.description}
@@ -301,7 +301,7 @@ export function AgentProfileEditorDialog(props: {
 
             <div className="grid gap-3 border-t border-border/60 pt-4">
               <h3 className="font-medium text-sm">Base configuration</h3>
-              <label className="grid gap-1.5">
+              <label className="grid min-w-0 gap-1.5">
                 <span className="text-muted-foreground text-xs">Reasoning effort</span>
                 <Input
                   value={draft.reasoningEffort}
@@ -309,7 +309,7 @@ export function AgentProfileEditorDialog(props: {
                   placeholder="Inherit current"
                 />
               </label>
-              <div className="grid gap-1.5">
+              <div className="grid min-w-0 gap-1.5">
                 <span className="text-muted-foreground text-xs">Mini Skills</span>
                 {props.miniSkills.length === 0 ? (
                   <span className="text-muted-foreground/80 text-xs">
@@ -355,7 +355,7 @@ export function AgentProfileEditorDialog(props: {
                     </label>
                   ))}
               </div>
-              <label className="grid gap-1.5">
+              <label className="grid min-w-0 gap-1.5">
                 <span className="text-muted-foreground text-xs">Instructions (Markdown)</span>
                 <Textarea
                   value={draft.instructions}
@@ -495,10 +495,10 @@ function AddPickerSelect(props: {
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false}>
+      <SelectPopup alignItemWithTrigger={false} popupClassName="max-w-[calc(100vw-2rem)]">
         {props.options.map((option) => (
           <SelectItem key={option.value} hideIndicator value={option.value}>
-            {option.label}
+            <span className="block break-words">{option.label}</span>
           </SelectItem>
         ))}
       </SelectPopup>
@@ -528,7 +528,7 @@ function RouteEditor(props: {
   };
 
   return (
-    <div className="grid gap-3 rounded-lg border border-border/60 px-3 py-3">
+    <div className="grid min-w-0 gap-3 rounded-lg border border-border/60 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 truncate font-medium text-sm">
           {instance?.displayName ?? `${route.instanceId} (unavailable)`}
@@ -542,7 +542,7 @@ function RouteEditor(props: {
           <XIcon className="size-3.5" />
         </Button>
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-1.5">
         <span className="text-muted-foreground text-xs">Model candidates</span>
         {route.modelCandidates.length === 0 ? (
           <span className="text-muted-foreground/80 text-xs">
@@ -555,7 +555,7 @@ function RouteEditor(props: {
               return (
                 <li
                   key={slug}
-                  className="flex items-center gap-2 rounded-md border border-border/50 px-2 py-1"
+                  className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 rounded-md border border-border/50 p-2 sm:flex"
                 >
                   <span className="w-16 shrink-0 text-muted-foreground text-xs">
                     {index === 0 ? "Primary" : `Fallback ${index}`}
@@ -566,38 +566,40 @@ function RouteEditor(props: {
                       <span className="text-destructive text-xs"> (unavailable)</span>
                     )}
                   </span>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Move ${slug} up`}
-                    disabled={index === 0}
-                    onClick={() => moveCandidate(index, -1)}
-                  >
-                    <ArrowUpIcon className="size-3" />
-                  </Button>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Move ${slug} down`}
-                    disabled={index === route.modelCandidates.length - 1}
-                    onClick={() => moveCandidate(index, 1)}
-                  >
-                    <ArrowDownIcon className="size-3" />
-                  </Button>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Remove ${slug}`}
-                    onClick={() =>
-                      props.onChange({
-                        modelCandidates: route.modelCandidates.filter(
-                          (candidate) => candidate !== slug,
-                        ),
-                      })
-                    }
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
+                  <div className="col-span-2 flex shrink-0 justify-end gap-1">
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Move ${slug} up`}
+                      disabled={index === 0}
+                      onClick={() => moveCandidate(index, -1)}
+                    >
+                      <ArrowUpIcon className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Move ${slug} down`}
+                      disabled={index === route.modelCandidates.length - 1}
+                      onClick={() => moveCandidate(index, 1)}
+                    >
+                      <ArrowDownIcon className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Remove ${slug}`}
+                      onClick={() =>
+                        props.onChange({
+                          modelCandidates: route.modelCandidates.filter(
+                            (candidate) => candidate !== slug,
+                          ),
+                        })
+                      }
+                    >
+                      <XIcon className="size-3" />
+                    </Button>
+                  </div>
                 </li>
               );
             })}
@@ -614,7 +616,7 @@ function RouteEditor(props: {
           />
         ) : null}
       </div>
-      <label className="grid gap-1.5">
+      <label className="grid min-w-0 gap-1.5">
         <span className="text-muted-foreground text-xs">Reasoning effort</span>
         <Input
           value={route.reasoningEffort}

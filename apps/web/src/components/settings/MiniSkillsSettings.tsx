@@ -191,7 +191,7 @@ function PromptWrapperEditor(props: {
   };
 
   return (
-    <div className="grid max-w-3xl gap-2 px-4 pb-4">
+    <div className="grid min-w-0 gap-3 p-3 sm:p-4">
       <div className="grid gap-0.5">
         <span className="font-medium text-sm">{props.title}</span>
         <span className="text-muted-foreground text-xs">{props.description}</span>
@@ -303,14 +303,14 @@ export function MiniSkillsSettingsPanel() {
         {...searchableSetting("mini-skills")}
         description="Reusable instructions that can be attached to threads and requests."
         headerAction={
-          <Button size="sm" variant="outline" onClick={() => setEditingSkill("new")}>
+          <Button size="xs" variant="outline" onClick={() => setEditingSkill("new")}>
             <PlusIcon className="size-3.5" />
             New Mini Skill
           </Button>
         }
       >
         {miniSkills.length === 0 ? (
-          <div className="px-4 py-6 text-muted-foreground text-sm">
+          <div className="px-3 py-6 text-muted-foreground text-sm sm:px-4">
             No Mini Skills yet. Create one to reuse instructions across threads and requests.
           </div>
         ) : (
@@ -338,7 +338,7 @@ export function MiniSkillsSettingsPanel() {
                 </label>
                 <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Edit ${skill.name}`}
                     onClick={() => setEditingSkill(skill)}
@@ -346,7 +346,7 @@ export function MiniSkillsSettingsPanel() {
                     <PencilIcon className="size-3.5" />
                   </Button>
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Delete ${skill.name}`}
                     onClick={() => setDeletingSkill(skill)}

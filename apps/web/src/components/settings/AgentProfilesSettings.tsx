@@ -139,14 +139,14 @@ export function AgentProfilesSettingsPanel() {
         {...searchableSetting("agent-profiles")}
         description="Reusable execution presets: provider-aware model routing, reasoning effort, Mini Skills, and instructions."
         headerAction={
-          <Button size="sm" variant="outline" onClick={openNewProfile}>
+          <Button size="xs" variant="outline" onClick={openNewProfile}>
             <PlusIcon className="size-3.5" />
             New Profile
           </Button>
         }
       >
         {agentProfiles.length === 0 ? (
-          <div className="px-4 py-6 text-muted-foreground text-sm">
+          <div className="px-3 py-6 text-muted-foreground text-sm sm:px-4">
             No profiles yet. Create one to turn recurring composer setups into a preset.
           </div>
         ) : (
@@ -189,7 +189,7 @@ export function AgentProfilesSettingsPanel() {
                 />
                 <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Duplicate ${profile.name}`}
                     onClick={() => openDuplicateProfile(profile)}
@@ -197,7 +197,7 @@ export function AgentProfilesSettingsPanel() {
                     <CopyIcon className="size-3.5" />
                   </Button>
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Edit ${profile.name}`}
                     onClick={() => openEditProfile(profile)}
@@ -205,7 +205,7 @@ export function AgentProfilesSettingsPanel() {
                     <PencilIcon className="size-3.5" />
                   </Button>
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Delete ${profile.name}`}
                     onClick={() => setDeletingProfile(profile)}
@@ -223,7 +223,7 @@ export function AgentProfilesSettingsPanel() {
         {...searchableSetting("agent-profiles-default-wrapper")}
         description="The template profiles use to wrap a request unless they define their own. {{user_message}} is required."
       >
-        <div className="grid max-w-3xl gap-2 px-4 pb-4">
+        <div className="grid min-w-0 gap-3 p-3 sm:p-4">
           <Textarea
             value={wrapperText}
             rows={10}

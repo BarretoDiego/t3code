@@ -188,12 +188,12 @@ export function SettingsSection({
       ) : (
         <div
           data-settings-scroll-target
-          className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
+          className="flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-2 px-3 sm:px-4"
         >
-          <div className="min-w-0">
+          <div className={cn("min-w-0", headerAction && "flex-1 basis-48")}>
             <h2 className="flex min-h-7 items-center gap-2 text-sm font-normal tracking-[-0.005em] text-foreground/70">
               {icon}
-              {title}
+              <span className="min-w-0 break-words">{title}</span>
             </h2>
             {description ? (
               <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[13px] leading-[1.45] text-muted-foreground/80">
@@ -201,7 +201,9 @@ export function SettingsSection({
               </div>
             ) : null}
           </div>
-          <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+          {headerAction ? (
+            <div className="flex min-h-7 shrink-0 items-center justify-end">{headerAction}</div>
+          ) : null}
         </div>
       )}
       <div

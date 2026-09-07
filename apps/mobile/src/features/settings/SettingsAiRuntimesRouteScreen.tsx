@@ -54,7 +54,7 @@ function Button({
       accessibilityState={{ disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={onPress}
-      className={`min-h-11 justify-center rounded-xl px-4 py-2.5 disabled:opacity-40 ${primary ? "bg-primary" : "bg-muted"}`}
+      className={`min-h-11 max-w-full justify-center rounded-xl px-4 py-2.5 disabled:opacity-40 ${primary ? "bg-primary" : "bg-muted"}`}
     >
       <Text
         className={`text-sm text-center font-t3-medium ${primary ? "text-primary-foreground" : "text-foreground"}`}
@@ -302,9 +302,9 @@ function RuntimeRow({
   };
   return (
     <View className="gap-3 p-4 border-b border-border">
-      <View className="flex-row justify-between gap-3">
-        <Text className="min-w-0 flex-1 font-t3-bold text-foreground">{runtime.name}</Text>
-        <Text className="text-xs text-foreground-muted">
+      <View className="flex-row flex-wrap items-start justify-between gap-2">
+        <Text className="min-w-0 flex-1 basis-40 font-t3-bold text-foreground">{runtime.name}</Text>
+        <Text className="max-w-full shrink text-xs text-foreground-muted">
           {!online
             ? "Node offline"
             : runtime.status === "available"
