@@ -375,3 +375,43 @@ describe("thread workspace persistence", () => {
     expect(pruneThreadWorkspaceTargets(model, () => true)).toBe(model);
   });
 });
+
+it("persists Source Control and AI Review panels without replacing existing thread tabs", () => {
+  const reference = {
+    provider: "github" as const,
+    host: "github.com",
+    repository: "owner/repo",
+    number: 1,
+  };
+  const panels = [
+    { kind: "source-control" as const },
+    { kind: "ai-review" as const, environmentId: "env-1", reference },
+  ];
+  const model = normalizeThreadWorkspaceModel({
+    layout: "two-columns",
+    activePaneId: "thread-pane-1",
+    panes: panels.map((panel, index) => ({
+      ...pane(`thread-pane-${index + 1}`, [target(String(index))]),
+      panel,
+    })),
+  })!;
+  const restored = restoreSavedThreadWorkspace(
+    createSavedThreadWorkspace(model, { id: "hub", name: "Review", savedAt: 1 }),
+  );
+  expect(restored.panes.map((pane) => pane.panel)).toEqual(panels);
+  expect(restored.panes.map((pane) => pane.tabs[0]?.threadId)).toEqual(["0", "1"]);
+});
+it("ignores malformed persisted panels and retains their normal thread pane", () => {
+  const model = normalizeThreadWorkspaceModel({
+    layout: "single",
+    activePaneId: "thread-pane-1",
+    panes: [
+      {
+        ...pane("thread-pane-1", [target("thread")]),
+        panel: { kind: "ai-review", reference: { number: -1 } },
+      },
+    ],
+  })!;
+  expect(model.panes[0]?.panel).toBeUndefined();
+  expect(model.panes[0]?.tabs[0]?.threadId).toBe("thread");
+});

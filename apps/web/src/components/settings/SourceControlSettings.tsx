@@ -1,3 +1,5 @@
+import { SourceControlReviewSettingsSection } from "./SourceControlReviewSettings";
+import { SourceControlAccountsSettings } from "./SourceControlAccountsSettings";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon, GitPullRequestIcon } from "lucide-react";
 import * as Duration from "effect/Duration";
@@ -589,6 +591,8 @@ export function SourceControlSettingsPanel() {
 
       {/* Its rows are serverScoped: without a primary they render inert with
           an explanation, which beats disappearing. */}
+      <SourceControlAccountsSettings />
+      <SourceControlReviewSettingsSection />
       <SourceControlWritingSettingsSection />
     </SettingsPageContainer>
   );

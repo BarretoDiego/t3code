@@ -1,3 +1,4 @@
+import { CommitMessageAssistant } from "./sourceControl/CommitMessageAssistant";
 import { useAtomValue } from "@effect/atom-react";
 import { type ScopedThreadRef } from "@t3tools/contracts";
 import {
@@ -1969,6 +1970,14 @@ export default function GitActionsControl({
                 placeholder="Leave empty to auto-generate"
                 size="sm"
               />
+              {activeEnvironmentId && gitCwd && (
+                <CommitMessageAssistant
+                  environmentId={activeEnvironmentId}
+                  cwd={gitCwd}
+                  filePaths={selectedFiles.map((file) => file.path)}
+                  onGenerated={setDialogCommitMessage}
+                />
+              )}
             </div>
           </DialogPanel>
           <DialogFooter variant="bare">

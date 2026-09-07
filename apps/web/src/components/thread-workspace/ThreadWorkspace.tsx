@@ -1,3 +1,5 @@
+import { SourceControlHub } from "../sourceControl/SourceControlHub";
+import { AiReviewPanel } from "../sourceControl/AiReviewPanel";
 import {
   DndContext,
   DragOverlay,
@@ -582,7 +584,7 @@ function ThreadPaneTabs(props: {
                 key={tabKey}
                 target={target}
                 paneId={props.pane.id}
-                selected={props.pane.activeTabKey === tabKey}
+                selected={!props.pane.panel && props.pane.activeTabKey === tabKey}
                 routed={props.routedTargetKey === tabKey}
                 totalTabs={props.totalTabs}
                 onActivate={() => props.onActivateTab(target)}
@@ -594,6 +596,17 @@ function ThreadPaneTabs(props: {
       </div>
       {props.active ? (
         <div className="ml-1 flex shrink-0 items-center">
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              useThreadWorkspaceStore
+                .getState()
+                .setPanePanel(props.pane.id, props.pane.panel ? null : { kind: "source-control" })
+            }
+          >
+            {props.pane.panel ? "Close panel" : "Source control"}
+          </Button>
           <SplitPaneDragHandle onSplit={props.onSplit} />
           <ThreadLayoutMenu layout={props.layout} />
         </div>
@@ -1067,20 +1080,46 @@ export function ThreadWorkspace({
           windowDragRegion={index === 0}
           totalTabs={totalTabs}
           routedTargetKey={routedTargetKey}
-          onActivateTab={(nextTarget) => activateTarget(pane.id, nextTarget)}
+          onActivateTab={(nextTarget) => {
+            useThreadWorkspaceStore.getState().setPanePanel(pane.id, null);
+            activateTarget(pane.id, nextTarget);
+          }}
           onCloseTab={(nextTarget) => closeTarget(pane.id, nextTarget)}
           onSplit={(axis) => {
             activatePane(pane.id);
             splitActivePane(axis);
           }}
         />
-        <ThreadPaneContent
-          active={active}
-          target={target}
-          reserveNativeControlsInset={reserveNativeControlsInset}
-          rightPanelHost={active ? rightPanelHost : null}
-          onRightPanelMaximizedChange={setRightPanelMaximized}
-        />
+        {pane.panel?.kind === "source-control" ? (
+          <SourceControlHub
+            onOpenReviewPanel={(environmentId, reference) => {
+              activatePane(pane.id);
+              splitActivePane("horizontal");
+              const state = useThreadWorkspaceStore.getState();
+              state.setPanePanel(state.activePaneId, {
+                kind: "ai-review",
+                environmentId,
+                reference,
+              });
+            }}
+          />
+        ) : pane.panel?.kind === "ai-review" ? (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <AiReviewPanel
+              key={`${pane.panel.environmentId}:${pane.panel.reference.provider}:${pane.panel.reference.repository}:${pane.panel.reference.number}`}
+              environmentId={pane.panel.environmentId}
+              reference={pane.panel.reference}
+            />
+          </div>
+        ) : (
+          <ThreadPaneContent
+            active={active}
+            target={target}
+            reserveNativeControlsInset={reserveNativeControlsInset}
+            rightPanelHost={active ? rightPanelHost : null}
+            onRightPanelMaximizedChange={setRightPanelMaximized}
+          />
+        )}
       </ThreadPaneSection>
     );
   };

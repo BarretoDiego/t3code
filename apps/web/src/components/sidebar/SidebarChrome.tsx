@@ -268,6 +268,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           <SidebarExperienceSelector />
           <SidebarUtilityItem
+            icon={<GitPullRequestIcon />}
+            label="Source Control"
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/source-control" });
+            }}
+          />
+          <SidebarUtilityItem
             icon={<LayoutDashboardIcon />}
             label="Agent Operations"
             onClick={handleBoardClick}
