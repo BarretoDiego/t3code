@@ -42,6 +42,8 @@ export interface CommandPaletteOpenIntent {
   readonly kind: "add-project" | "new-thread-in";
   /** Preselected environment for "add-project"; absent means "ask". */
   readonly environmentId?: string;
+  readonly projectSource?: "local" | "url";
+  readonly repositoryUrl?: string;
 }
 
 export interface CommandPaletteUiState {
@@ -53,7 +55,12 @@ export interface CommandPaletteUiState {
 export type CommandPaletteUiAction =
   | { readonly _tag: "SetOpen"; readonly open: boolean }
   | { readonly _tag: "ToggleMode"; readonly mode: SearchOverlayMode }
-  | { readonly _tag: "OpenAddProject"; readonly environmentId?: string }
+  | {
+      readonly _tag: "OpenAddProject";
+      readonly environmentId?: string;
+      readonly projectSource?: "local" | "url";
+      readonly repositoryUrl?: string;
+    }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "ClearOpenIntent" };
 
@@ -74,10 +81,12 @@ export function reduceCommandPaletteUiState(
       return {
         open: true,
         mode: "command",
-        openIntent:
-          action.environmentId === undefined
-            ? { kind: "add-project" }
-            : { kind: "add-project", environmentId: action.environmentId },
+        openIntent: {
+          kind: "add-project",
+          ...(action.environmentId !== undefined ? { environmentId: action.environmentId } : {}),
+          ...(action.projectSource !== undefined ? { projectSource: action.projectSource } : {}),
+          ...(action.repositoryUrl !== undefined ? { repositoryUrl: action.repositoryUrl } : {}),
+        },
       };
     case "OpenNewThreadIn":
       return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };

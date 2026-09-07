@@ -130,3 +130,9 @@ workspace layout. The existing Pull requests and thread Git workflows remain ava
 For commit messages, choose **Generate message with agent** in the commit dialog. The preview uses
 your writing style, Agent Profile, and selected Mini Skills, without changing staging or committing.
 Review and edit the generated text before committing.
+
+### Repositories on your devices
+
+Open **Source Control → Repositories → On your devices** to find folders and repositories already associated with T3 projects, grouped by environment. Search by project name or path. Select a checkout to inspect its branch and worktrees, open the project, or switch to its Changes view.
+
+Use **Add existing** for a folder already downloaded on an environment. **Clone repository** opens the existing Git URL workflow: choose the destination environment and confirm the local folder, then T3 clones the repository and opens it as a project. Git uses that environment's existing credentials. Remote repository pages can prefill the clone URL. The catalog does not scan your disk for unregistered folders.

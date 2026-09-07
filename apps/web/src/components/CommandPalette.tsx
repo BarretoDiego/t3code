@@ -96,7 +96,7 @@ import {
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
-import { onOpenCommandPalette } from "../commandPaletteBus";
+import { onOpenCommandPalette, type CommandPaletteOpenDetail } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { SyncProjectDialog, type SyncProjectDialogSource } from "./SyncProjectDialog";
@@ -411,12 +411,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     [],
   );
   const openAddProject = useCallback(
-    (environmentId?: string) =>
-      dispatch(
-        environmentId === undefined
-          ? { _tag: "OpenAddProject" }
-          : { _tag: "OpenAddProject", environmentId },
-      ),
+    (environmentId?: string, detail?: CommandPaletteOpenDetail) =>
+      dispatch({
+        _tag: "OpenAddProject",
+        ...(environmentId !== undefined ? { environmentId } : {}),
+        ...(detail?.projectSource ? { projectSource: detail.projectSource } : {}),
+        ...(detail?.repositoryUrl ? { repositoryUrl: detail.repositoryUrl } : {}),
+      }),
     [],
   );
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
@@ -503,7 +504,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
-          openAddProject(detail.environmentId);
+          openAddProject(detail.environmentId, detail);
         } else {
           setOpen(true);
         }
@@ -1322,14 +1323,14 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const startAddProjectClone = useCallback(
-    (environmentId: EnvironmentId, source: AddProjectRemoteSource): void => {
+    (environmentId: EnvironmentId, source: AddProjectRemoteSource, initialQuery = ""): void => {
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow({ step: "repository", environmentId, source });
       pushPaletteView({
         addonIcon: remoteProjectSourceIcon(source, ADDON_ICON_CLASS),
         groups: [],
-        initialQuery: "",
       });
+      setQuery(initialQuery);
     },
     [pushPaletteView],
   );
@@ -1544,8 +1545,28 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
     clearOpenIntent();
-    openAddProjectFlow(openIntent.environmentId as EnvironmentId | undefined);
-  }, [clearOpenIntent, openAddProjectFlow, openIntent]);
+    const target = environments.find(
+      (environment) =>
+        environment.environmentId === openIntent.environmentId &&
+        environment.connection.phase === "connected",
+    );
+    if (target && openIntent.projectSource === "url") {
+      // Consume the external navigation intent once, just like the existing add-project entry point.
+      // eslint-disable-next-line react/set-state-in-effect
+      startAddProjectClone(target.environmentId, "url", openIntent.repositoryUrl ?? "");
+    } else if (target && openIntent.projectSource === "local") {
+      void startAddProjectBrowse(target.environmentId);
+    } else {
+      openAddProjectFlow(openIntent.environmentId as EnvironmentId | undefined);
+    }
+  }, [
+    clearOpenIntent,
+    openAddProjectFlow,
+    openIntent,
+    environments,
+    startAddProjectClone,
+    startAddProjectBrowse,
+  ]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "new-thread-in" || projectThreadItems.length === 0) {

@@ -488,3 +488,29 @@ describe("filterPinnedBrowseEntries", () => {
     });
   });
 });
+
+it("keeps the clone destination environment and URL when entering from the repository catalog", () => {
+  const state = reduceCommandPaletteUiState(
+    { open: false, mode: "command", openIntent: null },
+    {
+      _tag: "OpenAddProject",
+      environmentId: "remote-node",
+      projectSource: "url",
+      repositoryUrl: "git@example.test:team/repo.git",
+    },
+  );
+  expect(state.openIntent).toEqual({
+    kind: "add-project",
+    environmentId: "remote-node",
+    projectSource: "url",
+    repositoryUrl: "git@example.test:team/repo.git",
+  });
+  expect(reduceCommandPaletteUiState(state, { _tag: "ClearOpenIntent" }).openIntent).toBeNull();
+  expect(
+    reduceCommandPaletteUiState(state, {
+      _tag: "OpenAddProject",
+      environmentId: "local",
+      projectSource: "local",
+    }).openIntent,
+  ).toEqual({ kind: "add-project", environmentId: "local", projectSource: "local" });
+});
