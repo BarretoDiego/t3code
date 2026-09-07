@@ -38,6 +38,18 @@ import {
   AiRuntimeActionInput,
   AiRuntimeBindInput,
 } from "./aiRuntime.ts";
+import {
+  ComputeError,
+  ComputeEvent,
+  ComputeJobCancelInput,
+  ComputeJobGetInput,
+  ComputeJobListInput,
+  ComputeJobSubmitInput,
+  ComputeProviderRemoveInput,
+  ComputeProviderSaveInput,
+  ComputeSnapshot,
+  GenerationJob,
+} from "./compute.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -342,6 +354,15 @@ export const WS_METHODS = {
   aiRuntimesRemove: "aiRuntimes.remove",
   aiRuntimesAction: "aiRuntimes.action",
   aiRuntimesBind: "aiRuntimes.bind",
+  computeList: "compute.list",
+  computeSubscribe: "compute.subscribe",
+  computeEventsSubscribe: "compute.events.subscribe",
+  computeSaveProvider: "compute.saveProvider",
+  computeRemoveProvider: "compute.removeProvider",
+  computeListJobs: "compute.listJobs",
+  computeGetJob: "compute.getJob",
+  computeSubmit: "compute.submit",
+  computeCancelJob: "compute.cancelJob",
   // Marketplace methods
   marketplaceList: "marketplace.list",
   marketplaceGetPackage: "marketplace.getPackage",
@@ -738,6 +759,53 @@ export const WsAiRuntimesBindRpc = Rpc.make(WS_METHODS.aiRuntimesBind, {
   payload: AiRuntimeBindInput,
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeListRpc = Rpc.make(WS_METHODS.computeList, {
+  payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
+  success: ComputeSnapshot,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeSubscribeRpc = Rpc.make(WS_METHODS.computeSubscribe, {
+  payload: Schema.Struct({}),
+  success: ComputeSnapshot,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+export const WsComputeEventsSubscribeRpc = Rpc.make(WS_METHODS.computeEventsSubscribe, {
+  payload: Schema.Struct({}),
+  success: ComputeEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+export const WsComputeSaveProviderRpc = Rpc.make(WS_METHODS.computeSaveProvider, {
+  payload: ComputeProviderSaveInput,
+  success: ComputeSnapshot,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeRemoveProviderRpc = Rpc.make(WS_METHODS.computeRemoveProvider, {
+  payload: ComputeProviderRemoveInput,
+  success: ComputeSnapshot,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeListJobsRpc = Rpc.make(WS_METHODS.computeListJobs, {
+  payload: ComputeJobListInput,
+  success: Schema.Array(GenerationJob),
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeGetJobRpc = Rpc.make(WS_METHODS.computeGetJob, {
+  payload: ComputeJobGetInput,
+  success: GenerationJob,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeSubmitRpc = Rpc.make(WS_METHODS.computeSubmit, {
+  payload: ComputeJobSubmitInput,
+  success: GenerationJob,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
+});
+export const WsComputeCancelJobRpc = Rpc.make(WS_METHODS.computeCancelJob, {
+  payload: ComputeJobCancelInput,
+  success: GenerationJob,
+  error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
 export const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
   payload: Schema.Struct({}),
@@ -1597,6 +1665,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsAiRuntimesRemoveRpc,
   WsAiRuntimesActionRpc,
   WsAiRuntimesBindRpc,
+  WsComputeListRpc,
+  WsComputeSubscribeRpc,
+  WsComputeEventsSubscribeRpc,
+  WsComputeSaveProviderRpc,
+  WsComputeRemoveProviderRpc,
+  WsComputeListJobsRpc,
+  WsComputeGetJobRpc,
+  WsComputeSubmitRpc,
+  WsComputeCancelJobRpc,
   WsSourceControlHubCommitPreviewRpc,
   WsSourceControlHubMapRepositoryRpc,
   WsSourceControlHubReviewSubscribeRpc,
