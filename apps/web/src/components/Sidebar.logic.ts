@@ -20,6 +20,9 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
 
+/** Compatibility alias for legacy sidebar callers that use the settled-row label helper. */
+export const resolveSettledTimestamp = resolveSettledThreadTimestamp;
+
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
@@ -85,6 +88,9 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 // dragging; replaying their committed DOM order would animate the drop twice.
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false;
+
+// Legacy sidebar variants share the same sortable behavior until they are removed.
+export const animatePinnedLayoutChanges = animateSidebarLayoutChanges;
 
 // Rows and section markers share one sortable list. The separators resolve
 // the lifecycle action; Sidebar.drag previews the resulting layout. Pinned
@@ -857,7 +863,7 @@ export function firstValidTimestampMs(
 
 /** String twin of firstValidTimestampMs for callers that need the ISO string
     (display labels, tick anchors) rather than epoch ms. */
-function firstValidTimestamp(
+export function firstValidTimestamp(
   ...candidates: ReadonlyArray<string | null | undefined>
 ): string | null {
   for (const candidate of candidates) {
