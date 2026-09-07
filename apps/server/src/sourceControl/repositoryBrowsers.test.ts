@@ -140,3 +140,35 @@ describe("source control repository adapters", () => {
     }),
   );
 });
+
+it.effect("lists workspace integration repositories without a user role filter", () =>
+  Effect.gen(function* () {
+    const paths: string[] = [];
+    yield* makeBitbucketRepositoryBrowser(
+      bb('{"values":[]}', paths),
+      Effect.succeed("team"),
+    ).listRepositories({ provider: "bitbucket" });
+    expect(paths[0]).not.toContain("role=");
+    expect(paths[0]).toContain("/repositories/team");
+  }),
+);
+it.effect("discovers a repository-scoped integration without requiring workspace enumeration", () =>
+  Effect.gen(function* () {
+    const paths: string[] = [];
+    const repository = {
+      full_name: "team/repo",
+      name: "repo",
+      description: "",
+      links: { html: { href: "https://bitbucket.org/team/repo" }, clone: [] },
+      is_private: true,
+    };
+    const page = yield* makeBitbucketRepositoryBrowser(
+      bb(encodeJson(repository), paths),
+      Effect.succeed("team"),
+      Effect.succeed("repo"),
+    ).listRepositories({ provider: "bitbucket" });
+    expect(paths).toEqual(["/repositories/team/repo"]);
+    expect(page.items[0]?.nameWithOwner).toBe("team/repo");
+    expect(page.nextCursor).toBeNull();
+  }),
+);

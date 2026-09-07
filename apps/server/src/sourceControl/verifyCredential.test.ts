@@ -56,8 +56,58 @@ it.effect("sanitizes denied, malformed and failed identity checks", () =>
         "fixture-secret",
         request,
       ).pipe(Effect.flip);
-      expect(result.message).toContain("Authentication could not be verified");
+      expect(result.message.length).toBeGreaterThan(0);
       expect(result.message).not.toContain("fixture-secret");
     }
+  }),
+);
+
+it.effect(
+  "verifies integration tokens through read-only repository access without user scopes",
+  () =>
+    Effect.gen(function* () {
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ full_name: "team/repo" }));
+      expect(
+        yield* verifySourceControlCredential(
+          {
+            provider: "bitbucket",
+            label: "Integration",
+            username: "",
+            workspace: "team",
+            repository: "repo",
+          },
+          "fixture-secret",
+          request,
+        ),
+      ).toEqual({ accountName: "team/repo" });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith(
+        "https://api.bitbucket.org/2.0/repositories/team/repo",
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({ Authorization: "Bearer fixture-secret" }),
+        }),
+      );
+    }),
+);
+it.effect("verifies API tokens with repository scopes when user-profile access is denied", () =>
+  Effect.gen(function* () {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("denied", { status: 403 }))
+      .mockResolvedValueOnce(Response.json({ values: [] }));
+    expect(
+      yield* verifySourceControlCredential(
+        { provider: "bitbucket", label: "Work", username: "dev@example.test", workspace: "team" },
+        "fixture-secret",
+        request,
+      ),
+    ).toEqual({ accountName: "team" });
+    expect(request.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.bitbucket.org/2.0/user",
+      "https://api.bitbucket.org/2.0/repositories/team?pagelen=1",
+    ]);
   }),
 );

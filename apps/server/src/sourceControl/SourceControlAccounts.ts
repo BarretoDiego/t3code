@@ -7,6 +7,7 @@ import {
   type SourceControlAccount,
   type SourceControlAccountSaveInput,
 } from "@t3tools/contracts";
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -57,6 +58,12 @@ export class SourceControlAccounts extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore;
+  const environment = yield* Config.all({
+    email: Config.string("T3CODE_BITBUCKET_EMAIL").pipe(Config.withDefault("")),
+    token: Config.string("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.withDefault("")),
+    accessToken: Config.string("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.withDefault("")),
+    workspace: Config.string("T3CODE_BITBUCKET_WORKSPACE").pipe(Config.withDefault("")),
+  });
   const gate = yield* Semaphore.make(1);
   const key = (provider: Provider) => `source-control-account-${provider}`;
   const credential = Effect.fn(function* (provider: Provider) {
@@ -120,11 +127,28 @@ export const make = Effect.gen(function* () {
                   label: account.label,
                   username: account.username,
                   workspace: account.workspace,
+                  ...(account.repository !== undefined ? { repository: account.repository } : {}),
                   hasCredential: account.token.length > 0,
                 },
               ]
             : [],
         ),
+      ),
+      Effect.map((accounts) =>
+        accounts.some((account) => account.provider === "bitbucket") ||
+        !(environment.accessToken.trim() || (environment.email.trim() && environment.token.trim()))
+          ? accounts
+          : [
+              ...accounts,
+              {
+                provider: "bitbucket" as const,
+                label: "Bitbucket environment",
+                username: environment.accessToken.trim() ? "" : environment.email.trim(),
+                workspace: environment.workspace.trim(),
+                hasCredential: true,
+                credentialSource: "environment" as const,
+              },
+            ],
       ),
     ),
     save: (input) =>

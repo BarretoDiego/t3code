@@ -117,6 +117,8 @@ describe("DesktopShellEnvironment", () => {
             PATH: "/opt/homebrew/bin:/usr/bin",
             SSH_AUTH_SOCK: "/tmp/secretive.sock",
             HOMEBREW_PREFIX: "/opt/homebrew",
+            T3CODE_BITBUCKET_EMAIL: "dev@example.test",
+            T3CODE_BITBUCKET_API_TOKEN: "shell-fixture",
           });
         },
       });
@@ -126,6 +128,8 @@ describe("DesktopShellEnvironment", () => {
       assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin:/Users/test/.local/bin");
       assert.equal(env.SSH_AUTH_SOCK, "/tmp/secretive.sock");
       assert.equal(env.HOMEBREW_PREFIX, "/opt/homebrew");
+      assert.equal(env.T3CODE_BITBUCKET_EMAIL, "dev@example.test");
+      assert.equal(env.T3CODE_BITBUCKET_API_TOKEN, "shell-fixture");
     }),
   );
 
@@ -135,6 +139,7 @@ describe("DesktopShellEnvironment", () => {
         SHELL: "/bin/zsh",
         PATH: "/usr/bin",
         SSH_AUTH_SOCK: "/tmp/inherited.sock",
+        T3CODE_BITBUCKET_API_TOKEN: "inherited-fixture",
       };
 
       yield* runShellEnvironment({
@@ -149,6 +154,7 @@ describe("DesktopShellEnvironment", () => {
 
       assert.equal(env.PATH, "/opt/homebrew/bin:/usr/bin");
       assert.equal(env.SSH_AUTH_SOCK, "/tmp/inherited.sock");
+      assert.equal(env.T3CODE_BITBUCKET_API_TOKEN, "inherited-fixture");
     }),
   );
 

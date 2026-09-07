@@ -58,7 +58,7 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                 <p className="font-medium">{provider === "github" ? "GitHub" : "Bitbucket"}</p>
                 <p className="break-words text-sm text-muted-foreground">
                   {account
-                    ? `${account.label} · ${account.hasCredential ? "Credential saved" : "Environment credentials"}`
+                    ? `${account.label} · ${account.credentialSource === "environment" ? "Detected in environment" : account.hasCredential ? "Credential saved" : "No saved token"}`
                     : "Environment credentials"}
                 </p>
               </div>
@@ -81,7 +81,7 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                 >
                   Manage
                 </Button>
-                {account && (
+                {account && account.credentialSource !== "environment" && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -173,6 +173,13 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                       <Input
                         value={draft.workspace}
                         onChange={(event) => setDraft({ ...draft, workspace: event.target.value })}
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm">
+                      Repository slug (repository-scoped tokens)
+                      <Input
+                        value={draft.repository ?? ""}
+                        onChange={(event) => setDraft({ ...draft, repository: event.target.value })}
                       />
                     </label>
                   </>
