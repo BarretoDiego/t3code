@@ -301,7 +301,6 @@ export function MiniSkillsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("mini-skills")}
-        description="Reusable instructions that can be attached to threads and requests."
         headerAction={
           <Button size="xs" variant="outline" onClick={() => setEditingSkill("new")}>
             <PlusIcon className="size-3.5" />
@@ -309,6 +308,9 @@ export function MiniSkillsSettingsPanel() {
           </Button>
         }
       >
+        <p className="px-3 py-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+          Reusable instructions that can be attached to threads and requests.
+        </p>
         {miniSkills.length === 0 ? (
           <div className="px-3 py-6 text-muted-foreground text-sm sm:px-4">
             No Mini Skills yet. Create one to reuse instructions across threads and requests.
@@ -360,10 +362,12 @@ export function MiniSkillsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection
-        {...searchableSetting("mini-skills-prompt-wrappers")}
-        description={`The text surrounding Mini Skills when they are sent to the agent. ${MINI_SKILLS_WRAPPER_PLACEHOLDER} marks where the skills are inserted.`}
-      >
+      <SettingsSection {...searchableSetting("mini-skills-prompt-wrappers")}>
+        <p className="px-3 pt-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+          The text surrounding Mini Skills when they are sent to the agent.{" "}
+          {MINI_SKILLS_WRAPPER_PLACEHOLDER}
+          {" marks where the skills are inserted."}
+        </p>
         <PromptWrapperEditor
           scope="thread"
           title="Thread instructions"

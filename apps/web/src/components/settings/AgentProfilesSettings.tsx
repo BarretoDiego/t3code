@@ -137,7 +137,6 @@ export function AgentProfilesSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("agent-profiles")}
-        description="Reusable execution presets: provider-aware model routing, reasoning effort, Mini Skills, and instructions."
         headerAction={
           <Button size="xs" variant="outline" onClick={openNewProfile}>
             <PlusIcon className="size-3.5" />
@@ -145,6 +144,10 @@ export function AgentProfilesSettingsPanel() {
           </Button>
         }
       >
+        <p className="px-3 py-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+          Reusable execution presets: provider-aware model routing, reasoning effort, Mini Skills,
+          and instructions.
+        </p>
         {agentProfiles.length === 0 ? (
           <div className="px-3 py-6 text-muted-foreground text-sm sm:px-4">
             No profiles yet. Create one to turn recurring composer setups into a preset.
@@ -219,10 +222,11 @@ export function AgentProfilesSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection
-        {...searchableSetting("agent-profiles-default-wrapper")}
-        description="The template profiles use to wrap a request unless they define their own. {{user_message}} is required."
-      >
+      <SettingsSection {...searchableSetting("agent-profiles-default-wrapper")}>
+        <p className="px-3 pt-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+          The template profiles use to wrap a request unless they define their own.{" "}
+          {"{{user_message}}"} is required.
+        </p>
         <div className="grid min-w-0 gap-3 p-3 sm:p-4">
           <Textarea
             value={wrapperText}

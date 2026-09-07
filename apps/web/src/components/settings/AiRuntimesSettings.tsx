@@ -705,8 +705,7 @@ function EnvironmentRuntimes({
   const target = { environmentId: environment.environmentId };
   return (
     <SettingsSection
-      title={environment.label}
-      description={online ? "Online" : "Offline"}
+      title={`${environment.label} · ${online ? "Online" : "Offline"}`}
       icon={<ServerIcon className="size-4 shrink-0 text-muted-foreground" />}
       variant="plain"
       headerAction={
