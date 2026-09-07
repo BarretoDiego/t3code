@@ -1,3 +1,4 @@
+import { SourceControlAuthWizard } from "../sourceControl/SourceControlAuthWizard";
 import { useState } from "react";
 import type { SourceControlAccountConfig } from "@t3tools/contracts";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
@@ -38,7 +39,16 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
     setError(null);
   };
   return (
-    <SettingsSection title={`${environment.label} accounts`} variant="plain">
+    <SettingsSection
+      title={`${environment.label} accounts`}
+      variant="plain"
+      headerAction={
+        <SourceControlAuthWizard
+          environmentId={environment.environmentId}
+          onConnected={query.refresh}
+        />
+      }
+    >
       <div className="divide-y rounded-lg border">
         {(["github", "bitbucket"] as const).map((provider) => {
           const account = query.data?.find((account) => account.provider === provider);

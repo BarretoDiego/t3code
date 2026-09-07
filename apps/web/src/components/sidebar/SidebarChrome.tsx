@@ -1,7 +1,7 @@
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
+  GitBranchIcon,
   LayoutDashboardIcon,
   PanelsTopLeftIcon,
   SettingsIcon,
@@ -16,7 +16,6 @@ import {
   useSidebarExperience,
 } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -37,7 +36,6 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
-import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -201,30 +199,17 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ? "project-settings"
           : location.pathname === "/usage"
             ? "usage"
-            : location.pathname === "/pull-requests"
+            : location.pathname === "/pull-requests" || location.pathname === "/source-control"
               ? "pull-requests"
               : location.pathname === "/board"
                 ? "board"
                 : null,
   });
-  const { environments } = useEnvironments();
-  // The page reads every connected server, so one of them offering pull requests is enough for
-  // the link to lead somewhere.
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
   }, [isMobile, setOpenMobile]);
-  const handlePullRequestsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({
-      to: "/pull-requests",
-      search: readPullRequestListPreferences(),
-    });
-  }, [closeMobileSidebar, navigate]);
   const handleBoardClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/board" });
@@ -268,7 +253,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           <SidebarExperienceSelector />
           <SidebarUtilityItem
-            icon={<GitPullRequestIcon />}
+            icon={<GitBranchIcon />}
             label="Source Control"
             onClick={() => {
               closeMobileSidebar();
@@ -280,13 +265,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Agent Operations"
             onClick={handleBoardClick}
           />
-          {pullRequestsSupported ? (
-            <SidebarUtilityItem
-              icon={<GitPullRequestIcon />}
-              label="Pull Requests"
-              onClick={handlePullRequestsClick}
-            />
-          ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
