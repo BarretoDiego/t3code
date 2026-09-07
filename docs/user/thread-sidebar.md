@@ -33,11 +33,14 @@ thread into the active list un-settles it. A snoozed thread can be dragged out o
 shelf, which wakes it, but threads cannot be dragged into the shelf because snoozing needs a wake
 time. Dragging a pinned thread out of the pinned section does not ask for unpin confirmation.
 Pinned and active boundary labels appear only while dragging, without moving the rows. The
-destination boundary highlights. When you cross into another section, the dragged thread shows
-its destination, such as **→ Active**. Its usual pin, status, and hover actions hide during the
-drag. Reordering within the same section does not show a destination badge. When there are no
-pins, drag to the top edge to pin a thread. Section labels also identify empty sections and a
-collapsed settled shelf.
+other rows slide aside to show where the thread will land. When you cross into another section,
+the dragged thread shows the action the drop performs, with its icon: **Pin**, **Unpin**,
+**Settle**, **Un-settle**, or **Wake**. Its status and hover actions hide during the drag. A pinned
+thread keeps its pin only while it stays in the pinned section; once it leaves, the badge takes
+over. Reordering within the same section shows no badge. When there are no pins, drag to the top
+edge to pin a thread. Section labels stay readable for the whole drag, and the section the
+thread is over takes the accent color. Section labels also
+identify empty sections and a collapsed settled shelf.
 
 Drag within the pinned or active section to change its order. Other rows slide aside to show the
 spot where the thread will land. Drops into either section keep the position you choose. On
@@ -73,116 +76,11 @@ prevent automatic settlement. An open pull request does not prevent inactivity
 settlement, but an old closed or merged pull request does not settle work you
 resumed after it closed.
 
-Change settlement rules in **Settings → General**. They continue to run when your apps
+Change these rules in **Settings → General**. They continue to run when your apps
 are closed. Changes apply to connected environments that support shared settings;
 offline environments and older servers keep their previous values. If connected
 environments disagree, **Apply to all** copies your current settings to those named
 in the warning. Changing a rule does not reopen already settled threads.
-
-## Sidebar layouts
-
-On web and desktop, choose **Grouped**, **Original**, or **Legacy** in **Settings → General →
-Sidebar style**, or from the sidebar's layout menu. T3 Code remembers the choice. The grouped
-layout provides the organization controls below; the other two preserve the original and legacy
-thread-list experiences.
-
-## Grouping, filtering, and sorting
-
-A compact bar at the top of the sidebar controls how the thread list is laid out. Every choice
-is remembered.
-
-**Group by** splits the list into collapsible sections. Out of the box the sidebar is grouped by
-**Environment** and then by **Project**. Choose **Leave open (flat list)** for one uninterrupted
-list, or group by **Environment**, **Project**, or **Provider**. Once a grouping is active,
-**Then by** adds a second level inside each section. Click a section header to collapse it;
-collapsing a section also hides its subsections. Changing either grouping expands everything
-again.
-
-**Treat a project as** decides what counts as one project in the sidebar: one row per repository,
-one row per folder inside a repository (useful for worktrees and monorepo packages), or one row
-per project you added. Individual projects can still override this in project settings.
-
-**All providers** narrows the sidebar to threads running on a single provider, including pinned,
-snoozed, and settled ones. The menu only lists providers that currently have threads.
-
-The last menu sorts threads by **Last activity** or **Date created**. Sorting and grouping are
-independent: changing one never reshuffles the other.
-
-## Arranging sections
-
-The same menu carries **Order sections**, which decides where sections sit rather than which ones
-exist. **Busiest first** is the default: sections with live work come first, then the ones that
-only hold history, then your quiet projects. **Name (A–Z)** ignores all of that and sorts by
-label. **Custom** is your own arrangement.
-
-Drag a section header to move it, or right-click it and choose **Move up** or **Move down**.
-Either way the sidebar switches to **Custom** and remembers where you put things, so a section
-stays put no matter what arrives in it. Sections only move within their own level: a project
-cannot be dragged out of its environment, and a collapsed section travels with everything inside
-it.
-
-Switching to **Custom** from the menu freezes the layout exactly as it looks at that moment. A
-project you add later joins the end of its level. **Reset section order** in the same menu throws
-the arrangement away and goes back to **Busiest first**.
-
-## Acting on a section
-
-Section headers carry the actions for whatever they are about. They appear on hover and always sit
-to the left of the collapse arrow, which stays in the same place on every row.
-
-Project sections offer **New thread** and **Project settings**. Every project you have added keeps
-a section whether or not it currently has threads, so starting work in a quiet project is one
-click, not a detour through a menu.
-
-Environment sections offer **New project**, which opens the project picker already pointed at that
-environment.
-
-Provider sections span several projects and environments, so they carry no actions.
-
-Right-clicking a section header opens the same actions as a menu, plus **Remove project**.
-Removing is destructive, so it stays out of the row: it tells you the path, the environment and
-how many threads go with the project, and asks before doing anything. Threads keep their own
-right-click menu with **Archive thread** and **Delete**.
-
-A collapsed section shows what is waiting inside it as colored dots with counts, in order of
-urgency: amber for approvals, indigo for input requests, red for failures, green for finished
-threads you have not opened yet, and blue for threads still working. Open sections leave that to
-the rows themselves. Unread finished threads also carry a green dot next to their title.
-
-## The path above a thread
-
-Every open thread shows its path across the top of the window: the environment it runs on, the
-project it belongs to, then the thread's own title. The environment leads it whenever T3 Code can
-name one, so with more than one server connected the header says which machine the work is
-happening on without you having to guess from the project name.
-
-Both scopes are links.
-
-Clicking the **environment** opens a page listing every project on that server, busiest first,
-with each project's live thread count and when it was last touched. **New project** in the corner
-adds one to that environment.
-
-Clicking the **project** opens a page listing every thread in it, under the same **Active**,
-**Snoozed** and **Settled** shelves the sidebar uses, so the two never disagree about what is
-finished. **New thread** in the corner starts one there.
-
-Each page carries the path too, so the project page walks back up to its environment, and any
-thread walks back to the project it came from.
-
-## Where settled threads go
-
-When the list is grouped by project, each project section ends with its own **Settled** shelf
-holding that project's finished threads. The shelf starts closed and shows a count, so history
-stays one click away without pushing live work off the screen. Long histories open a handful at a
-time with a **Show more** row.
-
-With any other grouping — including the flat list — settled threads collect in the single
-**Settled** shelf at the bottom of the sidebar instead.
-
-Pinned threads keep their manual order and the snoozed shelf stays whole: grouping applies to the
-main list.
-
-## Panel motion
 
 ## Link a pull request
 
