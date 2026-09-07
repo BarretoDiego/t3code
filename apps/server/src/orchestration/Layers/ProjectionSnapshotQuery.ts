@@ -1,3 +1,4 @@
+import { MessagePromptContext } from "@t3tools/contracts";
 import {
   AgentSessionImportSource,
   ApprovalRequestId,
@@ -107,6 +108,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
+    promptContext: Schema.NullOr(Schema.fromJsonString(MessagePromptContext)),
   }),
 );
 const ProjectionTurnStartMessageDbRowSchema = ProjectionThreadMessageDbRowSchema.mapFields(
@@ -618,6 +620,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  // Stable receipt IDs allow an indexed lookup even when the activity page omits older prompt context.
   const listThreadMessageRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionThreadMessageDbRowSchema,
@@ -630,6 +633,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          (SELECT json_extract(context.payload_json, '$.context')
+           FROM projection_thread_activities AS context
+           WHERE context.activity_id = 'prompt-context:' || projection_thread_messages.message_id
+             AND context.thread_id = projection_thread_messages.thread_id
+             AND context.kind = 'user.prompt-context') AS "promptContext",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1156,6 +1164,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         role,
         text,
         attachments_json AS "attachments",
+          (SELECT json_extract(context.payload_json, '$.context')
+           FROM projection_thread_activities AS context
+           WHERE context.activity_id = 'prompt-context:' || projection_thread_messages.message_id
+             AND context.thread_id = projection_thread_messages.thread_id
+             AND context.kind = 'user.prompt-context') AS "promptContext",
         is_streaming AS "isStreaming",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
@@ -1191,6 +1204,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          (SELECT json_extract(context.payload_json, '$.context')
+           FROM projection_thread_activities AS context
+           WHERE context.activity_id = 'prompt-context:' || projection_thread_messages.message_id
+             AND context.thread_id = projection_thread_messages.thread_id
+             AND context.kind = 'user.prompt-context') AS "promptContext",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1548,6 +1566,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          (SELECT json_extract(context.payload_json, '$.context')
+           FROM projection_thread_activities AS context
+           WHERE context.activity_id = 'prompt-context:' || projection_thread_messages.message_id
+             AND context.thread_id = projection_thread_messages.thread_id
+             AND context.kind = 'user.prompt-context') AS "promptContext",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1946,6 +1969,7 @@ pending_approval_requests AS (
                   id: row.messageId,
                   role: row.role,
                   text: row.text,
+                  ...(row.promptContext !== null ? { promptContext: row.promptContext } : {}),
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
@@ -2976,6 +3000,7 @@ pending_approval_requests AS (
         id: row.messageId,
         role: row.role,
         text: row.text,
+        ...(row.promptContext !== null ? { promptContext: row.promptContext } : {}),
         turnId: row.turnId,
         streaming: row.isStreaming === 1,
         createdAt: row.createdAt,
@@ -3222,6 +3247,7 @@ pending_approval_requests AS (
             id: row.messageId,
             role: row.role,
             text: row.text,
+            ...(row.promptContext !== null ? { promptContext: row.promptContext } : {}),
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
             createdAt: row.createdAt,

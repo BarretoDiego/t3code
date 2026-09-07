@@ -560,6 +560,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           )
       `;
 
+      yield* sql`INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at) VALUES ('prompt-context:message-1', 'thread-1', null, 'info', 'user.prompt-context', 'Prompt context prepared', '{"messageId":"message-1","context":{"threadSkills":[],"requestSkills":["Review"],"profileName":"Reviewer","prompt":"exact wrapper"}}', '2026-02-24T00:00:06.300Z')`;
+      const contextSnapshot = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"), {
+        activityKinds: [],
+      });
+      assert.ok(Option.isSome(contextSnapshot));
+      assert.deepEqual(contextSnapshot.value.messages[0]?.promptContext, {
+        threadSkills: [],
+        requestSkills: ["Review"],
+        profileName: "Reviewer",
+        prompt: "exact wrapper",
+      });
+      yield* sql`DELETE FROM projection_thread_activities WHERE activity_id = 'prompt-context:message-1'`;
+
       const detailWithoutActivities = yield* snapshotQuery.getThreadDetailById(
         ThreadId.make("thread-1"),
         { activityKinds: [] },

@@ -1,3 +1,4 @@
+import { MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND } from "@t3tools/contracts";
 import type {
   OrchestrationEvent,
   OrchestrationThreadActivity,
@@ -580,7 +581,11 @@ export function projectThreadDetailSnapshot(
     thread: {
       ...snapshot.thread,
       activities: dropSupersededToolUpdatedActivities(
-        dropStaleContextWindowActivities(snapshot.thread.activities),
+        dropStaleContextWindowActivities(
+          snapshot.thread.activities.filter(
+            (activity) => activity.kind !== MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND,
+          ),
+        ),
       ).map(projectActivityPayload),
     },
   };

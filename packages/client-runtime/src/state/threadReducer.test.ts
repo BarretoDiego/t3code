@@ -1459,3 +1459,53 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 });
+
+it("attaches exact prompt context to its user message without changing message text or work activity", () => {
+  const messageId = MessageId.make("context-message");
+  const context = {
+    threadSkills: ["Workspace"],
+    requestSkills: ["Commit"],
+    profileName: "Custom reviewer",
+    prompt: "wrapper\nmessage",
+  };
+  const thread = {
+    ...baseThread,
+    messages: [
+      {
+        id: messageId,
+        role: "user" as const,
+        text: "message",
+        turnId: null,
+        streaming: false,
+        createdAt: baseThread.createdAt,
+        updatedAt: baseThread.updatedAt,
+      },
+    ],
+  };
+  const result = applyThreadDetailEvent(thread, {
+    ...baseEventFields,
+    sequence: 1,
+    occurredAt: baseThread.createdAt,
+    aggregateKind: "thread",
+    aggregateId: thread.id,
+    type: "thread.activity-appended",
+    payload: {
+      threadId: thread.id,
+      activity: {
+        id: EventId.make(`prompt-context:${messageId}`),
+        tone: "info",
+        kind: "user.prompt-context",
+        summary: "Prompt context prepared",
+        payload: { messageId, context },
+        turnId: null,
+        createdAt: baseThread.createdAt,
+      },
+    },
+  });
+  expect(result.kind).toBe("updated");
+  if (result.kind === "updated") {
+    expect(result.thread.messages[0]?.promptContext).toEqual(context);
+    expect(result.thread.messages[0]?.text).toBe("message");
+    expect(result.thread.activities).toEqual([]);
+  }
+});

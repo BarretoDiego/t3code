@@ -7,6 +7,7 @@ import type {
   ChatImageAttachment,
   EnvironmentId,
   MessageId,
+  MessagePromptContext,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -1488,6 +1489,7 @@ function renderFeedEntry(
                   : null),
             }}
           >
+            {message.promptContext && <PromptContextCard context={message.promptContext} />}
             {message.text.trim().length > 0 ? (
               <MarkdownImageAvailableWidthContext
                 value={props.userBubbleMaxWidth - USER_BUBBLE_HORIZONTAL_PADDING * 2}
@@ -2950,3 +2952,36 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     </PresentationSource>
   );
 });
+
+function PromptContextCard({ context }: { context: MessagePromptContext }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View className="gap-2 rounded-xl border border-border p-3">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+      >
+        <NativeText className="text-sm font-medium text-foreground">
+          Applied context {expanded ? "−" : "+"}
+        </NativeText>
+        <NativeText className="text-xs text-muted-foreground">
+          {[
+            context.profileName && `Profile · ${context.profileName}`,
+            ...context.threadSkills.map((name) => `Thread skill · ${name}`),
+            ...context.requestSkills.map((name) => `Mini Skill · ${name}`),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </NativeText>
+      </Pressable>
+      {expanded && (
+        <ScrollView style={{ maxHeight: 280 }} nestedScrollEnabled>
+          <NativeText selectable className="text-xs text-foreground">
+            {context.prompt}
+          </NativeText>
+        </ScrollView>
+      )}
+    </View>
+  );
+}

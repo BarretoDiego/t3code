@@ -353,10 +353,26 @@ export type OrchestrationProject = typeof OrchestrationProject.Type;
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
+/** Snapshot of the prompt composed by the server for this message, independent of later settings edits. */
+export const MessagePromptContext = Schema.Struct({
+  threadSkills: Schema.Array(Schema.String),
+  requestSkills: Schema.Array(Schema.String),
+  profileName: Schema.optional(Schema.String),
+  prompt: Schema.String,
+});
+export type MessagePromptContext = typeof MessagePromptContext.Type;
+export const MessagePromptContextPayload = Schema.Struct({
+  messageId: MessageId,
+  context: MessagePromptContext,
+});
+export const isMessagePromptContextPayload = Schema.is(MessagePromptContextPayload);
+export const MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND = "user.prompt-context";
+
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  promptContext: Schema.optional(MessagePromptContext),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
