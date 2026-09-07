@@ -39,14 +39,19 @@ import {
   AlertDialogClose,
 } from "../ui/alert-dialog";
 
-export function LocalChangesWorkbench() {
+export function LocalChangesWorkbench({
+  selection,
+  onSelection,
+}: {
+  selection: string;
+  onSelection: (selection: string) => void;
+}) {
   const projects = useProjects();
   const { environments } = useEnvironments();
-  const [selection, setSelection] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const project =
-    projects.find((project) => `${project.environmentId}:${project.id}` === selection) ??
-    projects[0];
+  const project = selection
+    ? projects.find((project) => `${project.environmentId}:${project.id}` === selection)
+    : projects[0];
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
@@ -61,7 +66,7 @@ export function LocalChangesWorkbench() {
               value: `${project.environmentId}:${project.id}`,
               label: `${project.title} · ${environments.find((env) => env.environmentId === project.environmentId)?.label ?? "Environment"}`,
             }))}
-            onChange={setSelection}
+            onChange={onSelection}
           />
         </div>
       </div>

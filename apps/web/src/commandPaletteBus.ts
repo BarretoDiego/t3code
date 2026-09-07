@@ -11,6 +11,9 @@ export interface CommandPaletteOpenDetail {
    * and re-asking would be the palette ignoring where the click came from.
    */
   readonly environmentId?: string;
+  /** Enter the existing local-folder or Git-URL flow directly. */
+  readonly projectSource?: "local" | "url";
+  readonly repositoryUrl?: string;
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {
