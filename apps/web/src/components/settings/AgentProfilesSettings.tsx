@@ -35,6 +35,7 @@ import { searchableSetting } from "./settingsSearch";
 import {
   AgentProfileEditorDialog,
   emptyAgentProfileDraft,
+  duplicateAgentProfileDraft,
   profileDraftFromProfile,
   type AgentProfileDraft,
 } from "./AgentProfileEditorDialog";
@@ -56,8 +57,9 @@ export function AgentProfilesSettingsPanel() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [deletingProfile, setDeletingProfile] = useState<AgentProfile | null>(null);
   const defaultWrapper = settings.agentProfileDefaultWrapper;
-  const [wrapperText, setWrapperText] = useState(defaultWrapper);
+  const [wrapperDraft, setWrapperText] = useState(defaultWrapper);
   const [wrapperTouched, setWrapperTouched] = useState(false);
+  const wrapperText = wrapperTouched ? wrapperDraft : defaultWrapper;
   const wrapperInvalid = !isValidAgentProfileTemplate(wrapperText);
 
   const persistProfiles = (next: ReadonlyArray<AgentProfile>) => {
@@ -127,10 +129,7 @@ export function AgentProfilesSettingsPanel() {
   const openEditProfile = (profile: AgentProfile) =>
     setEditor({ existing: profile, draft: profileDraftFromProfile(profile) });
   const openDuplicateProfile = (profile: AgentProfile) => {
-    const draft = profileDraftFromProfile(profile);
-    draft.name = `${profile.name} copy`;
-    draft.slug = "";
-    draft.slugTouched = false;
+    const draft = duplicateAgentProfileDraft(profile, agentProfiles);
     setEditor({ existing: null, draft });
   };
 
@@ -140,24 +139,27 @@ export function AgentProfilesSettingsPanel() {
         {...searchableSetting("agent-profiles")}
         description="Reusable execution presets: provider-aware model routing, reasoning effort, Mini Skills, and instructions."
         headerAction={
-          <Button size="sm" variant="outline" onClick={openNewProfile}>
+          <Button size="xs" variant="outline" onClick={openNewProfile}>
             <PlusIcon className="size-3.5" />
             New Profile
           </Button>
         }
       >
         {agentProfiles.length === 0 ? (
-          <div className="px-4 py-6 text-muted-foreground text-sm">
+          <div className="px-3 py-6 text-muted-foreground text-sm sm:px-4">
             No profiles yet. Create one to turn recurring composer setups into a preset.
           </div>
         ) : (
           <ul className="divide-y divide-border/60">
             {agentProfiles.map((profile) => (
-              <li key={profile.id} className="group/row flex items-center gap-4 px-3 py-3 sm:px-4">
-                <div className="grid min-w-0 flex-1 gap-0.5">
-                  <span className="flex min-w-0 items-center gap-2">
+              <li
+                key={profile.id}
+                className="group/row flex flex-wrap items-center gap-3 px-3 py-3 sm:px-4"
+              >
+                <div className="grid min-w-0 flex-1 basis-40 gap-0.5">
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="truncate font-medium text-sm">{profile.name}</span>
-                    <Badge variant="outline" className="shrink-0 font-normal">
+                    <Badge variant="outline" className="max-w-full truncate font-normal">
                       #{profile.slug}
                     </Badge>
                     {profile.enabled ? null : (
@@ -187,7 +189,7 @@ export function AgentProfilesSettingsPanel() {
                 />
                 <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Duplicate ${profile.name}`}
                     onClick={() => openDuplicateProfile(profile)}
@@ -195,7 +197,7 @@ export function AgentProfilesSettingsPanel() {
                     <CopyIcon className="size-3.5" />
                   </Button>
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Edit ${profile.name}`}
                     onClick={() => openEditProfile(profile)}
@@ -203,7 +205,7 @@ export function AgentProfilesSettingsPanel() {
                     <PencilIcon className="size-3.5" />
                   </Button>
                   <Button
-                    size="icon-sm"
+                    size="icon-xs"
                     variant="ghost"
                     aria-label={`Delete ${profile.name}`}
                     onClick={() => setDeletingProfile(profile)}
@@ -221,7 +223,7 @@ export function AgentProfilesSettingsPanel() {
         {...searchableSetting("agent-profiles-default-wrapper")}
         description="The template profiles use to wrap a request unless they define their own. {{user_message}} is required."
       >
-        <div className="grid max-w-3xl gap-2 px-4 pb-4">
+        <div className="grid min-w-0 gap-3 p-3 sm:p-4">
           <Textarea
             value={wrapperText}
             rows={10}
@@ -277,7 +279,9 @@ export function AgentProfilesSettingsPanel() {
       >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{deletingProfile?.name}"?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              Delete "{deletingProfile?.name}"?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               Threads with this profile selected fall back to Custom. Turns already sent keep the
               configuration they ran with.

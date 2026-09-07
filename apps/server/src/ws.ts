@@ -1,3 +1,4 @@
+import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -482,6 +483,7 @@ const makeWsRpcLayer = (
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   marketplace: MarketplaceService.MarketplaceService["Service"],
+  aiRuntimes: AiRuntimeService["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -2104,6 +2106,12 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.aiRuntimesList]: ({ refresh }) => aiRuntimes.list(refresh),
+        [WS_METHODS.aiRuntimesSubscribe]: () => aiRuntimes.changes,
+        [WS_METHODS.aiRuntimesSave]: (input) => aiRuntimes.save(input),
+        [WS_METHODS.aiRuntimesRemove]: ({ runtimeId }) => aiRuntimes.remove(runtimeId),
+        [WS_METHODS.aiRuntimesAction]: (input) => aiRuntimes.action(input),
+        [WS_METHODS.aiRuntimesBind]: (input) => aiRuntimes.bind(input),
         [WS_METHODS.marketplaceList]: (_input) =>
           observeRpcEffect(WS_METHODS.marketplaceList, marketplace.list(), {
             "rpc.aggregate": "marketplace",
@@ -3123,6 +3131,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
     const marketplace = yield* MarketplaceService.MarketplaceService;
+    const aiRuntimes = yield* AiRuntimeService;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3156,6 +3165,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientAnalyticsProps,
               previewAutomationBroker,
               marketplace,
+              aiRuntimes,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(AgentSessionScanner.layer),

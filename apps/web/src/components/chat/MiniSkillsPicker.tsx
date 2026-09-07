@@ -71,6 +71,7 @@ export const MiniSkillsMenuContent = memo(function MiniSkillsMenuContent(props: 
         {miniSkills.map((skill) => (
           <MenuCheckboxItem
             key={skill.id}
+            className="grid-cols-[1rem_minmax(0,1fr)] [&>span]:min-w-0"
             checked={selectedMiniSkillIds.includes(skill.id)}
             onCheckedChange={(checked) => toggleSkill(skill.id, checked === true)}
           >
@@ -129,7 +130,11 @@ export const MiniSkillsPicker = memo(function MiniSkillsPicker(props: {
         <ComposerControlIcon icon={SparklesIcon} size={size} />
         {selectedCount > 0 ? <span>{selectedCount}</span> : null}
       </MenuTrigger>
-      <MenuPopup align="start" {...composerFloatingLayerProps}>
+      <MenuPopup
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)]"
+        {...composerFloatingLayerProps}
+      >
         <MiniSkillsMenuContent
           composerDraftTarget={props.composerDraftTarget}
           environmentId={props.environmentId}

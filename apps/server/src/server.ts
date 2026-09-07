@@ -1,3 +1,4 @@
+import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -557,6 +558,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
   Layer.provide(MarketplaceService.layer),
+  Layer.provide(AiRuntimeService.layer),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),

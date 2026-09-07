@@ -19,6 +19,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   miniSkillsMenuContent?: ReactNode;
+  agentProfileMenuContent?: ReactNode;
   size?: "sm" | "xs";
   /**
    * The resting strip keeps this menu mounted out of flow while every block
@@ -46,7 +47,17 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
       >
         <ComposerControlIcon icon={EllipsisIcon} size={size} />
       </MenuTrigger>
-      <MenuPopup align="start" {...composerFloatingLayerProps}>
+      <MenuPopup
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)]"
+        {...composerFloatingLayerProps}
+      >
+        {props.agentProfileMenuContent ? (
+          <>
+            {props.agentProfileMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
         {props.traitsMenuContent ? (
           <>
             {props.traitsMenuContent}

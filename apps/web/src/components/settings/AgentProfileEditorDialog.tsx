@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import * as Schema from "effect/Schema";
+import { useId, useMemo, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, XIcon } from "lucide-react";
 import {
-  AGENT_PROFILE_SLUG_PATTERN,
+  AgentProfileSlug,
   DEFAULT_AGENT_PROFILE_WRAPPER,
   isValidAgentProfileTemplate,
   slugifyAgentProfileName,
@@ -22,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogPopup,
+  DialogPanel,
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -91,7 +93,28 @@ export function profileDraftFromProfile(profile: AgentProfile): AgentProfileDraf
   };
 }
 
-const SLUG_TEST = new RegExp(AGENT_PROFILE_SLUG_PATTERN);
+/** Duplicate with independent editor rows and a usable, unique shortcut. */
+export function duplicateAgentProfileDraft(
+  profile: AgentProfile,
+  profiles: ReadonlyArray<AgentProfile>,
+): AgentProfileDraft {
+  const draft = profileDraftFromProfile(profile);
+  draft.name = `${profile.name} copy`;
+  const baseSlug =
+    slugifyAgentProfileName(draft.name).slice(0, 48).replace(/-+$/, "") || "profile-copy";
+  const usedSlugs = new Set(profiles.map((entry) => entry.slug));
+  let slug = baseSlug;
+  for (let suffix = 2; usedSlugs.has(slug); suffix++) {
+    const ending = `-${suffix}`;
+    slug = `${baseSlug.slice(0, 48 - ending.length).replace(/-+$/, "")}${ending}`;
+  }
+  draft.slug = slug;
+  draft.slugTouched = true;
+  draft.routes = draft.routes.map((route) => ({ ...route, id: `route-${randomUUID()}` }));
+  return draft;
+}
+
+const isProfileSlug = Schema.is(AgentProfileSlug);
 
 export interface AgentProfileDraftIssue {
   readonly message: string;
@@ -109,10 +132,10 @@ export function validateAgentProfileDraft(
     issues.push({ message: "Name is required." });
   }
   const slug = draft.slug.trim();
-  if (!SLUG_TEST.test(slug)) {
+  if (!isProfileSlug(slug)) {
     issues.push({
       message:
-        "Shortcut must start with a letter and use only lowercase letters, numbers, and hyphens.",
+        "Shortcut must be at most 48 characters, start with a letter, and use lowercase letters, numbers, and single hyphens.",
     });
   } else if (
     existingProfiles.some((profile) => profile.slug === slug && profile.id !== existingId)
@@ -161,6 +184,7 @@ export function AgentProfileEditorDialog(props: {
   readonly onClose: () => void;
   readonly onSave: (draft: AgentProfileDraft, existing: AgentProfile | null) => void;
 }) {
+  const formId = useId();
   const [draft, setDraft] = useState<AgentProfileDraft>(props.initialDraft);
   const issues = validateAgentProfileDraft(
     draft,
@@ -194,213 +218,243 @@ export function AgentProfileEditorDialog(props: {
         if (!open) props.onClose();
       }}
     >
-      <DialogPopup className="max-h-[85vh] max-w-2xl overflow-y-auto">
-        <DialogHeader>
+      <DialogPopup className="max-h-[min(calc(100dvh-4rem),56rem)] max-w-2xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{props.existing === null ? "New Profile" : "Edit Profile"}</DialogTitle>
           <DialogDescription>
             A reusable execution preset. Provider configurations adapt it to each backend.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-6">
-          <div className="grid gap-4">
-            <label className="grid gap-1.5">
-              <span className="font-medium text-sm">Name</span>
-              <Input
-                value={draft.name}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    name: event.target.value,
-                    ...(current.slugTouched
-                      ? {}
-                      : { slug: slugifyAgentProfileName(event.target.value) }),
-                  }))
-                }
-                placeholder="Reviewer Pre-Commit"
-              />
-            </label>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label className="grid gap-1.5">
-                <span className="font-medium text-sm">Shortcut</span>
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground text-sm">
-                    #
-                  </span>
-                  <Input
-                    className="pl-7"
-                    value={draft.slug}
-                    onChange={(event) =>
-                      update({
-                        slug: event.target.value.toLowerCase(),
-                        slugTouched: true,
-                      })
-                    }
-                    placeholder="reviewer"
-                  />
-                </div>
-              </label>
-              <label className="grid gap-1.5">
-                <span className="font-medium text-sm">Description</span>
+        <DialogPanel>
+          <form
+            id={formId}
+            className="grid min-w-0 gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (issues.length === 0) props.onSave(draft, props.existing);
+            }}
+          >
+            <div className="grid gap-4">
+              <label className="grid min-w-0 gap-1.5">
+                <span className="font-medium text-sm">Name</span>
                 <Input
-                  value={draft.description}
-                  onChange={(event) => update({ description: event.target.value })}
-                  placeholder="Review changes before committing."
-                />
-              </label>
-            </div>
-            <label className="flex items-center justify-between gap-4">
-              <span className="grid gap-0.5">
-                <span className="font-medium text-sm">Enabled</span>
-                <span className="text-muted-foreground text-xs">
-                  Disabled profiles stay in the library but cannot be selected in the composer.
-                </span>
-              </span>
-              <Switch
-                checked={draft.enabled}
-                onCheckedChange={(checked) => update({ enabled: Boolean(checked) })}
-                aria-label="Enabled"
-              />
-            </label>
-          </div>
-
-          <div className="grid gap-3 border-t border-border/60 pt-4">
-            <h3 className="font-medium text-sm">Base configuration</h3>
-            <label className="grid gap-1.5">
-              <span className="text-muted-foreground text-xs">Reasoning effort</span>
-              <Input
-                value={draft.reasoningEffort}
-                onChange={(event) => update({ reasoningEffort: event.target.value })}
-                placeholder="Inherit current"
-              />
-            </label>
-            <div className="grid gap-1.5">
-              <span className="text-muted-foreground text-xs">Mini Skills</span>
-              {props.miniSkills.length === 0 ? (
-                <span className="text-muted-foreground/80 text-xs">
-                  No Mini Skills in the library yet.
-                </span>
-              ) : (
-                <ul className="grid gap-1">
-                  {props.miniSkills.map((skill) => (
-                    <li key={skill.id}>
-                      <label className="flex cursor-pointer items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={draft.miniSkillIds.includes(skill.id)}
-                          onCheckedChange={(checked) =>
-                            update({
-                              miniSkillIds:
-                                checked === true
-                                  ? [...draft.miniSkillIds, skill.id]
-                                  : draft.miniSkillIds.filter((id) => id !== skill.id),
-                            })
-                          }
-                        />
-                        <span className="min-w-0 truncate">{skill.name}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <label className="grid gap-1.5">
-              <span className="text-muted-foreground text-xs">Instructions (Markdown)</span>
-              <Textarea
-                value={draft.instructions}
-                onChange={(event) => update({ instructions: event.target.value })}
-                rows={8}
-                className="font-mono text-xs"
-                placeholder="Act as a pre-commit reviewer…"
-              />
-            </label>
-          </div>
-
-          <div className="grid gap-3 border-t border-border/60 pt-4">
-            <h3 className="font-medium text-sm">Provider configurations</h3>
-            <p className="text-muted-foreground text-xs">
-              Route this profile to concrete models per provider. Without a matching configuration,
-              the profile keeps the provider's current model.
-            </p>
-            {draft.routes.map((route) => (
-              <RouteEditor
-                key={route.id}
-                route={route}
-                instanceEntries={props.instanceEntries}
-                onChange={(patch) => updateRoute(route.id, patch)}
-                onRemove={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    routes: current.routes.filter((entry) => entry.id !== route.id),
-                  }))
-                }
-              />
-            ))}
-            {availableInstances.length > 0 ? (
-              <div>
-                <AddPickerSelect
-                  value=""
-                  label="Add provider configuration"
-                  options={availableInstances.map((entry) => ({
-                    value: entry.instanceId,
-                    label: entry.displayName,
-                  }))}
-                  onPick={(value) => {
+                  value={draft.name}
+                  onChange={(event) =>
                     setDraft((current) => ({
                       ...current,
-                      routes: [
-                        ...current.routes,
-                        {
-                          id: `route-${randomUUID()}`,
-                          instanceId: value as ProviderInstanceId,
-                          modelCandidates: [],
-                          reasoningEffort: "",
-                        },
-                      ],
-                    }));
-                  }}
+                      name: event.target.value,
+                      ...(current.slugTouched
+                        ? {}
+                        : {
+                            slug: slugifyAgentProfileName(event.target.value)
+                              .slice(0, 48)
+                              .replace(/-+$/, ""),
+                          }),
+                    }))
+                  }
+                  placeholder="Reviewer Pre-Commit"
                 />
+              </label>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="grid min-w-0 gap-1.5">
+                  <span className="font-medium text-sm">Shortcut</span>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-muted-foreground text-sm">
+                      #
+                    </span>
+                    <Input
+                      className="[&_[data-slot=input]]:pl-7"
+                      value={draft.slug}
+                      onChange={(event) =>
+                        update({
+                          slug: event.target.value.toLowerCase(),
+                          slugTouched: true,
+                        })
+                      }
+                      placeholder="reviewer"
+                    />
+                  </div>
+                </label>
+                <label className="grid min-w-0 gap-1.5">
+                  <span className="font-medium text-sm">Description</span>
+                  <Input
+                    value={draft.description}
+                    onChange={(event) => update({ description: event.target.value })}
+                    placeholder="Review changes before committing."
+                  />
+                </label>
               </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3 border-t border-border/60 pt-4">
-            <h3 className="font-medium text-sm">Prompt template</h3>
-            <label className="flex items-center justify-between gap-4">
-              <span className="grid gap-0.5">
-                <span className="text-muted-foreground text-xs">Use custom template</span>
-                <span className="text-muted-foreground/80 text-xs">
-                  Off uses the default wrapper from Settings.
+              <label className="flex items-center justify-between gap-4">
+                <span className="grid gap-0.5">
+                  <span className="font-medium text-sm">Enabled</span>
+                  <span className="text-muted-foreground text-xs">
+                    Disabled profiles stay in the library but cannot be selected in the composer.
+                  </span>
                 </span>
-              </span>
-              <Switch
-                checked={draft.useCustomTemplate}
-                onCheckedChange={(checked) => update({ useCustomTemplate: Boolean(checked) })}
-                aria-label="Use custom template"
-              />
-            </label>
-            {draft.useCustomTemplate ? (
-              <Textarea
-                value={draft.promptTemplate}
-                onChange={(event) => update({ promptTemplate: event.target.value })}
-                rows={10}
-                className="font-mono text-xs"
-                aria-label="Custom prompt template"
-              />
-            ) : null}
-          </div>
+                <Switch
+                  checked={draft.enabled}
+                  onCheckedChange={(checked) => update({ enabled: Boolean(checked) })}
+                  aria-label="Enabled"
+                />
+              </label>
+            </div>
 
-          {issues.length > 0 ? (
-            <ul className="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
-              {issues.map((issue) => (
-                <li key={issue.message} className="text-destructive text-xs">
-                  {issue.message}
-                </li>
+            <div className="grid gap-3 border-t border-border/60 pt-4">
+              <h3 className="font-medium text-sm">Base configuration</h3>
+              <label className="grid min-w-0 gap-1.5">
+                <span className="text-muted-foreground text-xs">Reasoning effort</span>
+                <Input
+                  value={draft.reasoningEffort}
+                  onChange={(event) => update({ reasoningEffort: event.target.value })}
+                  placeholder="Inherit current"
+                />
+              </label>
+              <div className="grid min-w-0 gap-1.5">
+                <span className="text-muted-foreground text-xs">Mini Skills</span>
+                {props.miniSkills.length === 0 ? (
+                  <span className="text-muted-foreground/80 text-xs">
+                    No Mini Skills in the library yet.
+                  </span>
+                ) : (
+                  <ul className="grid gap-1">
+                    {props.miniSkills.map((skill) => (
+                      <li key={skill.id}>
+                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={draft.miniSkillIds.includes(skill.id)}
+                            onCheckedChange={(checked) =>
+                              update({
+                                miniSkillIds:
+                                  checked === true
+                                    ? [...draft.miniSkillIds, skill.id]
+                                    : draft.miniSkillIds.filter((id) => id !== skill.id),
+                              })
+                            }
+                          />
+                          <span className="min-w-0 truncate">{skill.name}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {draft.miniSkillIds
+                  .filter((id) => !props.miniSkills.some((skill) => skill.id === id))
+                  .map((id) => (
+                    <label key={id} className="flex items-center gap-2 text-sm text-destructive">
+                      <Checkbox
+                        checked
+                        onCheckedChange={() =>
+                          update({
+                            miniSkillIds: draft.miniSkillIds.filter((value) => value !== id),
+                          })
+                        }
+                      />
+                      <span className="min-w-0 break-all">
+                        Unavailable Mini Skill · {id} (uncheck to remove)
+                      </span>
+                    </label>
+                  ))}
+              </div>
+              <label className="grid min-w-0 gap-1.5">
+                <span className="text-muted-foreground text-xs">Instructions (Markdown)</span>
+                <Textarea
+                  value={draft.instructions}
+                  onChange={(event) => update({ instructions: event.target.value })}
+                  rows={8}
+                  className="font-mono text-xs"
+                  placeholder="Act as a pre-commit reviewer…"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-3 border-t border-border/60 pt-4">
+              <h3 className="font-medium text-sm">Provider configurations</h3>
+              <p className="text-muted-foreground text-xs">
+                Route this profile to concrete models per provider. Without a matching
+                configuration, the profile keeps the provider's current model.
+              </p>
+              {draft.routes.map((route) => (
+                <RouteEditor
+                  key={route.id}
+                  route={route}
+                  instanceEntries={props.instanceEntries}
+                  onChange={(patch) => updateRoute(route.id, patch)}
+                  onRemove={() =>
+                    setDraft((current) => ({
+                      ...current,
+                      routes: current.routes.filter((entry) => entry.id !== route.id),
+                    }))
+                  }
+                />
               ))}
-            </ul>
-          ) : null}
-        </div>
-        <DialogFooter>
+              {availableInstances.length > 0 ? (
+                <div>
+                  <AddPickerSelect
+                    value=""
+                    label="Add provider configuration"
+                    options={availableInstances.map((entry) => ({
+                      value: entry.instanceId,
+                      label: entry.displayName,
+                    }))}
+                    onPick={(value) => {
+                      setDraft((current) => ({
+                        ...current,
+                        routes: [
+                          ...current.routes,
+                          {
+                            id: `route-${randomUUID()}`,
+                            instanceId: value as ProviderInstanceId,
+                            modelCandidates: [],
+                            reasoningEffort: "",
+                          },
+                        ],
+                      }));
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 border-t border-border/60 pt-4">
+              <h3 className="font-medium text-sm">Prompt template</h3>
+              <label className="flex items-center justify-between gap-4">
+                <span className="grid gap-0.5">
+                  <span className="text-muted-foreground text-xs">Use custom template</span>
+                  <span className="text-muted-foreground/80 text-xs">
+                    Off uses the default wrapper from Settings.
+                  </span>
+                </span>
+                <Switch
+                  checked={draft.useCustomTemplate}
+                  onCheckedChange={(checked) => update({ useCustomTemplate: Boolean(checked) })}
+                  aria-label="Use custom template"
+                />
+              </label>
+              {draft.useCustomTemplate ? (
+                <Textarea
+                  value={draft.promptTemplate}
+                  onChange={(event) => update({ promptTemplate: event.target.value })}
+                  rows={10}
+                  className="font-mono text-xs"
+                  aria-label="Custom prompt template"
+                />
+              ) : null}
+            </div>
+
+            {issues.length > 0 ? (
+              <ul className="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
+                {[...new Set(issues.map((issue) => issue.message))].map((message) => (
+                  <li key={message} className="text-destructive text-xs">
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </form>
+        </DialogPanel>
+        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-          <Button disabled={issues.length > 0} onClick={() => props.onSave(draft, props.existing)}>
+          <Button type="submit" form={formId} disabled={issues.length > 0}>
             Save
           </Button>
         </DialogFooter>
@@ -441,10 +495,10 @@ function AddPickerSelect(props: {
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false}>
+      <SelectPopup alignItemWithTrigger={false} popupClassName="max-w-[calc(100vw-2rem)]">
         {props.options.map((option) => (
           <SelectItem key={option.value} hideIndicator value={option.value}>
-            {option.label}
+            <span className="block break-words">{option.label}</span>
           </SelectItem>
         ))}
       </SelectPopup>
@@ -474,7 +528,7 @@ function RouteEditor(props: {
   };
 
   return (
-    <div className="grid gap-3 rounded-lg border border-border/60 px-3 py-3">
+    <div className="grid min-w-0 gap-3 rounded-lg border border-border/60 p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 truncate font-medium text-sm">
           {instance?.displayName ?? `${route.instanceId} (unavailable)`}
@@ -488,7 +542,7 @@ function RouteEditor(props: {
           <XIcon className="size-3.5" />
         </Button>
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-1.5">
         <span className="text-muted-foreground text-xs">Model candidates</span>
         {route.modelCandidates.length === 0 ? (
           <span className="text-muted-foreground/80 text-xs">
@@ -501,7 +555,7 @@ function RouteEditor(props: {
               return (
                 <li
                   key={slug}
-                  className="flex items-center gap-2 rounded-md border border-border/50 px-2 py-1"
+                  className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 rounded-md border border-border/50 p-2 sm:flex"
                 >
                   <span className="w-16 shrink-0 text-muted-foreground text-xs">
                     {index === 0 ? "Primary" : `Fallback ${index}`}
@@ -512,38 +566,40 @@ function RouteEditor(props: {
                       <span className="text-destructive text-xs"> (unavailable)</span>
                     )}
                   </span>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Move ${slug} up`}
-                    disabled={index === 0}
-                    onClick={() => moveCandidate(index, -1)}
-                  >
-                    <ArrowUpIcon className="size-3" />
-                  </Button>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Move ${slug} down`}
-                    disabled={index === route.modelCandidates.length - 1}
-                    onClick={() => moveCandidate(index, 1)}
-                  >
-                    <ArrowDownIcon className="size-3" />
-                  </Button>
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={`Remove ${slug}`}
-                    onClick={() =>
-                      props.onChange({
-                        modelCandidates: route.modelCandidates.filter(
-                          (candidate) => candidate !== slug,
-                        ),
-                      })
-                    }
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
+                  <div className="col-span-2 flex shrink-0 justify-end gap-1">
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Move ${slug} up`}
+                      disabled={index === 0}
+                      onClick={() => moveCandidate(index, -1)}
+                    >
+                      <ArrowUpIcon className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Move ${slug} down`}
+                      disabled={index === route.modelCandidates.length - 1}
+                      onClick={() => moveCandidate(index, 1)}
+                    >
+                      <ArrowDownIcon className="size-3" />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Remove ${slug}`}
+                      onClick={() =>
+                        props.onChange({
+                          modelCandidates: route.modelCandidates.filter(
+                            (candidate) => candidate !== slug,
+                          ),
+                        })
+                      }
+                    >
+                      <XIcon className="size-3" />
+                    </Button>
+                  </div>
                 </li>
               );
             })}
@@ -560,7 +616,7 @@ function RouteEditor(props: {
           />
         ) : null}
       </div>
-      <label className="grid gap-1.5">
+      <label className="grid min-w-0 gap-1.5">
         <span className="text-muted-foreground text-xs">Reasoning effort</span>
         <Input
           value={route.reasoningEffort}

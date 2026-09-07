@@ -1,3 +1,4 @@
+import { SettingsAiRuntimesRouteScreen } from "./features/settings/SettingsAiRuntimesRouteScreen";
 import {
   createPathConfigForStaticNavigation,
   getPathFromState,
@@ -159,6 +160,11 @@ const SettingsContentStack = createNativeStackNavigator({
       options: {
         title: "Environments",
       },
+    }),
+    SettingsAiRuntimes: createNativeStackScreen({
+      screen: SettingsAiRuntimesRouteScreen,
+      linking: "ai-runtimes",
+      options: { title: "AI Runtimes" },
     }),
     SettingsMarketplace: createNativeStackScreen({
       screen: SettingsMarketplaceRouteScreen,

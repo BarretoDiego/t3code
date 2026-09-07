@@ -1105,6 +1105,31 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    aiRuntimes: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:ai-runtimes",
+      tag: WS_METHODS.aiRuntimesSubscribe,
+      idleTtlMs: 0,
+    }),
+    aiRuntimesList: createEnvironmentRpcCommand(runtime, {
+      label: "ai-runtimes:list",
+      tag: WS_METHODS.aiRuntimesList,
+    }),
+    aiRuntimesSave: createEnvironmentRpcCommand(runtime, {
+      label: "ai-runtimes:save",
+      tag: WS_METHODS.aiRuntimesSave,
+    }),
+    aiRuntimesRemove: createEnvironmentRpcCommand(runtime, {
+      label: "ai-runtimes:remove",
+      tag: WS_METHODS.aiRuntimesRemove,
+    }),
+    aiRuntimesAction: createEnvironmentRpcCommand(runtime, {
+      label: "ai-runtimes:action",
+      tag: WS_METHODS.aiRuntimesAction,
+    }),
+    aiRuntimesBind: createEnvironmentRpcCommand(runtime, {
+      label: "ai-runtimes:bind",
+      tag: WS_METHODS.aiRuntimesBind,
+    }),
     marketplace: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:marketplace:list",
       tag: WS_METHODS.marketplaceList,

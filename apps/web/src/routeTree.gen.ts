@@ -27,6 +27,7 @@ import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagn
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsAiRuntimesRouteImport } from './routes/settings.ai-runtimes'
 import { Route as SettingsAgentProfilesRouteImport } from './routes/settings.agent-profiles'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
@@ -126,6 +127,11 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAiRuntimesRoute = SettingsAiRuntimesRouteImport.update({
+  id: '/ai-runtimes',
+  path: '/ai-runtimes',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAgentProfilesRoute = SettingsAgentProfilesRouteImport.update({
   id: '/agent-profiles',
   path: '/agent-profiles',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
+  '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
+  '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/connect_/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
+  '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/connections': typeof SettingsConnectionsRoute
@@ -275,6 +284,7 @@ export interface FileRouteTypes {
     | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
+    | '/settings/ai-runtimes'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -302,6 +312,7 @@ export interface FileRouteTypes {
     | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
+    | '/settings/ai-runtimes'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -331,6 +342,7 @@ export interface FileRouteTypes {
     | '/connect_/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
+    | '/settings/ai-runtimes'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/connections'
@@ -488,6 +500,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/ai-runtimes': {
+      id: '/settings/ai-runtimes'
+      path: '/ai-runtimes'
+      fullPath: '/settings/ai-runtimes'
+      preLoaderRoute: typeof SettingsAiRuntimesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/agent-profiles': {
       id: '/settings/agent-profiles'
       path: '/agent-profiles'
@@ -580,6 +599,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAgentProfilesRoute: typeof SettingsAgentProfilesRoute
+  SettingsAiRuntimesRoute: typeof SettingsAiRuntimesRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
@@ -595,6 +615,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAgentProfilesRoute: SettingsAgentProfilesRoute,
+  SettingsAiRuntimesRoute: SettingsAiRuntimesRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,

@@ -1255,7 +1255,7 @@ const make = Effect.gen(function* () {
       });
       return;
     }
-    const { message, hasOtherUserMessages } = turnStart.value;
+    const { message, hasOtherUserMessages, threadMiniSkills } = turnStart.value;
     const appendTurnStartFailure = (summary: string, detail: string) =>
       appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -1469,7 +1469,6 @@ const make = Effect.gen(function* () {
         "Wait for context compaction to finish before sending another message.",
       );
     }
-    const threadMiniSkills = thread.miniSkills ?? [];
     const requestMiniSkillIds = event.payload.miniSkillIds ?? [];
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
@@ -1479,9 +1478,7 @@ const make = Effect.gen(function* () {
         ? { modelSelection: event.payload.modelSelection }
         : {}),
       interactionMode: event.payload.interactionMode,
-      ...(nonCompactUserMessageCount === 1 && threadMiniSkills.length > 0
-        ? { threadMiniSkills }
-        : {}),
+      ...(!hasOtherUserMessages && threadMiniSkills.length > 0 ? { threadMiniSkills } : {}),
       ...(requestMiniSkillIds.length > 0 ? { miniSkillIds: requestMiniSkillIds } : {}),
       ...(event.payload.agentProfile !== undefined
         ? { agentProfile: event.payload.agentProfile }
