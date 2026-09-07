@@ -629,6 +629,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly number: number;
       readonly action: PullRequestAction;
       readonly mergeMethod?: PullRequestMergeMethod;
+      readonly expectedHeadSha?: string;
       readonly updateMethod?: PullRequestUpdateMethod;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
 
@@ -646,6 +647,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly host: string;
       readonly number: number;
       readonly verdict: PullRequestReviewVerdict;
+      readonly expectedHeadSha?: string;
       readonly body: string;
       readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
@@ -2164,7 +2166,16 @@ export const make = Effect.gen(function* () {
       return github
         .execute({
           cwd: input.cwd,
-          args: ["pr", subcommand!, String(input.number), ...repositoryArgs(input), ...flags],
+          args: [
+            "pr",
+            subcommand!,
+            String(input.number),
+            ...repositoryArgs(input),
+            ...flags,
+            ...(input.action === "merge" && input.expectedHeadSha
+              ? ["--match-head-commit", input.expectedHeadSha]
+              : []),
+          ],
         })
         .pipe(Effect.asVoid);
     },
@@ -2207,6 +2218,9 @@ export const make = Effect.gen(function* () {
           ],
           stdin: buildReviewSubmissionJson({
             verdict: input.verdict,
+            ...(input.expectedHeadSha === undefined
+              ? {}
+              : { expectedHeadSha: input.expectedHeadSha }),
             body: input.body,
             comments: input.comments,
           }),

@@ -26,6 +26,7 @@ const SHARED_SERVER_SETTING_KEYS = [
   "sidebarAutoSettleOnMerge",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
+  "sourceControlReview",
   // The mini skill library and its prompt wrappers are user content, not
   // machine state: they roam to every sync-eligible environment.
   "miniSkills",

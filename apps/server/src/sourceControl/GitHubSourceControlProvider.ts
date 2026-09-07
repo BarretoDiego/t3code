@@ -9,6 +9,8 @@ import {
   type ChangeRequestState,
 } from "@t3tools/contracts";
 
+import { makeGitHubRepositoryBrowser } from "./GitHubRepositoryBrowser.ts";
+import { ServerConfig } from "../config.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import { decodeGitHubPullRequestListJson } from "./gitHubPullRequests.ts";
@@ -113,6 +115,7 @@ export const discovery = {
 
 export const make = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
+  const config = yield* Effect.serviceOption(ServerConfig);
 
   const listChangeRequests: SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"] =
     (input) => {
@@ -211,6 +214,10 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "github",
+    repositories: makeGitHubRepositoryBrowser(
+      github,
+      Option.isSome(config) ? config.value.cwd : process.cwd(),
+    ),
     listChangeRequests,
     getChangeRequest: (input) =>
       github.getPullRequest(input).pipe(

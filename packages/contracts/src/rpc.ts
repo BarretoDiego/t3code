@@ -1,3 +1,35 @@
+import { SourceControlCommitPreviewInput, SourceControlCommitPreview } from "./aiReview.ts";
+import {
+  AiReviewRun,
+  AiReviewStartInput,
+  AiReviewEditInput,
+  AiReviewPublishInput,
+} from "./aiReview.ts";
+import {
+  RemotePullRequestListInput,
+  SourceControlRepositoryMappingInput,
+  RemotePullRequestPage,
+  RemotePullRequestRef,
+  RemotePullRequestDetail,
+  RemotePullRequestDiffInput,
+  RemotePullRequestReviewInput,
+  RemotePullRequestMergeInput,
+  PullRequestRevisions,
+} from "./sourceControlHub.ts";
+import { ProjectId } from "./baseSchemas.ts";
+import {
+  SourceControlAccount,
+  SourceControlAccountSaveInput,
+  SourceControlHubError,
+  RemoteRepositoryListInput,
+  RemoteRepositoryPage,
+  RemoteGitRefListInput,
+  RemoteGitRefPage,
+  SourceControlLocalClone,
+  SourceControlCloneState,
+  RemotePullRequestCreateInput,
+  RemotePullRequestCreated,
+} from "./sourceControlHub.ts";
 import {
   AiRuntimeSnapshot,
   AiRuntimeError,
@@ -123,6 +155,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   PullRequestActionInput,
   PullRequestActivity,
+  PullRequestDiffResult,
   PullRequestCommentInput,
   PullRequestCommentUpdateInput,
   PullRequestDetail,
@@ -278,6 +311,30 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
 
+  sourceControlHubAccounts: "sourceControlHub.accounts",
+  sourceControlHubSaveAccount: "sourceControlHub.saveAccount",
+  sourceControlHubRemoveAccount: "sourceControlHub.removeAccount",
+  sourceControlHubRepositories: "sourceControlHub.repositories",
+  sourceControlHubRefs: "sourceControlHub.refs",
+  sourceControlHubClones: "sourceControlHub.clones",
+  sourceControlHubCloneState: "sourceControlHub.cloneState",
+  sourceControlHubRefresh: "sourceControlHub.refresh",
+  sourceControlHubCreatePullRequest: "sourceControlHub.createPullRequest",
+  sourceControlHubPullRequests: "sourceControlHub.pullRequests",
+  sourceControlHubPullRequest: "sourceControlHub.pullRequest",
+  sourceControlHubActivity: "sourceControlHub.activity",
+  sourceControlHubDiff: "sourceControlHub.diff",
+  sourceControlHubRevisions: "sourceControlHub.revisions",
+  sourceControlHubSubmitReview: "sourceControlHub.submitReview",
+  sourceControlHubMerge: "sourceControlHub.merge",
+  sourceControlHubReviewStart: "sourceControlHub.reviewStart",
+  sourceControlHubReviewHistory: "sourceControlHub.reviewHistory",
+  sourceControlHubReviewEdit: "sourceControlHub.reviewEdit",
+  sourceControlHubReviewPublish: "sourceControlHub.reviewPublish",
+  sourceControlHubReviewCancel: "sourceControlHub.reviewCancel",
+  sourceControlHubReviewSubscribe: "sourceControlHub.reviewSubscribe",
+  sourceControlHubMapRepository: "sourceControlHub.mapRepository",
+  sourceControlHubCommitPreview: "sourceControlHub.commitPreview",
   aiRuntimesList: "aiRuntimes.list",
   aiRuntimesSubscribe: "aiRuntimes.subscribe",
   aiRuntimesSave: "aiRuntimes.save",
@@ -327,6 +384,7 @@ export const WS_METHODS = {
 
   // VCS methods
   vcsPull: "vcs.pull",
+  vcsFetch: "vcs.fetch",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -494,6 +552,152 @@ const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   success: ServerProviderUpdatedPayload,
   error: Schema.Union([ServerProviderUpdateError, EnvironmentAuthorizationError]),
 });
+
+export const WsSourceControlHubAccountsRpc = Rpc.make(WS_METHODS.sourceControlHubAccounts, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(SourceControlAccount),
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubSaveAccountRpc = Rpc.make(WS_METHODS.sourceControlHubSaveAccount, {
+  payload: SourceControlAccountSaveInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubRemoveAccountRpc = Rpc.make(
+  WS_METHODS.sourceControlHubRemoveAccount,
+  {
+    payload: Schema.Struct({ provider: Schema.Literals(["github", "bitbucket"]) }),
+    success: Schema.Void,
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
+export const WsSourceControlHubRepositoriesRpc = Rpc.make(WS_METHODS.sourceControlHubRepositories, {
+  payload: RemoteRepositoryListInput,
+  success: RemoteRepositoryPage,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubRefsRpc = Rpc.make(WS_METHODS.sourceControlHubRefs, {
+  payload: RemoteGitRefListInput,
+  success: RemoteGitRefPage,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubClonesRpc = Rpc.make(WS_METHODS.sourceControlHubClones, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(SourceControlLocalClone),
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubCloneStateRpc = Rpc.make(WS_METHODS.sourceControlHubCloneState, {
+  payload: Schema.Struct({ projectId: ProjectId }),
+  success: SourceControlCloneState,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubRefreshRpc = Rpc.make(WS_METHODS.sourceControlHubRefresh, {
+  payload: Schema.Struct({}),
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubCreatePullRequestRpc = Rpc.make(
+  WS_METHODS.sourceControlHubCreatePullRequest,
+  {
+    payload: RemotePullRequestCreateInput,
+    success: RemotePullRequestCreated,
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsSourceControlHubPullRequestsRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequests, {
+  payload: RemotePullRequestListInput,
+  success: RemotePullRequestPage,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubPullRequestRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequest, {
+  payload: RemotePullRequestRef,
+  success: RemotePullRequestDetail,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubActivityRpc = Rpc.make(WS_METHODS.sourceControlHubActivity, {
+  payload: RemotePullRequestRef,
+  success: PullRequestActivity,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubDiffRpc = Rpc.make(WS_METHODS.sourceControlHubDiff, {
+  payload: RemotePullRequestDiffInput,
+  success: PullRequestDiffResult,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubRevisionsRpc = Rpc.make(WS_METHODS.sourceControlHubRevisions, {
+  payload: RemotePullRequestRef,
+  success: PullRequestRevisions,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubSubmitReviewRpc = Rpc.make(WS_METHODS.sourceControlHubSubmitReview, {
+  payload: RemotePullRequestReviewInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubMergeRpc = Rpc.make(WS_METHODS.sourceControlHubMerge, {
+  payload: RemotePullRequestMergeInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubReviewStartRpc = Rpc.make(WS_METHODS.sourceControlHubReviewStart, {
+  payload: AiReviewStartInput,
+  success: AiReviewRun,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubReviewHistoryRpc = Rpc.make(
+  WS_METHODS.sourceControlHubReviewHistory,
+  {
+    payload: RemotePullRequestRef,
+    success: Schema.Array(AiReviewRun),
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
+export const WsSourceControlHubReviewEditRpc = Rpc.make(WS_METHODS.sourceControlHubReviewEdit, {
+  payload: AiReviewEditInput,
+  success: AiReviewRun,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubReviewPublishRpc = Rpc.make(
+  WS_METHODS.sourceControlHubReviewPublish,
+  {
+    payload: AiReviewPublishInput,
+    success: AiReviewRun,
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
+export const WsSourceControlHubReviewCancelRpc = Rpc.make(WS_METHODS.sourceControlHubReviewCancel, {
+  payload: Schema.Struct({ id: TrimmedNonEmptyString }),
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+export const WsSourceControlHubReviewSubscribeRpc = Rpc.make(
+  WS_METHODS.sourceControlHubReviewSubscribe,
+  {
+    payload: Schema.Struct({}),
+    success: AiReviewRun,
+    error: EnvironmentAuthorizationError,
+    stream: true,
+  },
+);
+
+export const WsSourceControlHubMapRepositoryRpc = Rpc.make(
+  WS_METHODS.sourceControlHubMapRepository,
+  {
+    payload: SourceControlRepositoryMappingInput,
+    success: Schema.Void,
+    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsSourceControlHubCommitPreviewRpc = Rpc.make(
+  WS_METHODS.sourceControlHubCommitPreview,
+  {
+    payload: SourceControlCommitPreviewInput,
+    success: SourceControlCommitPreview,
+    error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+  },
+);
 
 export const WsAiRuntimesListRpc = Rpc.make(WS_METHODS.aiRuntimesList, {
   payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
@@ -1051,6 +1255,15 @@ const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   stream: true,
 });
 
+const WsVcsFetchRpc = Rpc.make(WS_METHODS.vcsFetch, {
+  payload: Schema.Struct({
+    cwd: Schema.String.check(Schema.isMinLength(1)),
+    remoteName: Schema.String.check(Schema.isMinLength(1)),
+  }),
+  success: Schema.Void,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
   payload: VcsPullInput,
   success: VcsPullResult,
@@ -1375,6 +1588,30 @@ export const WsRpcGroup = RpcGroup.make(
   WsAiRuntimesRemoveRpc,
   WsAiRuntimesActionRpc,
   WsAiRuntimesBindRpc,
+  WsSourceControlHubCommitPreviewRpc,
+  WsSourceControlHubMapRepositoryRpc,
+  WsSourceControlHubReviewSubscribeRpc,
+  WsSourceControlHubPullRequestsRpc,
+  WsSourceControlHubPullRequestRpc,
+  WsSourceControlHubActivityRpc,
+  WsSourceControlHubDiffRpc,
+  WsSourceControlHubRevisionsRpc,
+  WsSourceControlHubSubmitReviewRpc,
+  WsSourceControlHubMergeRpc,
+  WsSourceControlHubReviewStartRpc,
+  WsSourceControlHubReviewHistoryRpc,
+  WsSourceControlHubReviewEditRpc,
+  WsSourceControlHubReviewPublishRpc,
+  WsSourceControlHubReviewCancelRpc,
+  WsSourceControlHubAccountsRpc,
+  WsSourceControlHubSaveAccountRpc,
+  WsSourceControlHubRemoveAccountRpc,
+  WsSourceControlHubRepositoriesRpc,
+  WsSourceControlHubRefsRpc,
+  WsSourceControlHubClonesRpc,
+  WsSourceControlHubCloneStateRpc,
+  WsSourceControlHubRefreshRpc,
+  WsSourceControlHubCreatePullRequestRpc,
   WsMarketplaceListRpc,
   WsMarketplaceGetPackageRpc,
   WsMarketplaceAddSourceRpc,
@@ -1459,6 +1696,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
+  WsVcsFetchRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,

@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+import { EnvironmentId as EnvironmentIdSchema, RemotePullRequestRef } from "@t3tools/contracts";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
@@ -31,7 +33,19 @@ export type ThreadWorkspaceTarget =
       readonly threadId: ThreadId;
     };
 
+export const SourceControlWorkspacePanel = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("source-control") }),
+  Schema.Struct({
+    kind: Schema.Literal("ai-review"),
+    environmentId: EnvironmentIdSchema,
+    reference: RemotePullRequestRef,
+  }),
+]);
+export type SourceControlWorkspacePanel = typeof SourceControlWorkspacePanel.Type;
+const isSourceControlWorkspacePanel = Schema.is(SourceControlWorkspacePanel);
+
 export interface ThreadWorkspacePane {
+  readonly panel?: SourceControlWorkspacePanel;
   readonly id: string;
   readonly tabs: readonly ThreadWorkspaceTarget[];
   readonly activeTabKey: string | null;
@@ -73,6 +87,7 @@ export interface SavedThreadWorkspace {
   readonly layout: ThreadWorkspaceLayout;
   readonly root: ThreadWorkspacePaneTree;
   readonly panes: ReadonlyArray<{
+    readonly panel?: SourceControlWorkspacePanel;
     readonly tabs: readonly ThreadWorkspaceTarget[];
     readonly activeTabKey: string | null;
   }>;
@@ -82,6 +97,7 @@ export interface SavedThreadWorkspace {
 interface ThreadWorkspaceStoreState extends ThreadWorkspaceModel {
   readonly root: ThreadWorkspacePaneTree;
   readonly saved: readonly SavedThreadWorkspace[];
+  setPanePanel: (paneId: string, panel: SourceControlWorkspacePanel | null) => void;
   bindRouteTarget: (target: ThreadWorkspaceTarget) => void;
   setLayout: (layout: ThreadWorkspaceLayout) => void;
   splitActivePane: (axis: ThreadWorkspaceSplitAxis) => void;
@@ -561,7 +577,11 @@ export function createSavedThreadWorkspace(
     savedAt: input.savedAt,
     layout: model.layout,
     root: saveTree(workspaceTree(model)),
-    panes: model.panes.map((pane) => ({ tabs: pane.tabs, activeTabKey: pane.activeTabKey })),
+    panes: model.panes.map((pane) => ({
+      tabs: pane.tabs,
+      activeTabKey: pane.activeTabKey,
+      ...(pane.panel ? { panel: pane.panel } : {}),
+    })),
     activePaneIndex: activePaneIndex < 0 ? 0 : activePaneIndex,
   };
 }
@@ -571,7 +591,14 @@ export function restoreSavedThreadWorkspace(saved: SavedThreadWorkspace): Thread
   const panes = Array.from({ length: paneCount }, (_, index) => {
     const source = saved.panes[index];
     const pane = createPane();
-    return source ? { ...pane, tabs: source.tabs, activeTabKey: source.activeTabKey } : pane;
+    return source
+      ? {
+          ...pane,
+          tabs: source.tabs,
+          activeTabKey: source.activeTabKey,
+          ...(source.panel ? { panel: source.panel } : {}),
+        }
+      : pane;
   });
   const activePane = panes[saved.activePaneIndex] ?? panes[0]!;
   const paneIdBySavedId = new Map(panes.map((pane, index) => [`saved-pane-${index}`, pane.id]));
@@ -689,7 +716,12 @@ export function normalizeThreadWorkspaceModel(candidate: unknown): ThreadWorkspa
         : tabs[0]
           ? threadWorkspaceTargetKey(tabs[0])
           : null;
-    parsedPanes.push({ id, tabs, activeTabKey });
+    parsedPanes.push({
+      id,
+      tabs,
+      activeTabKey,
+      ...(isSourceControlWorkspacePanel(paneSource.panel) ? { panel: paneSource.panel } : {}),
+    });
   }
 
   reservePaneSequence(parsedPanes);
@@ -786,6 +818,14 @@ export const useThreadWorkspaceStore = create<ThreadWorkspaceStoreState>()(
       bindRouteTarget: (target) => set((state) => bindThreadWorkspaceRouteTarget(state, target)),
       setLayout: (layout) => set((state) => resizeThreadWorkspace(state, layout)),
       splitActivePane: (axis) => set((state) => splitActiveThreadWorkspacePane(state, axis)),
+      setPanePanel: (paneId, panel) =>
+        set((state) => ({
+          panes: state.panes.map((pane) => {
+            if (pane.id !== paneId) return pane;
+            const { panel: _previousPanel, ...rest } = pane;
+            return panel ? { ...rest, panel } : rest;
+          }),
+        })),
       setSplitRatio: (paneId, ratio) =>
         set((state) => setThreadWorkspaceSplitRatio(state, paneId, ratio)),
       activatePane: (paneId) => set((state) => activateThreadWorkspacePane(state, paneId)),

@@ -1,3 +1,9 @@
+import { resolveAgentTaskConfiguration } from "../sourceControl/agentTaskConfiguration.ts";
+import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import type {
+  SourceControlCommitPreviewInput,
+  SourceControlCommitPreview,
+} from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -92,6 +98,9 @@ interface SourceControlTextGenerationSettings {
 export class GitManager extends Context.Service<
   GitManager,
   {
+    readonly previewCommitMessage: (
+      input: SourceControlCommitPreviewInput,
+    ) => Effect.Effect<SourceControlCommitPreview, GitManagerServiceError>;
     readonly status: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
@@ -661,6 +670,7 @@ export const make = Effect.gen(function* () {
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
+  const taskRegistry = yield* Effect.serviceOption(ProviderInstanceRegistry);
   const readRepositoryInstructions = (cwd: string, fileName: string) =>
     Effect.gen(function* () {
       const root = yield* fileSystem.realPath(cwd);
@@ -1753,8 +1763,11 @@ export const make = Effect.gen(function* () {
       includeBranch?: boolean;
       filePaths?: readonly string[];
       settings: SourceControlTextGenerationSettings;
+      composeInstructions?: (message: string) => string;
+      preparedContext?: { stagedSummary: string; stagedPatch: string };
     }) {
-      const context = yield* gitCore.prepareCommitContext(input.cwd, input.filePaths);
+      const context =
+        input.preparedContext ?? (yield* gitCore.prepareCommitContext(input.cwd, input.filePaths));
       if (!context) {
         return null;
       }
@@ -1771,7 +1784,16 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      const policy = yield* resolveStylePolicy(input.cwd, input.settings);
+      const basePolicy = yield* resolveStylePolicy(input.cwd, input.settings);
+      const policy = input.composeInstructions
+        ? {
+            ...basePolicy,
+            commitInstructions: input.composeInstructions(
+              basePolicy.commitInstructions ??
+                "Write a concise commit message matching the actual changes.",
+            ),
+          }
+        : basePolicy;
 
       const generated = yield* textGeneration
         .generateCommitMessage({
@@ -2742,7 +2764,116 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const previewCommitMessage: GitManager["Service"]["previewCommitMessage"] = (input) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        if (input.filePaths?.length === 0)
+          return yield* new GitManagerError({
+            operation: "previewCommitMessage",
+            cwd: input.cwd,
+            detail: "Select changes to describe.",
+          });
+        const settings = yield* serverSettingsService.getSettings;
+        const providers = yield* providerRegistry.getProviders;
+        const task =
+          input.agent && Option.isSome(taskRegistry)
+            ? yield* resolveAgentTaskConfiguration(input.agent).pipe(
+                Effect.provideService(ServerSettings.ServerSettingsService, serverSettingsService),
+                Effect.provideService(ProviderInstanceRegistry, taskRegistry.value),
+              )
+            : undefined;
+        if (input.agent && !task)
+          return yield* new GitManagerError({
+            operation: "previewCommitMessage",
+            cwd: input.cwd,
+            detail: "The selected agent is unavailable.",
+          });
+        const modelSelection =
+          task?.agent.modelSelection ??
+          ServerSettings.resolveSourceControlWriterModelSelection(settings, providers);
+        const temporary = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-commit-preview-",
+        });
+        const env = { ...process.env, GIT_INDEX_FILE: path.join(temporary, "index") };
+        const readTree = yield* gitCore.execute({
+          operation: "GitManager.previewCommitMessage.readTree",
+          cwd: input.cwd,
+          args: ["read-tree", "HEAD"],
+          env,
+          allowNonZeroExit: true,
+        });
+        if (readTree.exitCode !== 0)
+          yield* gitCore.execute({
+            operation: "GitManager.previewCommitMessage.emptyTree",
+            cwd: input.cwd,
+            args: ["read-tree", "--empty"],
+            env,
+          });
+        yield* gitCore.execute({
+          operation: "GitManager.previewCommitMessage.stageTemporaryIndex",
+          cwd: input.cwd,
+          args: [
+            "--literal-pathspecs",
+            "add",
+            "-A",
+            "--",
+            ...(input.filePaths?.length ? input.filePaths : ["."]),
+          ],
+          env,
+        });
+        const [summary, patch] = yield* Effect.all([
+          gitCore.execute({
+            operation: "GitManager.previewCommitMessage.summary",
+            cwd: input.cwd,
+            args: ["diff", "--cached", "--name-status"],
+            env,
+          }),
+          gitCore.execute({
+            operation: "GitManager.previewCommitMessage.patch",
+            cwd: input.cwd,
+            args: ["diff", "--no-ext-diff", "--cached", "--patch"],
+            env,
+            maxOutputBytes: 50_000,
+            appendTruncationMarker: true,
+          }),
+        ]);
+        if (!summary.stdout.trim())
+          return yield* new GitManagerError({
+            operation: "previewCommitMessage",
+            cwd: input.cwd,
+            detail: "There are no changes to describe.",
+          });
+        const status = yield* gitCore.statusDetailsLocal(input.cwd);
+        const result = yield* resolveCommitAndBranchSuggestion({
+          cwd: input.cwd,
+          preparedContext: { stagedSummary: summary.stdout, stagedPatch: patch.stdout },
+          branch: status.branch,
+          ...(input.filePaths ? { filePaths: input.filePaths } : {}),
+          settings: { modelSelection, style: settings.sourceControlWritingStyle },
+          ...(task ? { composeInstructions: task.compose } : {}),
+        });
+        if (!result)
+          return yield* new GitManagerError({
+            operation: "previewCommitMessage",
+            cwd: input.cwd,
+            detail: "There are no changes to describe.",
+          });
+        return { message: result.commitMessage, modelSelection };
+      }),
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "previewCommitMessage",
+            cwd: input.cwd,
+            detail: "Could not generate a commit message. Check the selected agent and changes.",
+            cause,
+          }),
+      ),
+    );
+
   return GitManager.of({
+    previewCommitMessage,
     localStatus,
     remoteStatus,
     status,

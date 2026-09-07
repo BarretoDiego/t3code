@@ -1111,6 +1111,104 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.aiRuntimesSubscribe,
       idleTtlMs: 0,
     }),
+    sourceControlHubAccounts: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "source-control-hub:Accounts",
+      tag: WS_METHODS.sourceControlHubAccounts,
+      staleTimeMs: 30_000,
+    }),
+    sourceControlHubSaveAccount: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:SaveAccount",
+      tag: WS_METHODS.sourceControlHubSaveAccount,
+    }),
+    sourceControlHubRemoveAccount: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:RemoveAccount",
+      tag: WS_METHODS.sourceControlHubRemoveAccount,
+    }),
+    sourceControlHubRepositories: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Repositories",
+      tag: WS_METHODS.sourceControlHubRepositories,
+    }),
+    sourceControlHubRefs: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Refs",
+      tag: WS_METHODS.sourceControlHubRefs,
+    }),
+    sourceControlHubClones: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Clones",
+      tag: WS_METHODS.sourceControlHubClones,
+    }),
+    sourceControlHubCloneState: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:CloneState",
+      tag: WS_METHODS.sourceControlHubCloneState,
+    }),
+    sourceControlHubRefresh: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Refresh",
+      tag: WS_METHODS.sourceControlHubRefresh,
+    }),
+    sourceControlHubCreatePullRequest: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:CreatePullRequest",
+      tag: WS_METHODS.sourceControlHubCreatePullRequest,
+    }),
+    sourceControlHubPullRequests: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:PullRequests",
+      tag: WS_METHODS.sourceControlHubPullRequests,
+    }),
+    sourceControlHubPullRequest: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:PullRequest",
+      tag: WS_METHODS.sourceControlHubPullRequest,
+    }),
+    sourceControlHubActivity: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Activity",
+      tag: WS_METHODS.sourceControlHubActivity,
+    }),
+    sourceControlHubDiff: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Diff",
+      tag: WS_METHODS.sourceControlHubDiff,
+    }),
+    sourceControlHubRevisions: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Revisions",
+      tag: WS_METHODS.sourceControlHubRevisions,
+    }),
+    sourceControlHubSubmitReview: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:SubmitReview",
+      tag: WS_METHODS.sourceControlHubSubmitReview,
+    }),
+    sourceControlHubMerge: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:Merge",
+      tag: WS_METHODS.sourceControlHubMerge,
+    }),
+    sourceControlHubReviewStart: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:ReviewStart",
+      tag: WS_METHODS.sourceControlHubReviewStart,
+    }),
+    sourceControlHubReviewHistory: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:ReviewHistory",
+      tag: WS_METHODS.sourceControlHubReviewHistory,
+    }),
+    sourceControlHubReviewEdit: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:ReviewEdit",
+      tag: WS_METHODS.sourceControlHubReviewEdit,
+    }),
+    sourceControlHubReviewPublish: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:ReviewPublish",
+      tag: WS_METHODS.sourceControlHubReviewPublish,
+    }),
+    sourceControlHubReviewCancel: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:ReviewCancel",
+      tag: WS_METHODS.sourceControlHubReviewCancel,
+    }),
+    sourceControlHubReviewChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "source-control-hub:review-changes",
+      tag: WS_METHODS.sourceControlHubReviewSubscribe,
+      idleTtlMs: 0,
+    }),
+    sourceControlHubMapRepository: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:map-repository",
+      tag: WS_METHODS.sourceControlHubMapRepository,
+    }),
+    sourceControlHubCommitPreview: createEnvironmentRpcCommand(runtime, {
+      label: "source-control-hub:commit-preview",
+      tag: WS_METHODS.sourceControlHubCommitPreview,
+    }),
     aiRuntimesList: createEnvironmentRpcCommand(runtime, {
       label: "ai-runtimes:list",
       tag: WS_METHODS.aiRuntimesList,

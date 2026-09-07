@@ -14,7 +14,7 @@ import {
   MiniSkill,
   MiniSkillPromptWrappers,
 } from "./miniSkills.ts";
-import { AgentProfile, DEFAULT_AGENT_PROFILE_WRAPPER } from "./agentProfiles.ts";
+import { AgentProfile, AgentProfileId, DEFAULT_AGENT_PROFILE_WRAPPER } from "./agentProfiles.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode } from "./environment.ts";
 import {
@@ -38,6 +38,23 @@ import {
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
+
+export const SourceControlReviewSettings = Schema.Struct({
+  tier: Schema.Literals(["quick", "standard", "deep", "exhaustive"]),
+  profileId: Schema.NullOr(AgentProfileId),
+  severityThreshold: Schema.Literals(["critical", "major", "minor", "suggestion", "info"]),
+  includeExistingComments: Schema.Boolean,
+  includeGenerated: Schema.Boolean,
+  publication: Schema.Literal("draft"),
+});
+export const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
+  tier: "standard",
+  profileId: null,
+  severityThreshold: "minor",
+  includeExistingComments: true,
+  includeGenerated: false,
+  publication: "draft",
+};
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1057,6 +1074,9 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  sourceControlReview: SourceControlReviewSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS)),
+  ),
   sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1323,6 +1343,7 @@ export const ServerSettingsPatch = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  sourceControlReview: Schema.optionalKey(SourceControlReviewSettings),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),

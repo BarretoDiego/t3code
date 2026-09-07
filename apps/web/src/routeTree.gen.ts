@@ -31,6 +31,7 @@ import { Route as SettingsAiRuntimesRouteImport } from './routes/settings.ai-run
 import { Route as SettingsAgentProfilesRouteImport } from './routes/settings.agent-profiles'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
+import { Route as ChatSourceControlRouteImport } from './routes/_chat.source-control'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatBoardRouteImport } from './routes/_chat.board'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
@@ -147,6 +148,11 @@ const ConnectCallbackRoute = ConnectCallbackRouteImport.update({
   path: '/connect/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatSourceControlRoute = ChatSourceControlRouteImport.update({
+  id: '/source-control',
+  path: '/source-control',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof WelcomeRoute
   '/board': typeof ChatBoardRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/source-control': typeof ChatSourceControlRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof WelcomeRoute
   '/board': typeof ChatBoardRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/source-control': typeof ChatSourceControlRoute
   '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   '/welcome': typeof WelcomeRoute
   '/_chat/board': typeof ChatBoardRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
+  '/_chat/source-control': typeof ChatSourceControlRoute
   '/connect_/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
@@ -281,6 +290,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/board'
     | '/pull-requests'
+    | '/source-control'
     | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
@@ -309,6 +319,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/board'
     | '/pull-requests'
+    | '/source-control'
     | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
@@ -339,6 +350,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/_chat/board'
     | '/_chat/pull-requests'
+    | '/_chat/source-control'
     | '/connect_/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
@@ -528,6 +540,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_chat/source-control': {
+      id: '/_chat/source-control'
+      path: '/source-control'
+      fullPath: '/source-control'
+      preLoaderRoute: typeof ChatSourceControlRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/pull-requests': {
       id: '/_chat/pull-requests'
       path: '/pull-requests'
@@ -576,6 +595,7 @@ declare module '@tanstack/react-router' {
 interface ChatRouteChildren {
   ChatBoardRoute: typeof ChatBoardRoute
   ChatPullRequestsRoute: typeof ChatPullRequestsRoute
+  ChatSourceControlRoute: typeof ChatSourceControlRoute
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
@@ -586,6 +606,7 @@ interface ChatRouteChildren {
 const ChatRouteChildren: ChatRouteChildren = {
   ChatBoardRoute: ChatBoardRoute,
   ChatPullRequestsRoute: ChatPullRequestsRoute,
+  ChatSourceControlRoute: ChatSourceControlRoute,
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,

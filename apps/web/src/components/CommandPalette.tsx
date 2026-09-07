@@ -1741,6 +1741,24 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
+    value: "action:source-control-hub",
+    searchTerms: [
+      "source control",
+      "github",
+      "bitbucket",
+      "pull requests",
+      "AI review",
+      "worktrees",
+    ],
+    title: "Open Source Control Hub",
+    icon: <FolderSyncIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/source-control" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
     value: "action:settings",
     searchTerms: ["settings", "preferences", "configuration", "keybindings"],
     title: "Open settings",

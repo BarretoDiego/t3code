@@ -91,3 +91,35 @@ reopening a declined pull request.
   remotes can require separate setup from the hosting provider's API access.
 - **A review cannot load:** open it on the host website while resolving connectivity, permissions,
   or rate limits.
+
+## Source Control Hub and AI review
+
+Open **Source control** in the sidebar to browse GitHub or Bitbucket repositories without cloning
+them. In **Settings → Source Control**, save an account token or use the server's existing credentials.
+Tokens belong to the selected environment. GitHub requires GitHub CLI; Bitbucket can use an access
+token or an email and API token. A Bitbucket workspace narrows repository browsing.
+
+The repository's **Worktrees** view shows associated projects across connected environments,
+including each checkout's branch and HEAD. Associate a project manually if its remote URL cannot
+be identified, or restore automatic association later. Local Git actions operate on the selected clone.
+Remote comments, reviews, and merges operate on the selected pull request.
+
+In a pull request, open **Review**, choose an Agent Profile or a custom harness and model, and run
+a review. Mini Skills apply to that review request. Quick samples patches; Standard analyzes changed
+files in bounded batches and reads nearby code. Deep adds an isolated checkout at the PR head;
+Exhaustive adds another architecture, security, and test-coverage pass. Deep and Exhaustive require
+an associated local project when reviewing code. Metadata and commit-message scopes do not require
+a checkout. Important findings are rechecked before the draft is prepared.
+
+Review results stay local until you select findings, edit or dismiss them, and confirm publication.
+Merge is a separate manual action. If the PR changes, run another review before publishing.
+Incremental reviews compare against the last completed review's head; after rewritten GitHub history,
+run a full review. If publication loses its connection, inspect PR activity before preparing a new
+review: the previous draft will not retry an uncertain publication. Coverage warnings identify sampled, generated, unavailable, or bounded context.
+
+The Hub and an AI Review panel can share a split workspace with agent threads and be saved in a
+workspace layout. The existing Pull requests and thread Git workflows remain available.
+
+For commit messages, choose **Generate message with agent** in the commit dialog. The preview uses
+your writing style, Agent Profile, and selected Mini Skills, without changing staging or committing.
+Review and edit the generated text before committing.

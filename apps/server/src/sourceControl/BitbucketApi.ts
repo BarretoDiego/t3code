@@ -1,3 +1,4 @@
+import { SourceControlAccounts } from "./SourceControlAccounts.ts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -608,6 +609,7 @@ function responseError(
 
 export const make = Effect.gen(function* () {
   const config = yield* BitbucketApiEnvConfig;
+  const accounts = yield* Effect.serviceOption(SourceControlAccounts);
   const httpClient = yield* HttpClient.HttpClient;
   const fileSystem = yield* FileSystem.FileSystem;
   const git = yield* GitVcsDriver.GitVcsDriver;
@@ -615,7 +617,14 @@ export const make = Effect.gen(function* () {
 
   const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
 
-  const withAuth = (request: HttpClientRequest.HttpClientRequest) => {
+  const withAuth = Effect.fn(function* (request: HttpClientRequest.HttpClientRequest) {
+    const account = Option.isSome(accounts)
+      ? yield* accounts.value.credential("bitbucket")
+      : undefined;
+    if (account?.token)
+      return account.username
+        ? request.pipe(HttpClientRequest.basicAuth(account.username, account.token))
+        : request.pipe(HttpClientRequest.bearerToken(account.token));
     if (Option.isSome(config.accessToken)) {
       return request.pipe(HttpClientRequest.bearerToken(config.accessToken.value));
     }
@@ -623,7 +632,7 @@ export const make = Effect.gen(function* () {
       return request.pipe(HttpClientRequest.basicAuth(config.email.value, config.apiToken.value));
     }
     return request;
-  };
+  });
 
   const decodeResponse = <S extends Schema.Top>(
     operation: BitbucketApiOperation,
@@ -650,16 +659,18 @@ export const make = Effect.gen(function* () {
     request: HttpClientRequest.HttpClientRequest,
     schema: S,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
-    httpClient.execute(withAuth(request.pipe(HttpClientRequest.acceptJson))).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRequestError({
-            operation,
-            cause,
-          }),
-      ),
-      Effect.flatMap((response) => decodeResponse(operation, schema, response)),
-    );
+    withAuth(request.pipe(HttpClientRequest.acceptJson))
+      .pipe(Effect.flatMap(httpClient.execute))
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new BitbucketRequestError({
+              operation,
+              cause,
+            }),
+        ),
+        Effect.flatMap((response) => decodeResponse(operation, schema, response)),
+      );
 
   const resolveRepository = Effect.fn("BitbucketApi.resolveRepository")(function* (input: {
     readonly cwd: string;
@@ -843,27 +854,29 @@ export const make = Effect.gen(function* () {
       input.body === undefined
         ? base
         : base.pipe(HttpClientRequest.bodyText(input.body, "application/json"));
-    return httpClient.execute(withAuth(withBody)).pipe(
-      Effect.mapError(
-        (cause): BitbucketApiError => new BitbucketRequestError({ operation: "request", cause }),
-      ),
-      Effect.flatMap((response) => {
-        const location = response.headers.location;
-        if (
-          response.status >= 300 &&
-          response.status < 400 &&
-          location !== undefined &&
-          input.redirects < MAX_REDIRECTS
-        ) {
-          return send({
-            ...input,
-            url: new URL(location, url).toString(),
-            redirects: input.redirects + 1,
-          });
-        }
-        return Effect.succeed(response);
-      }),
-    );
+    return withAuth(withBody)
+      .pipe(Effect.flatMap(httpClient.execute))
+      .pipe(
+        Effect.mapError(
+          (cause): BitbucketApiError => new BitbucketRequestError({ operation: "request", cause }),
+        ),
+        Effect.flatMap((response) => {
+          const location = response.headers.location;
+          if (
+            response.status >= 300 &&
+            response.status < 400 &&
+            location !== undefined &&
+            input.redirects < MAX_REDIRECTS
+          ) {
+            return send({
+              ...input,
+              url: new URL(location, url).toString(),
+              redirects: input.redirects + 1,
+            });
+          }
+          return Effect.succeed(response);
+        }),
+      );
   };
 
   const request: BitbucketApi["Service"]["request"] = (input) =>

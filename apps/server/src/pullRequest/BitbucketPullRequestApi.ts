@@ -115,7 +115,7 @@ export type BitbucketPullRequestApiError =
 function isRepositoryPermissionRemovedError(
   error: BitbucketPullRequestApiError,
 ): error is BitbucketApi.BitbucketResponseError {
-  return error._tag === "BitbucketResponseError" && error.status === 410;
+  return error._tag === "BitbucketResponseError" && (error.status === 410 || error.status === 404);
 }
 
 /**
@@ -578,7 +578,7 @@ export const make = Effect.gen(function* () {
     // may do, so this endpoint is the one request Bitbucket makes unavoidable. It is asked
     // alongside the reads the detail was already making, so it costs no round trip of its own.
     //
-    // Bitbucket permanently removed this endpoint (CHANGE-2770): every account now gets HTTP 410
+    // Bitbucket permanently removed this endpoint (CHANGE-2770): the retired endpoint returns HTTP 410 or 404
     // in place of an answer, whatever it may do. That is the deprecated-endpoint signal, not a
     // permission being refused, so it is read the same way an unreachable read already is
     // elsewhere — as a permission that could not be learned, which grants rather than blocks, and
