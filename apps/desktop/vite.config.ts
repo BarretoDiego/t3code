@@ -99,6 +99,7 @@ export default defineConfig({
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/pet-preload.ts"],
+      dts: false,
     },
   ],
   test: {
