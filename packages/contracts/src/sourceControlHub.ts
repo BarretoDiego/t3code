@@ -18,11 +18,15 @@ export const SourceControlAccountConfig = Schema.Struct({
   label: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
   username: Schema.String.check(Schema.isMaxLength(320)),
   workspace: Schema.String.check(Schema.isMaxLength(200)),
+  repository: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(200), Schema.isPattern(/^[A-Za-z0-9_.-]*$/u)),
+  ),
 });
 export type SourceControlAccountConfig = typeof SourceControlAccountConfig.Type;
 export const SourceControlAccount = Schema.Struct({
   ...SourceControlAccountConfig.fields,
   hasCredential: Schema.Boolean,
+  credentialSource: Schema.optional(Schema.Literals(["stored", "environment"])),
 });
 export type SourceControlAccount = typeof SourceControlAccount.Type;
 export const SourceControlAccountSaveInput = Schema.Struct({

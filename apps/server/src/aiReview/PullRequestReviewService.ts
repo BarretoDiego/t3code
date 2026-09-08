@@ -298,6 +298,7 @@ export const make = Effect.gen(function* () {
             `Large PR: ${plan.batches.length} bounded analysis batches. This review may take longer.`,
           );
         const context = buildReviewMetadata(run, detail, activity);
+        const reviewPrompt = (yield* taskSettings.getSettings).sourceControlReview.prompt;
         const ask = Effect.fn(function* (message: string) {
           const invocation = yield* crypto.randomUUIDv4;
           const label = run.progress;
@@ -316,7 +317,9 @@ export const make = Effect.gen(function* () {
           yield* onActivity({ id: "output", kind: "agent", label, status: "running", text: "" });
           const request = (prompt: string) =>
             executor.execute({ cwd, modelSelection: agent.modelSelection, prompt, onActivity });
-          return yield* request(`${REVIEW_INSTRUCTIONS}\n\n${resolvedTask.compose(message)}`).pipe(
+          return yield* request(
+            `${REVIEW_INSTRUCTIONS}\n\nReviewer preferences:\n${reviewPrompt}\n\n${resolvedTask.compose(message)}`,
+          ).pipe(
             Effect.flatMap((text) =>
               decodeReviewAnalysis(text).pipe(
                 Effect.catch(() =>

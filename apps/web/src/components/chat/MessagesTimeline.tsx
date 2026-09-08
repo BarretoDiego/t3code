@@ -1,3 +1,4 @@
+import { MessagePromptContextCard } from "./MessagePromptContextCard";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -1480,6 +1481,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
+        {row.message.promptContext && (
+          <MessagePromptContextCard context={row.message.promptContext} />
+        )}
         <CollapsibleUserMessageBody
           text={elementContextState.promptText}
           terminalContexts={terminalContexts}

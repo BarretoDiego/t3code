@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import type {
   EnvironmentId,
+  AiReviewFinding,
   PullRequestReviewCommentDraft,
   PullRequestReviewThread,
   PullRequestReviewVerdict,
@@ -71,6 +72,7 @@ export function RemotePullRequestPanel({
     "overview",
   );
   const [reviewVisited, setReviewVisited] = useState(false);
+  const [focusedFinding, setFocusedFinding] = useState<AiReviewFinding | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [line, setLine] = useState<number | undefined>();
   const [diffRevision, setDiffRevision] = useState(0);
@@ -105,7 +107,7 @@ export function RemotePullRequestPanel({
   const effectiveMethod = mergeMethods.includes(method) ? method : mergeMethods[0];
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="space-y-3 border-b p-4 sm:p-6">
+      <header className="shrink-0 space-y-2 border-b px-4 py-3">
         <div className="flex flex-wrap justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>
             ← Repository
@@ -154,7 +156,8 @@ export function RemotePullRequestPanel({
           <AiReviewPanel
             environmentId={environmentId}
             reference={reference}
-            onFinding={(path, line) => {
+            onFinding={(path, line, finding) => {
+              setFocusedFinding(finding);
               setFile(path);
               setLine(line);
               setTab("changes");
@@ -163,27 +166,61 @@ export function RemotePullRequestPanel({
         </div>
       )}
       {tab === "review" ? null : tab === "changes" ? (
-        <RemoteDiff
-          selectedLine={line}
-          key={`${reference.repository}:${reference.number}:${diffRevision}:${refreshKey}`}
-          environmentId={environmentId}
-          reference={reference}
-          threads={activity.data?.reviewThreads ?? []}
-          selectedPath={file}
-          onSelectPath={setFile}
-          canComment={
-            !!revisions.data &&
-            pr?.capabilities.review.inlineComment === true &&
-            pr.viewerPermissions.comment
-          }
-          onComment={(comment) => {
-            setDraftHeadSha((current) => current ?? revisions.data?.headSha ?? null);
-            setComments((current) => [...current, comment]);
-          }}
-        />
+        <div className="flex min-h-0 flex-1 flex-col">
+          {focusedFinding && (
+            <aside className="shrink-0 border-b border-primary/20 bg-primary/5 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-primary">
+                    AI analysis · {focusedFinding.severity}
+                  </p>
+                  <p className="break-words text-sm font-semibold">{focusedFinding.title}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setTab("review");
+                    setReviewVisited(true);
+                  }}
+                >
+                  Back to draft
+                </Button>
+                <Button variant="ghost" size="xs" onClick={() => setFocusedFinding(null)}>
+                  Close
+                </Button>
+              </div>
+              <p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-sm text-muted-foreground">
+                {focusedFinding.description}
+              </p>
+            </aside>
+          )}
+          <RemoteDiff
+            selectedLine={line}
+            key={`${reference.repository}:${reference.number}:${diffRevision}:${refreshKey}`}
+            environmentId={environmentId}
+            reference={reference}
+            threads={activity.data?.reviewThreads ?? []}
+            selectedPath={file}
+            onSelectPath={(path) => {
+              setFile(path);
+              setLine(undefined);
+              if (path !== focusedFinding?.filePath) setFocusedFinding(null);
+            }}
+            canComment={
+              !!revisions.data &&
+              pr?.capabilities.review.inlineComment === true &&
+              pr.viewerPermissions.comment
+            }
+            onComment={(comment) => {
+              setDraftHeadSha((current) => current ?? revisions.data?.headSha ?? null);
+              setComments((current) => [...current, comment]);
+            }}
+          />
+        </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
-          <div className="space-y-5 p-4 sm:p-6">
+          <div className="space-y-4 p-4">
             {tab === "overview" && pr && (
               <>
                 <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">

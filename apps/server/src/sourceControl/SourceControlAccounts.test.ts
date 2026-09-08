@@ -1,3 +1,4 @@
+import * as ConfigProvider from "effect/ConfigProvider";
 import { expect, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -89,4 +90,37 @@ it.effect("only replaces saved credentials after successful provider verificatio
     expect((yield* accounts.credential("github"))?.token).toBe("new-token");
     expect((yield* accounts.list)[0]).not.toHaveProperty("token");
   }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect("reports environment credentials without exposing or persisting tokens", () =>
+  Effect.gen(function* () {
+    const accounts = yield* make;
+    expect(yield* accounts.list).toEqual([
+      {
+        provider: "bitbucket",
+        label: "Bitbucket environment",
+        username: "dev@example.test",
+        workspace: "team",
+        hasCredential: true,
+        credentialSource: "environment",
+      },
+    ]);
+    expect(yield* accounts.credential("bitbucket")).toBeUndefined();
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.merge(
+        dependencies,
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_BITBUCKET_EMAIL: "dev@example.test",
+              T3CODE_BITBUCKET_API_TOKEN: "fixture-secret",
+              T3CODE_BITBUCKET_WORKSPACE: "team",
+            },
+          }),
+        ),
+      ),
+    ),
+  ),
 );

@@ -1,3 +1,4 @@
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -36,6 +37,9 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
   const accounts = yield* Effect.serviceOption(SourceControlAccounts);
+  const environmentWorkspace = yield* Config.string("T3CODE_BITBUCKET_WORKSPACE").pipe(
+    Config.withDefault(""),
+  );
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "bitbucket",
@@ -44,7 +48,12 @@ export const make = Effect.gen(function* () {
       Option.isSome(accounts)
         ? accounts.value
             .credential("bitbucket")
-            .pipe(Effect.map((account) => account?.workspace ?? ""))
+            .pipe(Effect.map((account) => account?.workspace || environmentWorkspace))
+        : Effect.succeed(environmentWorkspace),
+      Option.isSome(accounts)
+        ? accounts.value
+            .credential("bitbucket")
+            .pipe(Effect.map((account) => account?.repository ?? ""))
         : Effect.succeed(""),
     ),
     listChangeRequests: (input) => {

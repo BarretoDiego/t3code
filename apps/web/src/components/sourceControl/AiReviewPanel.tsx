@@ -36,7 +36,7 @@ export function AiReviewPanel({
 }: {
   environmentId: EnvironmentId;
   reference: RemotePullRequestRef;
-  onFinding?: (path: string, line?: number) => void;
+  onFinding?: (path: string, line: number | undefined, finding: AiReviewFinding) => void;
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? [];
@@ -187,7 +187,7 @@ export function AiReviewPanel({
     groups.set(key, [...(groups.get(key) ?? []), finding]);
   }
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 p-4 sm:p-6">
+    <div className="w-full min-w-0 space-y-4 p-4">
       <header>
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           AI-assisted review
@@ -549,6 +549,14 @@ export function AiReviewPanel({
                             }
                           />
                           <div className="min-w-0">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              AI analysis ·{" "}
+                              {published
+                                ? "Published comment"
+                                : dismissed
+                                  ? "Dismissed"
+                                  : "Draft finding"}
+                            </p>
                             <p className="break-words text-sm font-medium">{finding.title}</p>
                             <p className="text-xs text-muted-foreground">
                               {finding.severity} · {finding.category}
@@ -598,7 +606,7 @@ export function AiReviewPanel({
                             size="xs"
                             variant="link"
                             className="h-auto max-w-full whitespace-normal break-all p-0"
-                            onClick={() => onFinding?.(finding.filePath!, finding.line)}
+                            onClick={() => onFinding?.(finding.filePath!, finding.line, finding)}
                           >
                             {finding.filePath}
                             {finding.line ? `:${finding.line}` : ""}

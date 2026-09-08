@@ -28,3 +28,5 @@ where the skills are inserted and must stay in the wrapper. **Reset to default**
 built-in wrapper.
 
 The library syncs across your connected environments with your other shared preferences.
+
+Messages sent with Mini Skills or an Agent Profile include an **Applied context** block. Expand it to inspect the exact prompt, including wrappers and instructions, sent to the agent. This snapshot stays with the message when you later edit your settings. Older messages created before context recording was available do not have a snapshot.

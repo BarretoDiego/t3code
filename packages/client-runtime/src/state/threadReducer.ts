@@ -1,3 +1,7 @@
+import {
+  MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND,
+  isMessagePromptContextPayload,
+} from "@t3tools/contracts";
 import { pipe } from "effect/Function";
 import * as Arr from "effect/Array";
 import * as O from "effect/Order";
@@ -606,6 +610,24 @@ export function applyThreadDetailEvent(
     // ── Activities ──────────────────────────────────────────────────
     case "thread.activity-appended": {
       const activity = event.payload.activity;
+      if (
+        activity.kind === MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND &&
+        isMessagePromptContextPayload(activity.payload)
+      ) {
+        const payload = activity.payload;
+        return {
+          kind: "updated",
+          thread: {
+            ...thread,
+            messages: thread.messages.map((message) =>
+              message.id === payload.messageId && message.role === "user"
+                ? { ...message, promptContext: payload.context }
+                : message,
+            ),
+            updatedAt: event.occurredAt,
+          },
+        };
+      }
       // A resolvable context-window update supersedes earlier resolvable ones
       // for the same turn: consumers only read the latest value (walking the
       // array backwards), and providers stream these updates continuously, so
