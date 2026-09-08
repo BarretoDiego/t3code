@@ -26,7 +26,7 @@ export const ComputeListProvidersTool = readonlyTool(
   Tool.make("compute.listProviders", {
     description:
       "List configured compute providers, connection status, environment/node or managed execution target, cancellation/recovery support, queue depth, and declared resources. Query this before submitting work when the destination matters.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Array(ComputeProviderSnapshot),
     failure: ComputeError,
     dependencies,
@@ -37,7 +37,7 @@ export const ComputeListCapabilitiesTool = readonlyTool(
   Tool.make("compute.listCapabilities", {
     description:
       "List capabilities currently announced by online or configured compute providers. Capability and operation strings are provider-defined, so inspect this before constructing a request.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Array(ComputeCapability),
     failure: ComputeError,
     dependencies,
@@ -48,7 +48,7 @@ export const ComputeListModelsTool = readonlyTool(
   Tool.make("compute.listModels", {
     description:
       "List provider-announced model capabilities and their declarative parameter schemas, presets, operations, and availability states.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Array(ModelCapability),
     failure: ComputeError,
     dependencies,
