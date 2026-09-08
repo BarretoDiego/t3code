@@ -3,6 +3,7 @@ import { PullRequestReviewService } from "./aiReview/PullRequestReviewService.ts
 import { SourceControlHubService } from "./sourceControl/SourceControlHubService.ts";
 import { SourceControlAccounts } from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
+import { ComputeService } from "./compute/ComputeService.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -488,6 +489,7 @@ const makeWsRpcLayer = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   marketplace: MarketplaceService.MarketplaceService["Service"],
   aiRuntimes: AiRuntimeService["Service"],
+  compute: ComputeService["Service"],
   remotePrs: RemotePullRequestService["Service"],
   reviews: PullRequestReviewService["Service"],
   hub: SourceControlHubService["Service"],
@@ -2168,6 +2170,24 @@ const makeWsRpcLayer = (
         [WS_METHODS.aiRuntimesRemove]: ({ runtimeId }) => aiRuntimes.remove(runtimeId),
         [WS_METHODS.aiRuntimesAction]: (input) => aiRuntimes.action(input),
         [WS_METHODS.aiRuntimesBind]: (input) => aiRuntimes.bind(input),
+        [WS_METHODS.computeList]: ({ refresh }) =>
+          observeRpcEffect(WS_METHODS.computeList, compute.list(refresh)),
+        [WS_METHODS.computeSubscribe]: () =>
+          observeRpcStream(WS_METHODS.computeSubscribe, compute.changes),
+        [WS_METHODS.computeEventsSubscribe]: () =>
+          observeRpcStream(WS_METHODS.computeEventsSubscribe, compute.events),
+        [WS_METHODS.computeSaveProvider]: ({ provider }) =>
+          observeRpcEffect(WS_METHODS.computeSaveProvider, compute.saveProvider(provider)),
+        [WS_METHODS.computeRemoveProvider]: ({ providerId }) =>
+          observeRpcEffect(WS_METHODS.computeRemoveProvider, compute.removeProvider(providerId)),
+        [WS_METHODS.computeListJobs]: (input) =>
+          observeRpcEffect(WS_METHODS.computeListJobs, compute.listJobs(input)),
+        [WS_METHODS.computeGetJob]: (input) =>
+          observeRpcEffect(WS_METHODS.computeGetJob, compute.getJob(input)),
+        [WS_METHODS.computeSubmit]: (input) =>
+          observeRpcEffect(WS_METHODS.computeSubmit, compute.submit(input)),
+        [WS_METHODS.computeCancelJob]: (input) =>
+          observeRpcEffect(WS_METHODS.computeCancelJob, compute.cancel(input)),
         [WS_METHODS.marketplaceList]: (_input) =>
           observeRpcEffect(WS_METHODS.marketplaceList, marketplace.list(), {
             "rpc.aggregate": "marketplace",
@@ -3189,6 +3209,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const pullRequests = yield* PullRequestService.PullRequestService;
     const marketplace = yield* MarketplaceService.MarketplaceService;
     const aiRuntimes = yield* AiRuntimeService;
+    const compute = yield* ComputeService;
     const remotePrs = yield* RemotePullRequestService;
     const reviews = yield* PullRequestReviewService;
     const hub = yield* SourceControlHubService;
@@ -3227,6 +3248,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               previewAutomationBroker,
               marketplace,
               aiRuntimes,
+              compute,
               remotePrs,
               reviews,
               hub,
