@@ -332,3 +332,79 @@ describe("projectSyncFraming", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("project sync decoder cancellation", () => {
+  it("closes an export suspended at its header without pulling file content", async () => {
+    let closed = false;
+    let contentRead = false;
+    async function* records(): AsyncGenerator<ProjectSyncFrameRecord> {
+      try {
+        yield {
+          header: { path: "working.patch", size: 1, kind: "file" },
+          content: (async function* () {
+            contentRead = true;
+            yield new Uint8Array([1]);
+          })(),
+        };
+      } finally {
+        closed = true;
+      }
+    }
+    const decoder = createProjectSyncFrameDecoder(encodeProjectSyncRecords(records()));
+    expect((await decoder.next()).value?.header.path).toBe("working.patch");
+    await decoder.return(undefined);
+    expect(closed).toBe(true);
+    expect(contentRead).toBe(false);
+  });
+
+  it("awaits nested content and export cleanup when cancelled mid-file", async () => {
+    const closing = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let contentClosed = 0;
+    let exportClosed = 0;
+    let extraContentRead = false;
+    async function* content() {
+      try {
+        yield new Uint8Array([1]);
+        extraContentRead = true;
+        yield new Uint8Array([2]);
+      } finally {
+        closing.resolve();
+        await release.promise;
+        contentClosed++;
+      }
+    }
+    async function* records(): AsyncGenerator<ProjectSyncFrameRecord> {
+      try {
+        yield { header: { path: "working.patch", size: 2, kind: "file" }, content: content() };
+      } finally {
+        exportClosed++;
+      }
+    }
+    const decoder = createProjectSyncFrameDecoder(encodeProjectSyncRecords(records()));
+    const first = await decoder.next();
+    if (first.done) throw new Error("Expected file record");
+    expect(await first.value.content[Symbol.asyncIterator]().next()).toMatchObject({ done: false });
+    const stopped = decoder.return(undefined);
+    await closing.promise;
+    expect(exportClosed).toBe(0);
+    release.resolve();
+    await stopped;
+    expect(contentClosed).toBe(1);
+    expect(exportClosed).toBe(1);
+    expect(extraContentRead).toBe(false);
+  });
+
+  it("closes the upstream source when header validation fails", async () => {
+    let closed = false;
+    async function* bytes() {
+      try {
+        yield new Uint8Array([255, 255, 255, 255]);
+      } finally {
+        closed = true;
+      }
+    }
+    await expect(createProjectSyncFrameDecoder(bytes()).next()).rejects.toThrow(/exceeds/);
+    expect(closed).toBe(true);
+  });
+});
