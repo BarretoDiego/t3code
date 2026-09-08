@@ -1,8 +1,10 @@
+import { MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND } from "@t3tools/contracts";
 import {
   type ChatAttachment,
   CommandId,
   EventId,
   type MiniSkillId,
+  type MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -846,6 +848,7 @@ const make = Effect.gen(function* () {
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
+    readonly messageId: MessageId;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
@@ -903,6 +906,32 @@ const make = Effect.gen(function* () {
               },
             }
           : {}),
+      });
+      const requestIds = new Set(requestSkills.map((skill) => skill.id));
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: yield* serverCommandId("prompt-context"),
+        threadId: input.threadId,
+        activity: {
+          id: EventId.make(`prompt-context:${input.messageId}`),
+          tone: "info",
+          kind: MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND,
+          summary: "Prompt context prepared",
+          payload: {
+            messageId: input.messageId,
+            context: {
+              threadSkills: threadMiniSkills
+                .filter((skill) => agentProfile !== undefined || !requestIds.has(skill.skillId))
+                .map((skill) => skill.name),
+              requestSkills: [...new Set(requestSkills.map((skill) => skill.name))],
+              ...(agentProfile ? { profileName: agentProfile.profileName } : {}),
+              prompt: messageText,
+            },
+          },
+          turnId: null,
+          createdAt: input.createdAt,
+        },
+        createdAt: input.createdAt,
       });
     }
     const normalizedInput = toNonEmptyProviderInput(messageText);
@@ -1472,6 +1501,7 @@ const make = Effect.gen(function* () {
     const requestMiniSkillIds = event.payload.miniSkillIds ?? [];
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
+      messageId: event.payload.messageId,
       messageText: message.text,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined

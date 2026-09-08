@@ -922,7 +922,24 @@ export const make = Effect.gen(function* () {
         host: Option.some("bitbucket.org"),
         detail: Option.none<string>(),
       })),
-      Effect.orElseSucceed(() => authFromConfig(config)),
+      Effect.catch(() =>
+        Effect.gen(function* () {
+          const stored = Option.isSome(accounts)
+            ? yield* accounts.value
+                .credential("bitbucket")
+                .pipe(Effect.orElseSucceed(() => undefined))
+            : undefined;
+          if (!stored?.token) return authFromConfig(config);
+          return {
+            status: "unknown" as const,
+            account: nonEmpty(stored.username || stored.workspace),
+            host: Option.some("bitbucket.org"),
+            detail: Option.some(
+              "Bitbucket credentials are configured. This token may not allow user-profile access; verify access through repositories.",
+            ),
+          };
+        }),
+      ),
     ),
     listPullRequests: (input) =>
       resolveRepository(input).pipe(

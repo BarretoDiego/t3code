@@ -61,6 +61,7 @@ export function bitbucketPagePath(path: string, cursor?: string): string {
 export function makeBitbucketRepositoryBrowser(
   bitbucket: Pick<BitbucketApi["Service"], "request">,
   workspace: Effect.Effect<string, SourceControlHubError>,
+  repository: Effect.Effect<string, SourceControlHubError> = Effect.succeed(""),
 ): SourceControlRepositoryBrowser {
   const request = (path: string, body?: unknown) =>
     bitbucket
@@ -102,10 +103,19 @@ export function makeBitbucketRepositoryBrowser(
     listRepositories: (input) =>
       Effect.gen(function* () {
         const selectedWorkspace = yield* workspace;
+        const selectedRepository = yield* repository;
         const path = selectedWorkspace
-          ? `/repositories/${encodeURIComponent(selectedWorkspace)}?role=member`
+          ? `/repositories/${encodeURIComponent(selectedWorkspace)}`
           : "/repositories?role=member";
-        const page = yield* json(yield* pagePath(path, input.cursor), pageSchema(Repository));
+        const page =
+          selectedRepository && selectedWorkspace
+            ? {
+                values: [
+                  yield* json(`${path}/${encodeURIComponent(selectedRepository)}`, Repository),
+                ],
+                next: null,
+              }
+            : yield* json(yield* pagePath(path, input.cursor), pageSchema(Repository));
         return {
           items: page.values
             .filter(

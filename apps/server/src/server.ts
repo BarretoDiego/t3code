@@ -4,6 +4,7 @@ import * as ReviewAgentExecutor from "./aiReview/ReviewAgentExecutor.ts";
 import * as SourceControlHubService from "./sourceControl/SourceControlHubService.ts";
 import * as SourceControlAccounts from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
+import { ComputeService } from "./compute/ComputeService.ts";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -571,6 +572,7 @@ export const makeRoutesLayer = Layer.mergeAll(
 ).pipe(
   Layer.provide(MarketplaceService.layer),
   Layer.provide(AiRuntimeService.layer),
+  Layer.provide(ComputeService.layer),
   Layer.provide(
     PullRequestReviewService.layer.pipe(
       Layer.provide(ReviewAgentExecutor.layer),

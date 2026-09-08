@@ -67,7 +67,14 @@ export class DesktopShellEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/shell/DesktopShellEnvironment") {}
 
+const SOURCE_CONTROL_ENV_NAMES = [
+  "T3CODE_BITBUCKET_EMAIL",
+  "T3CODE_BITBUCKET_API_TOKEN",
+  "T3CODE_BITBUCKET_ACCESS_TOKEN",
+  "T3CODE_BITBUCKET_WORKSPACE",
+] as const;
 const LOGIN_SHELL_ENV_NAMES = [
+  ...SOURCE_CONTROL_ENV_NAMES,
   "PATH",
   "DBUS_SESSION_BUS_ADDRESS",
   "DISPLAY",
@@ -466,6 +473,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
     }
 
     for (const name of [
+      ...SOURCE_CONTROL_ENV_NAMES,
       "DISPLAY",
       "HOMEBREW_PREFIX",
       "HOMEBREW_CELLAR",

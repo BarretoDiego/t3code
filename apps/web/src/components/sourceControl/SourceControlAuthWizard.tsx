@@ -1,3 +1,4 @@
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 import { CheckCircle2Icon, ChevronRightIcon, KeyRoundIcon, ShieldCheckIcon } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -36,6 +37,8 @@ export function SourceControlAuthWizard({
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [workspace, setWorkspace] = useState("");
+  const [authType, setAuthType] = useState<"api" | "access">("api");
+  const [repository, setRepository] = useState("");
   const [token, setToken] = useState("");
   const [identity, setIdentity] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -193,6 +196,18 @@ export function SourceControlAuthWizard({
                   or connect with an API token
                   <span className="h-px flex-1 bg-border" />
                 </div>
+                {provider === "bitbucket" && (
+                  <HubSelect
+                    label="Authentication method"
+                    showLabel
+                    value={authType}
+                    onChange={setAuthType}
+                    options={[
+                      { value: "api", label: "API token · Atlassian email" },
+                      { value: "access", label: "Integration access token · Bearer" },
+                    ]}
+                  />
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="grid gap-1.5 text-sm">
                     Account label
@@ -202,7 +217,7 @@ export function SourceControlAuthWizard({
                       onChange={(event) => setName(event.target.value)}
                     />
                   </label>
-                  {provider === "bitbucket" && (
+                  {provider === "bitbucket" && authType === "api" && (
                     <label className="grid gap-1.5 text-sm">
                       Atlassian email
                       <Input
@@ -215,7 +230,7 @@ export function SourceControlAuthWizard({
                   )}
                   {provider === "bitbucket" && (
                     <label className="grid gap-1.5 text-sm sm:col-span-2">
-                      Workspace (optional)
+                      Workspace {authType === "api" ? "(optional)" : "(required)"}
                       <Input
                         value={workspace}
                         onChange={(event) => setWorkspace(event.target.value)}
@@ -223,8 +238,18 @@ export function SourceControlAuthWizard({
                     </label>
                   )}
                 </div>
+                {provider === "bitbucket" && (
+                  <label className="grid gap-1.5 text-sm">
+                    Repository slug (for repository-scoped tokens)
+                    <Input
+                      value={repository}
+                      onChange={(event) => setRepository(event.target.value)}
+                      placeholder="my-repository"
+                    />
+                  </label>
+                )}
                 <label className="grid gap-1.5 text-sm">
-                  API token
+                  Token
                   <Input
                     type="password"
                     autoComplete="new-password"
@@ -236,7 +261,7 @@ export function SourceControlAuthWizard({
                   <p>
                     {provider === "github"
                       ? "Give the token access to the repositories you need, with Pull requests and Contents permissions for the actions you plan to use. GitHub CLI must be installed in this environment."
-                      : "Create a Bitbucket API token with account read, repository read and pull-request permissions. Add write permissions only when you intend to publish or merge."}
+                      : "API tokens use your Atlassian email. Repository or workspace access tokens use Bearer authentication and require a workspace. For a repository token, enter its repository slug. Repository read is sufficient to verify access; publishing requires additional permissions."}
                   </p>
                   <Button
                     size="xs"
@@ -295,7 +320,8 @@ export function SourceControlAuthWizard({
                   pending ||
                   !environment ||
                   !token.trim() ||
-                  (provider === "bitbucket" && !username.trim())
+                  (provider === "bitbucket" &&
+                    (authType === "api" ? !username.trim() : !workspace.trim()))
                 }
                 onClick={async () => {
                   if (!environment) return;
@@ -308,17 +334,25 @@ export function SourceControlAuthWizard({
                         account: {
                           provider,
                           label: name.trim() || (provider === "github" ? "GitHub" : "Bitbucket"),
-                          username: username.trim(),
+                          username:
+                            provider === "bitbucket" && authType === "access"
+                              ? ""
+                              : username.trim(),
                           workspace: workspace.trim(),
+                          repository: repository.trim(),
                         },
                         token: token.trim(),
                       },
                     });
                     if (result._tag === "Success") done(result.value.accountName);
-                    else
+                    else {
+                      const failure = squashAtomCommandFailure(result);
                       setError(
-                        "Could not verify this account. Check the token, permissions and network access.",
+                        failure instanceof Error
+                          ? failure.message
+                          : "Could not verify this account. Check the token type and repository permissions.",
                       );
+                    }
                   } finally {
                     setPending(false);
                   }

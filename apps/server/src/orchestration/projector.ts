@@ -1,3 +1,7 @@
+import {
+  MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND,
+  isMessagePromptContextPayload,
+} from "@t3tools/contracts";
 import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
 import {
   isImportedAgentSessionMessageId,
@@ -851,6 +855,11 @@ export function projectEvent(
             return nextBase;
           }
 
+          const promptContext =
+            payload.activity.kind === MESSAGE_PROMPT_CONTEXT_ACTIVITY_KIND &&
+            isMessagePromptContextPayload(payload.activity.payload)
+              ? payload.activity.payload
+              : null;
           const activities = retainThreadActivities(
             [
               ...thread.activities.filter((entry) => entry.id !== payload.activity.id),
@@ -862,6 +871,15 @@ export function projectEvent(
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
               activities,
+              ...(promptContext
+                ? {
+                    messages: thread.messages.map((message) =>
+                      message.id === promptContext.messageId && message.role === "user"
+                        ? { ...message, promptContext: promptContext.context }
+                        : message,
+                    ),
+                  }
+                : {}),
               updatedAt: event.occurredAt,
             }),
           };

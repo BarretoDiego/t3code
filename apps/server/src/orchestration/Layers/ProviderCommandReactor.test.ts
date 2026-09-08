@@ -959,6 +959,11 @@ describe("ProviderCommandReactor", () => {
             "Implement pagination.",
           ]);
           expect(thread?.miniSkills).toEqual([workspaceSnapshot]);
+          expect(thread?.messages[0]?.promptContext).toEqual({
+            threadSkills: [workspaceSnapshot.name],
+            requestSkills: [],
+            prompt: input,
+          });
         }),
     );
 
@@ -1003,6 +1008,13 @@ describe("ProviderCommandReactor", () => {
         );
         expect(input).not.toContain('<user_preferences scope="thread">');
         expect(input?.endsWith("Implement pagination.")).toBe(true);
+        yield* Effect.promise(() => harness.drain());
+        const model = yield* Effect.promise(() => harness.readModel());
+        expect(model.threads[0]?.messages[0]?.promptContext).toEqual({
+          threadSkills: [],
+          requestSkills: [commitSkill.name, pullRequestSkill.name],
+          prompt: input,
+        });
       }),
     );
 
@@ -1157,12 +1169,19 @@ describe("ProviderCommandReactor", () => {
           expect(input).not.toContain('<user_preferences scope="request">');
           expect(input?.endsWith("Review these changes.")).toBe(true);
 
+          yield* Effect.promise(() => harness.drain());
           // Transcript stays clean and the turn keeps the profile snapshot.
           const readModel = yield* Effect.promise(() => harness.readModel());
           const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
           expect(thread?.messages.map((message) => message.text)).toEqual([
             "Review these changes.",
           ]);
+          expect(thread?.messages[0]?.promptContext).toEqual({
+            threadSkills: [],
+            requestSkills: ["Commit Changes"],
+            profileName: "Reviewer Pre-Commit",
+            prompt: input,
+          });
           const events = yield* Stream.runCollect(harness.engine.readEvents(0));
           const turnStart = [...events].find(
             (event) => event.type === "thread.turn-start-requested",
