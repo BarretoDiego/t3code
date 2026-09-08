@@ -313,12 +313,7 @@ function ThreadRouteContent(
   const handoffSupported =
     selectedThreadCreation === null &&
     selectedThread !== null &&
-    routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadHandoff === true &&
-    routeEnvironmentRuntime.serverConfig.providers.some(
-      (provider) =>
-        provider.instanceId === selectedThread.modelSelection.instanceId &&
-        provider.supportsSessionHandoff === true,
-    );
+    routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadHandoff === true;
 
   const handoffWatch = useThreadHandoffWatch(
     routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadHandoff === true

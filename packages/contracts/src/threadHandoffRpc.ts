@@ -7,6 +7,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ModelSelection } from "./orchestration.ts";
 import { ProjectSyncManifestEntry, ProjectSyncExportEntry } from "./projectSync.ts";
 import {
   ThreadExecutionOwner,
@@ -29,7 +30,8 @@ export const ThreadHandoffSource = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   driver: ProviderDriverKind,
   version: TrimmedNonEmptyString,
-  sessionId: TrimmedNonEmptyString,
+  sessionId: Schema.optional(TrimmedNonEmptyString),
+  supportsNativeHandoff: Schema.optional(Schema.Boolean),
   repositories: Schema.optional(Schema.Array(ThreadHandoffRepository)),
 });
 export type ThreadHandoffSource = typeof ThreadHandoffSource.Type;
@@ -40,6 +42,8 @@ export const ThreadHandoffDestinationProject = Schema.Struct({
   availableHead: Schema.optional(TrimmedNonEmptyString),
 });
 export const ThreadHandoffDestination = Schema.Struct({
+  transferMode: Schema.optional(Schema.Literals(["native", "context"])),
+  modelSelection: Schema.optional(ModelSelection),
   environmentId: EnvironmentId,
   providerInstanceId: ProviderInstanceId,
   source: ThreadHandoffSource,
@@ -49,7 +53,7 @@ export type ThreadHandoffDestination = typeof ThreadHandoffDestination.Type;
 export const ThreadHandoffReadyReceipt = Schema.Struct({
   handoffId: ThreadHandoffId,
   environmentId: EnvironmentId,
-  sessionId: TrimmedNonEmptyString,
+  sessionId: Schema.optional(TrimmedNonEmptyString),
   manifestHash: TrimmedNonEmptyString,
 });
 export type ThreadHandoffReadyReceipt = typeof ThreadHandoffReadyReceipt.Type;

@@ -81,17 +81,28 @@ broken state.
 
 ## Continue a Thread on Another Environment
 
-For a Claude thread with a native session, choose **Continue on…** from the thread menu or
-**Continue thread on…** in the command palette. Web, desktop and mobile can start the transfer.
-Both environments must be connected, have compatible authenticated Claude installations, and
-have the matching Git project available. The destination uses its own credentials.
+Choose **Continue on…** from the thread menu or **Continue thread on…** in the command palette.
+Web, desktop and mobile can start the transfer. Both environments must be connected and have
+the matching Git project available. The destination uses its own credentials.
+
+Choose how the conversation continues:
+
+- **Native session** preserves a compatible Claude session, including its provider-native history.
+- **Conversation context** supports Codex, Claude, Cursor, Grok, OpenCode and Antigravity. Choose
+  the destination provider and model; they can differ from the source. This preserves the full
+  T3 conversation but creates a new provider-native session. Native tool and compaction state
+  are not transferred. The conversation history accompanies your next message; large histories
+  are provided as a complete archive for the agent to read, rather than summarized or truncated.
+
+Conversation context requires an updated client and updated servers on both environments. If
+**Continue on…** is missing for a Codex thread, update the source environment and client. If the
+destination is marked **Update required**, update that server too.
 
 An idle thread moves immediately. During a turn, choose to wait for it to finish or interrupt it
-using Claude's normal stop mechanism. T3 preserves the conversation and native session, then
-restores the branch, staged and unstaged changes, and relevant untracked files in a separate
-checkout on the destination. Installed dependencies and ignored or reproducible untracked
-artifacts are excluded. Historical absolute paths, local MCP services, terminals and running
-processes are not recreated automatically.
+using the provider's normal stop mechanism. T3 restores the branch, staged and unstaged changes,
+and relevant untracked files in a separate checkout on the destination. Installed dependencies
+and ignored or reproducible untracked artifacts are excluded. Historical absolute paths, local
+MCP services, terminals and running processes are not recreated automatically.
 
 Keep the transferring client and both environments available until completion. The thread's
 execution indicator shows its owner and transfer progress. Once transfer completes, open the
@@ -102,7 +113,7 @@ If the connection fails, use **Recover transfer**. Before ownership changes, rec
 preparation and leaves the source resumable. After ownership changes, recovery finishes on the
 destination. Do not manually resume the old source copy while recovery is pending.
 
-This first version supports native Claude sessions only. Codex and other providers, threads with
-attachments, custom source Claude homes that differ from the server configuration, and returning
-a thread to an environment that already holds an earlier copy are blocked. The destination must
-have an existing project; automatic clone setup is not available in the transfer selector.
+Threads with attachments, custom source Claude homes that differ from the server configuration
+for native transfer, and returning a thread to an environment that already holds an earlier copy
+are blocked. The destination must have an existing project; automatic clone setup is not
+available in the transfer selector.

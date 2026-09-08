@@ -234,6 +234,7 @@ export const make = Effect.gen(function* () {
       environmentIcon: true,
       projectSync: true,
       threadHandoff: true,
+      threadHandoffContext: true,
       aiRuntimes: true,
       compute: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),

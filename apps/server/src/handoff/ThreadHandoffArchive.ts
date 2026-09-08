@@ -3,6 +3,7 @@ import {
   EventId,
   ThreadHandoffError,
   type OrchestrationEvent,
+  type ModelSelection,
   type ProjectId,
   type ProviderInstanceId,
   type ThreadHandoffId,
@@ -18,6 +19,7 @@ export function remapThreadHandoffEvents(input: {
   readonly projectId: ProjectId;
   readonly worktreePath: string | null;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly modelSelection?: ModelSelection;
   readonly events: readonly OrchestrationEvent[];
 }): readonly OrchestrationEvent[] {
   const latestCreation = input.events.findLastIndex((event) => event.type === "thread.created");
@@ -58,7 +60,7 @@ export function remapThreadHandoffEvents(input: {
             projectId: input.projectId,
             worktreePath: input.worktreePath,
             modelSelection: {
-              ...local.payload.modelSelection,
+              ...(input.modelSelection ?? local.payload.modelSelection),
               instanceId: input.providerInstanceId,
             },
           },
@@ -74,7 +76,7 @@ export function remapThreadHandoffEvents(input: {
             ...(local.payload.modelSelection
               ? {
                   modelSelection: {
-                    ...local.payload.modelSelection,
+                    ...(input.modelSelection ?? local.payload.modelSelection),
                     instanceId: input.providerInstanceId,
                   },
                 }

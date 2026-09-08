@@ -93,8 +93,8 @@ export const ThreadHandoffManifest = Schema.Struct({
   ),
   provider: Schema.Struct({
     driver: ProviderDriverKind,
-    mode: Schema.Literal("native"),
-    sessionId: TrimmedNonEmptyString,
+    mode: Schema.Literals(["native", "context"]),
+    sessionId: Schema.optional(TrimmedNonEmptyString),
     directory: Schema.Literal("provider"),
     resumeCursor: Schema.optional(Schema.Unknown),
     version: Schema.optional(TrimmedNonEmptyString),

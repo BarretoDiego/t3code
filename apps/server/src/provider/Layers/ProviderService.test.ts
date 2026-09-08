@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import type {
+  OrchestrationEvent,
   ProviderApprovalDecision,
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
@@ -52,6 +53,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { installConversationHandoffContext } from "../../handoff/ConversationHandoffContext.ts";
 import { makeHandoffJournal } from "../../handoff/HandoffJournal.ts";
 
 import {
@@ -421,6 +423,7 @@ function makeProviderServiceLayer(
     readonly supportsConversationRollback?: boolean;
     readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
+    readonly configLayer?: typeof serverConfigTestLayer;
   } = {},
 ) {
   const codex = makeFakeCodexAdapter(CODEX_DRIVER, input.supportsConversationRollback);
@@ -453,7 +456,7 @@ function makeProviderServiceLayer(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
-        Layer.provide(serverConfigTestLayer),
+        Layer.provide(input.configLayer ?? serverConfigTestLayer),
         Layer.provideMerge(input.analyticsLayer ?? AnalyticsService.layerTest),
         Layer.provide(
           Layer.succeed(
@@ -463,7 +466,7 @@ function makeProviderServiceLayer(
         ),
       ),
       directoryLayer,
-
+      input.configLayer ?? serverConfigTestLayer,
       runtimeRepositoryLayer,
       NodeServices.layer,
     ),
@@ -5032,3 +5035,213 @@ handoffRouting.layer("ProviderService handoff execution fence", (it) => {
     }),
   );
 });
+
+for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", "antigravity"]) {
+  const driver = ProviderDriverKind.make(driverName);
+  const instanceId = ProviderInstanceId.make(driverName);
+  const adapter = makeFakeCodexAdapter(driver);
+  const contextFixture = makeProviderServiceLayer({
+    registry: makeStaticInstanceRegistry([[instanceId, adapter.adapter]]),
+    configLayer: ServerConfig.layerTest(process.cwd(), { prefix: `context-${driverName}-` }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
+  });
+  contextFixture.layer(`Conversation context admission: ${driverName}`, (it) => {
+    const prepare = Effect.fnUntraced(function* (suffix: string) {
+      const threadId = asThreadId(`context-${driverName}-${suffix}`);
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const config = yield* ServerConfig.ServerConfig;
+      const events: readonly OrchestrationEvent[] = [
+        {
+          sequence: 1,
+          eventId: asEventId(`${threadId}-creation`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-09-08T12:00:00.000Z",
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "thread.created",
+          payload: {
+            threadId,
+            projectId: ProjectId.make("context-project"),
+            title: "Complete prior history",
+            modelSelection: { instanceId: codexInstanceId, model: "original-model" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: "feature/context",
+            worktreePath: "/Users/source/project",
+            createdAt: "2026-09-08T12:00:00.000Z",
+            updatedAt: "2026-09-08T12:00:00.000Z",
+          },
+        },
+      ];
+      const context = yield* Effect.promise(() =>
+        installConversationHandoffContext({
+          stateDir: config.stateDir,
+          handoffId: ThreadHandoffId.make(`${threadId}-handoff`),
+          threadId,
+          providerInstanceId: instanceId,
+          events,
+        }),
+      );
+      yield* provider.startSession(threadId, {
+        threadId,
+        providerInstanceId: instanceId,
+        runtimeMode: "full-access",
+      });
+      yield* directory.upsert({
+        threadId,
+        provider: driver,
+        providerInstanceId: instanceId,
+        status: "running",
+        runtimePayload: { handoffContext: context },
+      });
+      return { threadId, provider, directory, context, events };
+    });
+
+    it.effect(
+      "delivers all historical events on the next real request and consumes only after admission",
+      () =>
+        Effect.gen(function* () {
+          const f = yield* prepare("success");
+          const request = { threadId: f.threadId, input: "Run the requested tests" };
+          adapter.sendTurn.mockClear();
+          yield* f.provider.sendTurn(request);
+          const received = adapter.sendTurn.mock.calls[0]?.[0].input ?? "";
+          assert.include(received, encodeJson(f.events));
+          assert.include(received, "Current user request:\nRun the requested tests");
+          assert.deepEqual(request, { threadId: f.threadId, input: "Run the requested tests" });
+          const binding = Option.getOrThrow(yield* f.directory.getBinding(f.threadId));
+          assert.propertyVal(binding.runtimePayload, "handoffContext", null);
+          yield* f.provider.sendTurn({ threadId: f.threadId, input: "Next request" });
+          assert.equal(adapter.sendTurn.mock.calls[1]?.[0].input, "Next request");
+        }),
+    );
+
+    it.effect("retains context after failed admission and rejects promptless continuation", () =>
+      Effect.gen(function* () {
+        const f = yield* prepare("retry");
+        adapter.sendTurn.mockClear();
+        const noInput = yield* Effect.flip(
+          f.provider.sendTurn({ threadId: f.threadId, continuation: true }),
+        );
+        assert.instanceOf(noInput, ProviderValidationError);
+        assert.equal(adapter.sendTurn.mock.calls.length, 0);
+        adapter.sendTurn.mockImplementationOnce(() =>
+          Effect.fail(
+            new ProviderAdapterRequestError({
+              provider: driver,
+              method: "sendTurn",
+              detail: "Admission rejected",
+            }),
+          ),
+        );
+        yield* Effect.flip(f.provider.sendTurn({ threadId: f.threadId, input: "Try first" }));
+        const binding = Option.getOrThrow(yield* f.directory.getBinding(f.threadId));
+        assert.deepPropertyVal(binding.runtimePayload, "handoffContext", f.context);
+        yield* f.provider.sendTurn({ threadId: f.threadId, input: "Retry now" });
+        assert.include(adapter.sendTurn.mock.calls[1]?.[0].input ?? "", encodeJson(f.events));
+      }),
+    );
+
+    it.effect("rejects context for another instance before adapter admission", () =>
+      Effect.gen(function* () {
+        const f = yield* prepare("foreign");
+        yield* f.directory.upsert({
+          threadId: f.threadId,
+          provider: driver,
+          providerInstanceId: instanceId,
+          status: "running",
+          runtimePayload: {
+            handoffContext: {
+              ...f.context,
+              providerInstanceId: ProviderInstanceId.make("foreign"),
+            },
+          },
+        });
+        adapter.sendTurn.mockClear();
+        const failure = yield* Effect.flip(
+          f.provider.sendTurn({ threadId: f.threadId, input: "Run" }),
+        );
+        assert.instanceOf(failure, ProviderValidationError);
+        assert.include(failure.issue, "another thread or provider instance");
+        assert.equal(adapter.sendTurn.mock.calls.length, 0);
+      }),
+    );
+
+    it.effect(
+      "recovers a fresh context session without a native cursor but refuses ordinary cursor loss",
+      () =>
+        Effect.gen(function* () {
+          const f = yield* prepare("restart");
+          yield* adapter.adapter.stopSession(f.threadId);
+          yield* f.directory.upsert({
+            threadId: f.threadId,
+            provider: driver,
+            providerInstanceId: instanceId,
+            status: "running",
+            resumeCursor: null,
+          });
+          adapter.startSession.mockClear();
+          yield* f.provider.sendTurn({ threadId: f.threadId, input: "Continue after restart" });
+          assert.equal(adapter.startSession.mock.calls.length, 1);
+          assert.equal(adapter.startSession.mock.calls[0]?.[0].resumeCursor, undefined);
+          yield* adapter.adapter.stopSession(f.threadId);
+          yield* f.directory.upsert({
+            threadId: f.threadId,
+            provider: driver,
+            providerInstanceId: instanceId,
+            status: "running",
+            resumeCursor: null,
+          });
+          const failure = yield* Effect.flip(
+            f.provider.sendTurn({ threadId: f.threadId, input: "No context remains" }),
+          );
+          assert.instanceOf(failure, ProviderValidationError);
+          assert.include(failure.issue, "no provider resume state");
+        }),
+    );
+
+    it.effect("serializes simultaneous initial admissions without duplicating history", () =>
+      Effect.gen(function* () {
+        const f = yield* prepare("concurrent");
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        adapter.sendTurn.mockClear();
+        adapter.sendTurn.mockImplementationOnce((input) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(release);
+            return { threadId: input.threadId, turnId: asTurnId("first-admitted") };
+          }),
+        );
+        const first = yield* Effect.forkChild(
+          f.provider.sendTurn({ threadId: f.threadId, input: "First" }),
+        );
+        yield* Deferred.await(entered);
+        const observedPending = yield* Deferred.make<void>();
+        const originalGetBinding = f.directory.getBinding;
+        const pendingRead = vi
+          .spyOn(f.directory, "getBinding")
+          .mockImplementation((id) =>
+            originalGetBinding(id).pipe(
+              Effect.tap(() => Deferred.succeed(observedPending, undefined)),
+            ),
+          );
+        const second = yield* Effect.forkChild(
+          f.provider.sendTurn({ threadId: f.threadId, input: "Second" }),
+        );
+        yield* Deferred.await(observedPending);
+        pendingRead.mockRestore();
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+        assert.include(adapter.sendTurn.mock.calls[0]?.[0].input ?? "", encodeJson(f.events));
+        assert.equal(adapter.sendTurn.mock.calls[1]?.[0].input, "Second");
+      }),
+    );
+  });
+}

@@ -233,6 +233,10 @@ export async function runThreadHandoff(
     if (
       verifiedDestination.environmentId !== requestedDestination.environmentId ||
       verifiedDestination.providerInstanceId !== requestedDestination.providerInstanceId ||
+      (verifiedDestination.transferMode ?? "native") !==
+        (requestedDestination.transferMode ?? "native") ||
+      JSON.stringify(verifiedDestination.modelSelection) !==
+        JSON.stringify(requestedDestination.modelSelection) ||
       verifiedDestination.source.owner.threadId !== source.owner.threadId ||
       verifiedDestination.source.owner.environmentId !== source.owner.environmentId ||
       verifiedDestination.source.owner.generation !== source.owner.generation ||
@@ -296,7 +300,12 @@ export async function runThreadHandoff(
       manifest.owner.environmentId !== input.sourceEnvironmentId ||
       manifest.owner.generation !== source.owner.generation ||
       manifest.destinationEnvironmentId !== destination.environmentId ||
-      manifest.provider.sessionId !== source.sessionId
+      manifest.provider.driver !== source.driver ||
+      manifest.provider.mode !== (destination.transferMode ?? "native") ||
+      (manifest.provider.mode === "native" &&
+        (!source.sessionId || manifest.provider.sessionId !== source.sessionId)) ||
+      (manifest.provider.mode === "context" &&
+        (manifest.provider.sessionId !== undefined || manifest.provider.resumeCursor !== undefined))
     )
       throw error("verificationFailed", "Source manifest does not match the requested handoff.");
     checkCancellation();
@@ -371,7 +380,9 @@ export async function runThreadHandoff(
     if (
       receipt.handoffId !== input.handoffId ||
       receipt.environmentId !== destination.environmentId ||
-      receipt.sessionId !== source.sessionId
+      ((destination.transferMode ?? "native") === "native"
+        ? !source.sessionId || receipt.sessionId !== source.sessionId
+        : receipt.sessionId !== undefined)
     )
       throw error("verificationFailed", "Destination receipt belongs to a different handoff.");
     report(context, "ready");
