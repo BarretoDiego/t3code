@@ -26,6 +26,7 @@ import {
   ProviderInstanceId,
   ProviderSessionStartInput,
   ThreadId,
+  ThreadHandoffId,
   TurnId,
 } from "@t3tools/contracts";
 import {
@@ -51,6 +52,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { makeHandoffJournal } from "../../handoff/HandoffJournal.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -437,7 +439,7 @@ function makeProviderServiceLayer(
     registry,
   );
   const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
   );
   const directoryLayer =
     input.directory === undefined
@@ -4954,5 +4956,79 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, threadId, true);
       assert.deepEqual(issued, [threadId]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+const handoffRouting = makeProviderServiceLayer();
+handoffRouting.layer("ProviderService handoff execution fence", (it) => {
+  it.effect("blocks native starts, recovery, turns and approvals while preserving safe stop", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const journal = yield* makeHandoffJournal;
+      const threadId = asThreadId("handoff-native-fence");
+      const startInput = {
+        threadId,
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access" as const,
+        cwd: fixtureCwd("handoff-native-fence"),
+      };
+      yield* provider.startSession(threadId, startInput);
+      const record = yield* journal.begin({
+        handoffId: ThreadHandoffId.make("provider-fence"),
+        owner: { threadId, environmentId: EnvironmentId.make("source"), generation: 0 },
+        destinationEnvironmentId: EnvironmentId.make("destination"),
+        phase: "preflighting",
+        revision: 0,
+        createdAt: "2026-09-08T00:00:00.000Z",
+        updatedAt: "2026-09-08T00:00:00.000Z",
+        failure: null,
+      });
+      let current = yield* journal.advance({
+        handoffId: record.handoffId,
+        expectedRevision: 0,
+        phase: "pausing",
+        updatedAt: record.updatedAt,
+      });
+      for (const operation of [
+        provider.startSession(threadId, startInput).pipe(Effect.asVoid),
+        provider.sendTurn({ threadId, input: "must not run" }).pipe(Effect.asVoid),
+        provider.compactThread(threadId),
+        provider.respondToRequest({
+          threadId,
+          requestId: asRequestId("approval"),
+          decision: "accept",
+        }),
+      ]) {
+        const error = yield* Effect.flip(operation);
+        assert.instanceOf(error, ProviderValidationError);
+        assert.match(error.message, /frozen/);
+      }
+      yield* provider.stopSession({ threadId });
+      handoffRouting.codex.startSession.mockClear();
+      const recovery = yield* Effect.flip(provider.interruptTurn({ threadId }));
+      assert.instanceOf(recovery, ProviderValidationError);
+      assert.equal(handoffRouting.codex.startSession.mock.calls.length, 0);
+      for (const phase of [
+        "checkpointing",
+        "syncingProjects",
+        "transferringSession",
+        "verifying",
+        "ready",
+        "committed",
+        "completed",
+      ] as const) {
+        current = yield* journal.advance({
+          handoffId: record.handoffId,
+          expectedRevision: current.revision,
+          phase,
+          updatedAt: record.updatedAt,
+        });
+      }
+      const stale = yield* Effect.flip(provider.startSession(threadId, startInput));
+      assert.instanceOf(stale, ProviderValidationError);
+      assert.match(stale.message, /belongs to destination/);
+      assert.equal(handoffRouting.codex.startSession.mock.calls.length, 0);
+    }),
   );
 });

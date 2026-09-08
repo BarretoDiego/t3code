@@ -106,6 +106,7 @@ import * as SourceControlRepositoryService from "./sourceControl/SourceControlRe
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import * as ThreadHandoffRuntime from "./handoff/ThreadHandoffService.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -307,7 +308,7 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // NDJSON writers and is provided at the outer runtime layer so both
 // `ProviderService` and the per-instance drivers read the same logger pair.
 const ProviderLayerLive = ProviderServiceLive.pipe(
-  Layer.provide(ProviderAdapterRegistryLive),
+  Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 
@@ -529,7 +530,8 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   ),
 );
 
-const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
+const RuntimeDependenciesLive = ThreadHandoffRuntime.layer.pipe(
+  Layer.provideMerge(RuntimeCoreDependenciesLive),
   // Misc.
   Layer.provideMerge(BackgroundLayerLive),
   Layer.provideMerge(ResourceDiagnosticsLayerLive),

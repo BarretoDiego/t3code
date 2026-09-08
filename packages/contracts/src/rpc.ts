@@ -16,7 +16,7 @@ import {
   RemotePullRequestMergeInput,
   PullRequestRevisions,
 } from "./sourceControlHub.ts";
-import { ProjectId } from "./baseSchemas.ts";
+import { ProjectId, ThreadId } from "./baseSchemas.ts";
 import {
   SourceControlAccount,
   SourceControlAccountSaveInput,
@@ -226,6 +226,8 @@ import {
   ProjectSyncManifestInput,
   ProjectSyncManifestResult,
 } from "./projectSync.ts";
+import { ThreadHandoffRequest, ThreadHandoffResponse } from "./threadHandoffRpc.ts";
+import { ThreadHandoffError, ThreadHandoffRecord } from "./threadHandoff.ts";
 import {
   TerminalAttachInput,
   TerminalAttachStreamEvent,
@@ -379,6 +381,8 @@ export const WS_METHODS = {
   projectSyncCreateExportUrl: "projectSync.createExportUrl",
   projectSyncCreateImportUrl: "projectSync.createImportUrl",
   projectSyncApplyDeletions: "projectSync.applyDeletions",
+  threadHandoffRequest: "threadHandoff.request",
+  threadHandoffWatch: "threadHandoff.watch",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -1255,6 +1259,18 @@ export const WsProjectSyncManifestRpc = Rpc.make(WS_METHODS.projectSyncManifest,
   success: ProjectSyncManifestResult,
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
 });
+export const WsThreadHandoffWatchRpc = Rpc.make(WS_METHODS.threadHandoffWatch, {
+  payload: Schema.Struct({ threadId: ThreadId }),
+  success: Schema.NullOr(ThreadHandoffRecord),
+  error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsThreadHandoffRpc = Rpc.make(WS_METHODS.threadHandoffRequest, {
+  payload: ThreadHandoffRequest,
+  success: ThreadHandoffResponse,
+  error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
+});
 
 export const WsProjectSyncCreateExportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateExportUrl, {
   payload: ProjectSyncCreateExportUrlInput,
@@ -1770,6 +1786,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsProjectSyncManifestRpc,
+  WsThreadHandoffRpc,
+  WsThreadHandoffWatchRpc,
   WsProjectSyncCreateExportUrlRpc,
   WsProjectSyncCreateImportUrlRpc,
   WsProjectSyncApplyDeletionsRpc,

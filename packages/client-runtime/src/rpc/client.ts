@@ -40,6 +40,7 @@ export type EnvironmentRpcTag = keyof WsRpcProtocolClient & string;
 type RpcMethod<TTag extends EnvironmentRpcTag> = WsRpcProtocolClient[TTag];
 
 export type EnvironmentSubscriptionRpcTag =
+  | typeof WS_METHODS.threadHandoffWatch
   | typeof WS_METHODS.computeSubscribe
   | typeof WS_METHODS.computeEventsSubscribe
   | typeof WS_METHODS.sourceControlHubReviewSubscribe

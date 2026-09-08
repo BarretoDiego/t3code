@@ -1,3 +1,4 @@
+import { assertExecutionOwner, committedOwner } from "../../handoff/lifecycle.ts";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -43,7 +44,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
+import { makeBarrierStream } from "@t3tools/shared/BarrierStream";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -482,7 +483,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const revokeMcpCredential =
     options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
   const fileSystem = yield* FileSystem.FileSystem;
-  const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventPubSub = yield* makeBarrierStream<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
   const timedOutNativeCompactions = new Set<ThreadId>();
   const settleCompaction = (threadId: ThreadId, pending: PendingCompaction, terminal: string) =>
@@ -920,7 +921,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? canonicalEventLogger.write(canonicalEvent, canonicalEvent.threadId)
           : Effect.void,
       ),
-      Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
+      Effect.flatMap((canonicalEvent) => runtimeEventPubSub.publish(canonicalEvent)),
       Effect.asVoid,
     );
 
@@ -1146,10 +1147,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     () => reconcileInstanceSubscriptions,
   ).pipe(Effect.forkScoped);
 
+  const assertBindingExecutionOwner = (
+    binding: ProviderSessionDirectory.ProviderRuntimeBinding | undefined,
+    operation: string,
+  ) =>
+    Effect.try({
+      try: () => {
+        const fence = binding?.executionFence;
+        if (fence)
+          assertExecutionOwner({
+            record: fence,
+            environmentId: fence.localEnvironmentId ?? fence.owner.environmentId,
+            generation: committedOwner(fence).generation,
+          });
+      },
+      catch: (cause) =>
+        toValidationError(
+          operation,
+          cause instanceof Error ? cause.message : "Thread execution is fenced by handoff.",
+        ),
+    });
+
   const recoverSessionForThread = Effect.fn("recoverSessionForThread")(function* (input: {
     readonly binding: ProviderSessionDirectory.ProviderRuntimeBinding;
     readonly operation: string;
   }) {
+    yield* assertBindingExecutionOwner(input.binding, input.operation);
     const bindingInstanceId = yield* requireBindingInstanceId(input.operation, input.binding);
     yield* Effect.annotateCurrentSpan({
       "provider.operation": "recover-session",
@@ -1244,6 +1267,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         `Cannot route thread '${input.threadId}' because no persisted provider binding exists.`,
       );
     }
+    // Stop/interrupt may settle an already running source, but the recovery
+    // path below still forbids creating a new process while it is fenced.
+    if (
+      input.operation !== "ProviderService.stopSession" &&
+      input.operation !== "ProviderService.interruptTurn"
+    )
+      yield* assertBindingExecutionOwner(binding, input.operation);
     const instanceId = yield* requireBindingInstanceId(input.operation, binding);
     const adapter = yield* registry.getByInstance(instanceId);
 
@@ -1357,6 +1387,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           );
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+        yield* assertBindingExecutionOwner(persistedBinding, "ProviderService.startSession");
         if (
           persistedBinding?.provider === resolvedProvider &&
           persistedBinding.providerInstanceId !== resolvedInstanceId &&
@@ -1495,6 +1526,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       payload: rawInput,
     });
 
+    const binding = Option.getOrUndefined(yield* directory.getBinding(parsed.threadId));
+    yield* assertBindingExecutionOwner(binding, "ProviderService.sendTurn");
     const attachments = parsed.attachments ?? [];
     if (!parsed.input && attachments.length === 0 && parsed.continuation !== true) {
       return yield* toValidationError(
@@ -2290,11 +2323,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     assertConversationRollbackSupported,
     rollbackConversation,
     uploadFeedback,
+    subscribeHandoffEvents: runtimeEventPubSub.subscribe,
+    flushEvents: runtimeEventPubSub.flush,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
     // independently receive all runtime events.
     get streamEvents(): ProviderServiceMethod<"streamEvents"> {
-      return Stream.fromPubSub(runtimeEventPubSub);
+      return runtimeEventPubSub.stream;
     },
   } satisfies ProviderService.ProviderService["Service"];
 });

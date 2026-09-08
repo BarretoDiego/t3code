@@ -158,6 +158,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       servers from before project sync shipped, so clients must not offer the
       sync flow or probe these RPCs under version skew. */
   projectSync: Schema.optionalKey(Schema.Boolean),
+  /** Native handoff transaction and private Project Sync staging RPCs. */
+  threadHandoff: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

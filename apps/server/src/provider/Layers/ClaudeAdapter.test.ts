@@ -19,6 +19,7 @@ import {
   ProviderRuntimeEvent,
   type RuntimeMode,
   ThreadId,
+  ThreadHandoffError,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -37,6 +38,11 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { makeClaudeSessionHandoffDriver } from "../../handoff/ClaudeSessionHandoff.ts";
+import {
+  installTransferredClaudeSession,
+  exportTransferredClaudeSession,
+} from "../../handoff/TransferredClaudeSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
@@ -49,6 +55,7 @@ import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+const isThreadHandoffError = Schema.is(ThreadHandoffError);
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -58,6 +65,9 @@ class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()
 ) {}
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
+  async initializationResult(): Promise<unknown> {
+    return {};
+  }
   private readonly queue: Array<SDKMessage> = [];
   private readonly waiters: Array<{
     readonly resolve: (value: IteratorResult<SDKMessage>) => void;
@@ -70,6 +80,11 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
   public closeCalls = 0;
+  public disposeBarrier: (() => Promise<void>) | undefined;
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.disposeBarrier?.();
+    this.close();
+  }
   public closeError: unknown | undefined;
 
   emit(message: SDKMessage): void {
@@ -6110,6 +6125,172 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect(
+    "resumes transferred native history through the SDK store with the same session ID",
+    () => {
+      const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-handoff-adapter-"));
+      const harness = makeHarness({ cwd: root, baseDir: root });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const serverConfig = yield* ServerConfig;
+        const sessionId = "550e8400-e29b-41d4-a716-446655440000";
+        const entries = [
+          { type: "system", subtype: "compact_boundary", uuid: "native-compaction" },
+        ];
+        yield* Effect.promise(async () => {
+          const inputDirectory = NodePath.join(root, "snapshot");
+          const driver = makeClaudeSessionHandoffDriver(async (id, store) => {
+            await store.append({ projectKey: "source", sessionId: id }, entries);
+          });
+          const snapshot = await driver.checkpoint({
+            sessionId,
+            cwd: root,
+            outputDirectory: inputDirectory,
+          });
+          await installTransferredClaudeSession({
+            stateDir: serverConfig.stateDir,
+            threadId: RESUME_THREAD_ID,
+            snapshot,
+            inputDirectory,
+          });
+        });
+        yield* adapter.startSession({
+          threadId: RESUME_THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          resumeCursor: { resume: sessionId },
+          runtimeMode: "full-access",
+        });
+        const options = harness.getLastCreateQueryInput()?.options;
+        assert.equal(options?.resume, sessionId);
+        assert.equal(options?.sessionId, undefined);
+        assert.isDefined(options?.sessionStore);
+        const native = yield* Effect.promise(() =>
+          options!.sessionStore!.load({ projectKey: "destination", sessionId }),
+        );
+        assert.deepEqual(native, entries);
+        harness.query.disposeBarrier = async () => {
+          throw new Error("native flush failed");
+        };
+        const failedStop = yield* adapter.stopSession(RESUME_THREAD_ID).pipe(Effect.result);
+        assert.equal(failedStop._tag, "Failure");
+        assert.equal((yield* adapter.listSessions()).length, 1);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        harness.query.disposeBarrier = () => {
+          entered.resolve();
+          return release.promise;
+        };
+        const stopFiber = yield* adapter.stopSession(RESUME_THREAD_ID).pipe(Effect.forkChild);
+        yield* Effect.promise(() => entered.promise);
+        assert.equal((yield* adapter.listSessions()).length, 1);
+        assert.equal(harness.query.closeCalls, 0);
+        release.resolve();
+        yield* Fiber.join(stopFiber);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
+      );
+    },
+  );
+
+  for (const failureKind of ["sessionMismatch", "mirrorError"] as const) {
+    it.effect(
+      `quarantines transferred native history on ${failureKind} and closes execution`,
+      () => {
+        const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-handoff-failure-"));
+        const harness = makeHarness({ cwd: root, baseDir: root });
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          const config = yield* ServerConfig;
+          const sessionId = "550e8400-e29b-41d4-a716-446655440000";
+          const wrongSessionId = "22222222-2222-4222-8222-222222222222";
+          yield* Effect.promise(async () => {
+            const inputDirectory = NodePath.join(root, "snapshot");
+            const driver = makeClaudeSessionHandoffDriver(async (id, store) => {
+              await store.append({ projectKey: "source", sessionId: id }, [
+                { type: "system", uuid: "native-original" },
+              ]);
+            });
+            const snapshot = await driver.checkpoint({
+              sessionId,
+              cwd: root,
+              outputDirectory: inputDirectory,
+            });
+            await installTransferredClaudeSession({
+              stateDir: config.stateDir,
+              threadId: RESUME_THREAD_ID,
+              snapshot,
+              inputDirectory,
+            });
+          });
+          const eventsFiber = yield* adapter.streamEvents.pipe(
+            Stream.takeUntil((event) => event.type === "session.exited"),
+            Stream.runCollect,
+            Effect.forkChild,
+          );
+          yield* adapter.startSession({
+            threadId: RESUME_THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            resumeCursor: { resume: sessionId },
+            runtimeMode: "full-access",
+          });
+          harness.query.emit(
+            failureKind === "sessionMismatch"
+              ? ({
+                  type: "system",
+                  subtype: "init",
+                  session_id: wrongSessionId,
+                  uuid: "wrong-native-session",
+                } as unknown as SDKMessage)
+              : ({
+                  type: "system",
+                  subtype: "mirror_error",
+                  session_id: sessionId,
+                  uuid: "550e8400-e29b-41d4-a716-446655440001",
+                  error: "disk unavailable",
+                  key: { projectKey: "destination", sessionId },
+                } as SDKMessage),
+          );
+          const events = Array.from(yield* Fiber.join(eventsFiber));
+          assert.isAtLeast(harness.query.closeCalls, 1);
+          assert.deepEqual(yield* adapter.listSessions(), []);
+          assert.isTrue(events.some((event) => event.type === "runtime.error"));
+          assert.isFalse(
+            events.some(
+              (event) =>
+                event.type === "thread.started" &&
+                event.payload.providerThreadId === wrongSessionId,
+            ),
+          );
+          assert.isFalse(events.some((event) => JSON.stringify(event).includes(wrongSessionId)));
+          const exported = yield* Effect.tryPromise({
+            try: () =>
+              exportTransferredClaudeSession({
+                stateDir: config.stateDir,
+                threadId: RESUME_THREAD_ID,
+                sessionId,
+                outputDirectory: NodePath.join(root, "must-not-export"),
+              }),
+            catch: (cause) =>
+              isThreadHandoffError(cause)
+                ? cause
+                : new ThreadHandoffError({
+                    code: "transferFailed",
+                    message: "Native export failed unexpectedly.",
+                  }),
+          }).pipe(Effect.result);
+          assert.equal(exported._tag, "Failure");
+          if (exported._tag === "Failure")
+            assert.propertyVal(exported.failure, "code", "recoveryRequired");
+        }).pipe(
+          Effect.provide(harness.layer),
+          Effect.ensuring(Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true }))),
+        );
+      },
+    );
+  }
 
   it.effect("preserves durable resume ids across Claude resume hooks", () => {
     const harness = makeHarness();

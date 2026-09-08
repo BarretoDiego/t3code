@@ -5,6 +5,7 @@ import type {
   ProviderSessionRuntimeStatus,
   RuntimeMode,
   ThreadId,
+  ThreadHandoffRecord,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
@@ -29,6 +30,8 @@ export interface ProviderRuntimeBinding {
   readonly resumeCursor?: unknown | null;
   readonly runtimePayload?: unknown | null;
   readonly runtimeMode?: RuntimeMode;
+  /** Derived from the local durable handoff journal, never copied from native provider state. */
+  readonly executionFence?: ThreadHandoffRecord;
 }
 
 export interface ProviderRuntimeBindingWithMetadata extends ProviderRuntimeBinding {

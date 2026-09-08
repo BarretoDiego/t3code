@@ -87,3 +87,10 @@ it("separates Hub reads, review execution, publication and manual merge", () => 
     AuthOrchestrationOperateScope,
   );
 });
+
+it("allows handoff observation without granting execution transfer permission", () => {
+  expect(requiredScopeForRpcMethod(WS_METHODS.threadHandoffWatch)).toBe(AuthOrchestrationReadScope);
+  expect(requiredScopeForRpcMethod(WS_METHODS.threadHandoffRequest)).toBe(
+    AuthOrchestrationOperateScope,
+  );
+});

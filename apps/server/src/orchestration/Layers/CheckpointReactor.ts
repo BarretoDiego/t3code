@@ -930,8 +930,14 @@ const make = Effect.gen(function* () {
   const worker = yield* makeDrainableWorker(processInputSafely);
 
   const start: CheckpointReactorShape["start"] = Effect.fn("start")(function* () {
+    const runtimeEvents = providerService.subscribeHandoffEvents
+      ? yield* providerService.subscribeHandoffEvents
+      : providerService.streamEvents;
+    const domainEvents = orchestrationEngine.subscribeHandoffEvents
+      ? yield* orchestrationEngine.subscribeHandoffEvents
+      : orchestrationEngine.streamDomainEvents;
     yield* forkParked(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+      Stream.runForEach(domainEvents, (event) => {
         if (
           event.type !== "thread.turn-start-requested" &&
           event.type !== "thread.message-sent" &&
@@ -944,7 +950,7 @@ const make = Effect.gen(function* () {
     );
 
     yield* forkParked(
-      Stream.runForEach(providerService.streamEvents, (event) => {
+      Stream.runForEach(runtimeEvents, (event) => {
         if (
           event.type !== "turn.started" &&
           event.type !== "turn.completed" &&

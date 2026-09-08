@@ -15,6 +15,7 @@ import type {
   OrchestrationCommand,
   OrchestrationEvent,
   ThreadId,
+  ThreadHandoffRecord,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -24,6 +25,7 @@ import type * as Stream from "effect/Stream";
 import type { OrchestrationDispatchError } from "../Errors.ts";
 import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
 import type { OrchestrationAggregateReplayStats } from "../../persistence/Services/OrchestrationEventStore.ts";
+import type { ProviderSessionRuntime } from "../../persistence/ProviderSessionRuntime.ts";
 
 export interface OrchestrationThreadReplayRange {
   readonly threadId: ThreadId;
@@ -75,12 +77,29 @@ export interface OrchestrationEngineShape {
     options?: { readonly origin?: OrchestrationClientOrigin },
   ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
 
+  /** Restore transferred history without replaying provider or checkpoint side effects. */
+  readonly importHandoffEvents?: (input: {
+    readonly threadId: ThreadId;
+    readonly events: ReadonlyArray<OrchestrationEvent>;
+    readonly handoff?: {
+      readonly record: ThreadHandoffRecord;
+      readonly runtime: ProviderSessionRuntime;
+    };
+  }) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError>;
+
   /**
    * Stream persisted domain events in dispatch order.
    *
    * This is a hot runtime stream (new events only), not a historical replay.
    */
   readonly streamDomainEvents: Stream.Stream<OrchestrationEvent>;
+  /** Reactor-only delivery barrier. Flush before draining downstream workers. */
+  readonly subscribeHandoffEvents?: Effect.Effect<
+    Stream.Stream<OrchestrationEvent>,
+    never,
+    Scope.Scope
+  >;
+  readonly flushEvents?: Effect.Effect<void>;
 
   /**
    * Acquire a domain-event subscription before starting a consumer.

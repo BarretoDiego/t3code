@@ -1,3 +1,8 @@
+import {
+  ThreadHandoffSheet,
+  useThreadHandoffWatch,
+  threadHandoffPhaseLabels,
+} from "./ThreadHandoffSheet";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
@@ -22,7 +27,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
@@ -32,6 +37,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
 
+import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import {
   AndroidScreenHeader,
@@ -201,7 +207,7 @@ function ThreadRouteContent(
     toggleAuxiliaryPane,
     togglePrimarySidebar,
   } = useAdaptiveWorkspaceLayout();
-  const { connectionState } = useRemoteConnectionStatus();
+  const { connectionState, connectedEnvironments } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
   const {
     selectedThread,
@@ -300,6 +306,32 @@ function ThreadRouteContent(
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeConnectionError = routeEnvironmentRuntime?.connectionError ?? null;
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const handoffSupported =
+    selectedThreadCreation === null &&
+    selectedThread !== null &&
+    routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadHandoff === true &&
+    routeEnvironmentRuntime.serverConfig.providers.some(
+      (provider) =>
+        provider.instanceId === selectedThread.modelSelection.instanceId &&
+        provider.supportsSessionHandoff === true,
+    );
+
+  const handoffWatch = useThreadHandoffWatch(
+    routeEnvironmentRuntime?.serverConfig?.environment.capabilities.threadHandoff === true
+      ? environmentId
+      : null,
+    selectedThread?.id ?? null,
+  );
+  const handoffRecord = handoffWatch.data;
+  const handoffCommitted =
+    handoffRecord?.phase === "committed" || handoffRecord?.phase === "completed";
+  const executionEnvironmentId = handoffCommitted
+    ? handoffRecord.destinationEnvironmentId
+    : environmentId;
+  const executionEnvironmentLabel =
+    connectedEnvironments.find((item) => item.environmentId === executionEnvironmentId)
+      ?.environmentLabel ?? executionEnvironmentId;
   const selectedThreadWithDraftSettings = useMemo(
     () =>
       selectedThread
@@ -704,6 +736,12 @@ function ThreadRouteContent(
     if (Platform.OS !== "android") return [];
 
     const actions: AndroidHeaderAction[] = [];
+    if (handoffSupported)
+      actions.push({
+        accessibilityLabel: "Continue on…",
+        icon: "arrow.right",
+        onPress: () => setHandoffOpen(true),
+      });
     if (props.onReturnToThread) {
       actions.push({
         accessibilityLabel: "Return to chat",
@@ -739,6 +777,7 @@ function ThreadRouteContent(
     }
     return actions;
   }, [
+    handoffSupported,
     fileInspector.supported,
     handleOpenFilesInspector,
     handleOpenTerminal,
@@ -896,6 +935,22 @@ function ThreadRouteContent(
 
   return (
     <>
+      {handoffOpen ? (
+        <ThreadHandoffSheet
+          environmentId={selectedThread.environmentId}
+          threadId={selectedThread.id}
+          onClose={() => setHandoffOpen(false)}
+          onComplete={(destinationEnvironmentId) => {
+            setHandoffOpen(false);
+            navigation.dispatch(
+              StackActions.replace("Thread", {
+                environmentId: destinationEnvironmentId,
+                threadId: selectedThread.id,
+              }),
+            );
+          }}
+        />
+      ) : null}
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
       <NativeStackScreenOptions
         optionsVersion={threadGitControlProps.projectScripts}
@@ -928,7 +983,20 @@ function ThreadRouteContent(
           // reserved for future breadcrumbs/status).
           unstable_headerRightItems:
             Platform.OS === "ios"
-              ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
+              ? () => [
+                  ...(layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems),
+                  ...(handoffSupported
+                    ? [
+                        withNativeGlassHeaderItem({
+                          type: "button" as const,
+                          identifier: "thread-handoff",
+                          accessibilityLabel: "Continue on…",
+                          icon: { name: "arrow.right", type: "sfSymbol" as const },
+                          onPress: () => setHandoffOpen(true),
+                        }),
+                      ]
+                    : []),
+                ]
               : undefined,
           unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
         }}
@@ -943,6 +1011,36 @@ function ThreadRouteContent(
         />
       ) : null}
 
+      <View className="bg-screen px-4 py-2">
+        <Text className="text-muted-foreground">
+          Execution environment: {executionEnvironmentLabel}
+        </Text>
+        {handoffRecord ? (
+          <Text accessibilityLiveRegion="polite" className="text-foreground">
+            {threadHandoffPhaseLabels[handoffRecord.phase]} →{" "}
+            {connectedEnvironments.find(
+              (item) => item.environmentId === handoffRecord.destinationEnvironmentId,
+            )?.environmentLabel ?? handoffRecord.destinationEnvironmentId}
+            {handoffRecord.failure ? `: ${handoffRecord.failure}` : ""}
+          </Text>
+        ) : null}
+        {handoffWatch.error ? <Text className="text-destructive">{handoffWatch.error}</Text> : null}
+        {handoffCommitted && executionEnvironmentId !== environmentId ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              navigation.dispatch(
+                StackActions.replace("Thread", {
+                  environmentId: executionEnvironmentId,
+                  threadId: selectedThread.id,
+                }),
+              )
+            }
+          >
+            <Text className="text-primary">Open thread on {executionEnvironmentLabel}</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {/* Android surfaces the git/files/inspector actions in its in-flow
           header above, so the fallback action toolbar stays iOS-only. */}
       {renderThreadRouteBody(

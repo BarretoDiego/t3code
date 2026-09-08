@@ -1,3 +1,4 @@
+import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
@@ -134,6 +135,7 @@ export function useThreadActionMenu(input: {
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+          handoff: canHandoffThread(threadRef),
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -190,6 +192,9 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "continue-on":
+            openThreadHandoff(threadRef);
+            return;
           case "project-settings": {
             const project = projects.find(
               (candidate) =>

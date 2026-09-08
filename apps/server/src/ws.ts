@@ -4,6 +4,8 @@ import { SourceControlHubService } from "./sourceControl/SourceControlHubService
 import { SourceControlAccounts } from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { ComputeService } from "./compute/ComputeService.ts";
+import { ThreadHandoffService } from "./handoff/ThreadHandoffService.ts";
+import { ThreadHandoffError } from "@t3tools/contracts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -2574,6 +2576,34 @@ const makeWsRpcLayer = (
               return { workspaceRoot, entries, generatedAt: yield* nowIso };
             }),
             { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.threadHandoffWatch]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.threadHandoffWatch,
+            Effect.gen(function* () {
+              const service = yield* Effect.serviceOption(ThreadHandoffService);
+              if (Option.isNone(service))
+                return yield* new ThreadHandoffError({
+                  code: "unsupported",
+                  message: "Thread handoff is unavailable on this server.",
+                });
+              return service.value.watch(input.threadId);
+            }),
+            { "rpc.aggregate": "thread" },
+          ),
+        [WS_METHODS.threadHandoffRequest]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.threadHandoffRequest,
+            Effect.gen(function* () {
+              const service = yield* Effect.serviceOption(ThreadHandoffService);
+              if (Option.isNone(service))
+                return yield* new ThreadHandoffError({
+                  code: "unsupported",
+                  message: "Thread handoff is unavailable on this server.",
+                });
+              return yield* service.value.handle(input);
+            }),
+            { "rpc.aggregate": "thread" },
           ),
         [WS_METHODS.projectSyncCreateExportUrl]: (input) =>
           observeRpcEffect(
