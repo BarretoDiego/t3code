@@ -15,6 +15,26 @@ a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
+## Updating an installed desktop app from source
+
+Run `vp run build:install` for stable, `vp run build:install:nightly` for nightly,
+or `vp run build:install:all` for all detected channels. Add `--dry-run` to inspect
+destinations first. These commands build the current checkout, not the latest remote release.
+Close the desktop app before installing; the command does not stop processes or restart services.
+
+Detection uses Linux desktop launchers and common application directories, macOS Applications
+folders and Spotlight, or Windows uninstall registry entries and Programs folders. For a portable,
+custom, or ambiguous installation, pass `--install-path` with its existing application directory,
+macOS `.app`, or Linux AppImage. Package-manager installations (such as Flatpak, Snap, deb/rpm,
+or Homebrew-managed apps) should be updated through their package manager instead.
+The destination's parent must be writable. No privilege escalation is performed by the script.
+
+The shared desktop/server/web build runs once. Directory installs use unpacked artifacts to avoid
+installer compression; channel packaging is sequential because it brands shared build files.
+`--skip-build` reuses existing dist files when only repackaging. Each replacement retains the old
+application at the printed backup path; with the app closed, move the new app aside and move that
+backup back to the original path to roll back. Application data is not migrated or restored by this command.
+
 ## Choosing a dev process
 
 Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
