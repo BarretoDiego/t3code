@@ -142,6 +142,7 @@ function buildHealth(input: {
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(function* () {
   const nativeClient = yield* NativeTelemetryClient.NativeTelemetryClient;
   const desktopReceiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
@@ -491,12 +492,10 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
     validateProcessIdentity,
     retry: nativeClient.retry.pipe(
       Effect.zip(Ref.get(state)),
-      Effect.map(
-        ([accepted, current]): ResourceTelemetryRetryResult => ({
-          accepted,
-          snapshot: current.latest,
-        }),
-      ),
+      Effect.map(([accepted, current]): ResourceTelemetryRetryResult => ({
+        accepted,
+        snapshot: current.latest,
+      })),
     ),
   });
 });

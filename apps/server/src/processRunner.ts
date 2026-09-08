@@ -236,13 +236,11 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
         });
       },
     ),
-    Effect.map(
-      (state): CollectedUint8StreamText => ({
-        ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
-        bytes: state.bytes,
-        truncated: false,
-      }),
-    ),
+    Effect.map((state): CollectedUint8StreamText => ({
+      ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
+      bytes: state.bytes,
+      truncated: false,
+    })),
   );
 });
 
@@ -401,6 +399,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   } satisfies ProcessRunOutput;
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("ProcessRunner.make")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 

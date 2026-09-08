@@ -39,6 +39,7 @@ import {
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
+import { PullRequestMergeMethod } from "./pullRequest.ts";
 
 export const DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT =
   "Review the pull request for actionable correctness, security, performance and testing issues. Explain the impact and cite precise code locations. Use as many findings as the evidence warrants, including none when there are no actionable issues. Avoid duplicate comments and cosmetic nitpicks. Distinguish uncertain claims and verify important findings.";
@@ -473,6 +474,10 @@ export const ClientSettingsSchema = Schema.Struct({
       ),
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  pullRequestMergeMethodOverrides: Schema.Record(
+    TrimmedNonEmptyString,
+    PullRequestMergeMethod,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
@@ -1534,6 +1539,9 @@ export const ClientSettingsPatch = Schema.Struct({
         ),
       }),
     ),
+  ),
+  pullRequestMergeMethodOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   petCompanionMode: Schema.optionalKey(PetCompanionMode),
