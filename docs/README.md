@@ -15,6 +15,7 @@
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Working with multiple threads](./user/thread-workspace.md)
 - [Sync projects between environments](./user/project-sync.md)
+- [SnapShots](./user/snap-shot.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
