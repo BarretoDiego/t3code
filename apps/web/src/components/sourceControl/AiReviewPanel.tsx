@@ -1,3 +1,4 @@
+import { ReviewRunStatus } from "./ReviewRunStatus";
 import { ReviewActivityTimeline } from "./ReviewActivityTimeline";
 import { resolveAgentProfile } from "@t3tools/shared/agentProfiles";
 import { useEffect, useState } from "react";
@@ -70,6 +71,7 @@ export function AiReviewPanel({
   const [preview, setPreview] = useState(false);
   const [summary, setSummary] = useState(true);
   const [pending, setPending] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const start = useAtomCommand(serverEnvironment.sourceControlHubReviewStart);
   const edit = useAtomCommand(serverEnvironment.sourceControlHubReviewEdit);
@@ -123,8 +125,8 @@ export function AiReviewPanel({
   const run =
     matchesUpdate &&
     update.data &&
-    !["draft", "failed", "cancelled"].includes(update.data.stage) &&
-    (!runId || update.data.id === runId)
+    update.data.id === (runId || persistedRun?.id) &&
+    (!persistedRun || update.data.updatedAt >= persistedRun.updatedAt)
       ? update.data
       : persistedRun;
   const needsClone =
@@ -404,10 +406,13 @@ export function AiReviewPanel({
           showLabel
           label="Review history"
           value={run?.id ?? ""}
-          options={history.data.map((run) => ({
-            value: run.id,
-            label: `${run.createdAt.slice(0, 16).replace("T", " ")} · ${run.tier} · ${run.headSha.slice(0, 8)} · ${run.stage}`,
-          }))}
+          options={history.data.map((item) => {
+            const current = item.id === run?.id ? run : item;
+            return {
+              value: current.id,
+              label: `${new Date(current.createdAt).toLocaleString()} · ${current.tier} · ${current.headSha.slice(0, 8)} · ${current.stage}`,
+            };
+          })}
           onChange={(id) => {
             setRunId(id);
             setSelected([]);
@@ -428,12 +433,25 @@ export function AiReviewPanel({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void cancel({ environmentId, input: { id: run.id } })}
+                disabled={cancelling}
+                onClick={() => {
+                  setCancelling(true);
+                  void cancel({ environmentId, input: { id: run.id } })
+                    .then((result) => {
+                      if (result._tag !== "Success")
+                        setError(
+                          "Could not cancel the review. Check the environment connection and retry.",
+                        );
+                      else refreshHistory();
+                    })
+                    .finally(() => setCancelling(false));
+                }}
               >
-                Cancel review
+                {cancelling ? "Cancelling…" : "Cancel review"}
               </Button>
             )}
           </div>
+          <ReviewRunStatus run={run} />
           <ReviewActivityTimeline run={run} />
           {run.warnings.map((warning) => (
             <p key={warning} className="break-words text-xs text-muted-foreground">

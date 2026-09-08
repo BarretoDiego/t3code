@@ -17,7 +17,7 @@ export function ReviewActivityTimeline({ run }: { run: AiReviewRun }) {
           Review agents
         </h3>
         <span className="text-xs text-muted-foreground">
-          {running ? "Live activity" : "Execution history"}
+          {running ? "Provider activity" : "Execution history"}
         </span>
       </header>
       <div className="max-h-[28rem] space-y-1 overflow-auto p-3">
@@ -45,7 +45,7 @@ export function ReviewActivityTimeline({ run }: { run: AiReviewRun }) {
                   />
                 )}
                 <span className="text-muted-foreground">
-                  {active ? "Working" : item.status === "running" ? run.stage : item.status}
+                  {active ? "In progress" : item.status === "running" ? run.stage : item.status}
                 </span>
               </summary>
               <div className="space-y-3 border-t px-3 py-3 text-sm">
@@ -67,14 +67,12 @@ export function ReviewActivityTimeline({ run }: { run: AiReviewRun }) {
                     {(item.kind === "agent" && /^[\s`]*[[{]/.test(item.text)
                       ? "Writing the review draft…"
                       : item.text) ||
-                      (active
-                        ? "The agent is inspecting the supplied context."
-                        : "No public output recorded.")}
+                      (active ? "Waiting for provider output." : "No public output recorded.")}
                   </p>
                 )}
                 {active && (
                   <p className="text-[11px] text-muted-foreground">
-                    Writing a preliminary draft. Findings become selectable after validation.
+                    Draft findings become selectable after validation.
                   </p>
                 )}
               </div>

@@ -306,9 +306,14 @@ export const make = Effect.gen(function* () {
           const onActivity = Effect.fn(function* (event: AiReviewActivity) {
             const id = `${invocation}:${event.id}`;
             const item = { ...event, id, label: event.kind === "agent" ? label : event.label };
-            run = { ...run, activity: foldReviewActivity(run.activity ?? [], item) };
-            liveSnapshots.set(run.id, run);
             const now = yield* Clock.currentTimeMillis;
+            run = {
+              ...run,
+              activity: foldReviewActivity(run.activity ?? [], item),
+              updatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+              durationMs: now - began,
+            };
+            liveSnapshots.set(run.id, run);
             if (now - emittedAt >= 250 || event.status !== "running") {
               emittedAt = now;
               yield* PubSub.publish(changes, run);
@@ -330,17 +335,19 @@ export const make = Effect.gen(function* () {
               ),
             ),
             Effect.onExit((exit) =>
-              onActivity({
-                id: "output",
-                kind: "agent",
-                label,
-                status:
+              Effect.gen(function* () {
+                const status =
                   exit._tag === "Success"
                     ? "completed"
                     : Cause.hasInterruptsOnly(exit.cause)
                       ? "cancelled"
-                      : "failed",
-                text: run.activity?.find((item) => item.id === `${invocation}:output`)?.text ?? "",
+                      : "failed";
+                const rows = (run.activity ?? []).filter(
+                  (item) => item.id.startsWith(`${invocation}:`) && item.status === "running",
+                );
+                for (const item of rows) {
+                  yield* onActivity({ ...item, id: item.id.slice(invocation.length + 1), status });
+                }
               }),
             ),
           );
