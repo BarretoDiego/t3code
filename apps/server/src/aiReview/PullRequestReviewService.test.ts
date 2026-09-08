@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
@@ -164,6 +165,17 @@ it.effect(
                     ],
                   });
                 }).pipe(
+                  Effect.tap(() => TestClock.adjust("1 second")),
+                  Effect.tap(
+                    () =>
+                      input.onActivity?.({
+                        id: "reasoning",
+                        kind: "task",
+                        label: "Reasoning",
+                        status: "running",
+                        text: "Processing review",
+                      }) ?? Effect.void,
+                  ),
                   Effect.tap(
                     () =>
                       input.onActivity?.({
@@ -199,6 +211,8 @@ it.effect(
       const first = yield* Queue.take(completed);
       expect(first.stage).toBe("draft");
       expect(first.headSha).toBe(firstHead);
+      expect(first.durationMs).toBeGreaterThanOrEqual(2000);
+      expect(first.activity?.every((item) => item.status !== "running")).toBe(true);
       expect(first.activity).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: "agent", status: "completed", text: "Public draft" }),
