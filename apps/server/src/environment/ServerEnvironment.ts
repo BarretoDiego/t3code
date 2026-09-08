@@ -232,6 +232,7 @@ export const make = Effect.gen(function* () {
       environmentIcon: true,
       projectSync: true,
       aiRuntimes: true,
+      compute: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {

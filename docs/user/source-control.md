@@ -138,3 +138,9 @@ Use an Atlassian email with an API token, or choose an integration access token 
 ### Reviewer instructions
 
 Customize the default analysis prompt in **Settings → Source Control → AI review → Reviewer instructions**. New runs use these preferences alongside the selected Agent Profile and Mini Skills. The agent determines the number of actionable findings; publication remains a separate, confirmed action. Findings marked **AI analysis · Draft finding** are local suggestions. Open a finding's file to inspect its explanation alongside the diff, then return to the draft to edit, dismiss or publish it.
+
+### Repositories on your devices
+
+Open **Source Control → Repositories → On your devices** to find folders and repositories already associated with T3 projects, grouped by environment. Search by project name or path. Select a checkout to inspect its branch and worktrees, open the project, or switch to its Changes view.
+
+Use **Add existing** for a folder already downloaded on an environment. **Clone repository** opens the existing Git URL workflow: choose the destination environment and confirm the local folder, then T3 clones the repository and opens it as a project. Git uses that environment's existing credentials. Remote repository pages can prefill the clone URL. The catalog does not scan your disk for unregistered folders.

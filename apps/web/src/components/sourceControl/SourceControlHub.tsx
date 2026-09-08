@@ -1,3 +1,8 @@
+import { LocalRepositoryCatalog, RepositoryImportActions } from "./LocalRepositoryCatalog";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
+import { useProjects } from "../../state/entities";
+import type { Project } from "../../types";
 import { SourceControlAuthWizard } from "./SourceControlAuthWizard";
 import { LocalChangesWorkbench } from "./LocalChangesWorkbench";
 import { SourceControlNavigation } from "./SourceControlNavigation";
@@ -96,7 +101,7 @@ function CloneDetails({
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
-  remoteName: string;
+  remoteName?: string;
 }) {
   const query = useHubQuery(serverEnvironment.sourceControlHubCloneState, {
     environmentId,
@@ -105,6 +110,13 @@ function CloneDetails({
   const state = query.data;
   return (
     <div className="space-y-2 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-medium">Branch and worktrees</h3>
+        <Button size="xs" variant="ghost" disabled={query.pending} onClick={query.refresh}>
+          Refresh
+        </Button>
+      </div>
+      {query.pending && <p className="text-muted-foreground">Loading checkout…</p>}
       {query.error && <p role="alert">{query.error}</p>}
       {state && (
         <>
@@ -125,12 +137,14 @@ function CloneDetails({
           >
             Open workspace
           </Button>
-          <LocalCloneActions
-            environmentId={environmentId}
-            cwd={state.cwd}
-            remoteName={remoteName}
-            onChanged={query.refresh}
-          />
+          {remoteName && (
+            <LocalCloneActions
+              environmentId={environmentId}
+              cwd={state.cwd}
+              remoteName={remoteName}
+              onChanged={query.refresh}
+            />
+          )}
           {state.worktrees.map((worktree) => (
             <div key={worktree.path} className="rounded-md border p-3">
               <p className="flex items-center gap-2">
@@ -148,6 +162,31 @@ function CloneDetails({
     </div>
   );
 }
+function LocalProjectCheckout({ project }: { project: Project }) {
+  const status = useEnvironmentQuery(
+    vcsEnvironment.status({
+      environmentId: project.environmentId,
+      input: { cwd: project.workspaceRoot },
+    }),
+  );
+  if (status.isPending)
+    return <p className="text-sm text-muted-foreground">Inspecting local folder…</p>;
+  if (!status.data)
+    return (
+      <p role="alert" className="text-sm text-muted-foreground">
+        Could not read this folder. Check that it is available in the selected environment.
+      </p>
+    );
+  if (!status.data.isRepo)
+    return (
+      <p className="text-sm text-muted-foreground">
+        This project is a local folder without a Git repository. You can open it as a project or add
+        another existing repository.
+      </p>
+    );
+  return <CloneDetails environmentId={project.environmentId} projectId={project.id} />;
+}
+
 function EnvironmentClones({
   environmentId,
   label,
@@ -255,6 +294,10 @@ function RepositoryPage({
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="shrink-0 space-y-3 border-b p-4">
+        <RepositoryImportActions
+          environmentId={environmentId}
+          repositoryUrl={repository.sshUrl || repository.url}
+        />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -500,10 +543,17 @@ function RepositoryPullRequests({
 }
 function RemoteRepositoryHub({
   onOpenReviewPanel,
+  onOpenChanges,
 }: {
   onOpenReviewPanel?: (environmentId: EnvironmentId, reference: RemotePullRequestRef) => void;
-} = {}) {
+  onOpenChanges: (project: Project) => void;
+}) {
   const { environments } = useEnvironments();
+  const projects = useProjects();
+  const [localSelection, setLocalSelection] = useState<string | null>(null);
+  const localProject = projects.find(
+    (project) => `${project.environmentId}:${project.id}` === localSelection,
+  );
   const [selection, setSelection] = useState<{
     environmentId: EnvironmentId;
     repository: RemoteRepository;
@@ -544,7 +594,24 @@ function RemoteRepositoryHub({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        <nav className="mt-3 space-y-3" aria-label="Source control repositories">
+        <Button
+          variant={!selection && !localSelection ? "secondary" : "ghost"}
+          size="sm"
+          className="mt-3 w-full justify-start"
+          onClick={() => {
+            setSelection(null);
+            setLocalSelection(null);
+            setPr(null);
+          }}
+        >
+          <FolderGit2Icon className="size-4" />
+          On your devices
+          <span className="ml-auto text-xs text-muted-foreground">{projects.length}</span>
+        </Button>
+        <p className="mt-5 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Remote accounts
+        </p>
+        <nav className="mt-2 space-y-3" aria-label="Source control repositories">
           {environments.map((environment) => (
             <div key={environment.environmentId}>
               <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
@@ -573,6 +640,7 @@ function RemoteRepositoryHub({
                         provider={provider}
                         search={sentSearch}
                         onSelect={(repository) => {
+                          setLocalSelection(null);
                           setSelection({ environmentId: environment.environmentId, repository });
                           setPr(null);
                         }}
@@ -585,7 +653,58 @@ function RemoteRepositoryHub({
           ))}
         </nav>
       </aside>
-      {selection ? (
+      {localProject ? (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="shrink-0 space-y-3 border-b p-4">
+            <Button variant="ghost" size="sm" onClick={() => setLocalSelection(null)}>
+              ← Local repositories
+            </Button>
+            <h2 className="text-base font-semibold">{localProject.title}</h2>
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {localProject.workspaceRoot}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                render={
+                  <Link
+                    to="/environments/$environmentId/projects/$projectId"
+                    params={{
+                      environmentId: localProject.environmentId,
+                      projectId: localProject.id,
+                    }}
+                  />
+                }
+              >
+                Open project
+              </Button>
+              <Button
+                size="sm"
+                disabled={
+                  environments.find(
+                    (environment) => environment.environmentId === localProject.environmentId,
+                  )?.connection.phase !== "connected"
+                }
+                onClick={() => onOpenChanges(localProject)}
+              >
+                Open changes
+              </Button>
+            </div>
+          </header>
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            {environments.find(
+              (environment) => environment.environmentId === localProject.environmentId,
+            )?.connection.phase === "connected" ? (
+              <LocalProjectCheckout project={localProject} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Environment offline. Reconnect to inspect this checkout.
+              </p>
+            )}
+          </div>
+        </section>
+      ) : selection ? (
         pr ? (
           <RemotePullRequestPanel
             key={`${selection.environmentId}:${pr.provider}:${pr.repository}:${pr.number}`}
@@ -605,10 +724,14 @@ function RemoteRepositoryHub({
           />
         )
       ) : (
-        <div className="grid min-h-40 flex-1 place-items-center p-6 text-center text-sm text-muted-foreground">
-          Select an account and repository to browse pull requests, branches, tags, and local
-          worktrees.
-        </div>
+        <LocalRepositoryCatalog
+          search={search}
+          onSelect={(project) => {
+            setLocalSelection(`${project.environmentId}:${project.id}`);
+            setSelection(null);
+            setPr(null);
+          }}
+        />
       )}
     </div>
   );
@@ -622,6 +745,7 @@ export function SourceControlHub({
   initialSection?: "changes" | "repositories";
 } = {}) {
   const [section, setSection] = useState(initialSection);
+  const [localSelection, setLocalSelection] = useState("");
   const [visited, setVisited] = useState(new Set([initialSection]));
   const [accountsRevision, setAccountsRevision] = useState(0);
   const selectSection = (value: "changes" | "repositories") => {
@@ -639,12 +763,18 @@ export function SourceControlHub({
         />
       </SourceControlNavigation>
       <div className={section === "changes" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
-        {visited.has("changes") && <LocalChangesWorkbench />}
+        {visited.has("changes") && (
+          <LocalChangesWorkbench selection={localSelection} onSelection={setLocalSelection} />
+        )}
       </div>
       <div className={section === "repositories" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
         {visited.has("repositories") && (
           <RemoteRepositoryHub
             key={accountsRevision}
+            onOpenChanges={(project) => {
+              setLocalSelection(`${project.environmentId}:${project.id}`);
+              selectSection("changes");
+            }}
             {...(onOpenReviewPanel ? { onOpenReviewPanel } : {})}
           />
         )}

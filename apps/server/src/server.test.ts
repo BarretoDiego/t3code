@@ -385,7 +385,7 @@ const browserOtlpTracingLayer = Layer.mergeAll(
 
 const makeAuthTestLayer = () =>
   EnvironmentAuth.layer.pipe(
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
     Layer.provide(
       Layer.mock(ServerEnvironment.ServerEnvironmentIdentity)({
@@ -1654,6 +1654,71 @@ const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
 );
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it.effect(
+    "routes websocket rpc compute discovery, submission, cancellation and durable history",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest();
+        const wsUrl = yield* getWsServerUrl("/ws");
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const initial = yield* client[WS_METHODS.computeList]({});
+              assert.deepEqual(initial.providers, []);
+              const catalog = yield* client[WS_METHODS.computeSaveProvider]({
+                provider: { id: "test-mock", name: "Test mock", type: "mock", configuration: {} },
+              });
+              assert.equal(catalog.providers[0]?.provider.status, "online");
+              const submitted = yield* client[WS_METHODS.computeSubmit]({
+                request: {
+                  providerId: "test-mock",
+                  capability: "image.generate",
+                  operation: "generate",
+                  parameters: { prompt: "fixture" },
+                },
+              });
+              assert.equal(submitted.status, "queued");
+              const cancelled = yield* client[WS_METHODS.computeCancelJob]({ jobId: submitted.id });
+              assert.equal(cancelled.status, "cancelled");
+              const loaded = yield* client[WS_METHODS.computeGetJob]({ jobId: submitted.id });
+              assert.equal(loaded.status, "cancelled");
+              assert.equal(
+                (yield* client[WS_METHODS.computeListJobs]({ providerId: "test-mock" })).length,
+                1,
+              );
+              yield* client[WS_METHODS.computeRemoveProvider]({ providerId: "test-mock" });
+              assert.equal(
+                (yield* client[WS_METHODS.computeGetJob]({ jobId: submitted.id })).id,
+                submitted.id,
+              );
+            }),
+          ),
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects compute mutations over a read-only websocket credential", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read",
+      });
+      const response = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+      });
+      const ticket = (yield* response.json) as { readonly ticket: string };
+      const wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+      const denied = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.computeSaveProvider]({
+            provider: { id: "unauthorized", name: "Denied", type: "mock", configuration: {} },
+          }),
+        ),
+      ).pipe(Effect.flip);
+      assert.equal(denied._tag, "EnvironmentAuthorizationError");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

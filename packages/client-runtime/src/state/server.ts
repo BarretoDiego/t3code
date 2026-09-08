@@ -1111,6 +1111,39 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.aiRuntimesSubscribe,
       idleTtlMs: 0,
     }),
+    compute: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:compute",
+      tag: WS_METHODS.computeSubscribe,
+      idleTtlMs: 0,
+    }),
+    computeList: createEnvironmentRpcCommand(runtime, {
+      label: "compute:list",
+      tag: WS_METHODS.computeList,
+    }),
+    computeSaveProvider: createEnvironmentRpcCommand(runtime, {
+      label: "compute:save-provider",
+      tag: WS_METHODS.computeSaveProvider,
+    }),
+    computeRemoveProvider: createEnvironmentRpcCommand(runtime, {
+      label: "compute:remove-provider",
+      tag: WS_METHODS.computeRemoveProvider,
+    }),
+    computeSubmit: createEnvironmentRpcCommand(runtime, {
+      label: "compute:submit",
+      tag: WS_METHODS.computeSubmit,
+    }),
+    computeGetJob: createEnvironmentRpcCommand(runtime, {
+      label: "compute:get-job",
+      tag: WS_METHODS.computeGetJob,
+    }),
+    computeListJobs: createEnvironmentRpcCommand(runtime, {
+      label: "compute:list-jobs",
+      tag: WS_METHODS.computeListJobs,
+    }),
+    computeCancelJob: createEnvironmentRpcCommand(runtime, {
+      label: "compute:cancel-job",
+      tag: WS_METHODS.computeCancelJob,
+    }),
     sourceControlHubAccounts: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "source-control-hub:Accounts",
       tag: WS_METHODS.sourceControlHubAccounts,
