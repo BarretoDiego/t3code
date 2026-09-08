@@ -24,7 +24,8 @@ export class LocalDesktopBuildFailedError extends Schema.TaggedError<LocalDeskto
 export function resolveLocalNightlyVersion(version: string, isoTimestamp: string): string {
   const baseVersion = Effect.runSync(resolveNightlyTargetVersion(version));
   const date = isoTimestamp.slice(0, 10).replaceAll("-", "");
-  const runNumber = isoTimestamp.slice(11, 19).replaceAll(":", "");
+  // Numeric semver prerelease identifiers cannot have leading zeroes.
+  const runNumber = Number(isoTimestamp.slice(11, 19).replaceAll(":", ""));
   return `${baseVersion}-nightly.${date}.${runNumber}`;
 }
 
