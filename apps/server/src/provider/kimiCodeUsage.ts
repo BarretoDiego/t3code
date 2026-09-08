@@ -372,7 +372,7 @@ export function normalizeKimiCodeUsage(input: {
 /* Fetch                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export class KimiCodeUsageFetchError extends Schema.TaggedErrorClass<KimiCodeUsageFetchError>()(
+export class KimiCodeUsageFetchError extends Schema.TaggedError<KimiCodeUsageFetchError>()(
   "KimiCodeUsageFetchError",
   {
     message: Schema.String,

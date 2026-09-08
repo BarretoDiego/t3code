@@ -12,7 +12,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { resolveNightlyTargetVersion } from "./resolve-nightly-release.ts";
 
-export class LocalDesktopBuildFailedError extends Schema.TaggedErrorClass<LocalDesktopBuildFailedError>()(
+export class LocalDesktopBuildFailedError extends Schema.TaggedError<LocalDesktopBuildFailedError>()(
   "LocalDesktopBuildFailedError",
   { exitCode: Schema.Number },
 ) {

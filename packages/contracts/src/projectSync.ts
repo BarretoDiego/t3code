@@ -159,7 +159,7 @@ type ProjectSyncErrorContext = {
   readonly cause?: unknown;
 };
 
-export class ProjectSyncProjectNotFoundError extends Schema.TaggedErrorClass<ProjectSyncProjectNotFoundError>()(
+export class ProjectSyncProjectNotFoundError extends Schema.TaggedError<ProjectSyncProjectNotFoundError>()(
   "ProjectSyncProjectNotFoundError",
   {
     projectId: Schema.optional(TrimmedNonEmptyString),
@@ -178,7 +178,7 @@ export class ProjectSyncProjectNotFoundError extends Schema.TaggedErrorClass<Pro
   }
 }
 
-export class ProjectSyncPathViolationError extends Schema.TaggedErrorClass<ProjectSyncPathViolationError>()(
+export class ProjectSyncPathViolationError extends Schema.TaggedError<ProjectSyncPathViolationError>()(
   "ProjectSyncPathViolationError",
   {
     path: Schema.optional(TrimmedNonEmptyString),
@@ -195,7 +195,7 @@ export class ProjectSyncPathViolationError extends Schema.TaggedErrorClass<Proje
   }
 }
 
-export class ProjectSyncIoError extends Schema.TaggedErrorClass<ProjectSyncIoError>()(
+export class ProjectSyncIoError extends Schema.TaggedError<ProjectSyncIoError>()(
   "ProjectSyncIoError",
   {
     message: TrimmedNonEmptyString,

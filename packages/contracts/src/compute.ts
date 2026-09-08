@@ -324,7 +324,7 @@ export type ComputeJobCancelInput = typeof ComputeJobCancelInput.Type;
 export const ComputeJobSubmitInput = Schema.Struct({ request: GenerationRequest });
 export type ComputeJobSubmitInput = typeof ComputeJobSubmitInput.Type;
 
-export class ComputeError extends Schema.TaggedErrorClass<ComputeError>()("ComputeError", {
+export class ComputeError extends Schema.TaggedError<ComputeError>()("ComputeError", {
   jobId: Schema.optionalKey(TrimmedNonEmptyString),
   message: Schema.String,
   code: Schema.optionalKey(TrimmedNonEmptyString),

@@ -27,7 +27,7 @@ import { errnoCode } from "./projectSyncErrno.ts";
 /** Raised when an import body carries more than the signed URL authorized,
     either in content bytes or in record count. Never crosses the WebSocket
     contract — the HTTP import route turns it into a 413. */
-export class ProjectSyncImportLimitError extends Schema.TaggedErrorClass<ProjectSyncImportLimitError>()(
+export class ProjectSyncImportLimitError extends Schema.TaggedError<ProjectSyncImportLimitError>()(
   "ProjectSyncImportLimitError",
   {
     limit: Schema.Number,

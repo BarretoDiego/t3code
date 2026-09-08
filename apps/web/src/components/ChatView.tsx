@@ -316,7 +316,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
-import { resolveComposerTimelineInset } from "./composerFooterLayout";
+import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
@@ -441,6 +441,7 @@ import {
 } from "./ui/alert-dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ServerUpdateAction } from "./ServerUpdateAction";
+import { useAutoBalanceUpdateBanner } from "./chat/useAutoBalanceUpdateBanner";
 import {
   ComposerServerUpdateIcon,
   ComposerServerUpdateStatus,
@@ -2321,6 +2322,35 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
+  const envLocked = Boolean(
+    activeThread &&
+    (activeThread.messages.length > 0 ||
+      (activeThread.session !== null && activeThread.session.status !== "stopped")),
+  );
+
+  const loadBalancingSettings = useClientSettings();
+  const automaticEnvironment = Boolean(
+    clientSettingsHydrated &&
+    draftId &&
+    !envLocked &&
+    hasMultipleEnvironments &&
+    loadBalancingSettings.loadBalancingEnabled &&
+    draftThread?.environmentSelection !== "manual" &&
+    (!composerHasAttachments || Boolean(draftThread?.loadBalancedEnvironmentId)) &&
+    (!draftThread?.branch || draftThread.environmentSelection === "auto") &&
+    !draftThread?.worktreePath,
+  );
+  const autoUpdateEnvironments = useMemo(
+    () =>
+      automaticEnvironment
+        ? logicalProjectEnvironments.flatMap(({ environmentId }) => {
+            const environment = environmentById.get(environmentId);
+            return environment ? [environment] : [];
+          })
+        : [],
+    [automaticEnvironment, logicalProjectEnvironments, environmentById],
+  );
+  const autoBalanceUpdateBanner = useAutoBalanceUpdateBanner(autoUpdateEnvironments);
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -2424,6 +2454,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     }
     if (
+      !automaticEnvironment &&
       serverUpdateEnvironmentId &&
       !reconnectingThroughVersionSkew &&
       (serverUpdateState.status === "idle"
@@ -2502,8 +2533,11 @@ export default function ChatView(props: ChatViewProps) {
             }),
       });
     }
+    if (autoBalanceUpdateBanner) items.push(autoBalanceUpdateBanner);
     return items;
   }, [
+    automaticEnvironment,
+    autoBalanceUpdateBanner,
     activeEnvironmentUnavailableState,
     reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
@@ -3237,24 +3271,6 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
 
-  const envLocked = Boolean(
-    activeThread &&
-    (activeThread.messages.length > 0 ||
-      (activeThread.session !== null && activeThread.session.status !== "stopped")),
-  );
-
-  const loadBalancingSettings = useClientSettings();
-  const automaticEnvironment = Boolean(
-    clientSettingsHydrated &&
-    draftId &&
-    !envLocked &&
-    hasMultipleEnvironments &&
-    loadBalancingSettings.loadBalancingEnabled &&
-    draftThread?.environmentSelection !== "manual" &&
-    (!composerHasAttachments || Boolean(draftThread?.loadBalancedEnvironmentId)) &&
-    (!draftThread?.branch || draftThread.environmentSelection === "auto") &&
-    !draftThread?.worktreePath,
-  );
   const needsLoadBalancing = automaticEnvironment && !draftThread?.loadBalancedEnvironmentId;
   const loadBalancingCandidates = useMemo(
     () =>
@@ -5151,27 +5167,48 @@ export default function ChatView(props: ChatViewProps) {
       ? activePlan.steps
       : null;
 
-  const publishComposerOverlayHeight = useCallback((height: number) => {
-    const nextHeight = Math.ceil(height);
-    if (nextHeight <= 0) return;
-    const previousHeight = composerOverlayHeightRef.current;
-    if (previousHeight !== nextHeight) {
-      composerOverlayHeightRef.current = nextHeight;
-      setComposerOverlayHeight(nextHeight);
-    }
-    const nextInset = resolveComposerTimelineInset({
-      currentInset: composerTimelineInsetRef.current,
-      overlayHeight: nextHeight,
-      isResting: composerRestingRef.current,
-    });
-    if (composerTimelineInsetRef.current !== nextInset) {
-      composerTimelineInsetRef.current = nextInset;
-      setComposerTimelineInset(nextInset);
-    }
-    setScrollToEndClearance((currentClearance) =>
-      currentClearance === nextHeight ? currentClearance : nextHeight,
-    );
-  }, []);
+  const publishComposerOverlayHeight = useCallback(
+    (height: number) => {
+      const nextHeight = Math.ceil(height);
+      if (nextHeight <= 0) return;
+      const previousHeight = composerOverlayHeightRef.current;
+      if (previousHeight !== nextHeight) {
+        composerOverlayHeightRef.current = nextHeight;
+        setComposerOverlayHeight(nextHeight);
+      }
+      const nextInset = resolveComposerTimelineInset({
+        currentInset: composerTimelineInsetRef.current,
+        overlayHeight: nextHeight,
+        isResting: composerRestingRef.current,
+      });
+      if (composerTimelineInsetRef.current !== nextInset) {
+        composerTimelineInsetRef.current = nextInset;
+        setComposerTimelineInset(nextInset);
+      }
+      const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
+        '[data-chat-composer-main-surface="true"]',
+      );
+      const button = composerOverlayElement?.parentElement?.querySelector<HTMLElement>(
+        'button[aria-label="Scroll to end"]',
+      );
+      const clearance =
+        composerOverlayElement && mainSurface && button
+          ? resolveScrollToEndClearance({
+              overlayHeight: nextHeight,
+              mainSurfaceTop: mainSurface.getBoundingClientRect().top,
+              button: button.getBoundingClientRect(),
+              attachments: Array.from(
+                composerOverlayElement.querySelectorAll<HTMLElement>(
+                  '[data-composer-banner-surface="attached"]',
+                ),
+                (element) => element.getBoundingClientRect(),
+              ),
+            })
+          : nextHeight;
+      setScrollToEndClearance(clearance);
+    },
+    [composerOverlayElement],
+  );
   // The composer reports its resting flag from a layout effect, which runs
   // before this component's own layout effects and before any resize
   // observation, so every measurement below sees the flag for its layout.
@@ -5204,7 +5241,7 @@ export default function ChatView(props: ChatViewProps) {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [composerOverlayElement, publishComposerOverlayHeight]);
+  }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
   const activeThreadReferenceCopyTarget = useMemo(
     () =>

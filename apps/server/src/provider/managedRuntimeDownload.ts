@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
-export class ManagedRuntimeDownloadError extends Schema.TaggedErrorClass<ManagedRuntimeDownloadError>()(
+export class ManagedRuntimeDownloadError extends Schema.TaggedError<ManagedRuntimeDownloadError>()(
   "ManagedRuntimeDownloadError",
   { message: Schema.String },
 ) {}

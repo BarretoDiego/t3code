@@ -341,7 +341,7 @@ export const MarketplaceErrorReason = Schema.Literals([
 ]);
 export type MarketplaceErrorReason = typeof MarketplaceErrorReason.Type;
 
-export class MarketplaceError extends Schema.TaggedErrorClass<MarketplaceError>()(
+export class MarketplaceError extends Schema.TaggedError<MarketplaceError>()(
   "MarketplaceError",
   {
     operation: MarketplaceOperation,

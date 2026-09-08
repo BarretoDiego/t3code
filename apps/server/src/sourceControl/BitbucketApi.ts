@@ -64,7 +64,7 @@ const BitbucketApiOperation = Schema.Literals([
 ]);
 type BitbucketApiOperation = typeof BitbucketApiOperation.Type;
 
-export class BitbucketRepositoryLocatorError extends Schema.TaggedErrorClass<BitbucketRepositoryLocatorError>()(
+export class BitbucketRepositoryLocatorError extends Schema.TaggedError<BitbucketRepositoryLocatorError>()(
   "BitbucketRepositoryLocatorError",
   {
     repository: Schema.String,
@@ -79,7 +79,7 @@ export class BitbucketRepositoryLocatorError extends Schema.TaggedErrorClass<Bit
   }
 }
 
-export class BitbucketRequestError extends Schema.TaggedErrorClass<BitbucketRequestError>()(
+export class BitbucketRequestError extends Schema.TaggedError<BitbucketRequestError>()(
   "BitbucketRequestError",
   {
     operation: BitbucketApiOperation,
@@ -95,7 +95,7 @@ export class BitbucketRequestError extends Schema.TaggedErrorClass<BitbucketRequ
   }
 }
 
-export class BitbucketResponseError extends Schema.TaggedErrorClass<BitbucketResponseError>()(
+export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponseError>()(
   "BitbucketResponseError",
   {
     operation: BitbucketApiOperation,
@@ -113,7 +113,7 @@ export class BitbucketResponseError extends Schema.TaggedErrorClass<BitbucketRes
   }
 }
 
-export class BitbucketResponseBodyReadError extends Schema.TaggedErrorClass<BitbucketResponseBodyReadError>()(
+export class BitbucketResponseBodyReadError extends Schema.TaggedError<BitbucketResponseBodyReadError>()(
   "BitbucketResponseBodyReadError",
   {
     operation: BitbucketApiOperation,
@@ -130,7 +130,7 @@ export class BitbucketResponseBodyReadError extends Schema.TaggedErrorClass<Bitb
   }
 }
 
-export class BitbucketResponseDecodeError extends Schema.TaggedErrorClass<BitbucketResponseDecodeError>()(
+export class BitbucketResponseDecodeError extends Schema.TaggedError<BitbucketResponseDecodeError>()(
   "BitbucketResponseDecodeError",
   {
     operation: BitbucketApiOperation,
@@ -147,7 +147,7 @@ export class BitbucketResponseDecodeError extends Schema.TaggedErrorClass<Bitbuc
   }
 }
 
-export class BitbucketRepositoryVcsResolveError extends Schema.TaggedErrorClass<BitbucketRepositoryVcsResolveError>()(
+export class BitbucketRepositoryVcsResolveError extends Schema.TaggedError<BitbucketRepositoryVcsResolveError>()(
   "BitbucketRepositoryVcsResolveError",
   {
     cwd: Schema.String,
@@ -163,7 +163,7 @@ export class BitbucketRepositoryVcsResolveError extends Schema.TaggedErrorClass<
   }
 }
 
-export class BitbucketRepositoryRemotesListError extends Schema.TaggedErrorClass<BitbucketRepositoryRemotesListError>()(
+export class BitbucketRepositoryRemotesListError extends Schema.TaggedError<BitbucketRepositoryRemotesListError>()(
   "BitbucketRepositoryRemotesListError",
   {
     cwd: Schema.String,
@@ -179,7 +179,7 @@ export class BitbucketRepositoryRemotesListError extends Schema.TaggedErrorClass
   }
 }
 
-export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedErrorClass<BitbucketRepositoryRemoteNotFoundError>()(
+export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedError<BitbucketRepositoryRemoteNotFoundError>()(
   "BitbucketRepositoryRemoteNotFoundError",
   {
     cwd: Schema.String,
@@ -194,7 +194,7 @@ export class BitbucketRepositoryRemoteNotFoundError extends Schema.TaggedErrorCl
   }
 }
 
-export class BitbucketPullRequestBodyReadError extends Schema.TaggedErrorClass<BitbucketPullRequestBodyReadError>()(
+export class BitbucketPullRequestBodyReadError extends Schema.TaggedError<BitbucketPullRequestBodyReadError>()(
   "BitbucketPullRequestBodyReadError",
   {
     cwd: Schema.String,
@@ -211,7 +211,7 @@ export class BitbucketPullRequestBodyReadError extends Schema.TaggedErrorClass<B
   }
 }
 
-export class BitbucketCheckoutError extends Schema.TaggedErrorClass<BitbucketCheckoutError>()(
+export class BitbucketCheckoutError extends Schema.TaggedError<BitbucketCheckoutError>()(
   "BitbucketCheckoutError",
   {
     cwd: Schema.String,
@@ -233,7 +233,7 @@ export class BitbucketCheckoutError extends Schema.TaggedErrorClass<BitbucketChe
  * the request carries the account's credentials and a url that came back in a response — a
  * pagination cursor, or the target of a redirect — is not this server's to trust.
  */
-export class BitbucketUntrustedUrlError extends Schema.TaggedErrorClass<BitbucketUntrustedUrlError>()(
+export class BitbucketUntrustedUrlError extends Schema.TaggedError<BitbucketUntrustedUrlError>()(
   "BitbucketUntrustedUrlError",
   {
     /** The host only. A rejected hop is often a signed url, whose query carries a credential. */

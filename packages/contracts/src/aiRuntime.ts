@@ -98,6 +98,6 @@ export const AiRuntimeBindInput = Schema.Struct({
   model: TrimmedNonEmptyString,
 });
 export type AiRuntimeBindInput = typeof AiRuntimeBindInput.Type;
-export class AiRuntimeError extends Schema.TaggedErrorClass<AiRuntimeError>()("AiRuntimeError", {
+export class AiRuntimeError extends Schema.TaggedError<AiRuntimeError>()("AiRuntimeError", {
   message: Schema.String,
 }) {}

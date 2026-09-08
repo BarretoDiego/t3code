@@ -127,7 +127,7 @@ export const RemotePullRequestCreated = Schema.Struct({
 });
 export type RemotePullRequestCreated = typeof RemotePullRequestCreated.Type;
 
-export class SourceControlHubError extends Schema.TaggedErrorClass<SourceControlHubError>()(
+export class SourceControlHubError extends Schema.TaggedError<SourceControlHubError>()(
   "SourceControlHubError",
   { message: Schema.String },
 ) {}
