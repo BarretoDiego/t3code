@@ -187,6 +187,17 @@ class ChunkCursor {
     this.source = source;
   }
 
+  /** Release the upstream iterator when the decoder is abandoned or fails.
+   * Export iterators hold file handles across yields, so dropping the cursor
+   * without forwarding return() leaves their finally blocks suspended. */
+  async close(): Promise<void> {
+    this.pending.length = 0;
+    this.pendingLength = 0;
+    if (this.sourceExhausted) return;
+    this.sourceExhausted = true;
+    await this.source.return?.();
+  }
+
   private async pullOne(): Promise<boolean> {
     if (this.sourceExhausted) return false;
     const { value, done } = await this.source.next();
@@ -311,10 +322,9 @@ function createContentIterable(
  * project sync frame records. Yields one `{ header, content }` pair per
  * record; `content` streams exactly `header.size` bytes.
  *
- * If the caller moves on to the next record (or stops iterating the decoder
- * entirely) before fully draining a record's `content`, the decoder drains
- * the remainder itself so the shared byte cursor stays aligned on the next
- * record's header.
+ * Moving to the next record drains unread content to keep the cursor aligned.
+ * Stopping the decoder closes its upstream iterator without downloading the
+ * remaining transfer, including when parsing or the consumer fails.
  */
 export async function* createProjectSyncFrameDecoder(
   chunks: AsyncIterable<Uint8Array>,
@@ -322,51 +332,55 @@ export async function* createProjectSyncFrameDecoder(
   const cursor = new ChunkCursor(chunks[Symbol.asyncIterator]());
   const textDecoder = new TextDecoder();
 
-  while (true) {
-    const haveLength = await cursor.ensure(HEADER_LENGTH_BYTES);
-    if (!haveLength) {
-      if (cursor.bufferedLength > 0) {
-        throw new Error("Project sync frame stream ended mid-header-length.");
+  try {
+    while (true) {
+      const haveLength = await cursor.ensure(HEADER_LENGTH_BYTES);
+      if (!haveLength) {
+        if (cursor.bufferedLength > 0) {
+          throw new Error("Project sync frame stream ended mid-header-length.");
+        }
+        return;
       }
-      return;
-    }
-    const lengthBytes = cursor.take(HEADER_LENGTH_BYTES);
-    const headerLength = new DataView(
-      lengthBytes.buffer,
-      lengthBytes.byteOffset,
-      lengthBytes.byteLength,
-    ).getUint32(0, false);
+      const lengthBytes = cursor.take(HEADER_LENGTH_BYTES);
+      const headerLength = new DataView(
+        lengthBytes.buffer,
+        lengthBytes.byteOffset,
+        lengthBytes.byteLength,
+      ).getUint32(0, false);
 
-    if (headerLength > MAX_HEADER_BYTES) {
-      throw new Error(
-        `Project sync frame header of ${headerLength} bytes exceeds the ${MAX_HEADER_BYTES} byte limit.`,
-      );
-    }
-
-    const haveHeader = await cursor.ensure(headerLength);
-    if (!haveHeader) {
-      throw new Error("Project sync frame stream ended mid-header.");
-    }
-    const headerBytes = cursor.take(headerLength);
-    const header = parseFrameHeader(textDecoder.decode(headerBytes));
-
-    const state = { consumed: 0 };
-    const content = createContentIterable(cursor, header.size, header.path, state);
-
-    yield { header, content };
-
-    // Defensive drain: covers the case where the caller never touched
-    // `content` at all (so the iterator's `return()` was never invoked).
-    while (state.consumed < header.size) {
-      const haveByte = await cursor.ensure(1);
-      if (!haveByte) {
+      if (headerLength > MAX_HEADER_BYTES) {
         throw new Error(
-          `Project sync frame stream ended mid-content for '${header.path}' ` +
-            `(${state.consumed}/${header.size} bytes read).`,
+          `Project sync frame header of ${headerLength} bytes exceeds the ${MAX_HEADER_BYTES} byte limit.`,
         );
       }
-      const chunk = cursor.takeUpTo(header.size - state.consumed);
-      state.consumed += chunk.length;
+
+      const haveHeader = await cursor.ensure(headerLength);
+      if (!haveHeader) {
+        throw new Error("Project sync frame stream ended mid-header.");
+      }
+      const headerBytes = cursor.take(headerLength);
+      const header = parseFrameHeader(textDecoder.decode(headerBytes));
+
+      const state = { consumed: 0 };
+      const content = createContentIterable(cursor, header.size, header.path, state);
+
+      yield { header, content };
+
+      // Defensive drain: covers the case where the caller never touched
+      // `content` at all (so the iterator's `return()` was never invoked).
+      while (state.consumed < header.size) {
+        const haveByte = await cursor.ensure(1);
+        if (!haveByte) {
+          throw new Error(
+            `Project sync frame stream ended mid-content for '${header.path}' ` +
+              `(${state.consumed}/${header.size} bytes read).`,
+          );
+        }
+        const chunk = cursor.takeUpTo(header.size - state.consumed);
+        state.consumed += chunk.length;
+      }
     }
+  } finally {
+    await cursor.close();
   }
 }

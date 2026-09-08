@@ -22,6 +22,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { ThreadHandoffIndicator } from "../ThreadHandoffIndicator";
 import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { type DraftId } from "~/composerDraftStore";
@@ -400,6 +401,7 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {isServerThread && <ThreadHandoffIndicator threadRef={activeThreadRef} />}
       <div
         ref={headerActionsRef}
         data-chat-header-actions

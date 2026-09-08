@@ -5,7 +5,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
-import { OrchestrationCommand } from "@t3tools/contracts";
+import { EventId, OrchestrationCommand } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -17,9 +17,10 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
+import { makeBarrierStream } from "@t3tools/shared/BarrierStream";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -30,6 +31,9 @@ import {
   orchestrationCommandDuration,
 } from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
+import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import { makeHandoffJournal } from "../../handoff/HandoffJournal.ts";
+import { committedOwner } from "../../handoff/lifecycle.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
@@ -89,12 +93,15 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const crypto = yield* Crypto.Crypto;
+  const handoffJournal = yield* makeHandoffJournal;
+  const providerSessionRuntime = yield* ProviderSessionRuntime.make;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   let commandReadModel = createEmptyReadModel(yield* nowIso);
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
-  const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+  const mutationMutex = yield* Semaphore.make(1);
+  const eventPubSub = yield* makeBarrierStream<OrchestrationEvent>();
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -127,7 +134,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       commandReadModel = yield* projectEventsOntoReadModel(commandReadModel, persistedEvents);
 
       for (const persistedEvent of persistedEvents) {
-        yield* PubSub.publish(eventPubSub, persistedEvent);
+        yield* eventPubSub.publish(persistedEvent);
       }
     });
 
@@ -169,6 +176,55 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             commandId: envelope.command.commandId,
             detail: existingReceipt.value.error ?? "Previously rejected.",
           });
+        }
+
+        if ("threadId" in envelope.command) {
+          const handoff = yield* handoffJournal.head(envelope.command.threadId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationCommandInvariantError({
+                  commandType: envelope.command.type,
+                  detail: "Could not verify thread execution ownership.",
+                  cause,
+                }),
+            ),
+          );
+          if (handoff) {
+            const localEnvironmentId = handoff.localEnvironmentId ?? handoff.owner.environmentId;
+            const frozen = [
+              "checkpointing",
+              "syncingProjects",
+              "transferringSession",
+              "verifying",
+              "ready",
+              "rollingBack",
+            ].includes(handoff.phase);
+            const moved = committedOwner(handoff).environmentId !== localEnvironmentId;
+            // While pausing, existing provider/checkpoint work must settle before
+            // the snapshot is frozen. Client edits and new turns cannot enter.
+            const canDrain =
+              envelope.command.type === "thread.turn.interrupt" ||
+              envelope.command.type === "thread.session.stop" ||
+              (envelope.origin === undefined &&
+                [
+                  "thread.session.set",
+                  "thread.message.assistant.delta",
+                  "thread.message.assistant.complete",
+                  "thread.proposed-plan.upsert",
+                  "thread.turn.diff.complete",
+                  "thread.activity.append",
+                  "thread.revert.complete",
+                  "thread.title.regeneration.complete",
+                ].includes(envelope.command.type));
+            if (frozen || moved || (handoff.phase === "pausing" && !canDrain)) {
+              return yield* new OrchestrationCommandInvariantError({
+                commandType: envelope.command.type,
+                detail: moved
+                  ? "Thread execution belongs to another environment."
+                  : "Thread mutations are frozen while its execution environment is transferring.",
+              });
+            }
+          }
         }
 
         if (
@@ -301,7 +357,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           yield* cleanup;
         }
         for (const [index, event] of committedCommand.committedEvents.entries()) {
-          yield* PubSub.publish(eventPubSub, event);
+          yield* eventPubSub.publish(event);
           if (index === 0) {
             yield* Metric.update(
               Metric.withAttributes(
@@ -390,7 +446,13 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   yield* projectionPipeline.bootstrap;
   commandReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
 
-  const worker = Effect.forever(Queue.take(commandQueue).pipe(Effect.flatMap(processEnvelope)));
+  const worker = Effect.forever(
+    Queue.take(commandQueue).pipe(
+      Effect.flatMap((envelope) =>
+        mutationMutex.withPermits(1)(Effect.suspend(() => processEnvelope(envelope))),
+      ),
+    ),
+  );
   yield* Effect.forkScoped(worker);
   yield* Effect.logDebug("orchestration engine started").pipe(
     Effect.annotateLogs({ sequence: commandReadModel.snapshotSequence }),
@@ -424,17 +486,236 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       return yield* Deferred.await(result);
     });
 
+  const importHandoffEvents: NonNullable<OrchestrationEngineShape["importHandoffEvents"]> = (
+    input,
+  ) =>
+    mutationMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const reject = (detail: string) =>
+          new OrchestrationCommandInvariantError({ commandType: "thread.handoff.import", detail });
+        const first = input.events[0];
+        if (first?.type !== "thread.created") {
+          return yield* reject("Handoff history must begin with thread.created.");
+        }
+        let previousSequence = -1;
+        for (const event of input.events) {
+          if (
+            event.aggregateKind !== "thread" ||
+            event.aggregateId !== input.threadId ||
+            !("threadId" in event.payload) ||
+            event.payload.threadId !== input.threadId ||
+            event.metadata.historyImport !== true ||
+            !Number.isSafeInteger(event.sequence) ||
+            event.sequence <= previousSequence
+          ) {
+            return yield* reject(
+              "Handoff history must be ordered, marked as imported, and belong to one thread.",
+            );
+          }
+          previousSequence = event.sequence;
+        }
+        if (
+          !commandReadModel.projects.some(
+            (project) => project.id === first.payload.projectId && project.deletedAt === null,
+          )
+        ) {
+          return yield* reject("Destination project does not exist.");
+        }
+        const occurredAt = yield* nowIso;
+        const eventId = EventId.make(
+          yield* crypto.randomUUIDv4.pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationCommandInvariantError({
+                  commandType: "thread.handoff.import",
+                  detail: "Failed to generate an event identifier.",
+                  cause,
+                }),
+            ),
+          ),
+        );
+        const committed = yield* sql
+          .withTransaction(
+            Effect.gen(function* () {
+              if (input.handoff) {
+                const { record, runtime } = input.handoff;
+                if (
+                  record.owner.threadId !== input.threadId ||
+                  runtime.threadId !== input.threadId ||
+                  record.localEnvironmentId !== record.destinationEnvironmentId ||
+                  record.owner.environmentId === record.destinationEnvironmentId ||
+                  (record.phase !== "committed" && record.phase !== "completed") ||
+                  runtime.providerInstanceId === null ||
+                  runtime.resumeCursor === null ||
+                  (runtime.executionFence !== undefined &&
+                    (runtime.executionFence.handoffId !== record.handoffId ||
+                      runtime.executionFence.owner.threadId !== input.threadId ||
+                      runtime.executionFence.owner.environmentId !== record.owner.environmentId ||
+                      runtime.executionFence.owner.generation !== record.owner.generation ||
+                      runtime.executionFence.destinationEnvironmentId !==
+                        record.destinationEnvironmentId))
+                )
+                  return yield* reject(
+                    "Handoff runtime and execution ownership identities do not match.",
+                  );
+                const current = yield* handoffJournal.head(input.threadId).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationCommandInvariantError({
+                        commandType: "thread.handoff.import",
+                        detail: "Could not verify reserved ownership.",
+                        cause,
+                      }),
+                  ),
+                );
+                if (
+                  !current ||
+                  current.handoffId !== record.handoffId ||
+                  current.owner.environmentId !== record.owner.environmentId ||
+                  current.owner.generation !== record.owner.generation ||
+                  current.localEnvironmentId !== record.localEnvironmentId ||
+                  current.destinationEnvironmentId !== record.destinationEnvironmentId
+                )
+                  return yield* reject("Handoff no longer matches the destination reservation.");
+                if (current.phase === "committed" || current.phase === "completed") {
+                  const binding = yield* providerSessionRuntime.getByThreadId({
+                    threadId: input.threadId,
+                  });
+                  const existing = commandReadModel.threads.find(
+                    (thread) => thread.id === input.threadId && thread.deletedAt === null,
+                  );
+                  if (
+                    !existing ||
+                    Option.isNone(binding) ||
+                    binding.value.providerName !== runtime.providerName ||
+                    binding.value.providerInstanceId !== runtime.providerInstanceId
+                  ) {
+                    return yield* reject(
+                      "Committed handoff is missing its matching thread or provider binding.",
+                    );
+                  }
+                  return {
+                    nextReadModel: commandReadModel,
+                    notification: null,
+                    sequence: commandReadModel.snapshotSequence,
+                  };
+                }
+                if (current.phase !== "preflighting")
+                  return yield* reject("Destination reservation is no longer activatable.");
+                if (
+                  Option.isSome(
+                    yield* providerSessionRuntime.getByThreadId({ threadId: input.threadId }),
+                  )
+                ) {
+                  return yield* reject(
+                    "Destination provider binding already exists; reverse handoff replacement is not supported yet.",
+                  );
+                }
+              }
+              if (
+                commandReadModel.threads.some(
+                  (thread) =>
+                    thread.id === input.threadId &&
+                    (input.handoff !== undefined || thread.deletedAt === null),
+                )
+              ) {
+                // Replacing an earlier departure must reset every projection and
+                // preserve replay semantics. Until that operation is explicit,
+                // returning handoffs cannot overwrite an existing thread.
+                return yield* reject(
+                  "Destination thread already exists; reverse handoff replacement is not supported yet.",
+                );
+              }
+              let nextReadModel = commandReadModel;
+              for (const event of input.events) {
+                const saved = yield* eventStore.append(event);
+                nextReadModel = yield* projectEvent(nextReadModel, saved);
+                // Historical revert/delete cleanups refer to the source timeline. Running
+                // them here could delete attachments already restored for the final state.
+                yield* projectionPipeline.projectEventDeferred(saved).pipe(Effect.asVoid);
+              }
+              const restored = nextReadModel.threads.find((thread) => thread.id === input.threadId);
+              if (!restored || restored.deletedAt !== null) {
+                return yield* reject("Handoff history must restore a live thread.");
+              }
+              if (
+                !nextReadModel.projects.some(
+                  (project) => project.id === restored.projectId && project.deletedAt === null,
+                )
+              ) {
+                return yield* reject("Restored thread references an unavailable project.");
+              }
+              if (input.handoff) {
+                const { record, runtime } = input.handoff;
+                if (
+                  restored.modelSelection.instanceId !== runtime.providerInstanceId ||
+                  restored.runtimeMode !== runtime.runtimeMode ||
+                  (restored.session !== null &&
+                    (restored.session.threadId !== input.threadId ||
+                      restored.session.providerName !== runtime.providerName ||
+                      (restored.session.providerInstanceId !== undefined &&
+                        restored.session.providerInstanceId !== runtime.providerInstanceId)))
+                ) {
+                  return yield* reject(
+                    "Imported thread and provider runtime identities do not match.",
+                  );
+                }
+                yield* handoffJournal.acceptIncoming(record).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationCommandInvariantError({
+                        commandType: "thread.handoff.import",
+                        detail: "Could not commit destination ownership.",
+                        cause,
+                      }),
+                  ),
+                );
+                yield* providerSessionRuntime.upsert(runtime);
+              }
+              const notification = yield* eventStore.append({
+                eventId,
+                aggregateKind: "thread",
+                aggregateId: input.threadId,
+                occurredAt,
+                commandId: null,
+                causationEventId: null,
+                correlationId: null,
+                metadata: {},
+                type: "thread.meta-updated",
+                payload: { threadId: input.threadId, updatedAt: restored.updatedAt },
+              });
+              nextReadModel = yield* projectEvent(nextReadModel, notification);
+              yield* projectionPipeline.projectEventDeferred(notification).pipe(Effect.asVoid);
+              return { nextReadModel, notification, sequence: notification.sequence };
+            }),
+          )
+          .pipe(
+            Effect.catchTag("SqlError", (error) =>
+              Effect.fail(
+                toPersistenceSqlError("OrchestrationEngine.importHandoffEvents:transaction")(error),
+              ),
+            ),
+          );
+        commandReadModel = committed.nextReadModel;
+        if (committed.notification !== null) yield* eventPubSub.publish(committed.notification);
+        return { sequence: committed.sequence };
+      }).pipe(Effect.uninterruptible),
+    );
+
   return {
     readEvents,
     readThreadEvents,
     getThreadReplayStats,
     dispatch,
-    subscribeDomainEvents: PubSub.subscribe(eventPubSub).pipe(Effect.map(Stream.fromSubscription)),
+    importHandoffEvents,
+    subscribeDomainEvents: eventPubSub.subscribeUntracked,
+    subscribeHandoffEvents: eventPubSub.subscribe,
+    flushEvents: eventPubSub.flush,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.
     get streamDomainEvents(): OrchestrationEngineShape["streamDomainEvents"] {
-      return Stream.fromPubSub(eventPubSub);
+      return eventPubSub.stream;
     },
     // The command read model's snapshotSequence tracks the latest committed
     // event sequence (updated on the worker fiber). A plain property read is a

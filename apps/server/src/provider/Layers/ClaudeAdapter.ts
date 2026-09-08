@@ -7,6 +7,10 @@
  * @module ClaudeAdapterLive
  */
 import {
+  openTransferredClaudeSession,
+  invalidateTransferredClaudeSession,
+} from "../../handoff/TransferredClaudeSession.ts";
+import {
   type CanUseTool,
   query,
   type Options as ClaudeQueryOptions,
@@ -300,6 +304,7 @@ interface ClaudeSessionContext {
    * effort override inherit this. */
   currentEffort: string | undefined;
   resumeSessionId: string | undefined;
+  readonly transferredSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{
@@ -337,6 +342,8 @@ interface ClaudeSessionContext {
 }
 
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
+  readonly initializationResult?: () => Promise<unknown>;
+  readonly [Symbol.asyncDispose]?: () => PromiseLike<void>;
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
@@ -1953,7 +1960,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       query({
         prompt: input.prompt,
         options: input.options,
-      }) as ClaudeQueryRuntime);
+      }));
 
   const sessions = new Map<ThreadId, ClaudeSessionContext>();
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -2232,6 +2239,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  const invalidateNativeStore = Effect.fn("invalidateNativeStore")(function* (
+    context: ClaudeSessionContext,
+    reason: "mirrorError" | "sessionMismatch",
+  ) {
+    if (!context.transferredSessionId) return;
+    yield* Effect.tryPromise({
+      try: () =>
+        invalidateTransferredClaudeSession({
+          stateDir: serverConfig.stateDir,
+          threadId: context.session.threadId,
+          sessionId: context.transferredSessionId!,
+          reason,
+        }),
+      catch: (cause) =>
+        new ProviderAdapterProcessError({
+          provider: PROVIDER,
+          threadId: context.session.threadId,
+          detail: "Failed to quarantine transferred Claude history.",
+          cause,
+        }),
+    }).pipe(Effect.ensuring(Effect.sync(() => context.query.close())));
+  });
+
   const ensureThreadId = Effect.fn("ensureThreadId")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -2241,6 +2271,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     if (!hasDurableClaudeSessionId(message)) {
       return;
+    }
+    if (context.transferredSessionId && message.session_id !== context.transferredSessionId) {
+      yield* invalidateNativeStore(context, "sessionMismatch");
+      return yield* new ProviderAdapterProcessError({
+        provider: PROVIDER,
+        threadId: context.session.threadId,
+        detail: "Transferred Claude session identity changed. Execution stopped.",
+      });
     }
     const nextThreadId = message.session_id;
     context.resumeSessionId = message.session_id;
@@ -3765,6 +3803,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "mirror_error":
+        if (context.transferredSessionId) {
+          yield* invalidateNativeStore(context, "mirrorError");
+          return yield* new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Transferred Claude history mirror failed. Execution stopped.",
+          });
+        }
         yield* emitRuntimeError(
           context,
           `Claude workspace mirror error: ${message.error}`,
@@ -4044,16 +4090,33 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     // Schedule process termination before any cleanup that can wait on the
     // provider. The SDK closes stdin, then escalates from SIGTERM to SIGKILL.
-    yield* Effect.try({
-      try: () => context.query.close(),
-      catch: (cause) =>
-        new ProviderAdapterProcessError({
-          provider: PROVIDER,
-          threadId: context.session.threadId,
-          detail: "Failed to close Claude runtime query.",
-          cause,
-        }),
-    });
+    if (context.transferredSessionId) {
+      yield* Effect.tryPromise({
+        try: async () => {
+          const dispose = context.query[Symbol.asyncDispose];
+          if (!dispose) throw new Error("Transferred Claude session requires awaitable shutdown.");
+          await dispose.call(context.query);
+        },
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Failed to flush transferred Claude native history during shutdown.",
+            cause,
+          }),
+      });
+    } else {
+      yield* Effect.try({
+        try: () => context.query.close(),
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Failed to close Claude runtime query.",
+            cause,
+          }),
+      });
+    }
 
     context.stopped = true;
 
@@ -4667,6 +4730,23 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? [input.cwd] : []),
         serverConfig.attachmentsDir,
       ];
+      const transferredSessionStore = existingResumeSessionId
+        ? yield* Effect.tryPromise({
+            try: () =>
+              openTransferredClaudeSession({
+                stateDir: serverConfig.stateDir,
+                threadId,
+                sessionId: existingResumeSessionId,
+              }),
+            catch: (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId,
+                detail: "Failed to open transferred Claude native session.",
+                cause,
+              }),
+          })
+        : undefined;
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4691,6 +4771,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
+        ...(transferredSessionStore ? { sessionStore: transferredSessionStore } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
@@ -4754,6 +4835,25 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           }),
       });
 
+      if (transferredSessionStore) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            if (!queryRuntime.initializationResult || !queryRuntime[Symbol.asyncDispose])
+              throw new Error(
+                "Claude runtime cannot verify transferred-session initialization and await native-history shutdown.",
+              );
+            await queryRuntime.initializationResult();
+          },
+          catch: (cause) =>
+            new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId,
+              detail: "Transferred Claude native session initialization failed.",
+              cause,
+            }),
+        }).pipe(Effect.tapError(() => Effect.sync(() => queryRuntime.close())));
+      }
+
       const session: ProviderSession = {
         threadId,
         provider: PROVIDER,
@@ -4783,6 +4883,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         currentApiModelId: apiModelId,
         currentEffort: effectiveEffort ?? undefined,
         resumeSessionId: sessionId,
+        transferredSessionId: transferredSessionStore ? sessionId : undefined,
         pendingApprovals,
         pendingUserInputs,
         turns: [],
@@ -5129,6 +5230,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      supportsSessionHandoff: true,
     },
     compaction: { type: "slash-command", command: "/compact" },
     startSession,

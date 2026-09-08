@@ -78,3 +78,31 @@ broken state.
   sync.
 - Sync transfers are time-limited in flight. If a transfer sits idle for a long time and the link
   it was using expires, start the sync again rather than trying to resume it.
+
+## Continue a Thread on Another Environment
+
+For a Claude thread with a native session, choose **Continue on…** from the thread menu or
+**Continue thread on…** in the command palette. Web, desktop and mobile can start the transfer.
+Both environments must be connected, have compatible authenticated Claude installations, and
+have the matching Git project available. The destination uses its own credentials.
+
+An idle thread moves immediately. During a turn, choose to wait for it to finish or interrupt it
+using Claude's normal stop mechanism. T3 preserves the conversation and native session, then
+restores the branch, staged and unstaged changes, and relevant untracked files in a separate
+checkout on the destination. Installed dependencies and ignored or reproducible untracked
+artifacts are excluded. Historical absolute paths, local MCP services, terminals and running
+processes are not recreated automatically.
+
+Keep the transferring client and both environments available until completion. The thread's
+execution indicator shows its owner and transfer progress. Once transfer completes, open the
+same thread on the destination; the source can be shut down. An idle or interrupted thread
+remains idle: T3 does not send an invented continuation message.
+
+If the connection fails, use **Recover transfer**. Before ownership changes, recovery cancels
+preparation and leaves the source resumable. After ownership changes, recovery finishes on the
+destination. Do not manually resume the old source copy while recovery is pending.
+
+This first version supports native Claude sessions only. Codex and other providers, threads with
+attachments, custom source Claude homes that differ from the server configuration, and returning
+a thread to an environment that already holds an earlier copy are blocked. The destination must
+have an existing project; automatic clone setup is not available in the transfer selector.

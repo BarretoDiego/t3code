@@ -152,6 +152,8 @@ export const RPC_REQUIRED_SCOPES = {
   // with projects.readFile. Import URLs and deletions write it, so they sit
   // with projects.writeFile.
   [WS_METHODS.projectSyncManifest]: AuthOrchestrationReadScope,
+  [WS_METHODS.threadHandoffWatch]: AuthOrchestrationReadScope,
+  [WS_METHODS.threadHandoffRequest]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectSyncCreateExportUrl]: AuthOrchestrationReadScope,
   [WS_METHODS.projectSyncCreateImportUrl]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectSyncApplyDeletions]: AuthOrchestrationOperateScope,

@@ -2166,13 +2166,17 @@ const make = Effect.gen(function* () {
 
   const start: ProviderRuntimeIngestionShape["start"] = () =>
     Effect.gen(function* () {
+      const runtimeEvents = providerService.subscribeHandoffEvents
+        ? yield* providerService.subscribeHandoffEvents
+        : providerService.streamEvents;
+      const domainEvents = orchestrationEngine.subscribeHandoffEvents
+        ? yield* orchestrationEngine.subscribeHandoffEvents
+        : orchestrationEngine.streamDomainEvents;
       yield* forkParked(
-        Stream.runForEach(providerService.streamEvents, (event) =>
-          worker.enqueue({ source: "runtime", event }),
-        ),
+        Stream.runForEach(runtimeEvents, (event) => worker.enqueue({ source: "runtime", event })),
       );
       yield* forkParked(
-        Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+        Stream.runForEach(domainEvents, (event) => {
           if (event.type !== "thread.turn-start-requested") {
             return Effect.void;
           }

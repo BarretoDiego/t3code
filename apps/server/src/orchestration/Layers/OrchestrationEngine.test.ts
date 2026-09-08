@@ -4,6 +4,9 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
+  EnvironmentId,
+  ThreadHandoffId,
+  type ThreadHandoffRecord,
   ApprovalRequestId,
   EventId,
   CheckpointRef,
@@ -29,6 +32,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vite-plus/test";
 
+import { makeHandoffJournal } from "../../handoff/HandoffJournal.ts";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import * as OrchestrationCommandReceipts from "../../persistence/Services/OrchestrationCommandReceipts.ts";
@@ -54,6 +58,8 @@ import {
 } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
+import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
@@ -79,7 +85,7 @@ function makeOrchestrationLayer(databasePath?: string) {
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(persistence),
+    Layer.provideMerge(persistence),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -91,6 +97,9 @@ async function createOrchestrationSystem(databasePath?: string) {
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
   return {
     engine,
+    handoffJournal: await runtime.runPromise(makeHandoffJournal),
+    providerRuntime: await runtime.runPromise(ProviderSessionRuntime.make),
+    sql: await runtime.runPromise(Effect.service(SqlClient.SqlClient)),
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     readThread: (threadId: ThreadId) =>
       runtime.runPromise(snapshotQuery.getThreadDetailById(threadId)),
@@ -2086,5 +2095,443 @@ describe("OrchestrationEngine", () => {
     expect(withoutOrigin?.metadata.origin).toBeUndefined();
 
     await system.dispose();
+  });
+});
+
+describe("thread handoff orchestration integration", () => {
+  const threadId = ThreadId.make("handoff-thread");
+  const projectId = ProjectId.make("handoff-project");
+  const owner = EnvironmentId.make("work-mac");
+  const destination = EnvironmentId.make("home-server");
+  const transfer: ThreadHandoffRecord = {
+    handoffId: ThreadHandoffId.make("engine-handoff"),
+    owner: { threadId, environmentId: owner, generation: 0 },
+    destinationEnvironmentId: destination,
+    localEnvironmentId: owner,
+    phase: "preflighting",
+    revision: 0,
+    failure: null,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  const seedProject = async (system: Awaited<ReturnType<typeof createOrchestrationSystem>>) => {
+    await system.run(
+      system.engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("handoff-project-create"),
+        projectId,
+        title: "Handoff",
+        workspaceRoot: "/tmp/handoff-project",
+        createdAt: now(),
+      }),
+    );
+  };
+  const seedThread = async (system: Awaited<ReturnType<typeof createOrchestrationSystem>>) => {
+    await seedProject(system);
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("handoff-thread-create"),
+        threadId,
+        projectId,
+        title: "Implement Scheduling",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/scheduling",
+        worktreePath: "/tmp/handoff-worktree",
+        createdAt: now(),
+      }),
+    );
+  };
+  const rename = (title: string): OrchestrationCommand => ({
+    type: "thread.meta.update",
+    commandId: CommandId.make(`rename-${title}`),
+    threadId,
+    title,
+  });
+
+  it("atomically activates history, provider binding and ownership, then retries a lost acknowledgement without replay", async () => {
+    const source = await createOrchestrationSystem();
+    const target = await createOrchestrationSystem();
+    try {
+      await seedThread(source);
+      await seedProject(target);
+      await source.run(
+        source.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("atomic-turn"),
+          threadId,
+          message: {
+            messageId: MessageId.make("atomic-message"),
+            role: "user",
+            text: "Keep the same conversation",
+            attachments: [],
+          },
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          createdAt: now(),
+        }),
+      );
+      const history = Array.from(
+        await source.run(
+          Stream.runCollect(
+            source.engine.readThreadEvents({
+              threadId,
+              fromSequenceExclusive: 0,
+              toSequenceInclusive: await source.run(source.engine.latestSequence),
+            }),
+          ),
+        ),
+      ).map((event) => ({ ...event, metadata: { ...event.metadata, historyImport: true } }));
+      const reservation = { ...transfer, localEnvironmentId: destination };
+      await target.run(target.handoffJournal.reserveIncoming(reservation));
+      const record: ThreadHandoffRecord = { ...reservation, phase: "committed", revision: 7 };
+      const runtime: ProviderSessionRuntime.ProviderSessionRuntime = {
+        threadId,
+        providerName: "codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        adapterKey: "codex",
+        runtimeMode: "full-access",
+        status: "stopped",
+        lastSeenAt: now(),
+        resumeCursor: { threadId: "native-session" },
+        runtimePayload: null,
+      };
+      const receipt = await target.run(
+        target.engine.importHandoffEvents!({
+          threadId,
+          events: history,
+          handoff: { record, runtime },
+        }),
+      );
+      expect(await target.run(target.handoffJournal.head(threadId))).toEqual(record);
+      const persisted = Option.getOrThrow(
+        await target.run(target.providerRuntime.getByThreadId({ threadId })),
+      );
+      expect(persisted).toMatchObject({ ...runtime, executionFence: record });
+      const restored = Option.getOrThrow(await target.readThread(threadId));
+      expect(restored.messages.map((message) => message.id)).toEqual(["atomic-message"]);
+      expect(
+        await target.run(
+          target.engine.importHandoffEvents!({
+            threadId,
+            events: history,
+            handoff: { record, runtime },
+          }),
+        ),
+      ).toEqual(receipt);
+      expect(await target.run(target.engine.latestSequence)).toBe(receipt.sequence);
+      expect(Option.getOrThrow(await target.readThread(threadId)).messages).toEqual(
+        restored.messages,
+      );
+      await target.run(
+        target.handoffJournal.advance({
+          handoffId: record.handoffId,
+          expectedRevision: 7,
+          phase: "completed",
+          updatedAt: now(),
+        }),
+      );
+      await target.run(
+        target.handoffJournal.begin({
+          ...transfer,
+          handoffId: ThreadHandoffId.make("later-departure"),
+          owner: { threadId, environmentId: destination, generation: 1 },
+          localEnvironmentId: destination,
+          destinationEnvironmentId: owner,
+        }),
+      );
+      await expect(
+        target.run(
+          target.engine.importHandoffEvents!({
+            threadId,
+            events: history,
+            handoff: { record, runtime },
+          }),
+        ),
+      ).rejects.toThrow("reservation");
+    } finally {
+      await source.dispose();
+      await target.dispose();
+    }
+  });
+
+  it("rolls back imported events and ownership when binding persistence rejects activation", async () => {
+    const source = await createOrchestrationSystem();
+    const target = await createOrchestrationSystem();
+    try {
+      await seedThread(source);
+      await seedProject(target);
+      const history = Array.from(
+        await source.run(
+          Stream.runCollect(
+            source.engine.readThreadEvents({
+              threadId,
+              fromSequenceExclusive: 0,
+              toSequenceInclusive: await source.run(source.engine.latestSequence),
+            }),
+          ),
+        ),
+      ).map((event) => ({ ...event, metadata: { ...event.metadata, historyImport: true } }));
+      const reservation = { ...transfer, localEnvironmentId: destination };
+      await target.run(target.handoffJournal.reserveIncoming(reservation));
+      const record: ThreadHandoffRecord = { ...reservation, phase: "committed", revision: 7 };
+      const runtime: ProviderSessionRuntime.ProviderSessionRuntime = {
+        threadId,
+        providerName: "codex",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        adapterKey: "codex",
+        runtimeMode: "full-access",
+        status: "stopped",
+        lastSeenAt: now(),
+        resumeCursor: { threadId: "native-session" },
+        runtimePayload: null,
+      };
+      const before = await target.run(target.engine.latestSequence);
+      for (const invalidRuntime of [
+        { ...runtime, threadId: ThreadId.make("another-thread") },
+        { ...runtime, providerInstanceId: ProviderInstanceId.make("another-instance") },
+      ]) {
+        await expect(
+          target.run(
+            target.engine.importHandoffEvents!({
+              threadId,
+              events: history,
+              handoff: { record, runtime: invalidRuntime },
+            }),
+          ),
+        ).rejects.toThrow("identities");
+        expect(await target.run(target.handoffJournal.head(threadId))).toEqual(reservation);
+        expect(Option.isNone(await target.readThread(threadId))).toBe(true);
+      }
+      await target.run(target.sql`CREATE TRIGGER reject_handoff_binding BEFORE INSERT ON provider_session_runtime
+        BEGIN SELECT RAISE(ABORT, 'Injected binding persistence failure'); END`);
+      await expect(
+        target.run(
+          target.engine.importHandoffEvents!({
+            threadId,
+            events: history,
+            handoff: { record, runtime },
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(await target.run(target.handoffJournal.head(threadId))).toEqual(reservation);
+      expect(
+        Option.isNone(await target.run(target.providerRuntime.getByThreadId({ threadId }))),
+      ).toBe(true);
+      expect(Option.isNone(await target.readThread(threadId))).toBe(true);
+      expect(await target.run(target.engine.latestSequence)).toBe(before);
+      await target.run(target.sql`DROP TRIGGER reject_handoff_binding`);
+      const last = history.at(-1)!;
+      await expect(
+        target.run(
+          target.engine.importHandoffEvents!({
+            threadId,
+            events: [...history, { ...last, sequence: last.sequence + 1 }],
+            handoff: { record, runtime: { ...runtime, lastSeenAt: now() } },
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(await target.run(target.handoffJournal.head(threadId))).toEqual(reservation);
+      expect(Option.isNone(await target.readThread(threadId))).toBe(true);
+      const accepted = await target.run(
+        target.engine.importHandoffEvents!({
+          threadId,
+          events: history,
+          handoff: { record, runtime: { ...runtime, lastSeenAt: now() } },
+        }),
+      );
+      expect(accepted.sequence).toBeGreaterThan(before);
+    } finally {
+      await source.dispose();
+      await target.dispose();
+    }
+  });
+
+  it("imports real conversation and checkpoints without publishing historical turn intents", async () => {
+    const source = await createOrchestrationSystem();
+    const target = await createOrchestrationSystem();
+    try {
+      await seedThread(source);
+      await seedProject(target);
+      await source.run(
+        source.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("handoff-turn"),
+          threadId,
+          message: {
+            messageId: MessageId.make("handoff-message"),
+            role: "user",
+            text: "Implement scheduling",
+            attachments: [],
+          },
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          createdAt: now(),
+        }),
+      );
+      await source.run(
+        source.engine.dispatch({
+          type: "thread.turn.diff.complete",
+          commandId: CommandId.make("handoff-checkpoint"),
+          threadId,
+          turnId: TurnId.make("handoff-turn-id"),
+          completedAt: now(),
+          createdAt: now(),
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/handoff-thread/turn/1"),
+          checkpointTurnCount: 1,
+          status: "ready",
+          files: [],
+        }),
+      );
+      const history = Array.from(
+        await source.run(
+          Stream.runCollect(
+            source.engine.readThreadEvents({
+              threadId,
+              fromSequenceExclusive: 0,
+              toSequenceInclusive: await source.run(source.engine.latestSequence),
+            }),
+          ),
+        ),
+      );
+      expect(history.some((event) => event.type === "thread.turn-start-requested")).toBe(true);
+      const imported = history.map((event) => ({
+        ...event,
+        metadata: { ...event.metadata, historyImport: true },
+      }));
+      const published = await target.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const events = yield* target.engine.subscribeDomainEvents;
+            const receipt = yield* target.engine.importHandoffEvents!({
+              threadId,
+              events: imported,
+            });
+            return yield* Stream.runCollect(
+              events.pipe(Stream.takeUntil((event) => event.sequence === receipt.sequence)),
+            );
+          }),
+        ),
+      );
+      expect(Array.from(published).map((event) => event.type)).toEqual(["thread.meta-updated"]);
+      const before = Option.getOrThrow(await source.readThread(threadId));
+      const after = Option.getOrThrow(await target.readThread(threadId));
+      expect(after).toEqual(before);
+      expect(after.messages.some((message) => message.id === "handoff-message")).toBe(true);
+      expect(after.checkpoints).toHaveLength(1);
+      const saved = Array.from(
+        await target.run(
+          Stream.runCollect(
+            target.engine.readThreadEvents({
+              threadId,
+              fromSequenceExclusive: 0,
+              toSequenceInclusive: await target.run(target.engine.latestSequence),
+            }),
+          ),
+        ),
+      );
+      expect(saved.slice(0, -1).map((event) => event.payload)).toEqual(
+        history.map((event) => event.payload),
+      );
+      expect(saved.slice(0, -1).every((event) => event.metadata.historyImport === true)).toBe(true);
+    } finally {
+      await source.dispose();
+      await target.dispose();
+    }
+  });
+
+  it("fences source mutations during freeze and after commit while allowing normal edits before and after rollback", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await seedThread(system);
+      await system.run(system.engine.dispatch(rename("before")));
+      let state = await system.run(system.handoffJournal.begin(transfer));
+      await system.run(system.engine.dispatch(rename("preflight")));
+      for (const phase of ["pausing", "checkpointing"] as const) {
+        state = await system.run(
+          system.handoffJournal.advance({
+            handoffId: state.handoffId,
+            expectedRevision: state.revision,
+            phase,
+            updatedAt: now(),
+          }),
+        );
+        await expect(system.run(system.engine.dispatch(rename(phase)))).rejects.toThrow("frozen");
+      }
+      state = await system.run(
+        system.handoffJournal.advance({
+          handoffId: state.handoffId,
+          expectedRevision: state.revision,
+          phase: "rollingBack",
+          failure: "Destination offline",
+          updatedAt: now(),
+        }),
+      );
+      await expect(system.run(system.engine.dispatch(rename("rollback-pending")))).rejects.toThrow(
+        "frozen",
+      );
+      state = await system.run(
+        system.handoffJournal.advance({
+          handoffId: state.handoffId,
+          expectedRevision: state.revision,
+          phase: "failed",
+          updatedAt: now(),
+        }),
+      );
+      await system.run(system.engine.dispatch(rename("after-rollback")));
+      state = await system.run(
+        system.handoffJournal.begin({
+          ...transfer,
+          handoffId: ThreadHandoffId.make("retry-handoff"),
+        }),
+      );
+      for (const phase of [
+        "pausing",
+        "checkpointing",
+        "syncingProjects",
+        "transferringSession",
+        "verifying",
+        "ready",
+        "committed",
+        "completed",
+      ] as const) {
+        state = await system.run(
+          system.handoffJournal.advance({
+            handoffId: state.handoffId,
+            expectedRevision: state.revision,
+            phase,
+            updatedAt: now(),
+          }),
+        );
+        if (phase === "committed" || phase === "completed")
+          await expect(system.run(system.engine.dispatch(rename(phase)))).rejects.toThrow(
+            "another environment",
+          );
+      }
+      expect(Option.getOrThrow(await system.readThread(threadId)).title).toBe("after-rollback");
+    } finally {
+      await system.dispose();
+    }
+  });
+
+  it("allows the destination to mutate its incoming committed thread", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await seedThread(system);
+      await system.run(
+        system.handoffJournal.acceptIncoming({
+          ...transfer,
+          localEnvironmentId: destination,
+          phase: "committed",
+          revision: 7,
+        }),
+      );
+      await system.run(system.engine.dispatch(rename("on-home-server")));
+      expect(Option.getOrThrow(await system.readThread(threadId)).title).toBe("on-home-server");
+    } finally {
+      await system.dispose();
+    }
   });
 });

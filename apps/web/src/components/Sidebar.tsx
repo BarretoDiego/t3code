@@ -1,3 +1,4 @@
+import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -3974,6 +3975,7 @@ export default function Sidebar() {
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                handoff: canHandoffThread(threadRef),
               },
               snoozePresets,
             }),
@@ -3989,6 +3991,9 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "continue-on":
+            openThreadHandoff(threadRef);
+            return;
           case "project-settings": {
             const projectGroup = projectGroupsRef.current.find((group) =>
               group.memberProjectRefs.some(

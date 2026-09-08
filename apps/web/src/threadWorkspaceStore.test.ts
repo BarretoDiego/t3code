@@ -18,6 +18,8 @@ import {
   splitActiveThreadWorkspacePane,
   threadWorkspacePaneCount,
   threadWorkspaceTargetKey,
+  remapThreadWorkspaceEnvironment,
+  useThreadWorkspaceStore,
   type ThreadWorkspacePane,
   type ThreadWorkspaceTarget,
 } from "./threadWorkspaceStore";
@@ -35,6 +37,114 @@ const pane = (
 ): ThreadWorkspacePane => ({ id, tabs, activeTabKey });
 
 describe("threadWorkspaceStore", () => {
+  it("moves execution bindings across live panes and saved layouts without moving the thread", () => {
+    const moved = target("handoff");
+    const untouched = target("other");
+    const otherEnvironment = { ...moved, environmentId: "third" as EnvironmentId };
+    const model = {
+      layout: "two-columns" as const,
+      root: {
+        type: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.35,
+        first: { type: "pane" as const, paneId: "left" },
+        second: { type: "pane" as const, paneId: "right" },
+      },
+      panes: [
+        pane("left", [untouched, moved], threadWorkspaceTargetKey(moved)),
+        pane("right", [otherEnvironment]),
+      ],
+      activePaneId: "left",
+    };
+    const saved = createSavedThreadWorkspace(model, { id: "saved", name: "Work", savedAt: 10 });
+    const state = { ...model, saved: [saved] };
+    const input = {
+      threadId: moved.threadId,
+      sourceEnvironmentId: moved.environmentId,
+      destinationEnvironmentId: "destination" as EnvironmentId,
+    };
+    const result = remapThreadWorkspaceEnvironment(state, input);
+    const destination = { ...moved, environmentId: input.destinationEnvironmentId };
+    expect(result.root).toBe(model.root);
+    expect(result.layout).toBe(model.layout);
+    expect(result.activePaneId).toBe("left");
+    expect(result.panes.map((entry) => entry.id)).toEqual(["left", "right"]);
+    expect(result.panes[0]?.tabs).toEqual([untouched, destination]);
+    expect(result.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(destination));
+    expect(result.panes[1]).toBe(model.panes[1]);
+    expect(result.saved[0]?.root).toBe(saved.root);
+    expect(result.saved[0]?.activePaneIndex).toBe(saved.activePaneIndex);
+    expect(result.saved[0]?.panes[0]?.tabs).toEqual([untouched, destination]);
+    expect(result.saved[0]?.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(destination));
+    expect(remapThreadWorkspaceEnvironment(result, input)).toBe(result);
+  });
+
+  it("merges a duplicate destination tab at the source position while retaining active identity", () => {
+    const source = target("handoff");
+    const destination = { ...source, environmentId: "destination" as EnvironmentId };
+    const before = target("before");
+    const after = target("after");
+    const state = {
+      layout: "single" as const,
+      panes: [
+        pane("pane", [destination, before, source, after], threadWorkspaceTargetKey(destination)),
+      ],
+      activePaneId: "pane",
+      saved: [],
+    };
+    const result = remapThreadWorkspaceEnvironment(state, {
+      threadId: source.threadId,
+      sourceEnvironmentId: source.environmentId,
+      destinationEnvironmentId: destination.environmentId,
+    });
+    expect(result.panes[0]?.tabs).toEqual([before, destination, after]);
+    expect(result.panes[0]?.activeTabKey).toBe(threadWorkspaceTargetKey(destination));
+  });
+
+  it("store action preserves panel state and ignores unrelated drafts and environments", () => {
+    const previous = useThreadWorkspaceStore.getState();
+    const source = target("handoff");
+    const draft: ThreadWorkspaceTarget = {
+      ...source,
+      routeKind: "draft",
+      draftId: DraftId.make("draft"),
+    };
+    const panel = { kind: "source-control" as const };
+    try {
+      useThreadWorkspaceStore.setState({
+        layout: "two-columns",
+        panes: [{ ...pane("live", [source]), panel }, pane("draft", [draft])],
+        activePaneId: "live",
+        root: {
+          type: "split",
+          axis: "vertical",
+          ratio: 0.4,
+          first: { type: "pane", paneId: "live" },
+          second: { type: "pane", paneId: "draft" },
+        },
+        saved: [],
+      });
+      const before = useThreadWorkspaceStore.getState();
+      before.remapThreadEnvironment({
+        threadId: source.threadId,
+        sourceEnvironmentId: source.environmentId,
+        destinationEnvironmentId: "destination" as EnvironmentId,
+      });
+      const result = useThreadWorkspaceStore.getState();
+      expect(result.panes[0]?.panel).toBe(panel);
+      expect(result.panes[1]).toBe(before.panes[1]);
+      expect(result.root).toBe(before.root);
+      expect(result.panes[0]?.tabs[0]?.environmentId).toBe("destination");
+      const input = {
+        threadId: source.threadId,
+        sourceEnvironmentId: source.environmentId,
+        destinationEnvironmentId: source.environmentId,
+      };
+      expect(remapThreadWorkspaceEnvironment(result, input)).toBe(result);
+    } finally {
+      useThreadWorkspaceStore.setState(previous, true);
+    }
+  });
   it("creates the expected number of cells for every layout", () => {
     expect(threadWorkspacePaneCount("single")).toBe(1);
     expect(threadWorkspacePaneCount("two-columns")).toBe(2);

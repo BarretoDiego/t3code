@@ -1,5 +1,7 @@
 "use client";
 
+import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
+
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   canCreateProjectInEnvironment,
@@ -1631,6 +1633,17 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+    });
+  }
+
+  if (activeThread && referenceThreadRef && canHandoffThread(referenceThreadRef)) {
+    actionItems.push({
+      kind: "action",
+      value: "action:thread-handoff",
+      searchTerms: ["transfer", "handoff", "environment", "continue on"],
+      title: "Continue thread on…",
+      icon: <LinkIcon className={ITEM_ICON_CLASS} />,
+      run: async () => openThreadHandoff(referenceThreadRef),
     });
   }
 

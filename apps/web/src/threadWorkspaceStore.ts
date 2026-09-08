@@ -107,9 +107,16 @@ interface ThreadWorkspaceStoreState extends ThreadWorkspaceModel {
   closeTab: (paneId: string, tabKey: string) => void;
   moveTab: (tabKey: string, destinationPaneId: string, destinationIndex: number) => void;
   pruneTargets: (retain: (target: ThreadWorkspaceTarget) => boolean) => void;
+  remapThreadEnvironment: (input: ThreadEnvironmentRemap) => void;
   saveWorkspace: (name: string) => void;
   deleteWorkspace: (id: string) => void;
   restoreWorkspace: (id: string) => void;
+}
+
+export interface ThreadEnvironmentRemap {
+  readonly threadId: ThreadId;
+  readonly sourceEnvironmentId: EnvironmentId;
+  readonly destinationEnvironmentId: EnvironmentId;
 }
 
 const THREAD_WORKSPACE_STORAGE_KEY = "t3code:thread-workspace:v1";
@@ -259,6 +266,53 @@ function resizeTreeForPane(
 
 export function threadWorkspaceTargetKey(target: ThreadWorkspaceTarget): string {
   return scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId));
+}
+
+/** Move an execution binding without rebuilding pane geometry or tab placement.
+ * A duplicate destination tab yields to the moved tab's existing position. */
+export function remapThreadWorkspaceEnvironment<
+  T extends ThreadWorkspaceModel & { readonly saved: readonly SavedThreadWorkspace[] },
+>(model: T, input: ThreadEnvironmentRemap): T {
+  if (input.sourceEnvironmentId === input.destinationEnvironmentId) return model;
+  const sourceKey = scopedThreadKey(scopeThreadRef(input.sourceEnvironmentId, input.threadId));
+  const destinationKey = scopedThreadKey(
+    scopeThreadRef(input.destinationEnvironmentId, input.threadId),
+  );
+  const matches = (target: ThreadWorkspaceTarget) =>
+    target.routeKind === "server" &&
+    target.environmentId === input.sourceEnvironmentId &&
+    target.threadId === input.threadId;
+  const remapPane = <P extends Pick<ThreadWorkspacePane, "tabs" | "activeTabKey">>(pane: P): P => {
+    if (!pane.tabs.some(matches)) return pane;
+    const tabs: ThreadWorkspaceTarget[] = [];
+    let moved = false;
+    for (const target of pane.tabs) {
+      if (matches(target)) {
+        if (!moved) tabs.push({ ...target, environmentId: input.destinationEnvironmentId });
+        moved = true;
+      } else if (threadWorkspaceTargetKey(target) !== destinationKey) {
+        tabs.push(target);
+      }
+    }
+    return {
+      ...pane,
+      tabs,
+      activeTabKey: pane.activeTabKey === sourceKey ? destinationKey : pane.activeTabKey,
+    };
+  };
+  const panes = model.panes.map(remapPane);
+  const saved = model.saved.map((workspace) => {
+    const nextPanes = workspace.panes.map(remapPane);
+    return nextPanes.some((pane, index) => pane !== workspace.panes[index])
+      ? { ...workspace, panes: nextPanes }
+      : workspace;
+  });
+  if (
+    panes.every((pane, index) => pane === model.panes[index]) &&
+    saved.every((workspace, index) => workspace === model.saved[index])
+  )
+    return model;
+  return { ...model, panes, saved };
 }
 
 function appendUniqueTargets(
@@ -835,6 +889,8 @@ export const useThreadWorkspaceStore = create<ThreadWorkspaceStoreState>()(
       moveTab: (tabKey, destinationPaneId, destinationIndex) =>
         set((state) => moveThreadWorkspaceTab(state, tabKey, destinationPaneId, destinationIndex)),
       pruneTargets: (retain) => set((state) => pruneThreadWorkspaceTargets(state, retain)),
+      remapThreadEnvironment: (input) =>
+        set((state) => remapThreadWorkspaceEnvironment(state, input)),
       saveWorkspace: (name) =>
         set((state) => {
           const trimmed = name.trim();

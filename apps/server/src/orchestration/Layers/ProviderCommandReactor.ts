@@ -1885,7 +1885,9 @@ const make = Effect.gen(function* () {
     });
 
     // Subscribe before returning, even while event handling waits for server activation.
-    const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
+    const domainEvents = yield* (
+      orchestrationEngine.subscribeHandoffEvents ?? orchestrationEngine.subscribeDomainEvents
+    );
     yield* forkParked(Stream.runForEach(domainEvents, processEvent));
 
     // The domain event stream is hot, so work pending before this reactor

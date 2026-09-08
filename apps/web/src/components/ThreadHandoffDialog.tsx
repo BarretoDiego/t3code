@@ -1,0 +1,535 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
+import { randomUUID } from "../lib/utils";
+import { buildThreadRouteParams } from "../threadRoutes";
+import * as Schema from "effect/Schema";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ScopedThreadRef,
+  ThreadHandoffId,
+  ThreadId,
+  type ThreadHandoffDestination,
+  type ThreadHandoffSource,
+} from "@t3tools/contracts";
+import {
+  runThreadHandoff,
+  recoverThreadHandoff,
+  type ThreadHandoffProgress,
+} from "@t3tools/client-runtime/operations/thread-handoff";
+import { useEnvironments } from "../state/environments";
+import { useProjects, useThreadShell } from "../state/entities";
+import { THREAD_HANDOFF_EVENT, useThreadHandoffDeps } from "../state/threadHandoff";
+import { useThreadWorkspaceStore } from "../threadWorkspaceStore";
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "./ui/select";
+
+const Recovery = Schema.Struct({
+  handoffId: ThreadHandoffId,
+  threadId: ThreadId,
+  sourceEnvironmentId: EnvironmentId,
+  destinationEnvironmentId: EnvironmentId,
+});
+type Recovery = typeof Recovery.Type;
+const decodeRecovery = Schema.decodeUnknownSync(Schema.fromJsonString(Recovery));
+const encodeRecovery = Schema.encodeSync(Schema.fromJsonString(Recovery));
+const isThreadRef = Schema.is(ScopedThreadRef);
+const recoveryKey = (ref: ScopedThreadRef) =>
+  `t3:thread-handoff:${ref.environmentId}:${ref.threadId}`;
+const clearRecovery = (ref: ScopedThreadRef) => {
+  try {
+    localStorage.removeItem(recoveryKey(ref));
+  } catch {
+    /* Recovery is idempotent if storage retains a completed descriptor. */
+  }
+};
+const message = (error: unknown) =>
+  error instanceof Error ? error.message : "The environment could not complete this request.";
+const phaseLabels: Record<ThreadHandoffProgress["phase"], string> = {
+  preflighting: "Checking environments / waiting for the current turn",
+  pausing: "Pausing agent",
+  checkpointing: "Creating a consistent checkpoint",
+  syncingProjects: "Transferring projects and native session",
+  transferringSession: "Transferring native session",
+  verifying: "Verifying destination",
+  ready: "Destination ready",
+  committed: "Activating destination",
+  completed: "Transfer completed",
+  rollingBack: "Restoring source ownership",
+  failed: "Transfer failed; source retained",
+  cancelled: "Transfer cancelled; source retained",
+};
+type RunState =
+  | { status: "idle" }
+  | { status: "running"; progress: ThreadHandoffProgress | null }
+  | { status: "completed"; destinationEnvironmentId: EnvironmentId }
+  | { status: "error"; message: string; recovery: Recovery | null };
+
+export interface ThreadHandoffDialogProps {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly threadRef: ScopedThreadRef;
+  readonly onTransferred?: (destination: ScopedThreadRef) => void;
+}
+
+export function ThreadHandoffDialog({
+  open,
+  onOpenChange,
+  threadRef,
+  onTransferred,
+}: ThreadHandoffDialogProps) {
+  const router = useRouter();
+  const deps = useThreadHandoffDeps();
+  const { environments } = useEnvironments();
+  const projects = useProjects();
+  const thread = useThreadShell(threadRef);
+  const [source, setSource] = useState<ThreadHandoffSource | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [destinationId, setDestinationId] = useState<EnvironmentId | null>(null);
+  const [providerId, setProviderId] = useState<ProviderInstanceId | null>(null);
+  const [projectId, setProjectId] = useState<ProjectId | null>(null);
+  const [mode, setMode] = useState<"idle" | "afterTurn" | "interrupt">("idle");
+  const [run, setRun] = useState<RunState>(() => {
+    try {
+      const stored = localStorage.getItem(recoveryKey(threadRef));
+      if (!stored) return { status: "idle" };
+      const recovery = decodeRecovery(stored);
+      if (
+        recovery.threadId !== threadRef.threadId ||
+        recovery.sourceEnvironmentId !== threadRef.environmentId
+      )
+        throw new Error("Saved recovery belongs to another thread.");
+      return {
+        status: "error",
+        message: "A previous transfer needs its ownership checked before continuing.",
+        recovery,
+      };
+    } catch (error) {
+      return { status: "error", message: message(error), recovery: null };
+    }
+  });
+  const [readiness, setReadiness] = useState<{
+    key: string;
+    status: "checking" | "ready" | "error";
+    message?: string;
+    warnings?: readonly string[];
+  } | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  const inFlight = useRef(false);
+  const sourceEnvironment = environments.find(
+    (entry) => entry.environmentId === threadRef.environmentId,
+  );
+  const selectedEnvironment = environments.find((entry) => entry.environmentId === destinationId);
+  const destinationProjects = projects.filter((project) => project.environmentId === destinationId);
+  const providers =
+    selectedEnvironment?.serverConfig?.providers.filter(
+      (provider) =>
+        provider.driver === source?.driver &&
+        provider.enabled &&
+        provider.supportsSessionHandoff === true,
+    ) ?? [];
+  const selectedProvider = providers.find((provider) => provider.instanceId === providerId);
+  const destination = useMemo<Omit<ThreadHandoffDestination, "source"> | null>(
+    () =>
+      source && destinationId && providerId && projectId
+        ? {
+            environmentId: destinationId,
+            providerInstanceId: providerId,
+            projects: [{ sourceProjectId: source.projectId, destinationProjectId: projectId }],
+          }
+        : null,
+    [source, destinationId, providerId, projectId],
+  );
+  const selectionKey = `${destinationId}:${providerId}:${projectId}`;
+  const visibleReadiness =
+    readiness?.key === selectionKey
+      ? readiness
+      : destination
+        ? { key: selectionKey, status: "checking" as const }
+        : null;
+  const busy = run.status === "running";
+  const destinationOnline = selectedEnvironment?.connection.phase === "connected";
+  const eligible =
+    destinationOnline &&
+    selectedEnvironment?.serverConfig?.environment.capabilities.threadHandoff === true;
+  const complete = useCallback(
+    (recovery: Recovery) => {
+      useThreadWorkspaceStore.getState().remapThreadEnvironment(recovery);
+      setRun({ status: "completed", destinationEnvironmentId: recovery.destinationEnvironmentId });
+      const destinationRef = {
+        threadId: recovery.threadId,
+        environmentId: recovery.destinationEnvironmentId,
+      };
+      const sourcePath = router.buildLocation({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams({
+          threadId: recovery.threadId,
+          environmentId: recovery.sourceEnvironmentId,
+        }),
+      }).pathname;
+      if (router.state.location.pathname === sourcePath) {
+        void router.navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(destinationRef),
+          replace: true,
+        });
+      }
+      onTransferred?.(destinationRef);
+    },
+    [onTransferred, router],
+  );
+
+  useEffect(() => {
+    if (!open || inFlight.current) return;
+    let active = true;
+    void deps
+      .request(threadRef.environmentId, { operation: "inspect", threadId: threadRef.threadId })
+      .then((response) => {
+        if (!active) return;
+        if (!response.source) throw new Error("Source did not return a native session.");
+        setSource(response.source);
+      })
+      .catch((error: unknown) => {
+        if (active) setSourceError(message(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, deps, threadRef.environmentId, threadRef.threadId]);
+
+  useEffect(() => {
+    if (!open || busy || !source || !destination || !eligible) return;
+    let active = true;
+    void deps
+      .request(destination.environmentId, {
+        operation: "preflight",
+        destination: { ...destination, source },
+      })
+      .then((response) => {
+        if (active)
+          setReadiness({ key: selectionKey, status: "ready", warnings: response.warnings ?? [] });
+      })
+      .catch((error: unknown) => {
+        if (active) setReadiness({ key: selectionKey, status: "error", message: message(error) });
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, busy, source, destination, eligible, selectionKey, deps]);
+
+  const execute = async (recovery?: Recovery) => {
+    if (inFlight.current || (!recovery && !destination)) return;
+    const descriptor: Recovery = recovery ?? {
+      handoffId: ThreadHandoffId.make(randomUUID()),
+      threadId: threadRef.threadId,
+      sourceEnvironmentId: threadRef.environmentId,
+      destinationEnvironmentId: destination!.environmentId,
+    };
+    inFlight.current = true;
+    const controller = new AbortController();
+    abort.current = controller;
+    const onProgress = (progress: ThreadHandoffProgress) => setRun({ status: "running", progress });
+    try {
+      localStorage.setItem(recoveryKey(threadRef), encodeRecovery(descriptor));
+      setRun({ status: "running", progress: null });
+      const result = recovery
+        ? await recoverThreadHandoff(deps, { ...descriptor, onProgress })
+        : await runThreadHandoff(deps, {
+            ...descriptor,
+            destination: destination!,
+            mode,
+            signal: controller.signal,
+            onProgress,
+          });
+      clearRecovery(threadRef);
+      if (result.phase === "completed") complete(descriptor);
+      else
+        setRun({
+          status: "error",
+          message: "Transfer rolled back. The thread remains on its source environment.",
+          recovery: null,
+        });
+    } catch (error) {
+      const needsRecovery =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "recoveryRequired";
+      if (!needsRecovery) clearRecovery(threadRef);
+      setRun({
+        status: "error",
+        message: message(error),
+        recovery: needsRecovery ? descriptor : null,
+      });
+    } finally {
+      abort.current = null;
+      inFlight.current = false;
+    }
+  };
+  const recovery = run.status === "error" ? run.recovery : null;
+  const canCancel =
+    busy &&
+    run.progress?.phase !== "committed" &&
+    run.progress?.phase !== "completed" &&
+    run.progress?.phase !== "rollingBack";
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!busy) onOpenChange(next);
+      }}
+    >
+      <DialogPopup className="max-w-lg" showCloseButton={!busy}>
+        <DialogHeader>
+          <DialogTitle>Continue on another environment</DialogTitle>
+          <DialogDescription>
+            Native Session Handoff preserves this conversation and its provider session.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4 text-sm">
+          <div className="rounded-md border bg-muted/30 p-3">
+            <p className="font-medium">{thread?.title ?? "Development thread"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Execution owner: {sourceEnvironment?.label ?? threadRef.environmentId}
+            </p>
+          </div>
+          {run.status !== "completed" && !recovery && (
+            <>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium">Destination environment</span>
+                <Select
+                  value={destinationId ?? ""}
+                  disabled={busy}
+                  onValueChange={(value) => {
+                    setDestinationId(EnvironmentId.make(String(value)));
+                    setProjectId(null);
+                    setProviderId(null);
+                  }}
+                >
+                  <SelectTrigger aria-label="Destination environment">
+                    <SelectValue placeholder="Choose an environment" />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {environments
+                      .filter((entry) => entry.environmentId !== threadRef.environmentId)
+                      .map((entry) => (
+                        <SelectItem
+                          key={entry.environmentId}
+                          value={entry.environmentId}
+                          disabled={
+                            entry.connection.phase !== "connected" ||
+                            entry.serverConfig?.environment.capabilities.threadHandoff !== true
+                          }
+                        >
+                          {entry.label}
+                          {entry.connection.phase !== "connected"
+                            ? " · Offline"
+                            : entry.serverConfig?.environment.capabilities.threadHandoff !== true
+                              ? " · Handoff unavailable"
+                              : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectPopup>
+                </Select>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium">Native provider</span>
+                <Select
+                  value={providerId ?? ""}
+                  disabled={busy || !destinationId || !source}
+                  onValueChange={(value) => setProviderId(ProviderInstanceId.make(String(value)))}
+                >
+                  <SelectTrigger aria-label="Destination provider">
+                    <SelectValue
+                      placeholder={
+                        source ? `Choose a ${source.driver} instance` : "Inspecting source session…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {providers.map((provider) => (
+                      <SelectItem
+                        key={provider.instanceId}
+                        value={provider.instanceId}
+                        disabled={
+                          !provider.installed ||
+                          provider.status === "error" ||
+                          provider.auth.status === "unauthenticated"
+                        }
+                      >
+                        {provider.displayName ?? provider.instanceId}
+                        {!provider.installed
+                          ? " · Provider missing"
+                          : provider.auth.status === "unauthenticated"
+                            ? " · Authentication required"
+                            : provider.status === "error"
+                              ? " · Incompatible"
+                              : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium">Destination project</span>
+                <Select
+                  value={projectId ?? ""}
+                  disabled={busy || !destinationId}
+                  onValueChange={(value) => setProjectId(ProjectId.make(String(value)))}
+                >
+                  <SelectTrigger aria-label="Destination project">
+                    <SelectValue placeholder="Choose the matching repository" />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {destinationProjects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.title}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium">Safe point</span>
+                <Select
+                  value={mode}
+                  disabled={busy}
+                  onValueChange={(value) => {
+                    if (value === "idle" || value === "afterTurn" || value === "interrupt")
+                      setMode(value);
+                  }}
+                >
+                  <SelectTrigger aria-label="Transfer safe point">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="idle">Transfer when already idle</SelectItem>
+                    <SelectItem value="afterTurn">Transfer after the current turn</SelectItem>
+                    <SelectItem value="interrupt">Stop and transfer now</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Working changes and staging are transferred. Development servers, terminals and
+                local services must be recreated separately.
+              </p>
+            </>
+          )}
+          {sourceError && !recovery && (
+            <p role="alert" className="text-destructive">
+              {sourceError}
+            </p>
+          )}
+          {!busy && visibleReadiness && !recovery && (
+            <div role="status" className="rounded-md border p-3">
+              <p>
+                {visibleReadiness.status === "ready"
+                  ? "Destination ready · Native session compatible"
+                  : visibleReadiness.status === "checking"
+                    ? "Verifying destination…"
+                    : "message" in visibleReadiness
+                      ? visibleReadiness.message
+                      : undefined}
+              </p>
+              {("warnings" in visibleReadiness ? visibleReadiness.warnings : undefined)?.map(
+                (warning) => (
+                  <p key={warning} className="mt-1 text-xs text-muted-foreground">
+                    {warning}
+                  </p>
+                ),
+              )}
+            </div>
+          )}
+          {busy && (
+            <div role="status" aria-live="polite" className="rounded-md border p-3">
+              <p className="font-medium">
+                {run.progress ? phaseLabels[run.progress.phase] : "Checking transfer ownership…"}
+              </p>
+              {run.progress?.transfer && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {run.progress.transfer.transferredFiles} of {run.progress.transfer.totalFiles}{" "}
+                  files · {Math.round(run.progress.transfer.transferredBytes / 1024)} KiB
+                  transferred
+                </p>
+              )}
+            </div>
+          )}
+          {run.status === "error" && (
+            <p role="alert" className="text-destructive">
+              {run.message}
+            </p>
+          )}
+          {run.status === "completed" && (
+            <p role="status" className="rounded-md border p-3">
+              Thread now belongs to{" "}
+              {environments.find((entry) => entry.environmentId === run.destinationEnvironmentId)
+                ?.label ?? run.destinationEnvironmentId}
+              . Its native session is ready to continue.
+            </p>
+          )}
+        </div>
+        <DialogFooter variant="bare">
+          <Button
+            variant="outline"
+            disabled={busy && !canCancel}
+            onClick={() => (busy ? abort.current?.abort() : onOpenChange(false))}
+          >
+            {busy ? "Cancel transfer" : "Close"}
+          </Button>
+          {run.status !== "completed" && (
+            <Button
+              disabled={
+                busy ||
+                (!recovery &&
+                  (!source ||
+                    !!sourceError ||
+                    !destination ||
+                    !eligible ||
+                    !selectedProvider ||
+                    readiness?.key !== selectionKey ||
+                    readiness.status !== "ready"))
+              }
+              onClick={() => {
+                void execute(recovery ?? undefined);
+              }}
+            >
+              {recovery ? "Recover transfer" : "Continue on destination"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+export function ThreadHandoffDialogHost() {
+  const [threadRef, setThreadRef] = useState<ScopedThreadRef | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const listener = (event: Event) => {
+      if (!open && event instanceof CustomEvent && isThreadRef(event.detail)) {
+        setThreadRef(event.detail);
+        setOpen(true);
+      }
+    };
+    window.addEventListener(THREAD_HANDOFF_EVENT, listener);
+    return () => window.removeEventListener(THREAD_HANDOFF_EVENT, listener);
+  }, [open]);
+  return open && threadRef ? (
+    <ThreadHandoffDialog
+      key={`${threadRef.environmentId}:${threadRef.threadId}`}
+      open={open}
+      onOpenChange={setOpen}
+      threadRef={threadRef}
+    />
+  ) : null;
+}

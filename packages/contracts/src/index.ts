@@ -50,3 +50,6 @@ export * from "./compute.ts";
 
 export * from "./sourceControlHub.ts";
 export * from "./aiReview.ts";
+
+export * from "./threadHandoff.ts";
+export * from "./threadHandoffRpc.ts";

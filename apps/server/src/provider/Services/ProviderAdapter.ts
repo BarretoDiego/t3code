@@ -53,6 +53,7 @@ export interface ProviderAdapterCapabilities {
   readonly promptlessTurnContinuation?: boolean;
   /** False when native conversation history cannot be rewound. */
   readonly supportsConversationRollback?: boolean;
+  readonly supportsSessionHandoff?: boolean;
 }
 
 export interface ProviderThreadTurnSnapshot {

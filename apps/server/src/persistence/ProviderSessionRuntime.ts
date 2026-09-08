@@ -16,7 +16,10 @@ import {
   ProviderSessionRuntimeStatus,
   RuntimeMode,
   ThreadId,
+  ThreadHandoffRecord,
 } from "@t3tools/contracts";
+
+import { makeHandoffJournal } from "../handoff/HandoffJournal.ts";
 
 import {
   PersistenceDecodeError,
@@ -50,6 +53,7 @@ export const ProviderSessionRuntime = Schema.Struct({
   lastSeenAt: IsoDateTime,
   resumeCursor: Schema.NullOr(Schema.Unknown),
   runtimePayload: Schema.NullOr(Schema.Unknown),
+  executionFence: Schema.optional(ThreadHandoffRecord),
 });
 export type ProviderSessionRuntime = typeof ProviderSessionRuntime.Type;
 
@@ -168,6 +172,7 @@ function toPersistenceSqlOrDecodeError(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
+  const handoffJournal = yield* makeHandoffJournal;
   const sql = yield* SqlClient.SqlClient;
 
   // Runtime writes can carry stale payloads. Only recordImportedTranscript may
@@ -408,7 +413,20 @@ export const make = Effect.gen(function* () {
                   { threadId: input.threadId },
                 ),
               ),
-              Effect.map((runtime) => Option.some(runtime)),
+              Effect.flatMap((runtime) =>
+                handoffJournal.head(input.threadId).pipe(
+                  Effect.mapError(
+                    toPersistenceSqlOrDecodeError(
+                      "ProviderSessionRuntimeRepository.getByThreadId:handoff",
+                      "ProviderSessionRuntimeRepository.getByThreadId:handoffDecode",
+                      { threadId: input.threadId },
+                    ),
+                  ),
+                  Effect.map((fence) =>
+                    Option.some(fence ? { ...runtime, executionFence: fence } : runtime),
+                  ),
+                ),
+              ),
             ),
         }),
       ),

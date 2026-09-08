@@ -78,6 +78,7 @@ function toRuntimeBinding(
           resumeCursor: runtime.resumeCursor,
           runtimePayload: runtime.runtimePayload,
           lastSeenAt: runtime.lastSeenAt,
+          ...(runtime.executionFence ? { executionFence: runtime.executionFence } : {}),
         }) satisfies ProviderRuntimeBindingWithMetadata,
     ),
   );

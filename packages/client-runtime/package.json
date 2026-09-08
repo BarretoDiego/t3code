@@ -87,6 +87,10 @@
       "types": "./src/operations/projectSyncFlow.ts",
       "default": "./src/operations/projectSyncFlow.ts"
     },
+    "./operations/thread-handoff": {
+      "types": "./src/operations/threadHandoff.ts",
+      "import": "./src/operations/threadHandoff.ts"
+    },
     "./platform": {
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"

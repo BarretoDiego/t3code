@@ -7,6 +7,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | "continue-on"
   | "new-thread-on-branch"
   | "project-settings"
   | "pin"
@@ -40,6 +41,7 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly handoff?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -53,6 +55,9 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(state.supports.handoff
+      ? [{ id: "continue-on" as const, label: "Continue on…", icon: "external-link" }]
+      : []),
     ...(state.branch
       ? [
           {

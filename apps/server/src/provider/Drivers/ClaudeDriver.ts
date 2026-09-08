@@ -143,6 +143,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         icon,
         continuationGroupKey,
+        supportsSessionHandoff: true,
       });
 
       // One per instance: the status probe writes the model-scoped bucket
