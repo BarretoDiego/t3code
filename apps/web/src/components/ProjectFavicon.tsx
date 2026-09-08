@@ -104,12 +104,33 @@ export type ProjectFaviconProject = Pick<
   "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
 >;
 
-export function ProjectFavicon(input: {
-  project: ProjectFaviconProject;
-  className?: string | undefined;
-  fallbackIcon?: ComponentType<{ className?: string }>;
-}) {
-  const { project } = input;
+type ProjectFaviconSource =
+  | { project: ProjectFaviconProject }
+  | {
+      environmentId: ProjectFaviconProject["environmentId"];
+      cwd: string;
+      projectName?: string;
+      faviconPath?: ProjectFaviconProject["faviconPath"];
+      projectIcon?: ProjectFaviconProject["projectIcon"];
+    };
+
+export function ProjectFavicon(
+  input: ProjectFaviconSource & {
+    className?: string | undefined;
+    fallbackIcon?: ComponentType<{ className?: string }>;
+  },
+) {
+  // Fork sidebar variants still pass snapshots of the project fields.
+  const project =
+    "project" in input
+      ? input.project
+      : {
+          environmentId: input.environmentId,
+          workspaceRoot: input.cwd,
+          title: input.projectName ?? "",
+          faviconPath: input.faviconPath,
+          projectIcon: input.projectIcon,
+        };
   const src = useAtomValue(
     projectFaviconUrlAtom({
       environmentId: project.environmentId,
