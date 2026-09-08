@@ -29,4 +29,4 @@ built-in wrapper.
 
 The library syncs across your connected environments with your other shared preferences.
 
-Messages sent with Mini Skills or an Agent Profile include an **Applied context** block. Expand it to inspect the exact prompt, including wrappers and instructions, sent to the agent. This snapshot stays with the message when you later edit your settings. Older messages created before context recording was available do not have a snapshot.
+Messages sent with Mini Skills or an Agent Profile include an **Also sent** strip above them: one chip per applied profile or skill, so you can see exactly what rode along without expanding anything. Expand the strip to inspect the exact prompt, including wrappers and instructions, sent to the agent. This snapshot stays with the message when you later edit your settings. Older messages created before context recording was available do not have a snapshot.

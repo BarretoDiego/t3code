@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { CircleAlertIcon, UserCogIcon } from "lucide-react";
-import type { AgentProfile, AgentProfileId, EnvironmentId } from "@t3tools/contracts";
+import type { AgentProfile, AgentProfileId, EnvironmentId, MiniSkill } from "@t3tools/contracts";
 import type { AgentProfileResolution } from "@t3tools/shared/agentProfiles";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -32,6 +32,7 @@ function useProfileSelection(props: AgentProfileMenuProps) {
     props.environmentId,
     (settings) => settings.agentProfiles,
   );
+  const miniSkills = useEnvironmentSettings(props.environmentId, (settings) => settings.miniSkills);
   const selectedProfileId = useComposerDraftStore(
     (store) => store.getComposerDraft(props.composerDraftTarget)?.selectedProfileId ?? null,
   );
@@ -53,7 +54,7 @@ function useProfileSelection(props: AgentProfileMenuProps) {
     [props.composerDraftTarget, setSelectedProfileId],
   );
 
-  return { enabledProfiles, selectedProfile, effectiveValue, selectProfile };
+  return { enabledProfiles, selectedProfile, effectiveValue, selectProfile, miniSkills };
 }
 
 /** Shared selection for the inline picker and the resting strip's overflow menu. */
@@ -61,7 +62,7 @@ export const AgentProfileMenuContent = memo(function AgentProfileMenuContent(
   props: AgentProfileMenuProps,
 ) {
   const navigate = useNavigate();
-  const { enabledProfiles, selectedProfile, effectiveValue, selectProfile } =
+  const { enabledProfiles, selectedProfile, effectiveValue, selectProfile, miniSkills } =
     useProfileSelection(props);
   const resolution = props.resolution;
   const unavailable = resolution?.status === "unavailable" ? resolution : null;
@@ -103,7 +104,11 @@ export const AgentProfileMenuContent = memo(function AgentProfileMenuContent(
       {resolution?.status === "resolved" && selectedProfile ? (
         <>
           <MenuSeparator />
-          <ResolvedProfileSummary profile={selectedProfile} resolution={resolution} />
+          <ResolvedProfileSummary
+            profile={selectedProfile}
+            resolution={resolution}
+            miniSkills={miniSkills}
+          />
         </>
       ) : null}
       {unavailable ? (
@@ -164,8 +169,12 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(
 function ResolvedProfileSummary(props: {
   profile: AgentProfile;
   resolution: Extract<AgentProfileResolution, { status: "resolved" }>;
+  miniSkills: ReadonlyArray<MiniSkill>;
 }) {
   const { resolution } = props;
+  const skillNames = resolution.miniSkillIds.map(
+    (id) => props.miniSkills.find((skill) => skill.id === id)?.name ?? id,
+  );
   const rows: Array<{ label: string; value: string }> = [
     { label: "Model", value: resolution.modelSelection.model },
     ...(resolution.diagnostics.requestedReasoningEffort !== null
@@ -178,9 +187,7 @@ function ResolvedProfileSummary(props: {
           },
         ]
       : []),
-    ...(resolution.miniSkillIds.length > 0
-      ? [{ label: "Mini Skills", value: String(resolution.miniSkillIds.length) }]
-      : []),
+    ...(skillNames.length > 0 ? [{ label: "Mini Skills", value: skillNames.join(", ") }] : []),
   ];
   return (
     <div className="grid gap-1 px-2 py-1.5">

@@ -2955,25 +2955,42 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
 function PromptContextCard({ context }: { context: MessagePromptContext }) {
   const [expanded, setExpanded] = useState(false);
+  const chips = [
+    context.profileName ? { key: "profile", label: `Profile · ${context.profileName}` } : null,
+    ...context.threadSkills.map((name) => ({ key: `thread:${name}`, label: name })),
+    ...context.requestSkills.map((name) => ({ key: `request:${name}`, label: name })),
+  ].filter((chip): chip is { key: string; label: string } => chip !== null);
   return (
     <View className="gap-2 rounded-xl border border-border p-3">
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         onPress={() => setExpanded(!expanded)}
+        className="gap-1.5"
       >
-        <NativeText className="text-sm font-medium text-foreground">
-          Applied context {expanded ? "−" : "+"}
+        <NativeText className="text-xs font-medium text-muted-foreground">
+          Also sent with this message {expanded ? "−" : "+"}
         </NativeText>
-        <NativeText className="text-xs text-muted-foreground">
-          {[
-            context.profileName && `Profile · ${context.profileName}`,
-            ...context.threadSkills.map((name) => `Thread skill · ${name}`),
-            ...context.requestSkills.map((name) => `Mini Skill · ${name}`),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </NativeText>
+        <View className="flex-row flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <View
+              key={chip.key}
+              className={
+                chip.key === "profile"
+                  ? "rounded-md border border-primary/30 bg-primary/10 px-2 py-1"
+                  : "rounded-md border border-border bg-muted px-2 py-1"
+              }
+            >
+              <NativeText
+                className={
+                  chip.key === "profile" ? "text-xs text-primary" : "text-xs text-foreground/85"
+                }
+              >
+                {chip.label}
+              </NativeText>
+            </View>
+          ))}
+        </View>
       </Pressable>
       {expanded && (
         <ScrollView style={{ maxHeight: 280 }} nestedScrollEnabled>

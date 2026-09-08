@@ -17,6 +17,7 @@ import {
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const EMPTY_SELECTION: ReadonlyArray<MiniSkillId> = [];
 
@@ -107,29 +108,48 @@ export const MiniSkillsPicker = memo(function MiniSkillsPicker(props: {
 }) {
   const size = props.size ?? "sm";
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(props.hidden);
-  const selectedCount = useComposerDraftStore(
-    (store) => store.getComposerDraft(props.composerDraftTarget)?.selectedMiniSkillIds.length ?? 0,
+  const miniSkills = useEnvironmentSettings(props.environmentId, (settings) => settings.miniSkills);
+  const selectedMiniSkillIds = useComposerDraftStore(
+    (store) =>
+      store.getComposerDraft(props.composerDraftTarget)?.selectedMiniSkillIds ?? EMPTY_SELECTION,
   );
+  const selectedCount = selectedMiniSkillIds.length;
+  const selectedNames = miniSkills
+    .filter((skill) => selectedMiniSkillIds.includes(skill.id))
+    .map((skill) => skill.name);
 
   return (
     <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-      <MenuTrigger
-        render={
-          <ComposerControl
-            size={size}
-            variant="ghost"
-            className="shrink-0 whitespace-nowrap"
-            aria-label={
-              selectedCount > 0
-                ? `Mini Skills, ${selectedCount} selected`
-                : "Attach a Mini Skill to this request"
-            }
-          />
-        }
-      >
-        <ComposerControlIcon icon={SparklesIcon} size={size} />
-        {selectedCount > 0 ? <span>{selectedCount}</span> : null}
-      </MenuTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <ComposerControl
+                  size={size}
+                  variant="ghost"
+                  className="shrink-0 whitespace-nowrap"
+                  aria-label={
+                    selectedCount > 0
+                      ? `Mini Skills, ${selectedCount} selected`
+                      : "Attach a Mini Skill to this request"
+                  }
+                />
+              }
+            />
+          }
+        >
+          <ComposerControlIcon icon={SparklesIcon} size={size} />
+          {selectedCount > 0 ? <span>{selectedCount}</span> : null}
+        </TooltipTrigger>
+        {selectedCount > 0 ? (
+          <TooltipPopup side="top" className="max-w-72">
+            <span className="font-medium">Sending with this message:</span>
+            <br />
+            {selectedNames.join(", ")}
+          </TooltipPopup>
+        ) : null}
+      </Tooltip>
       <MenuPopup
         align="start"
         className="w-72 max-w-[calc(100vw-2rem)]"
