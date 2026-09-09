@@ -79,3 +79,62 @@ it.effect(
       expect(result.compose("Describe changes")).toBe("Describe changes");
     }).pipe(Effect.provide(dependencies)),
 );
+
+const effortInstance = {
+  instanceId: id,
+  enabled: true,
+  snapshot: {
+    getSnapshot: Effect.succeed({
+      models: [
+        {
+          slug: "available-model",
+          capabilities: {
+            optionDescriptors: [
+              {
+                id: "reasoningEffort",
+                type: "select",
+                options: [{ id: "low" }, { id: "high" }],
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  },
+} as unknown as ProviderInstance;
+const effortDependencies = Layer.mergeAll(
+  Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(settings) }),
+  Layer.mock(ProviderInstanceRegistry)({ getInstance: () => Effect.succeed(effortInstance) }),
+);
+it.effect("applies the default reasoning effort only when the model supports it", () =>
+  Effect.gen(function* () {
+    const applied = yield* resolveAgentTaskConfiguration(
+      { modelSelection: { instanceId: id, model: "available-model" }, miniSkillIds: [] },
+      { reasoningEffort: "high" },
+    );
+    expect(applied.agent.modelSelection.options).toEqual([
+      { id: "reasoningEffort", value: "high" },
+    ]);
+    const unsupported = yield* resolveAgentTaskConfiguration(
+      { modelSelection: { instanceId: id, model: "available-model" }, miniSkillIds: [] },
+      { reasoningEffort: "ultra" },
+    );
+    expect(unsupported.agent.modelSelection.options).toBeUndefined();
+  }).pipe(Effect.provide(effortDependencies)),
+);
+it.effect("keeps an explicit reasoning effort ahead of the default", () =>
+  Effect.gen(function* () {
+    const result = yield* resolveAgentTaskConfiguration(
+      {
+        modelSelection: {
+          instanceId: id,
+          model: "available-model",
+          options: [{ id: "reasoningEffort", value: "low" }],
+        },
+        miniSkillIds: [],
+      },
+      { reasoningEffort: "high" },
+    );
+    expect(result.agent.modelSelection.options).toEqual([{ id: "reasoningEffort", value: "low" }]);
+  }).pipe(Effect.provide(effortDependencies)),
+);

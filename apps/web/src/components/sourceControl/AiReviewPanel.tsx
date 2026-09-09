@@ -59,7 +59,7 @@ export function AiReviewPanel({
   );
   const [instanceId, setInstanceId] = useState("");
   const [model, setModel] = useState("");
-  const [reasoning, setReasoning] = useState("");
+  const [reasoning, setReasoning] = useState(settings.sourceControlReview.reasoningEffort);
   const [profileId, setProfileId] = useState<string>(settings.sourceControlReview.profileId ?? "");
   const [projectId, setProjectId] = useState("");
   const [skills, setSkills] = useState<MiniSkillId[]>([]);

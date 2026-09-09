@@ -4309,9 +4309,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ProviderModelPicker
         isComposerOwned
         compact={composerControlsCompact}
-        // In Profile Mode the profile owns the model: the picker shows the
-        // resolved value and stays inert, leaving the underlying Custom
-        // selection untouched.
+        // Keep the saved thread selection visible until the catalog arrives;
+        // once known, Profile Mode owns the model and keeps the picker inert.
         disabled={providerCatalogPending || resolvedProfile !== null}
         activeInstanceId={
           providerCatalogPending
@@ -4321,9 +4320,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         model={
           providerCatalogPending
             ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-            : resolvedProfile
-              ? effectiveModel
-              : selectedModelForPickerWithCustomFallback
+            : (resolvedProfile?.modelSelection.model ?? selectedModelForPickerWithCustomFallback)
         }
         lockedProvider={lockedProvider}
         lockedContinuationGroupKey={lockedContinuationGroupKey}

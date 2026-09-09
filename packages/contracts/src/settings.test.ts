@@ -1,4 +1,7 @@
-import { DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT } from "./settings.ts";
+import {
+  DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
+  DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
+} from "./settings.ts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
@@ -799,6 +802,8 @@ describe("Source Control AI review defaults", () => {
       tier: "standard",
       profileId: null,
       severityThreshold: "minor",
+      language: DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
+      reasoningEffort: "",
       includeExistingComments: true,
       includeGenerated: false,
       publication: "draft",
@@ -824,6 +829,9 @@ it("preserves custom review prompts and supplies a default for older review sett
   expect(decodeServerSettings({ sourceControlReview: legacy }).sourceControlReview.prompt).toBe(
     DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
   );
+  const legacyDecoded = decodeServerSettings({ sourceControlReview: legacy }).sourceControlReview;
+  expect(legacyDecoded.language).toBe(DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE);
+  expect(legacyDecoded.reasoningEffort).toBe("");
   const custom = decodeServerSettings({
     sourceControlReview: { ...review, prompt: "Inspect database migrations." },
   });

@@ -43,6 +43,7 @@ import { PullRequestMergeMethod } from "./pullRequest.ts";
 
 export const DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT =
   "Review the pull request for actionable correctness, security, performance and testing issues. Explain the impact and cite precise code locations. Use as many findings as the evidence warrants, including none when there are no actionable issues. Avoid duplicate comments and cosmetic nitpicks. Distinguish uncertain claims and verify important findings.";
+export const DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE = "English";
 
 export const SourceControlReviewSettings = Schema.Struct({
   prompt: Schema.String.check(Schema.isMaxLength(32_000)).pipe(
@@ -51,6 +52,14 @@ export const SourceControlReviewSettings = Schema.Struct({
   tier: Schema.Literals(["quick", "standard", "deep", "exhaustive"]),
   profileId: Schema.NullOr(AgentProfileId),
   severityThreshold: Schema.Literals(["critical", "major", "minor", "suggestion", "info"]),
+  language: TrimmedString.check(Schema.isNonEmpty(), Schema.isMaxLength(100)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE)),
+  ),
+  // Empty defers to the provider default; unsupported values are ignored when
+  // the run's model does not advertise them.
+  reasoningEffort: TrimmedString.check(Schema.isMaxLength(50)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
   includeExistingComments: Schema.Boolean,
   includeGenerated: Schema.Boolean,
   publication: Schema.Literal("draft"),
@@ -60,6 +69,8 @@ export const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewS
   tier: "standard",
   profileId: null,
   severityThreshold: "minor",
+  language: DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
+  reasoningEffort: "",
   includeExistingComments: true,
   includeGenerated: false,
   publication: "draft",
