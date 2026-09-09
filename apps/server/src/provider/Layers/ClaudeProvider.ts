@@ -56,6 +56,7 @@ const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
   rateLimitsRefresh: "active-session-required",
+  reportsContextWindow: true,
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];

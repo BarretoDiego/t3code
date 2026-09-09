@@ -64,6 +64,7 @@ export interface ServerProviderPresentation {
   readonly displayName: string;
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
+  readonly reportsContextWindow?: boolean;
   readonly requiresNewThreadForModelChange?: boolean;
   readonly rateLimitsRefresh?: ServerProvider["rateLimitsRefresh"];
 }
@@ -212,6 +213,9 @@ export function buildServerProvider(input: {
     ...(input.presentation.badgeLabel ? { badgeLabel: input.presentation.badgeLabel } : {}),
     ...(typeof input.presentation.showInteractionModeToggle === "boolean"
       ? { showInteractionModeToggle: input.presentation.showInteractionModeToggle }
+      : {}),
+    ...(typeof input.presentation.reportsContextWindow === "boolean"
+      ? { reportsContextWindow: input.presentation.reportsContextWindow }
       : {}),
     ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
       ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }
