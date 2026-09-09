@@ -63,6 +63,7 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
   rateLimitsRefresh: "active-session-required",
+  reportsContextWindow: true,
 } as const;
 
 export interface CodexAppServerProviderSnapshot {
