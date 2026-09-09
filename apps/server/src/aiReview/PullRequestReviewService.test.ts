@@ -77,6 +77,7 @@ it.effect(
           sourceControlReview: {
             ...DEFAULT_SERVER_SETTINGS.sourceControlReview,
             prompt: "Prioritize database migrations and concurrency. No fixed finding quota.",
+            language: "Português",
           },
         }),
       }),
@@ -225,6 +226,7 @@ it.effect(
           ),
         ),
       ).toBe(true);
+      expect(prompts.every((prompt) => prompt.includes("in Português."))).toBe(true);
       expect(prompts).toHaveLength(2); // Generation and independent verification.
       expect(publications).toEqual([]);
       head = secondHead;

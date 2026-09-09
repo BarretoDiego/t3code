@@ -137,7 +137,7 @@ Use an Atlassian email with an API token, or choose an integration access token 
 
 ### Reviewer instructions
 
-Customize the default analysis prompt in **Settings → Source Control → AI review → Reviewer instructions**. New runs use these preferences alongside the selected Agent Profile and Mini Skills. The agent determines the number of actionable findings; publication remains a separate, confirmed action. Findings marked **AI analysis · Draft finding** are local suggestions. Open a finding's file to inspect its explanation alongside the diff, then return to the draft to edit, dismiss or publish it.
+Customize the default analysis prompt in **Settings → Source Control → AI review → Reviewer instructions**. The same section sets the language used for summaries, walkthroughs and findings, and a default reasoning effort, which applies only when the run's model supports it and no per-run choice was made. New runs use these preferences alongside the selected Agent Profile and Mini Skills. The agent determines the number of actionable findings; publication remains a separate, confirmed action. Findings marked **AI analysis · Draft finding** are local suggestions. Open a finding's file to inspect its explanation alongside the diff, then return to the draft to edit, dismiss or publish it.
 
 ### Repositories on your devices
 
