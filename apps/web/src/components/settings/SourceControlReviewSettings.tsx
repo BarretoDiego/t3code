@@ -1,7 +1,11 @@
 import { useState } from "react";
-import { DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT } from "@t3tools/contracts";
+import {
+  DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
+  DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
+} from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { DraftInput } from "../ui/draft-input";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { HubSelect } from "../sourceControl/HubSelect";
 import { Switch } from "../ui/switch";
@@ -56,6 +60,33 @@ export function SourceControlReviewSettingsSection() {
           }))}
           onChange={(severityThreshold) => save({ severityThreshold })}
         />
+        <HubSelect
+          showLabel
+          label="Default reasoning effort"
+          value={review.reasoningEffort}
+          options={[
+            { value: "", label: "Provider default" },
+            { value: "minimal", label: "Minimal" },
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+            { value: "xhigh", label: "Extra high" },
+          ]}
+          onChange={(reasoningEffort) => save({ reasoningEffort })}
+        />
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
+          Review language
+          <DraftInput
+            aria-label="Review language"
+            className="text-sm font-normal text-foreground"
+            maxLength={100}
+            placeholder={DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE}
+            value={review.language}
+            onCommit={(language) =>
+              save({ language: language.trim() || DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE })
+            }
+          />
+        </label>
       </div>
       <div className="mt-5 space-y-3 rounded-lg border p-4">
         <label className="grid gap-2 text-sm font-medium">

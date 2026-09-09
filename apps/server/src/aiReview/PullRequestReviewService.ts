@@ -203,7 +203,10 @@ export const make = Effect.gen(function* () {
     });
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const resolvedTask = yield* resolveAgentTaskConfiguration(run.agent).pipe(
+        const reviewSettings = (yield* taskSettings.getSettings).sourceControlReview;
+        const resolvedTask = yield* resolveAgentTaskConfiguration(run.agent, {
+          reasoningEffort: reviewSettings.reasoningEffort,
+        }).pipe(
           Effect.provideService(ServerSettingsService, taskSettings),
           Effect.provideService(ProviderInstanceRegistry, taskRegistry),
         );
@@ -298,7 +301,7 @@ export const make = Effect.gen(function* () {
             `Large PR: ${plan.batches.length} bounded analysis batches. This review may take longer.`,
           );
         const context = buildReviewMetadata(run, detail, activity);
-        const reviewPrompt = (yield* taskSettings.getSettings).sourceControlReview.prompt;
+        const languageInstruction = `Write all prose (summary, walkthrough, finding titles, descriptions and rationales) in ${reviewSettings.language}. Keep JSON keys, severity values, and file paths unchanged.`;
         const ask = Effect.fn(function* (message: string) {
           const invocation = yield* crypto.randomUUIDv4;
           const label = run.progress;
@@ -323,7 +326,7 @@ export const make = Effect.gen(function* () {
           const request = (prompt: string) =>
             executor.execute({ cwd, modelSelection: agent.modelSelection, prompt, onActivity });
           return yield* request(
-            `${REVIEW_INSTRUCTIONS}\n\nReviewer preferences:\n${reviewPrompt}\n\n${resolvedTask.compose(message)}`,
+            `${REVIEW_INSTRUCTIONS}\n\n${languageInstruction}\n\nReviewer preferences:\n${reviewSettings.prompt}\n\n${resolvedTask.compose(message)}`,
           ).pipe(
             Effect.flatMap((text) =>
               decodeReviewAnalysis(text).pipe(
