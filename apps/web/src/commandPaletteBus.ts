@@ -1,3 +1,10 @@
+import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+
+export interface CommandPaletteLinkedThreads {
+  readonly environmentId: EnvironmentId;
+  readonly threads: PullRequestLinkedThreadsResult["threads"];
+}
+
 // Tiny event bus allowing components to programmatically open the command palette
 // without owning its React state.
 const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
@@ -14,6 +21,8 @@ export interface CommandPaletteOpenDetail {
   /** Enter the existing local-folder or Git-URL flow directly. */
   readonly projectSource?: "local" | "url";
   readonly repositoryUrl?: string;
+  readonly query?: string;
+  readonly linkedThreads?: CommandPaletteLinkedThreads;
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {

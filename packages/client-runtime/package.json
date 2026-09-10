@@ -254,6 +254,10 @@
     "./ai-runtimes": {
       "types": "./src/aiRuntimes.ts",
       "default": "./src/aiRuntimes.ts"
+    },
+    "./thread-pull-request-compatibility": {
+      "types": "./src/threadPullRequestCompatibility.ts",
+      "default": "./src/threadPullRequestCompatibility.ts"
     }
   },
   "scripts": {

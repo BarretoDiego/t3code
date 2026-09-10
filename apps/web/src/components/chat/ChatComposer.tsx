@@ -4308,7 +4308,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) : null}
       <ProviderModelPicker
         isComposerOwned
-        compact={composerControlsCompact}
         // Keep the saved thread selection visible until the catalog arrives;
         // once known, Profile Mode owns the model and keeps the picker inert.
         disabled={providerCatalogPending || resolvedProfile !== null}

@@ -142,7 +142,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
   resolveSidebarThreadStatus,
-  searchSidebarThreadsByTitle,
+  searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
@@ -2176,7 +2176,7 @@ export default function Sidebar() {
     [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
   );
   const threadSearchResults = useMemo(
-    () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
+    () => searchSidebarThreads(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
   const threadSearchResultOrderKey = threadSearchResults
