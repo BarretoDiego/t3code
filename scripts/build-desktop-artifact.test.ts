@@ -70,6 +70,7 @@ import {
   STAGE_INSTALL_ARGS,
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
+  copyPackagedDirectory,
   LinuxBrowserSecretHostError,
   stageBrowserSecret,
   validateWindowsPackagedPayload,
@@ -2299,6 +2300,37 @@ it("keeps the prefix of a UNC path instead of going relative", () => {
   }
   assert.deepStrictEqual(paths[0], "\\\\server\\share\\tmp\\node_modules");
 });
+
+it.effect.skipIf(!symlinksSupported)(
+  "keeps framework links usable after staging is removed and the app is moved",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-framework-copy-" });
+      const source = path.join(root, "stage");
+      const output = path.join(root, "output");
+      const installed = path.join(root, "installed");
+      const framework = "Contents/Frameworks/Electron Framework.framework";
+      yield* fs.makeDirectory(path.join(source, framework, "Versions/A"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(source, framework, "Versions/A/Electron Framework"),
+        "binary",
+      );
+      yield* fs.symlink("A", path.join(source, framework, "Versions/Current"));
+      yield* fs.symlink(
+        "Versions/Current/Electron Framework",
+        path.join(source, framework, "Electron Framework"),
+      );
+      yield* copyPackagedDirectory(source, output);
+      yield* fs.remove(source, { recursive: true });
+      yield* fs.rename(output, installed);
+      assert.equal(
+        yield* fs.readFileString(path.join(installed, framework, "Electron Framework")),
+        "binary",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.effect.skipIf(!symlinksSupported)("rebases packaged links into the isolated tree", () =>
   Effect.gen(function* () {

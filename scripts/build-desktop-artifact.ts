@@ -23,6 +23,7 @@ import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" wit
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
+import { copyRelocatableDirectory } from "./lib/packaged-directory.ts";
 import {
   BRAND_ASSET_PATHS,
   resolveWebAssetBrandForChannel,
@@ -2005,6 +2006,21 @@ const hasNativeLoaderMarkers = Effect.fn("hasNativeLoaderMarkers")(function* (pa
   );
 });
 
+export const copyPackagedDirectory = Effect.fn("copyPackagedDirectory")(function* (
+  source: string,
+  destination: string,
+) {
+  // Framework links must remain relative after staging is deleted and the app is moved.
+  yield* Effect.tryPromise({
+    try: () => copyRelocatableDirectory(source, destination),
+    catch: (cause) =>
+      new BundleNotSelfContainedError({
+        exitCode: -1,
+        output: `Could not copy packaged directory ${source}: ${String(cause)}`,
+      }),
+  });
+});
+
 export const copyDirectoryPreservingSymlinks = Effect.fn("copyDirectoryPreservingSymlinks")(
   function* (source: string, destination: string) {
     const fs = yield* FileSystem.FileSystem;
@@ -3970,7 +3986,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
     const to = path.join(options.outputDir, entry);
     if (stat.type === "Directory") {
-      yield* fs.copy(from, to);
+      yield* copyPackagedDirectory(from, to);
     } else {
       yield* fs.copyFile(from, to);
     }

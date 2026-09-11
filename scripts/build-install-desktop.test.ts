@@ -7,6 +7,8 @@ import { createPackage } from "@electron/asar";
 import { afterEach, assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { copyRelocatableDirectory } from "./lib/packaged-directory.ts";
 import {
   desktopExecutable,
   inspectInstallation,
@@ -134,4 +136,76 @@ it("leaves the installed app intact when preparing the new payload fails", async
   await NodeFSP.writeFile(installed, "old");
   await NodeAssert.rejects(replaceInstallation(NodePath.join(directory, "missing"), installed));
   assert.equal(await NodeFSP.readFile(installed, "utf8"), "old");
+});
+
+it.skipIf(!symlinksSupported)(
+  "installs absolute framework links as a self-contained app after packaging cleanup",
+  async () => {
+    const directory = await fixture();
+    const source = NodePath.join(directory, "stage");
+    const output = NodePath.join(directory, "output");
+    const installed = NodePath.join(directory, "T3 Code.app");
+    const framework = "Contents/Frameworks/Electron Framework.framework";
+    const version = NodePath.join(source, framework, "Versions/A");
+    await NodeFSP.mkdir(version, { recursive: true });
+    await NodeFSP.writeFile(NodePath.join(version, "Electron Framework"), "binary");
+    await NodeFSP.symlink(version, NodePath.join(source, framework, "Versions/Current"));
+    await NodeFSP.symlink(
+      NodePath.join(source, framework, "Versions/Current/Electron Framework"),
+      NodePath.join(source, framework, "Electron Framework"),
+    );
+    await NodeFSP.mkdir(installed);
+    await NodeFSP.writeFile(NodePath.join(installed, "old"), "old");
+    await copyRelocatableDirectory(source, output);
+    await NodeFSP.rm(source, { recursive: true });
+    const backup = await replaceInstallation(output, installed);
+    await NodeFSP.rm(output, { recursive: true });
+    assert.equal(
+      await NodeFSP.readFile(NodePath.join(installed, framework, "Electron Framework"), "utf8"),
+      "binary",
+    );
+    assert.equal(await NodeFSP.readFile(NodePath.join(backup, "old"), "utf8"), "old");
+  },
+);
+
+it.skipIf(!symlinksSupported)(
+  "refuses absolute, broken and escaping links before moving the installed app",
+  async () => {
+    const directory = await fixture();
+    const installed = NodePath.join(directory, "installed");
+    const source = NodePath.join(directory, "source");
+    await NodeFSP.mkdir(source);
+    await NodeFSP.writeFile(installed, "old");
+    await NodeFSP.writeFile(NodePath.join(source, "binary"), "new");
+    const link = NodePath.join(source, "link");
+    for (const target of [NodePath.join(source, "binary"), "missing", "../installed", "link"]) {
+      await NodeFSP.symlink(target, link);
+      await NodeAssert.rejects(replaceInstallation(source, installed), /Packaged symlink/);
+      assert.equal(await NodeFSP.readFile(installed, "utf8"), "old");
+      await NodeFSP.unlink(link);
+    }
+  },
+);
+
+it("refuses a macOS bundle with no Electron binary before replacing the app", async () => {
+  const directory = await fixture();
+  const installed = NodePath.join(directory, "T3 Code.app");
+  const source = NodePath.join(directory, "source");
+  await NodeFSP.mkdir(source);
+  await NodeFSP.writeFile(installed, "old");
+  await NodeAssert.rejects(replaceInstallation(source, installed), /missing Electron Framework/);
+  assert.equal(await NodeFSP.readFile(installed, "utf8"), "old");
+});
+
+it.skipIf(!symlinksSupported)("rejects packaging links to files outside the artifact", async () => {
+  const directory = await fixture();
+  const source = NodePath.join(directory, "source");
+  await NodeFSP.mkdir(source);
+  const external = NodePath.join(directory, "external");
+  await NodeFSP.writeFile(external, "outside");
+  await NodeFSP.symlink(external, NodePath.join(source, "link"));
+  await NodeAssert.rejects(
+    copyRelocatableDirectory(source, NodePath.join(directory, "output")),
+    /leaves the source/,
+  );
 });

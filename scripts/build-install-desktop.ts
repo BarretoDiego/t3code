@@ -14,6 +14,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { HostProcessPlatform, HostProcessArchitecture } from "@t3tools/shared/hostProcess";
 import { resolveLocalNightlyVersion } from "./build-local-desktop.ts";
+import { validatePackagedDirectory } from "./lib/packaged-directory.ts";
 import desktopPackage from "../apps/desktop/package.json" with { type: "json" };
 
 type Channel = "stable" | "nightly";
@@ -248,6 +249,19 @@ export async function replaceInstallation(
       verbatimSymlinks: true,
       mode: NodeFS.constants.COPYFILE_FICLONE,
     });
+    if ((await NodeFSP.stat(payload)).isDirectory()) {
+      await validatePackagedDirectory(payload);
+      if (destination.endsWith(".app")) {
+        const framework = NodePath.join(
+          payload,
+          "Contents/Frameworks/Electron Framework.framework/Electron Framework",
+        );
+        const binary = await NodeFSP.stat(framework).catch(() => undefined);
+        if (!binary?.isFile() || binary.size === 0) {
+          throw new Error(`Packaged app is missing Electron Framework: ${framework}`);
+        }
+      }
+    }
     await move(destination, backup);
     moved = true;
     try {
