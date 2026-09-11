@@ -6,6 +6,7 @@ import {
   ThreadHandoffError,
   ThreadHandoffManifest,
   type ProjectId,
+  type ProviderDriverKind,
   type ThreadHandoffRecord,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -40,8 +41,10 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
   readonly outputDirectory: string;
   readonly projects: readonly HandoffProjectSource[];
   readonly events: readonly OrchestrationEvent[];
-  readonly driver: Pick<ProviderSessionHandoffDriver<NativeSnapshot>, "driver" | "checkpoint">;
-  readonly sessionId: string;
+  readonly driver?: Pick<ProviderSessionHandoffDriver<NativeSnapshot>, "driver" | "checkpoint">;
+  readonly transferMode?: "native" | "context";
+  readonly sourceDriver?: ProviderDriverKind;
+  readonly sessionId?: string;
   readonly providerCwd: string;
 }): Promise<ThreadHandoffManifest> {
   if (input.record.phase !== "checkpointing")
@@ -72,11 +75,29 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
       });
       projects.push({ projectId: project.projectId, directory, git });
     }
-    await input.driver.checkpoint({
-      sessionId: input.sessionId,
-      cwd: input.providerCwd,
-      outputDirectory: NodePath.join(input.outputDirectory, "provider"),
-    });
+    const mode = input.transferMode ?? "native";
+    const sourceDriver = input.sourceDriver ?? input.driver?.driver;
+    if (!sourceDriver) throw failure("Source provider identity is missing.");
+    if (mode === "native") {
+      if (!input.driver || !input.sessionId)
+        throw failure("Native handoff requires a driver and session identity.");
+      await input.driver.checkpoint({
+        sessionId: input.sessionId,
+        cwd: input.providerCwd,
+        outputDirectory: NodePath.join(input.outputDirectory, "provider"),
+      });
+    } else {
+      await NodeFSP.mkdir(NodePath.join(input.outputDirectory, "provider"), { mode: 0o700 });
+      await NodeFSP.writeFile(
+        NodePath.join(input.outputDirectory, "provider", "context.json"),
+        JSON.stringify({
+          format: "t3-conversation-context-v1",
+          sourceDriver,
+          historyFile: "thread.json",
+        }),
+        { mode: 0o600 },
+      );
+    }
     await NodeFSP.writeFile(
       NodePath.join(input.outputDirectory, "thread.json"),
       JSON.stringify(events),
@@ -93,9 +114,9 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
       createdAt: input.record.updatedAt,
       projects,
       provider: {
-        driver: input.driver.driver,
-        mode: "native",
-        sessionId: input.sessionId,
+        driver: sourceDriver,
+        mode,
+        ...(mode === "native" ? { sessionId: input.sessionId } : {}),
         directory: "provider",
       },
       threadFile: "thread.json",

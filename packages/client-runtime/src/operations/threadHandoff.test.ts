@@ -532,3 +532,96 @@ for (const invalid of ["missing", "identity", "generation", "phase", "environmen
     expect(f.activations()).toBe(1);
   });
 }
+
+test("moves Codex context to an explicitly selected OpenCode model without a native resume identity", async () => {
+  const f = fixture();
+  const original = f.deps.request;
+  const contextSource = {
+    ...source,
+    driver: ProviderDriverKind.make("codex"),
+    sessionId: "codex-native-session",
+  };
+  const contextManifest = {
+    ...manifest,
+    provider: {
+      driver: contextSource.driver,
+      mode: "context" as const,
+      directory: "provider" as const,
+    },
+  };
+  const selected = {
+    instanceId: ProviderInstanceId.make("opencode-destination"),
+    model: "local/k3",
+  };
+  const observed: ThreadHandoffRequest[] = [];
+  const deps: ThreadHandoffDeps = {
+    ...f.deps,
+    request: async (environment, request) => {
+      observed.push(request);
+      const result = await original(environment, request);
+      if (request.operation === "inspect") return { source: contextSource };
+      if (request.operation === "prepareSource") return { ...result, manifest: contextManifest };
+      if (request.operation === "verify")
+        return { ...result, ready: { ...result.ready!, sessionId: undefined } };
+      return result;
+    },
+  };
+  const result = await runThreadHandoff(deps, {
+    ...input,
+    destination: {
+      ...input.destination,
+      transferMode: "context",
+      providerInstanceId: selected.instanceId,
+      modelSelection: selected,
+    },
+  });
+  expect(result.phase).toBe("completed");
+  const preparation = observed.find((request) => request.operation === "prepareDestination");
+  expect(
+    preparation?.operation === "prepareDestination" && preparation.destination.modelSelection,
+  ).toEqual(selected);
+  expect(
+    preparation?.operation === "prepareDestination" && preparation.manifest.provider.sessionId,
+  ).toBeUndefined();
+});
+
+for (const change of ["mode", "model"] as const) {
+  test(`rejects preflight changing the requested ${change}`, async () => {
+    const f = fixture();
+    const original = f.deps.request;
+    const deps: ThreadHandoffDeps = {
+      ...f.deps,
+      request: async (environment, request) => {
+        if (request.operation === "preflight")
+          return {
+            destination: {
+              ...request.destination,
+              ...(change === "mode"
+                ? { transferMode: "native" as const }
+                : {
+                    modelSelection: {
+                      instanceId: request.destination.providerInstanceId,
+                      model: "unrequested",
+                    },
+                  }),
+            },
+          };
+        return original(environment, request);
+      },
+    };
+    await expect(
+      runThreadHandoff(deps, {
+        ...input,
+        destination: {
+          ...input.destination,
+          transferMode: "context",
+          modelSelection: {
+            instanceId: input.destination.providerInstanceId,
+            model: "chosen-model",
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "verificationFailed" });
+    expect(f.calls).not.toContain("source:prepareSource");
+  });
+}

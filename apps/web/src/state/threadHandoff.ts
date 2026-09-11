@@ -43,11 +43,5 @@ export function canHandoffThread(threadRef: ScopedThreadRef): boolean {
   const config = appAtomRegistry.get(environmentServerConfigsAtom).get(threadRef.environmentId);
   const thread = readThreadShell(threadRef);
   if (!thread || config?.environment.capabilities.threadHandoff !== true) return false;
-  const instanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
-  return config.providers.some(
-    (provider) =>
-      provider.instanceId === instanceId &&
-      provider.enabled &&
-      provider.supportsSessionHandoff === true,
-  );
+  return true;
 }

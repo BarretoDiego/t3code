@@ -26,6 +26,7 @@ import { Button } from "./ui/button";
 import {
   Dialog,
   DialogPopup,
+  DialogPanel,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -58,8 +59,8 @@ const phaseLabels: Record<ThreadHandoffProgress["phase"], string> = {
   preflighting: "Checking environments / waiting for the current turn",
   pausing: "Pausing agent",
   checkpointing: "Creating a consistent checkpoint",
-  syncingProjects: "Transferring projects and native session",
-  transferringSession: "Transferring native session",
+  syncingProjects: "Transferring projects and conversation state",
+  transferringSession: "Transferring conversation state",
   verifying: "Verifying destination",
   ready: "Destination ready",
   committed: "Activating destination",
@@ -97,6 +98,8 @@ export function ThreadHandoffDialog({
   const [destinationId, setDestinationId] = useState<EnvironmentId | null>(null);
   const [providerId, setProviderId] = useState<ProviderInstanceId | null>(null);
   const [projectId, setProjectId] = useState<ProjectId | null>(null);
+  const [transferMode, setTransferMode] = useState<"native" | "context">("native");
+  const [model, setModel] = useState<string | null>(null);
   const [mode, setMode] = useState<"idle" | "afterTurn" | "interrupt">("idle");
   const [run, setRun] = useState<RunState>(() => {
     try {
@@ -124,43 +127,93 @@ export function ThreadHandoffDialog({
     warnings?: readonly string[];
   } | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const initializedTransferMode = useRef(false);
   const inFlight = useRef(false);
   const sourceEnvironment = environments.find(
     (entry) => entry.environmentId === threadRef.environmentId,
   );
+  const supportsNative =
+    source?.supportsNativeHandoff ??
+    (!!source?.sessionId &&
+      sourceEnvironment?.serverConfig?.providers.some(
+        (provider) =>
+          provider.instanceId === source.providerInstanceId &&
+          provider.supportsSessionHandoff === true,
+      )) ??
+    false;
+  useEffect(() => {
+    if (!source || initializedTransferMode.current) return;
+    initializedTransferMode.current = true;
+    // Initialize from the completed inspection without making provider snapshots retrigger it.
+    setTransferMode(supportsNative ? "native" : "context");
+  }, [source, supportsNative]);
   const selectedEnvironment = environments.find((entry) => entry.environmentId === destinationId);
   const destinationProjects = projects.filter((project) => project.environmentId === destinationId);
   const providers =
     selectedEnvironment?.serverConfig?.providers.filter(
       (provider) =>
-        provider.driver === source?.driver &&
         provider.enabled &&
-        provider.supportsSessionHandoff === true,
+        (transferMode === "native"
+          ? provider.driver === source?.driver && provider.supportsSessionHandoff === true
+          : provider.supportsContextHandoff === true),
     ) ?? [];
   const selectedProvider = providers.find((provider) => provider.instanceId === providerId);
   const destination = useMemo<Omit<ThreadHandoffDestination, "source"> | null>(
     () =>
-      source && destinationId && providerId && projectId
+      source && destinationId && providerId && projectId && (transferMode === "native" || model)
         ? {
+            transferMode,
+            ...(transferMode === "context" && model
+              ? { modelSelection: { instanceId: providerId, model } }
+              : {}),
             environmentId: destinationId,
             providerInstanceId: providerId,
             projects: [{ sourceProjectId: source.projectId, destinationProjectId: projectId }],
           }
         : null,
-    [source, destinationId, providerId, projectId],
+    [source, destinationId, providerId, projectId, transferMode, model],
   );
-  const selectionKey = `${destinationId}:${providerId}:${projectId}`;
-  const visibleReadiness =
-    readiness?.key === selectionKey
-      ? readiness
-      : destination
-        ? { key: selectionKey, status: "checking" as const }
-        : null;
+  const selectionKey = JSON.stringify([destinationId, providerId, projectId, transferMode, model]);
   const busy = run.status === "running";
   const destinationOnline = selectedEnvironment?.connection.phase === "connected";
-  const eligible =
-    destinationOnline &&
-    selectedEnvironment?.serverConfig?.environment.capabilities.threadHandoff === true;
+  const destinationUnavailable = !destinationOnline
+    ? "Destination offline"
+    : selectedEnvironment?.serverConfig?.environment.capabilities.threadHandoff !== true
+      ? "Destination handoff is unavailable"
+      : transferMode === "native" && !supportsNative
+        ? "Native session transfer is unavailable for this thread"
+        : transferMode === "context" &&
+            (sourceEnvironment?.serverConfig?.environment.capabilities.threadHandoffContext !==
+              true ||
+              selectedEnvironment?.serverConfig?.environment.capabilities.threadHandoffContext !==
+                true)
+          ? "Both environments must support Conversation context"
+          : !selectedProvider ||
+              !selectedProvider.enabled ||
+              selectedProvider.availability === "unavailable" ||
+              selectedProvider.status === "disabled"
+            ? "Destination provider unavailable"
+            : !selectedProvider.installed
+              ? "Destination provider missing"
+              : selectedProvider.auth.status === "unauthenticated"
+                ? "Destination authentication required"
+                : selectedProvider.status === "error"
+                  ? "Destination provider is not ready"
+                  : transferMode === "context" &&
+                      !selectedProvider.models.some((entry) => entry.slug === model)
+                    ? "Selected model is no longer available"
+                    : !destinationProjects.some((project) => project.id === projectId)
+                      ? "Destination project unavailable"
+                      : null;
+  const eligible = destinationUnavailable === null;
+  const visibleReadiness =
+    destination && destinationUnavailable
+      ? { key: selectionKey, status: "error" as const, message: destinationUnavailable }
+      : readiness?.key === selectionKey
+        ? readiness
+        : destination
+          ? { key: selectionKey, status: "checking" as const }
+          : null;
   const complete = useCallback(
     (recovery: Recovery) => {
       useThreadWorkspaceStore.getState().remapThreadEnvironment(recovery);
@@ -195,8 +248,9 @@ export function ThreadHandoffDialog({
       .request(threadRef.environmentId, { operation: "inspect", threadId: threadRef.threadId })
       .then((response) => {
         if (!active) return;
-        if (!response.source) throw new Error("Source did not return a native session.");
+        if (!response.source) throw new Error("Source did not return the thread state.");
         setSource(response.source);
+        setSourceError(null);
       })
       .catch((error: unknown) => {
         if (active) setSourceError(message(error));
@@ -227,7 +281,15 @@ export function ThreadHandoffDialog({
   }, [open, busy, source, destination, eligible, selectionKey, deps]);
 
   const execute = async (recovery?: Recovery) => {
-    if (inFlight.current || (!recovery && !destination)) return;
+    if (
+      inFlight.current ||
+      (!recovery &&
+        (!destination ||
+          !eligible ||
+          readiness?.key !== selectionKey ||
+          readiness.status !== "ready"))
+    )
+      return;
     const descriptor: Recovery = recovery ?? {
       handoffId: ThreadHandoffId.make(randomUUID()),
       threadId: threadRef.threadId,
@@ -292,10 +354,10 @@ export function ThreadHandoffDialog({
         <DialogHeader>
           <DialogTitle>Continue on another environment</DialogTitle>
           <DialogDescription>
-            Native Session Handoff preserves this conversation and its provider session.
+            Move this thread and its working changes, choosing how the provider continues.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4 text-sm">
+        <DialogPanel className="grid gap-4 text-sm">
           <div className="rounded-md border bg-muted/30 p-3">
             <p className="font-medium">{thread?.title ?? "Development thread"}</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -305,18 +367,73 @@ export function ThreadHandoffDialog({
           {run.status !== "completed" && !recovery && (
             <>
               <label className="grid gap-1.5">
+                <span className="text-xs font-medium">Continuation type</span>
+                <Select
+                  value={transferMode}
+                  disabled={busy || !source}
+                  onValueChange={(value) => {
+                    if (value !== "native" && value !== "context") return;
+                    setReadiness(null);
+                    setTransferMode(value);
+                    setProviderId(null);
+                    setModel(null);
+                  }}
+                >
+                  <SelectTrigger aria-label="Continuation type">
+                    <SelectValue>
+                      {transferMode === "native" ? "Native session" : "Conversation context"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="native" disabled={!supportsNative}>
+                      Native session
+                    </SelectItem>
+                    <SelectItem
+                      value="context"
+                      disabled={
+                        sourceEnvironment?.serverConfig?.environment.capabilities
+                          .threadHandoffContext !== true
+                      }
+                    >
+                      Conversation context
+                    </SelectItem>
+                  </SelectPopup>
+                </Select>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                {transferMode === "native"
+                  ? "Preserve the same provider-native session on a compatible provider."
+                  : "Create a new provider session while preserving the full T3 conversation. Its history is delivered with your next message; no continuation message is sent automatically."}
+              </p>
+              {!supportsNative && source && (
+                <p className="text-xs text-muted-foreground">
+                  Native session transfer is unavailable for this thread. Choose Conversation
+                  context to continue with another provider.
+                </p>
+              )}
+              {sourceEnvironment?.serverConfig?.environment.capabilities.threadHandoffContext !==
+                true && (
+                <p role="alert">
+                  Update the source environment to support Conversation context handoff.
+                </p>
+              )}
+              <label className="grid gap-1.5">
                 <span className="text-xs font-medium">Destination environment</span>
                 <Select
                   value={destinationId ?? ""}
                   disabled={busy}
                   onValueChange={(value) => {
+                    setReadiness(null);
                     setDestinationId(EnvironmentId.make(String(value)));
                     setProjectId(null);
                     setProviderId(null);
+                    setModel(null);
                   }}
                 >
                   <SelectTrigger aria-label="Destination environment">
-                    <SelectValue placeholder="Choose an environment" />
+                    <SelectValue placeholder="Choose an environment">
+                      {selectedEnvironment?.label}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {environments
@@ -327,7 +444,10 @@ export function ThreadHandoffDialog({
                           value={entry.environmentId}
                           disabled={
                             entry.connection.phase !== "connected" ||
-                            entry.serverConfig?.environment.capabilities.threadHandoff !== true
+                            entry.serverConfig?.environment.capabilities.threadHandoff !== true ||
+                            (transferMode === "context" &&
+                              entry.serverConfig?.environment.capabilities.threadHandoffContext !==
+                                true)
                           }
                         >
                           {entry.label}
@@ -335,25 +455,39 @@ export function ThreadHandoffDialog({
                             ? " · Offline"
                             : entry.serverConfig?.environment.capabilities.threadHandoff !== true
                               ? " · Handoff unavailable"
-                              : ""}
+                              : transferMode === "context" &&
+                                  entry.serverConfig?.environment.capabilities
+                                    .threadHandoffContext !== true
+                                ? " · Update required for conversation context"
+                                : ""}
                         </SelectItem>
                       ))}
                   </SelectPopup>
                 </Select>
               </label>
               <label className="grid gap-1.5">
-                <span className="text-xs font-medium">Native provider</span>
+                <span className="text-xs font-medium">Destination provider</span>
                 <Select
                   value={providerId ?? ""}
                   disabled={busy || !destinationId || !source}
-                  onValueChange={(value) => setProviderId(ProviderInstanceId.make(String(value)))}
+                  onValueChange={(value) => {
+                    setReadiness(null);
+                    setProviderId(ProviderInstanceId.make(String(value)));
+                    setModel(null);
+                  }}
                 >
                   <SelectTrigger aria-label="Destination provider">
                     <SelectValue
                       placeholder={
-                        source ? `Choose a ${source.driver} instance` : "Inspecting source session…"
+                        source
+                          ? transferMode === "native"
+                            ? `Choose a ${source.driver} instance`
+                            : "Choose a provider"
+                          : "Inspecting source thread…"
                       }
-                    />
+                    >
+                      {selectedProvider?.displayName}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {providers.map((provider) => (
@@ -379,15 +513,56 @@ export function ThreadHandoffDialog({
                   </SelectPopup>
                 </Select>
               </label>
+              {destinationId && source && providers.length === 0 && (
+                <p role="status">No compatible provider is available in this environment.</p>
+              )}
+              {transferMode === "context" && (
+                <label className="grid gap-1.5">
+                  <span className="text-xs font-medium">Destination model</span>
+                  <Select
+                    value={model ?? ""}
+                    disabled={busy || !selectedProvider}
+                    onValueChange={(value) => {
+                      setReadiness(null);
+                      setModel(String(value));
+                    }}
+                  >
+                    <SelectTrigger aria-label="Destination model">
+                      <SelectValue placeholder="Choose a model">
+                        {selectedProvider?.models.find((entry) => entry.slug === model)?.name}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {selectedProvider?.models.map((entry) => (
+                        <SelectItem key={entry.slug} value={entry.slug}>
+                          {entry.name}
+                          {entry.subProvider ? ` · ${entry.subProvider}` : ""} · {entry.slug}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                  {selectedProvider && selectedProvider.models.length === 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      This provider reports no models. Configure a model in the destination
+                      environment.
+                    </span>
+                  )}
+                </label>
+              )}
               <label className="grid gap-1.5">
                 <span className="text-xs font-medium">Destination project</span>
                 <Select
                   value={projectId ?? ""}
                   disabled={busy || !destinationId}
-                  onValueChange={(value) => setProjectId(ProjectId.make(String(value)))}
+                  onValueChange={(value) => {
+                    setReadiness(null);
+                    setProjectId(ProjectId.make(String(value)));
+                  }}
                 >
                   <SelectTrigger aria-label="Destination project">
-                    <SelectValue placeholder="Choose the matching repository" />
+                    <SelectValue placeholder="Choose the matching repository">
+                      {destinationProjects.find((project) => project.id === projectId)?.title}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {destinationProjects.map((project) => (
@@ -409,7 +584,13 @@ export function ThreadHandoffDialog({
                   }}
                 >
                   <SelectTrigger aria-label="Transfer safe point">
-                    <SelectValue />
+                    <SelectValue>
+                      {mode === "idle"
+                        ? "Transfer when already idle"
+                        : mode === "afterTurn"
+                          ? "Transfer after the current turn"
+                          : "Stop and transfer now"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectItem value="idle">Transfer when already idle</SelectItem>
@@ -433,7 +614,9 @@ export function ThreadHandoffDialog({
             <div role="status" className="rounded-md border p-3">
               <p>
                 {visibleReadiness.status === "ready"
-                  ? "Destination ready · Native session compatible"
+                  ? transferMode === "native"
+                    ? "Destination ready · Native session compatible"
+                    : "Destination ready · New provider session with conversation context"
                   : visibleReadiness.status === "checking"
                     ? "Verifying destination…"
                     : "message" in visibleReadiness
@@ -473,11 +656,11 @@ export function ThreadHandoffDialog({
               Thread now belongs to{" "}
               {environments.find((entry) => entry.environmentId === run.destinationEnvironmentId)
                 ?.label ?? run.destinationEnvironmentId}
-              . Its native session is ready to continue.
+              . Continue this thread there with your next message.
             </p>
           )}
-        </div>
-        <DialogFooter variant="bare">
+        </DialogPanel>
+        <DialogFooter>
           <Button
             variant="outline"
             disabled={busy && !canCancel}
@@ -495,6 +678,8 @@ export function ThreadHandoffDialog({
                     !destination ||
                     !eligible ||
                     !selectedProvider ||
+                    (transferMode === "context" &&
+                      !selectedProvider.models.some((entry) => entry.slug === model)) ||
                     readiness?.key !== selectionKey ||
                     readiness.status !== "ready"))
               }

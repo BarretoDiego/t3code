@@ -9,6 +9,9 @@ import {
   WS_METHODS,
   type ThreadHandoffDestination,
   type ThreadHandoffSource,
+  type ProjectId,
+  type ModelSelection,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   runThreadHandoff,
@@ -29,6 +32,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentSession } from "../../state/session";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { useWorkspaceState } from "../../state/workspace";
+import { buildModelOptions } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentQuery } from "../../state/query";
 import { writeFileAtomically } from "../../lib/atomic-file";
@@ -92,8 +96,8 @@ export const threadHandoffPhaseLabels: Record<ThreadHandoffProgress["phase"], st
   preflighting: "Checking destination / waiting for current turn",
   pausing: "Pausing agent",
   checkpointing: "Created checkpoint",
-  syncingProjects: "Transferring project and native session",
-  transferringSession: "Transferring native session",
+  syncingProjects: "Transferring project and conversation state",
+  transferringSession: "Transferring conversation state",
   verifying: "Verifying destination",
   ready: "Destination ready",
   committed: "Switching execution owner",
@@ -117,15 +121,20 @@ export function ThreadHandoffSheet(props: {
   const [destination, setDestination] = useState<Omit<ThreadHandoffDestination, "source"> | null>(
     null,
   );
+  const [transferMode, setTransferMode] = useState<"native" | "context">("native");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | null>(null);
   const [mode, setMode] = useState<"idle" | "afterTurn" | "interrupt">("idle");
   const [progress, setProgress] = useState<ThreadHandoffProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<readonly string[]>([]);
   const [pending, setPending] = useState<Recovery | null>(null);
   const [busy, setBusy] = useState(false);
   const [cancellable, setCancellable] = useState(false);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const abort = useRef<AbortController | null>(null);
+  const initializedTransferMode = useRef(false);
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -140,7 +149,9 @@ export function ThreadHandoffSheet(props: {
         operation: "inspect",
         threadId: props.threadId,
       });
-      if (active) setSource(result.source ?? null);
+      if (active) {
+        setSource(result.source ?? null);
+      }
     })()
       .catch((cause: unknown) => {
         if (active) setError(cause instanceof Error ? cause.message : String(cause));
@@ -155,6 +166,108 @@ export function ThreadHandoffSheet(props: {
   const sourceProject = projects.find(
     (project) => project.environmentId === props.environmentId && project.id === source?.projectId,
   );
+  const selectedConfig = selectedEnvironmentId ? configs.get(selectedEnvironmentId) : null;
+  const sourceConfig = configs.get(props.environmentId);
+  const supportsNative =
+    source?.supportsNativeHandoff ??
+    (!!source?.sessionId &&
+      sourceConfig?.providers.some(
+        (provider) =>
+          provider.instanceId === source.providerInstanceId &&
+          provider.supportsSessionHandoff === true,
+      )) ??
+    false;
+  useEffect(() => {
+    if (!source || initializedTransferMode.current) return;
+    initializedTransferMode.current = true;
+    // Initialize from the completed inspection without making provider snapshots retrigger it.
+    setTransferMode(supportsNative ? "native" : "context");
+  }, [source, supportsNative]);
+  const selectedProjects = projects.filter(
+    (project) => project.environmentId === selectedEnvironmentId,
+  );
+  const modelOptions = buildModelOptions(selectedConfig, null).filter((option) =>
+    selectedConfig?.providers.some(
+      (provider) =>
+        provider.instanceId === option.selection.instanceId && provider.supportsContextHandoff,
+    ),
+  );
+  const nativeProviders =
+    selectedConfig?.providers.filter(
+      (provider) =>
+        provider.enabled && provider.supportsSessionHandoff && provider.driver === source?.driver,
+    ) ?? [];
+  const destinationProvider = selectedConfig?.providers.find(
+    (provider) => provider.instanceId === destination?.providerInstanceId,
+  );
+  const destinationUnavailable =
+    environments.find((entry) => entry.environmentId === selectedEnvironmentId)?.connectionState !==
+    "connected"
+      ? "Destination offline"
+      : !selectedConfig?.environment.capabilities.threadHandoff
+        ? "Destination handoff is unavailable"
+        : transferMode === "context" &&
+            (!sourceConfig?.environment.capabilities.threadHandoffContext ||
+              !selectedConfig.environment.capabilities.threadHandoffContext)
+          ? "Both environments must support Conversation context"
+          : !destinationProvider ||
+              !destinationProvider.enabled ||
+              destinationProvider.availability === "unavailable" ||
+              destinationProvider.status === "disabled"
+            ? "Destination provider unavailable"
+            : !destinationProvider.installed
+              ? "Destination provider missing"
+              : destinationProvider.auth.status === "unauthenticated"
+                ? "Destination authentication required"
+                : destinationProvider.status === "error"
+                  ? "Destination provider is not ready"
+                  : transferMode === "native" &&
+                      (!supportsNative ||
+                        !destinationProvider.supportsSessionHandoff ||
+                        destinationProvider.driver !== source?.driver)
+                    ? "Native session compatibility unavailable"
+                    : transferMode === "context" &&
+                        (!destinationProvider.supportsContextHandoff ||
+                          !destinationProvider.models.some(
+                            (model) => model.slug === destination?.modelSelection?.model,
+                          ))
+                      ? "Selected model is no longer available"
+                      : !selectedProjects.some((project) => project.id === selectedProjectId)
+                        ? "Destination project unavailable"
+                        : null;
+  const destinationReady = ready && destinationUnavailable === null;
+  const checkDestination = (
+    providerInstanceId: ProviderInstanceId,
+    modelSelection?: ModelSelection,
+  ) => {
+    if (!source || !selectedEnvironmentId || !selectedProjectId || busy) return;
+    if (
+      transferMode === "context" &&
+      (!sourceConfig?.environment.capabilities.threadHandoffContext ||
+        !selectedConfig?.environment.capabilities.threadHandoffContext)
+    )
+      return;
+    const next = {
+      environmentId: selectedEnvironmentId,
+      providerInstanceId,
+      transferMode,
+      ...(modelSelection ? { modelSelection } : {}),
+      projects: [{ sourceProjectId: source.projectId, destinationProjectId: selectedProjectId }],
+    };
+    setDestination(next);
+    setReady(false);
+    setBusy(true);
+    setError(null);
+    setWarnings([]);
+    void deps
+      .request(selectedEnvironmentId, { operation: "preflight", destination: { ...next, source } })
+      .then((result) => {
+        setReady(true);
+        setWarnings(result.warnings ?? []);
+      })
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setBusy(false));
+  };
   const remoteRecord = watched.data;
   const remoteRecovery =
     remoteRecord && remoteRecord.owner.environmentId === props.environmentId
@@ -171,7 +284,7 @@ export function ThreadHandoffSheet(props: {
       ? remoteRecovery
       : null);
   const perform = async (recover: boolean) => {
-    if (!recover && (!destination || !ready)) return;
+    if (!recover && (!destination || !destinationReady)) return;
     const operation = recover
       ? (pending ?? remoteRecovery)
       : destination
@@ -242,8 +355,7 @@ export function ThreadHandoffSheet(props: {
       >
         <Text className="text-foreground text-xl font-semibold">Continue thread on…</Text>
         <Text className="text-muted-foreground">
-          Native session handoff. Running services stay on the source. Keep this app open during
-          transfer.
+          Running services stay on the source. Keep this app open during transfer.
         </Text>
         {effectivePending ? (
           <Text className="text-foreground">
@@ -254,69 +366,192 @@ export function ThreadHandoffSheet(props: {
             . Recover its authoritative ownership before starting another transfer.
           </Text>
         ) : (
-          environments
-            .filter((item) => item.environmentId !== props.environmentId)
-            .map((item) => {
-              const config = configs.get(item.environmentId);
-              const provider = config?.providers.find(
-                (candidate) =>
-                  candidate.driver === source?.driver && candidate.supportsSessionHandoff,
-              );
-              const matches = projects.filter(
-                (project) =>
-                  project.environmentId === item.environmentId &&
-                  project.title === sourceProject?.title,
-              );
-              const project = matches.length === 1 ? matches[0] : null;
-              const reason =
-                item.connectionState !== "connected"
-                  ? "Offline"
-                  : !config?.environment.capabilities.threadHandoff
-                    ? "Incompatible"
-                    : !provider
-                      ? "Provider unavailable"
-                      : !project
-                        ? "Matching project required"
-                        : "Check readiness";
-              const enabled = !busy && !loading && !!source && reason === "Check readiness";
+          <View className="gap-4">
+            {(
+              [
+                ["native", "Native session"],
+                ["context", "Conversation context"],
+              ] as const
+            ).map(([value, label]) => {
+              const supported =
+                value === "native"
+                  ? supportsNative
+                  : sourceConfig?.environment.capabilities.threadHandoffContext;
               return (
                 <Pressable
-                  key={item.environmentId}
-                  accessibilityRole="button"
-                  disabled={!enabled}
-                  className="rounded-xl bg-surface p-4"
+                  key={value}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    checked: transferMode === value,
+                    disabled: !supported || busy,
+                  }}
+                  disabled={!supported || busy}
                   onPress={() => {
-                    if (!provider || !project || !source) return;
-                    const next = {
-                      environmentId: item.environmentId,
-                      providerInstanceId: provider.instanceId,
-                      projects: [
-                        { sourceProjectId: source.projectId, destinationProjectId: project.id },
-                      ],
-                    };
-                    setDestination(next);
+                    setTransferMode(value);
+                    setDestination(null);
+                    setSelectedEnvironmentId(null);
+                    setSelectedProjectId(null);
                     setReady(false);
-                    setBusy(true);
-                    setError(null);
-                    void deps
-                      .request(item.environmentId, {
-                        operation: "preflight",
-                        destination: { ...next, source },
-                      })
-                      .then(() => setReady(true))
-                      .catch((cause: unknown) =>
-                        setError(cause instanceof Error ? cause.message : String(cause)),
-                      )
-                      .finally(() => setBusy(false));
                   }}
                 >
-                  <Text className="text-foreground font-semibold">{item.environmentLabel}</Text>
-                  <Text className="text-muted-foreground">
-                    {destination?.environmentId === item.environmentId && ready ? "Ready" : reason}
+                  <Text className="text-foreground">
+                    {transferMode === value ? "●" : "○"} {label}
+                    {!supported ? " · Unavailable" : ""}
                   </Text>
                 </Pressable>
               );
-            })
+            })}
+            <Text className="text-muted-foreground">
+              {transferMode === "native"
+                ? "Continue the same native session on a compatible provider."
+                : "Create a new provider session and preserve the full T3 conversation. History is delivered with your next message; no continuation message is sent automatically."}
+            </Text>
+            {!sourceConfig?.environment.capabilities.threadHandoffContext && (
+              <Text className="text-muted-foreground">
+                Update the source environment to use Conversation context with all providers.
+              </Text>
+            )}
+            {environments
+              .filter((item) => item.environmentId !== props.environmentId)
+              .map((item) => {
+                const config = configs.get(item.environmentId);
+                const reason =
+                  item.connectionState !== "connected"
+                    ? "Offline"
+                    : !config?.environment.capabilities.threadHandoff
+                      ? "Handoff unavailable"
+                      : transferMode === "context" &&
+                          !config.environment.capabilities.threadHandoffContext
+                        ? "Update required for conversation context"
+                        : "Select environment";
+                const enabled = !busy && !loading && !!source && reason === "Select environment";
+                return (
+                  <Pressable
+                    key={item.environmentId}
+                    accessibilityRole="button"
+                    disabled={!enabled}
+                    className="rounded-xl bg-surface p-4"
+                    onPress={() => {
+                      setSelectedEnvironmentId(item.environmentId);
+                      const matches = projects.filter(
+                        (project) =>
+                          project.environmentId === item.environmentId &&
+                          project.title === sourceProject?.title,
+                      );
+                      setSelectedProjectId(matches.length === 1 ? matches[0]!.id : null);
+                      setDestination(null);
+                      setReady(false);
+                      setError(null);
+                    }}
+                  >
+                    <Text className="text-foreground font-semibold">
+                      {selectedEnvironmentId === item.environmentId ? "● " : ""}
+                      {item.environmentLabel}
+                    </Text>
+                    <Text className="text-muted-foreground">{reason}</Text>
+                  </Pressable>
+                );
+              })}
+            {selectedEnvironmentId && (
+              <>
+                <Text className="text-foreground font-semibold">Destination project</Text>
+                {selectedProjects.map((project) => (
+                  <Pressable
+                    key={project.id}
+                    disabled={busy}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selectedProjectId === project.id }}
+                    onPress={() => {
+                      setSelectedProjectId(project.id);
+                      setDestination(null);
+                      setReady(false);
+                    }}
+                  >
+                    <Text className="text-foreground">
+                      {selectedProjectId === project.id ? "●" : "○"} {project.title}
+                    </Text>
+                  </Pressable>
+                ))}
+                {selectedProjects.length === 0 && (
+                  <Text className="text-muted-foreground">
+                    Add the matching repository to this environment first.
+                  </Text>
+                )}
+                <Text className="text-foreground font-semibold">
+                  {transferMode === "context"
+                    ? "Destination provider and model"
+                    : "Destination provider"}
+                </Text>
+                {transferMode === "context"
+                  ? modelOptions.map((option) => (
+                      <Pressable
+                        key={option.key}
+                        disabled={busy || !selectedProjectId || option.isUnavailable}
+                        accessibilityRole="radio"
+                        accessibilityState={{
+                          checked:
+                            destination?.modelSelection?.instanceId ===
+                              option.selection.instanceId &&
+                            destination.modelSelection.model === option.selection.model,
+                        }}
+                        className="rounded-xl bg-surface p-3"
+                        onPress={() =>
+                          checkDestination(option.selection.instanceId, option.selection)
+                        }
+                      >
+                        <Text className="text-foreground">
+                          {option.providerLabel} · {option.label}
+                        </Text>
+                        <Text className="text-muted-foreground">
+                          {option.subtitle} {option.selection.model}
+                        </Text>
+                      </Pressable>
+                    ))
+                  : nativeProviders.map((provider) => (
+                      <Pressable
+                        key={provider.instanceId}
+                        disabled={
+                          busy ||
+                          !selectedProjectId ||
+                          !provider.installed ||
+                          provider.auth.status === "unauthenticated" ||
+                          provider.status === "error"
+                        }
+                        accessibilityRole="button"
+                        onPress={() => checkDestination(provider.instanceId)}
+                      >
+                        <Text className="text-foreground">
+                          {provider.displayName ?? provider.instanceId}
+                          {!provider.installed
+                            ? " · Provider missing"
+                            : provider.auth.status === "unauthenticated"
+                              ? " · Authentication required"
+                              : ""}
+                        </Text>
+                      </Pressable>
+                    ))}
+                {transferMode === "native" && nativeProviders.length === 0 && (
+                  <Text className="text-muted-foreground">
+                    No compatible native provider is configured in this environment.
+                  </Text>
+                )}
+                {transferMode === "context" && modelOptions.length === 0 && (
+                  <Text className="text-muted-foreground">
+                    No models are available. Install and authenticate a provider, then configure its
+                    models.
+                  </Text>
+                )}
+                {destinationReady && (
+                  <Text accessibilityLiveRegion="polite" className="text-foreground">
+                    Destination ready ·{" "}
+                    {transferMode === "native"
+                      ? "Native session compatible"
+                      : "New session with conversation context"}
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
         )}
         {!effectivePending &&
           (
@@ -338,6 +573,11 @@ export function ThreadHandoffSheet(props: {
               </Text>
             </Pressable>
           ))}
+        {!busy && destination && destinationUnavailable && (
+          <Text accessibilityRole="alert" className="text-destructive">
+            {destinationUnavailable}
+          </Text>
+        )}
         {watched.data && !progress ? (
           <Text accessibilityLiveRegion="polite" className="text-foreground">
             {threadHandoffPhaseLabels[watched.data.phase]}
@@ -350,6 +590,12 @@ export function ThreadHandoffSheet(props: {
             {threadHandoffPhaseLabels[progress.phase]}
           </Text>
         ) : null}
+        {destinationReady &&
+          warnings.map((warning) => (
+            <Text key={warning} className="text-muted-foreground">
+              {warning}
+            </Text>
+          ))}
         {error ? (
           <Text accessibilityRole="alert" className="text-destructive">
             {error}
@@ -361,7 +607,7 @@ export function ThreadHandoffSheet(props: {
               <Text className="text-primary">Recover transfer</Text>
             </Pressable>
           ) : (
-            <Pressable disabled={busy || !ready} onPress={() => void perform(false)}>
+            <Pressable disabled={busy || !destinationReady} onPress={() => void perform(false)}>
               <Text className="text-primary">Continue on selected environment</Text>
             </Pressable>
           )}

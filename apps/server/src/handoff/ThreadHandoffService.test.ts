@@ -82,7 +82,7 @@ const target: ThreadHandoffDestination = {
     providerInstanceId: ProviderInstanceId.make("claude-source"),
     driver: manifest.provider.driver,
     version: "1.0",
-    sessionId: manifest.provider.sessionId,
+    sessionId: manifest.provider.sessionId!,
   },
   projects: [],
 };
@@ -172,7 +172,7 @@ it.effect("commit persists departure across service recreation and refuses rollb
       const receipt = {
         handoffId: record.handoffId,
         environmentId: destination,
-        sessionId: manifest.provider.sessionId,
+        sessionId: manifest.provider.sessionId!,
         manifestHash: NodeCrypto.createHash("sha256")
           .update(encodeManifest(manifest))
           .digest("hex"),
@@ -223,7 +223,7 @@ it.effect("a mismatched readiness receipt cannot release source ownership", () =
             receipt: {
               handoffId: record.handoffId,
               environmentId: destination,
-              sessionId: manifest.provider.sessionId,
+              sessionId: manifest.provider.sessionId!,
               manifestHash: "wrong",
             },
           }),
@@ -274,299 +274,362 @@ function stub<T>(values: Partial<T>): T {
     },
   }) as T;
 }
+const decodeContextPending = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      context: Schema.Struct({ threadId: ThreadId }),
+      destinationResumeCursor: Schema.Unknown,
+    }),
+  ),
+);
 const decodeThread = Schema.decodeUnknownSync(OrchestrationThreadShell);
-const twoServices = Effect.gen(function* () {
-  const f = yield* fixture;
-  const sourceRoot = NodePath.join(f.ports.config.stateDir, "mac-repository");
-  const destinationRoot = NodePath.join(f.ports.config.stateDir, "linux-repository");
-  yield* Effect.promise(async () => {
-    await NodeFSP.mkdir(sourceRoot);
-    await runSnapshotGit(sourceRoot, ["init", "-b", "feature/private"]);
-    await runSnapshotGit(sourceRoot, ["config", "user.name", "Handoff test"]);
-    await runSnapshotGit(sourceRoot, ["config", "user.email", "test@example.invalid"]);
-    await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "original\n");
-    await runSnapshotGit(sourceRoot, ["add", "."]);
-    await runSnapshotGit(sourceRoot, ["commit", "-m", "Local commit"]);
-    await runSnapshotGit(sourceRoot, ["clone", "--no-local", sourceRoot, destinationRoot]);
-    await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "staged\n");
-    await runSnapshotGit(sourceRoot, ["add", "file.txt"]);
-    await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "unstaged\n");
-    await NodeFSP.writeFile(NodePath.join(sourceRoot, "notes.txt"), "untracked\n");
-  });
-  const destinationDb = yield* Layer.build(Layer.fresh(SqlitePersistenceMemory));
-  const destinationJournal = yield* makeHandoffJournal.pipe(Effect.provide(destinationDb));
-  const destinationChanges = yield* PubSub.unbounded<ThreadHandoffRecord>();
-  const thread = decodeThread({
-    id: record.owner.threadId,
-    projectId: target.source.projectId,
-    title: "Scheduling",
-    modelSelection: { instanceId: target.source.providerInstanceId, model: "sonnet" },
-    runtimeMode: "full-access",
-    branch: "feature/private",
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: now,
-    updatedAt: now,
-    session: null,
-    latestUserMessageAt: now,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-  });
-  const events: OrchestrationEvent[] = [
-    {
-      sequence: 1,
-      eventId: EventId.make("created"),
-      aggregateKind: "thread",
-      aggregateId: thread.id,
-      occurredAt: now,
-      commandId: null,
-      causationEventId: null,
-      correlationId: null,
-      metadata: {},
-      type: "thread.created",
-      payload: {
-        threadId: thread.id,
-        projectId: thread.projectId,
-        title: thread.title,
-        modelSelection: thread.modelSelection,
-        runtimeMode: thread.runtimeMode,
-        interactionMode: thread.interactionMode,
-        branch: thread.branch,
-        worktreePath: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-    },
-  ];
-  events.push(
-    {
-      ...events[0]!,
-      sequence: 2,
-      eventId: EventId.make("model-changed"),
-      type: "thread.meta-updated",
-      payload: {
-        threadId: thread.id,
-        modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
-        updatedAt: now,
-      },
-    },
-    {
-      ...events[0]!,
-      sequence: 3,
-      eventId: EventId.make("runtime-changed"),
-      type: "thread.runtime-mode-set",
-      payload: { threadId: thread.id, runtimeMode: "approval-required", updatedAt: now },
-    },
-  );
-  const status: ServerProvider = {
-    instanceId: target.source.providerInstanceId,
-    driver: target.source.driver,
-    installed: true,
-    models: [],
-    slashCommands: [],
-    skills: [],
-    enabled: true,
-    version: "1.0",
-    status: "ready",
-    auth: { status: "authenticated" },
-    checkedAt: now,
-  };
-  const instance = stub<ProviderInstance>({
-    enabled: true,
-    snapshot: stub<ProviderInstance["snapshot"]>({ refresh: Effect.succeed(status) }),
-  });
-  const project = (cwd: string) => ({
-    id: thread.projectId,
-    title: "Project",
-    workspaceRoot: cwd,
-    defaultModelSelection: null,
-    scripts: [],
-    createdAt: now,
-    updatedAt: now,
-  });
-  const nativeDriver: typeof getNativeHandoffDriver = (input) =>
-    getNativeHandoffDriver(input, {
-      claudeExportSession: async (id, store) => {
-        await store.append({ projectKey: "mac-source", sessionId: id }, [
-          { type: "user", uuid: "native-user", message: { content: "Keep the same session" } },
-          {
-            type: "system",
-            subtype: "compact_boundary",
-            compactMetadata: { trigger: "auto", preTokens: 30000 },
-          },
-        ]);
-      },
+const makeTwoServices = (contextDriver?: string) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const sourceDriver = contextDriver ? ProviderDriverKind.make("codex") : target.source.driver;
+    const sourceRoot = NodePath.join(f.ports.config.stateDir, "mac-repository");
+    const destinationRoot = NodePath.join(f.ports.config.stateDir, "linux-repository");
+    yield* Effect.promise(async () => {
+      await NodeFSP.mkdir(sourceRoot);
+      await runSnapshotGit(sourceRoot, ["init", "-b", "feature/private"]);
+      await runSnapshotGit(sourceRoot, ["config", "user.name", "Handoff test"]);
+      await runSnapshotGit(sourceRoot, ["config", "user.email", "test@example.invalid"]);
+      await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "original\n");
+      await runSnapshotGit(sourceRoot, ["add", "."]);
+      await runSnapshotGit(sourceRoot, ["commit", "-m", "Local commit"]);
+      await runSnapshotGit(sourceRoot, ["clone", "--no-local", sourceRoot, destinationRoot]);
+      await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "staged\n");
+      await runSnapshotGit(sourceRoot, ["add", "file.txt"]);
+      await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "unstaged\n");
+      await NodeFSP.writeFile(NodePath.join(sourceRoot, "notes.txt"), "untracked\n");
     });
-  const counters = { freeze: 0, starts: 0, active: false, wrongResume: false, imports: 0 };
-  const destinationState = NodePath.join(f.ports.config.stateDir, "destination-state");
-  const adapter = stub<ProviderAdapterShape<ProviderAdapterError>>({
-    hasSession: () => Effect.sync(() => counters.active),
-    stopSession: () =>
-      Effect.sync(() => {
-        counters.active = false;
-      }),
-    startSession: (input) =>
-      Effect.gen(function* () {
-        const native = yield* Effect.promise(() =>
-          openTransferredClaudeSession({
-            stateDir: destinationState,
-            threadId: thread.id,
-            sessionId: manifest.provider.sessionId,
-          }),
-        );
-        expect(native).toBeDefined();
-        expect(input.modelSelection?.model).toBe("opus");
-        expect(input.runtimeMode).toBe("approval-required");
-        counters.starts++;
-        counters.active = true;
-        return {
-          provider: target.source.driver,
-          status: "ready",
+    const destinationDb = yield* Layer.build(Layer.fresh(SqlitePersistenceMemory));
+    const destinationJournal = yield* makeHandoffJournal.pipe(Effect.provide(destinationDb));
+    const destinationChanges = yield* PubSub.unbounded<ThreadHandoffRecord>();
+    const thread = decodeThread({
+      id: record.owner.threadId,
+      projectId: target.source.projectId,
+      title: "Scheduling",
+      modelSelection: { instanceId: target.source.providerInstanceId, model: "sonnet" },
+      runtimeMode: "full-access",
+      branch: "feature/private",
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: now,
+      updatedAt: now,
+      session: null,
+      latestUserMessageAt: now,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    });
+    const events: OrchestrationEvent[] = [
+      {
+        sequence: 1,
+        eventId: EventId.make("created"),
+        aggregateKind: "thread",
+        aggregateId: thread.id,
+        occurredAt: now,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.created",
+        payload: {
           threadId: thread.id,
-          runtimeMode: input.runtimeMode,
+          projectId: thread.projectId,
+          title: thread.title,
+          modelSelection: thread.modelSelection,
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          branch: thread.branch,
+          worktreePath: null,
           createdAt: now,
           updatedAt: now,
-          resumeCursor: {
-            resume: counters.wrongResume
-              ? "22222222-2222-4222-8222-222222222222"
-              : manifest.provider.sessionId,
-          },
-        };
-      }),
-  });
-  const common = {
-    nativeDriver,
-    settings: { getSettings: Effect.succeed(stub<ServerSettings>({ providerInstances: {} })) },
-    instances: { getInstance: () => Effect.succeed(instance) },
-  };
-  const sourcePorts: ThreadHandoffServicePorts = {
-    ...f.ports,
-    ...common,
-    query: {
-      getThreadShellById: () => Effect.succeed(Option.some(thread)),
-      getProjectShellById: () => Effect.succeed(Option.some(project(sourceRoot))),
-    },
-    directory: {
-      getBinding: () =>
-        Effect.succeed(
-          Option.some({
-            threadId: thread.id,
-            provider: target.source.driver,
-            providerInstanceId: target.source.providerInstanceId,
-            resumeCursor: { resume: manifest.provider.sessionId },
-          }),
-        ),
-    },
-    engine: {
-      latestSequence: Effect.succeed(3),
-      readThreadEvents: () => Stream.fromIterable(events),
-    },
-    safePoint: {
-      waitForCurrentTurn: () => Effect.succeed(thread),
-      freeze: () =>
-        Effect.sync(() => {
-          counters.freeze++;
-          return { thread, sequence: 3 };
-        }),
-    },
-  };
-  let activatedThread: OrchestrationThreadShell | undefined;
-  let activatedBinding: ProviderRuntimeBinding | undefined;
-  const destinationPorts: ThreadHandoffServicePorts = {
-    ...f.ports,
-    ...common,
-    config: { stateDir: destinationState },
-    environmentId: destination,
-    journal: destinationJournal,
-    changes: destinationChanges,
-    query: {
-      getThreadShellById: () => Effect.sync(() => Option.fromUndefinedOr(activatedThread)),
-      getProjectShellById: () => Effect.succeed(Option.some(project(destinationRoot))),
-    },
-    directory: { getBinding: () => Effect.sync(() => Option.fromUndefinedOr(activatedBinding)) },
-    adapters: { getByInstance: () => Effect.succeed(adapter) },
-    engine: {
-      latestSequence: Effect.succeed(0),
-      readThreadEvents: () => Stream.empty,
-      importHandoffEvents: (input) =>
-        Effect.gen(function* () {
-          expect(input.events[0]?.type).toBe("thread.created");
-          expect(input.threadId).toBe(thread.id);
-          if (!input.handoff) throw new Error("Missing atomic handoff");
-          yield* destinationJournal.acceptIncoming(input.handoff.record).pipe(Effect.orDie);
-          const runtime = input.handoff.runtime;
-          const created = input.events[0];
-          if (created?.type !== "thread.created") throw new Error("Missing creation");
-          activatedThread = {
-            ...thread,
-            projectId: created.payload.projectId,
-            worktreePath: created.payload.worktreePath,
-            runtimeMode: runtime.runtimeMode,
-            modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
-          };
-          activatedBinding = {
-            threadId: thread.id,
-            provider: ProviderDriverKind.make(runtime.providerName),
-            providerInstanceId: target.providerInstanceId,
-            resumeCursor: runtime.resumeCursor,
-          };
-          counters.imports++;
-          return { sequence: 1 };
-        }),
-    },
-  };
-  const sourceService = createThreadHandoffService(sourcePorts);
-  const destinationService = createThreadHandoffService(destinationPorts);
-  const inspected = yield* sourceService.handle({ operation: "inspect", threadId: thread.id });
-  if (!inspected.source) throw new Error("Missing repository inspection");
-  const checked = yield* destinationService.handle({
-    operation: "preflight",
-    destination: {
-      ...target,
-      source: inspected.source,
-      projects: [{ sourceProjectId: thread.projectId, destinationProjectId: thread.projectId }],
-    },
-  });
-  if (!checked.destination) throw new Error("Missing repository preflight");
-  const destinationMapping = checked.destination;
-  const prepare = Effect.gen(function* () {
-    yield* destinationService.handle({ operation: "preflight", destination: destinationMapping });
-    const captured = yield* sourceService.handle({
-      operation: "prepareSource",
-      handoffId: record.handoffId,
-      destination: destinationMapping,
-      mode: "idle",
-    });
-    if (!captured.manifest) throw new Error("Missing source manifest");
-    expect(captured.manifest.projects[0]?.git.bundle).toBeNull();
-    yield* destinationService.handle({
-      operation: "prepareDestination",
-      manifest: captured.manifest,
-      destination: destinationMapping,
-    });
-    yield* Effect.promise(() =>
-      NodeFSP.cp(
-        NodePath.join(sourcePorts.config.stateDir, "handoffs", record.handoffId, "payload"),
-        NodePath.join(destinationState, "handoffs", record.handoffId, "payload"),
-        { recursive: true },
-      ),
+        },
+      },
+    ];
+    events.push(
+      {
+        ...events[0]!,
+        sequence: 2,
+        eventId: EventId.make("model-changed"),
+        type: "thread.meta-updated",
+        payload: {
+          threadId: thread.id,
+          modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
+          updatedAt: now,
+        },
+      },
+      {
+        ...events[0]!,
+        sequence: 3,
+        eventId: EventId.make("runtime-changed"),
+        type: "thread.runtime-mode-set",
+        payload: { threadId: thread.id, runtimeMode: "approval-required", updatedAt: now },
+      },
     );
+    const status: ServerProvider = {
+      instanceId: target.source.providerInstanceId,
+      driver: target.source.driver,
+      installed: true,
+      models: [{ slug: "opus", name: "Test model", isCustom: false, capabilities: null }],
+      slashCommands: [],
+      skills: [],
+      enabled: true,
+      version: "1.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: now,
+    };
+    const instance = stub<ProviderInstance>({
+      enabled: true,
+      driverKind: sourceDriver,
+      snapshot: stub<ProviderInstance["snapshot"]>({
+        refresh: Effect.succeed(
+          contextDriver
+            ? {
+                ...status,
+                driver: sourceDriver,
+                installed: false,
+                version: null,
+                auth: { status: "unauthenticated" },
+              }
+            : status,
+        ),
+      }),
+    });
+    const project = (cwd: string) => ({
+      id: thread.projectId,
+      title: "Project",
+      workspaceRoot: cwd,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const nativeDriver: typeof getNativeHandoffDriver = (input) =>
+      getNativeHandoffDriver(input, {
+        claudeExportSession: async (id, store) => {
+          await store.append({ projectKey: "mac-source", sessionId: id }, [
+            { type: "user", uuid: "native-user", message: { content: "Keep the same session" } },
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              compactMetadata: { trigger: "auto", preTokens: 30000 },
+            },
+          ]);
+        },
+      });
+    const counters = { freeze: 0, starts: 0, active: false, wrongResume: false, imports: 0 };
+    const destinationState = NodePath.join(f.ports.config.stateDir, "destination-state");
+    const adapter = stub<ProviderAdapterShape<ProviderAdapterError>>({
+      hasSession: () => Effect.sync(() => counters.active),
+      stopSession: () =>
+        Effect.sync(() => {
+          counters.active = false;
+        }),
+      startSession: (input) =>
+        Effect.gen(function* () {
+          if (!contextDriver) {
+            const native = yield* Effect.promise(() =>
+              openTransferredClaudeSession({
+                stateDir: destinationState,
+                threadId: thread.id,
+                sessionId: manifest.provider.sessionId!,
+              }),
+            );
+            expect(native).toBeDefined();
+          } else {
+            expect(input.provider).toBe(contextDriver);
+            expect(input.resumeCursor).not.toEqual({ resume: manifest.provider.sessionId });
+          }
+          expect(input.modelSelection?.model).toBe("opus");
+          expect(input.runtimeMode).toBe("approval-required");
+          counters.starts++;
+          counters.active = true;
+          return {
+            provider: target.source.driver,
+            status: "ready",
+            threadId: thread.id,
+            runtimeMode: input.runtimeMode,
+            createdAt: now,
+            updatedAt: now,
+            resumeCursor: {
+              resume: contextDriver
+                ? "new-destination-session"
+                : counters.wrongResume
+                  ? "22222222-2222-4222-8222-222222222222"
+                  : manifest.provider.sessionId,
+            },
+          };
+        }),
+    });
+    const common = {
+      nativeDriver,
+      settings: { getSettings: Effect.succeed(stub<ServerSettings>({ providerInstances: {} })) },
+      instances: { getInstance: () => Effect.succeed(instance) },
+    };
+    const sourcePorts: ThreadHandoffServicePorts = {
+      ...f.ports,
+      ...common,
+      query: {
+        getThreadShellById: () => Effect.succeed(Option.some(thread)),
+        getProjectShellById: () => Effect.succeed(Option.some(project(sourceRoot))),
+      },
+      directory: {
+        getBinding: () =>
+          Effect.succeed(
+            Option.some({
+              threadId: thread.id,
+              provider: sourceDriver,
+              providerInstanceId: target.source.providerInstanceId,
+              resumeCursor: { resume: manifest.provider.sessionId },
+            }),
+          ),
+      },
+      engine: {
+        latestSequence: Effect.succeed(3),
+        readThreadEvents: () => Stream.fromIterable(events),
+      },
+      safePoint: {
+        waitForCurrentTurn: () => Effect.succeed(thread),
+        freeze: () =>
+          Effect.sync(() => {
+            counters.freeze++;
+            return { thread, sequence: 3 };
+          }),
+      },
+    };
+    let activatedThread: OrchestrationThreadShell | undefined;
+    let activatedBinding: ProviderRuntimeBinding | undefined;
+    const destinationPorts: ThreadHandoffServicePorts = {
+      ...f.ports,
+      ...common,
+      instances: {
+        getInstance: () =>
+          Effect.succeed(
+            stub<ProviderInstance>({
+              enabled: true,
+              driverKind: contextDriver ? ProviderDriverKind.make(contextDriver) : status.driver,
+              snapshot: stub<ProviderInstance["snapshot"]>({
+                refresh: Effect.succeed({
+                  ...status,
+                  driver: contextDriver ? ProviderDriverKind.make(contextDriver) : status.driver,
+                }),
+              }),
+            }),
+          ),
+      },
+      config: { stateDir: destinationState },
+      environmentId: destination,
+      journal: destinationJournal,
+      changes: destinationChanges,
+      query: {
+        getThreadShellById: () => Effect.sync(() => Option.fromUndefinedOr(activatedThread)),
+        getProjectShellById: () => Effect.succeed(Option.some(project(destinationRoot))),
+      },
+      directory: { getBinding: () => Effect.sync(() => Option.fromUndefinedOr(activatedBinding)) },
+      adapters: { getByInstance: () => Effect.succeed(adapter) },
+      engine: {
+        latestSequence: Effect.succeed(0),
+        readThreadEvents: () => Stream.empty,
+        importHandoffEvents: (input) =>
+          Effect.gen(function* () {
+            expect(input.events[0]?.type).toBe("thread.created");
+            expect(input.threadId).toBe(thread.id);
+            if (!input.handoff) throw new Error("Missing atomic handoff");
+            yield* destinationJournal.acceptIncoming(input.handoff.record).pipe(Effect.orDie);
+            const runtime = input.handoff.runtime;
+            if (contextDriver) {
+              expect(runtime.providerName).toBe(contextDriver);
+              expect(runtime.resumeCursor).toEqual({ resume: "new-destination-session" });
+              expect(runtime.runtimePayload).toMatchObject({
+                handoffContext: {
+                  threadId: thread.id,
+                  providerInstanceId: target.providerInstanceId,
+                },
+                modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+              });
+            }
+            const created = input.events[0];
+            if (created?.type !== "thread.created") throw new Error("Missing creation");
+            activatedThread = {
+              ...thread,
+              projectId: created.payload.projectId,
+              worktreePath: created.payload.worktreePath,
+              runtimeMode: runtime.runtimeMode,
+              modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+            };
+            activatedBinding = {
+              threadId: thread.id,
+              provider: ProviderDriverKind.make(runtime.providerName),
+              providerInstanceId: target.providerInstanceId,
+              resumeCursor: runtime.resumeCursor,
+            };
+            counters.imports++;
+            return { sequence: 1 };
+          }),
+      },
+    };
+    const sourceService = createThreadHandoffService(sourcePorts);
+    const destinationService = createThreadHandoffService(destinationPorts);
+    const inspected = yield* sourceService.handle({ operation: "inspect", threadId: thread.id });
+    if (!inspected.source) throw new Error("Missing repository inspection");
+    const checked = yield* destinationService.handle({
+      operation: "preflight",
+      destination: {
+        ...target,
+        ...(contextDriver
+          ? {
+              transferMode: "context" as const,
+              modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+            }
+          : {}),
+        source: inspected.source,
+        projects: [{ sourceProjectId: thread.projectId, destinationProjectId: thread.projectId }],
+      },
+    });
+    if (!checked.destination) throw new Error("Missing repository preflight");
+    const destinationMapping = checked.destination;
+    const prepare = Effect.gen(function* () {
+      yield* destinationService.handle({ operation: "preflight", destination: destinationMapping });
+      const captured = yield* sourceService.handle({
+        operation: "prepareSource",
+        handoffId: record.handoffId,
+        destination: destinationMapping,
+        mode: "idle",
+      });
+      if (!captured.manifest) throw new Error("Missing source manifest");
+      expect(captured.manifest.projects[0]?.git.bundle).toBeNull();
+      yield* destinationService.handle({
+        operation: "prepareDestination",
+        manifest: captured.manifest,
+        destination: destinationMapping,
+      });
+      yield* Effect.promise(() =>
+        NodeFSP.cp(
+          NodePath.join(sourcePorts.config.stateDir, "handoffs", record.handoffId, "payload"),
+          NodePath.join(destinationState, "handoffs", record.handoffId, "payload"),
+          { recursive: true },
+        ),
+      );
+    });
+    return {
+      ...f,
+      sourcePorts,
+      destinationPorts,
+      sourceService,
+      destinationService,
+      destinationJournal,
+      counters,
+      prepare,
+      sourceRoot,
+      destinationState,
+      destinationMapping,
+    };
   });
-  return {
-    ...f,
-    sourcePorts,
-    destinationPorts,
-    sourceService,
-    destinationService,
-    destinationJournal,
-    counters,
-    prepare,
-    sourceRoot,
-    destinationState,
-    destinationMapping,
-  };
-});
+const twoServices = makeTwoServices();
 
 it.effect(
   "two services preserve dirty Git and native session identity through restart activation",
@@ -656,7 +719,7 @@ it.effect("a wrong native resume is rejected, then rollback leaves source Git un
           openTransferredClaudeSession({
             stateDir: f.destinationState,
             threadId: record.owner.threadId,
-            sessionId: manifest.provider.sessionId,
+            sessionId: manifest.provider.sessionId!,
           }),
         ),
       ).toBeUndefined();
@@ -905,6 +968,202 @@ it.effect("attachment history is blocked before freeze rather than silently disc
       ).toMatchObject({ code: "unsupported" });
       expect(f.counters.freeze).toBe(0);
       expect(yield* f.journal.head(record.owner.threadId)).toBeNull();
+    }),
+  ),
+);
+
+for (const provider of ["claudeAgent", "codex", "cursor", "grok", "opencode", "antigravity"]) {
+  it.effect(
+    `context handoff from Codex starts a new ${provider} session and survives destination restart`,
+    () =>
+      test(
+        Effect.gen(function* () {
+          const f = yield* makeTwoServices(provider);
+          yield* f.prepare;
+          const verified = yield* f.destinationService.handle({
+            operation: "verify",
+            handoffId: record.handoffId,
+          });
+          if (!verified.ready) throw new Error("Missing context readiness");
+          expect(verified.ready.sessionId).toBeUndefined();
+          const committed = yield* f.sourceService.handle({
+            operation: "commit",
+            receipt: verified.ready,
+          });
+          if (!committed.record) throw new Error("Missing commit");
+          f.counters.active = false;
+          const result = yield* createThreadHandoffService(f.destinationPorts).handle({
+            operation: "activate",
+            record: committed.record,
+          });
+          expect(result.record?.phase).toBe("completed");
+          expect(f.counters.starts).toBe(2);
+          const pending = yield* decodeContextPending(
+            yield* Effect.promise(() =>
+              NodeFSP.readFile(
+                NodePath.join(f.destinationState, "handoffs", record.handoffId, "request.json"),
+                "utf8",
+              ),
+            ),
+          );
+          expect(pending.context.threadId).toBe(record.owner.threadId);
+          expect(pending.destinationResumeCursor).toEqual({ resume: "new-destination-session" });
+          expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
+            phase: "committed",
+          });
+        }),
+      ),
+  );
+}
+
+it.effect("context preflight rejects a model from another instance before pausing source", () =>
+  test(
+    Effect.gen(function* () {
+      const f = yield* makeTwoServices("opencode");
+      const result = yield* f.destinationService
+        .handle({
+          operation: "preflight",
+          destination: {
+            ...f.destinationMapping,
+            modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
+          },
+        })
+        .pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(f.counters.freeze).toBe(0);
+    }),
+  ),
+);
+
+it.effect(
+  "failed context activation preparation can be revoked without changing source history",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const f = yield* makeTwoServices("opencode");
+        yield* f.prepare;
+        yield* f.destinationService.handle({ operation: "verify", handoffId: record.handoffId });
+        yield* f.destinationService.handle({ operation: "reject", handoffId: record.handoffId });
+        yield* f.sourceService.handle({ operation: "rollback", handoffId: record.handoffId });
+        expect(f.counters.active).toBe(false);
+        expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
+          phase: "failed",
+          owner: record.owner,
+        });
+        expect(
+          yield* Effect.promise(() =>
+            NodeFSP.readFile(NodePath.join(f.sourceRoot, "file.txt"), "utf8"),
+          ),
+        ).toBe("unstaged\n");
+      }),
+    ),
+);
+
+it.effect(
+  "context inspection survives absent native binding and unavailable source installation",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const f = yield* makeTwoServices("opencode");
+        const service = createThreadHandoffService({
+          ...f.sourcePorts,
+          directory: { getBinding: () => Effect.succeed(Option.none()) },
+        });
+        const result = yield* service.handle({
+          operation: "inspect",
+          threadId: record.owner.threadId,
+        });
+        expect(result.source).toMatchObject({
+          driver: "codex",
+          version: "unknown",
+          supportsNativeHandoff: false,
+        });
+        expect(result.source?.sessionId).toBeUndefined();
+      }),
+    ),
+);
+
+it.effect(
+  "context preflight supports a ready local runtime without account authentication and rejects unknown models",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const f = yield* makeTwoServices("opencode");
+        const original = yield* f.destinationPorts.instances.getInstance(target.providerInstanceId);
+        if (!original) throw new Error("Missing fixture instance");
+        const status = yield* original.snapshot.refresh;
+        const local = stub<ProviderInstance>({
+          enabled: true,
+          driverKind: status.driver,
+          snapshot: stub<ProviderInstance["snapshot"]>({
+            refresh: Effect.succeed({ ...status, auth: { status: "unknown" }, version: null }),
+          }),
+        });
+        const service = createThreadHandoffService({
+          ...f.destinationPorts,
+          instances: { getInstance: () => Effect.succeed(local) },
+        });
+        expect(
+          (yield* service.handle({ operation: "preflight", destination: f.destinationMapping }))
+            .destination,
+        ).toBeDefined();
+        const invalid = yield* service
+          .handle({
+            operation: "preflight",
+            destination: {
+              ...f.destinationMapping,
+              modelSelection: { instanceId: target.providerInstanceId, model: "not-installed" },
+            },
+          })
+          .pipe(Effect.result);
+        expect(invalid._tag).toBe("Failure");
+        expect(f.counters.freeze).toBe(0);
+      }),
+    ),
+);
+
+it.effect("restart rollback recovers an installed context whose reference was not persisted", () =>
+  test(
+    Effect.gen(function* () {
+      const f = yield* makeTwoServices("opencode");
+      yield* f.prepare;
+      const metadataPath = NodePath.join(
+        f.destinationState,
+        "handoffs",
+        record.handoffId,
+        "request.json",
+      );
+      const beforeInstallation = yield* Effect.promise(() =>
+        NodeFSP.readFile(metadataPath, "utf8"),
+      );
+      yield* f.destinationService.handle({ operation: "verify", handoffId: record.handoffId });
+      const archivePath = NodePath.join(
+        f.destinationState,
+        "handoff-context",
+        record.handoffId,
+        "conversation.json",
+      );
+      expect(yield* Effect.promise(() => NodeFSP.stat(archivePath))).toBeDefined();
+      // Reproduce the durable state after archive publication but before metadata save.
+      yield* Effect.promise(() => NodeFSP.writeFile(metadataPath, beforeInstallation));
+      f.counters.active = false;
+      const restarted = createThreadHandoffService(f.destinationPorts);
+      const rejected = yield* restarted.handle({
+        operation: "reject",
+        handoffId: record.handoffId,
+      });
+      expect(rejected.record?.phase).toBe("cancelled");
+      yield* Effect.promise(async () => {
+        await expect(NodeFSP.stat(archivePath)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(NodeFSP.stat(NodePath.dirname(archivePath))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      });
+      yield* f.sourceService.handle({ operation: "rollback", handoffId: record.handoffId });
+      expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
+        phase: "failed",
+        owner: record.owner,
+      });
     }),
   ),
 );

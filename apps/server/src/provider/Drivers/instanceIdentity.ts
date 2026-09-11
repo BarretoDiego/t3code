@@ -29,4 +29,5 @@ export const withInstanceIdentity =
     ...(input.icon ? { icon: input.icon } : {}),
     continuation: { groupKey: input.continuationGroupKey },
     ...(input.supportsSessionHandoff ? { supportsSessionHandoff: true } : {}),
+    supportsContextHandoff: true,
   });

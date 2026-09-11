@@ -323,3 +323,34 @@ it.effect(
       });
     }),
 );
+
+it.effect("captures complete conversation context without copying provider-native state", () =>
+  Effect.gen(function* () {
+    const f = yield* Effect.promise(fixture);
+    const outputDirectory = NodePath.join(f.root, "context-archive");
+    const snapshot = yield* Effect.promise(() =>
+      captureThreadHandoffSnapshot({
+        record,
+        projects: f.sources,
+        events,
+        outputDirectory,
+        transferMode: "context",
+        sourceDriver: f.manifest.provider.driver,
+        providerCwd: f.sources[0]!.cwd,
+      }),
+    );
+    expect(snapshot.provider.mode).toBe("context");
+    expect(snapshot.provider.sessionId).toBeUndefined();
+    expect(snapshot.provider.resumeCursor).toBeUndefined();
+    expect(
+      snapshot.files
+        .filter((entry) => entry.path.startsWith("provider/"))
+        .map((entry) => entry.path),
+    ).toEqual(["provider/context.json"]);
+    expect(
+      yield* Effect.promise(() =>
+        verifyThreadHandoffSnapshot({ manifest: snapshot, directory: outputDirectory }),
+      ),
+    ).toEqual(events);
+  }),
+);

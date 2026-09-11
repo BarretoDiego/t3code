@@ -18,7 +18,7 @@ const phaseLabels: Record<ThreadHandoffPhase, string> = {
   pausing: "Pausing agent",
   checkpointing: "Creating checkpoint",
   syncingProjects: "Synchronizing project",
-  transferringSession: "Transferring native session",
+  transferringSession: "Transferring session or context",
   verifying: "Verifying destination",
   ready: "Destination ready",
   committed: "Activating destination",

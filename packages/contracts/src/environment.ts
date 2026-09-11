@@ -166,6 +166,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   projectSync: Schema.optionalKey(Schema.Boolean),
   /** Native handoff transaction and private Project Sync staging RPCs. */
   threadHandoff: Schema.optionalKey(Schema.Boolean),
+  threadHandoffContext: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
