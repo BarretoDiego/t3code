@@ -65,7 +65,7 @@ import Migration0050 from "./Migrations/050_ProjectionThreadsActiveOrderKey.ts";
 import Migration0051 from "./Migrations/051_ComputeJobs.ts";
 import Migration0052 from "./Migrations/052_ThreadHandoffs.ts";
 import Migration0053 from "./Migrations/050_ProjectionThreadPullRequests.ts";
-import Migration0054 from "./Migrations/048_ProjectionThreadsMiniSkills.ts";
+import Migration0054 from "./Migrations/051_ProjectionThreadMessageContext.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -130,11 +130,11 @@ const migrationEntries = [
   [50, "ProjectionThreadsActiveOrderKey", Migration0050],
   [51, "ComputeJobs", Migration0051],
   [52, "ThreadHandoffs", Migration0052],
-  // The fork had already published IDs 49–52 when upstream assigned 49–50
-  // to different changes. Keep the fork's durable history, then replay the
-  // upstream PR migration and the fork's idempotent column reconciliation.
+  // The fork had already published IDs 49–52 when upstream assigned 49–51
+  // to different changes. Preserve that durable history, then append the
+  // upstream pull-request and message-context migrations.
   [53, "ProjectionThreadPullRequests", Migration0053],
-  [54, "ReconcileProjectionThreadFeatures", Migration0054],
+  [54, "ProjectionThreadMessageContext", Migration0054],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

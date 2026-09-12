@@ -544,7 +544,6 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     Math.max(composer.images.length, composer.persistedAttachments.length) +
     composer.files.length +
     composer.terminalContexts.length +
-    composer.elementContexts.length +
     composer.previewAnnotations.length +
     composer.reviewComments.length;
   const preview =

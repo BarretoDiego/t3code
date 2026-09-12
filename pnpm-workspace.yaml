@@ -138,6 +138,9 @@ overrides:
   "@tailwindcss/oxide": "catalog:"
   "@tailwindcss/vite": "catalog:"
   "@types/node": "catalog:"
+  # HAST utilities exchange syntax trees across package boundaries, so their
+  # declarations must resolve to the same version as @pierre/diffs.
+  "@types/hast": 3.0.4
   effect: "catalog:"
   expo-router: 57.0.17
   "expo-sharing>@expo/config-plugins": 57.0.9
