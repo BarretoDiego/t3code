@@ -390,10 +390,21 @@ export function useLegacySidebarEnabled(): boolean {
  * Old installations only have `legacySidebarEnabled`; honour it ahead of the
  * new selector so their previous choice is not lost during the migration.
  */
-/** Resolves the selected sidebar without waiting for persisted settings hydration. */
 export function useSidebarExperience(): ClientSettings["sidebarExperience"] {
+  const settingsHydrated = useClientSettingsHydrated();
   const settings = useClientSettingsValue();
-  return settings.legacySidebarEnabled ? "legacy" : settings.sidebarExperience;
+  return settingsHydrated
+    ? settings.legacySidebarEnabled
+      ? "legacy"
+      : settings.sidebarExperience
+    : "grouped";
+}
+
+/** Keep the default collapsed sidebar until persisted client settings hydrate. */
+export function useCompactSidebarEnabled(): boolean {
+  const settingsHydrated = useClientSettingsHydrated();
+  const compactSidebarEnabled = useClientSettingsValue().compactSidebarEnabled;
+  return settingsHydrated && compactSidebarEnabled;
 }
 
 /** Read current settings for one environment, merged with client-local preferences. */

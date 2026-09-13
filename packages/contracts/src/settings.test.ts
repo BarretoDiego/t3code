@@ -171,8 +171,31 @@ describe("ClaudeSettings auto-compaction", () => {
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
+    expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
   });
+
+  it.each([true, false])(
+    "round-trips in-app notifications set to %s",
+    (inAppNotificationsEnabled) => {
+      const settings = decodeClientSettings({ inAppNotificationsEnabled });
+      expect(encodeClientSettings(settings).inAppNotificationsEnabled).toBe(
+        inAppNotificationsEnabled,
+      );
+      expect(
+        decodeClientSettingsPatch({ inAppNotificationsEnabled }).inAppNotificationsEnabled,
+      ).toBe(inAppNotificationsEnabled);
+    },
+  );
+
+  it.each(["true", 1, null])(
+    "rejects an invalid in-app notification preference %s",
+    (inAppNotificationsEnabled) => {
+      expect(() => decodeClientSettings({ inAppNotificationsEnabled })).toThrow();
+      expect(() => decodeClientSettingsPatch({ inAppNotificationsEnabled })).toThrow();
+    },
+  );
 
   it.each(["off", "notifications", "sound", "notifications-and-sound"])(
     "round-trips the %s mode",
@@ -489,8 +512,33 @@ describe("ClientSettings sidebar", () => {
   it("defaults to the current sidebar", () => {
     const settings = decodeClientSettings({});
     expect(settings.legacySidebarEnabled).toBe(false);
+    expect(settings.sidebarExperience).toBe("grouped");
+    expect(settings.compactSidebarEnabled).toBe(false);
+    expect(settings.sidebarCompactThreadRows).toBe(false);
     expect(settings.sidebarPinnedRateLimitProviderKeys).toEqual([]);
     expect(settings.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual([]);
+  });
+
+  it("preserves the selected sidebar experience", () => {
+    expect(decodeClientSettings({ sidebarExperience: "original" }).sidebarExperience).toBe(
+      "original",
+    );
+    expect(decodeClientSettingsPatch({ sidebarExperience: "legacy" }).sidebarExperience).toBe(
+      "legacy",
+    );
+  });
+
+  it("preserves explicit compact sidebar preferences", () => {
+    expect(decodeClientSettings({ compactSidebarEnabled: true }).compactSidebarEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ compactSidebarEnabled: true }).compactSidebarEnabled).toBe(
+      true,
+    );
+    expect(decodeClientSettings({ sidebarCompactThreadRows: true }).sidebarCompactThreadRows).toBe(
+      true,
+    );
+    expect(
+      decodeClientSettingsPatch({ sidebarCompactThreadRows: true }).sidebarCompactThreadRows,
+    ).toBe(true);
   });
 
   it("persists per-account plan-limit pin and weekly collapse preferences", () => {
