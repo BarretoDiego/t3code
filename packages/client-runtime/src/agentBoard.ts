@@ -244,7 +244,7 @@ function operationFor(thread: EnvironmentThreadShell, state: AgentOperationalSta
 function optionList(counts: Map<string, { label: string; count: number }>) {
   return [...counts.entries()]
     .map(([value, entry]) => ({ value, ...entry }))
-    .toSorted(
+    .sort(
       (left, right) =>
         left.label.localeCompare(right.label) || left.value.localeCompare(right.value),
     );
