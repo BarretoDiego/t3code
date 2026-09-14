@@ -241,6 +241,7 @@ export const make = Effect.gen(function* () {
       threadHandoffContext: true,
       aiRuntimes: true,
       compute: true,
+      projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {
