@@ -399,14 +399,6 @@ export function useSidebarExperience(): ClientSettings["sidebarExperience"] {
       : settings.sidebarExperience
     : "grouped";
 }
-
-/** Keep the default collapsed sidebar until persisted client settings hydrate. */
-export function useCompactSidebarEnabled(): boolean {
-  const settingsHydrated = useClientSettingsHydrated();
-  const compactSidebarEnabled = useClientSettingsValue().compactSidebarEnabled;
-  return settingsHydrated && compactSidebarEnabled;
-}
-
 /** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,

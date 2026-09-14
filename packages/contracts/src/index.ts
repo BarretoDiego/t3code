@@ -47,7 +47,6 @@ export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
-
 export * from "./aiRuntime.ts";
 export * from "./compute.ts";
 
@@ -56,3 +55,4 @@ export * from "./aiReview.ts";
 
 export * from "./threadHandoff.ts";
 export * from "./threadHandoffRpc.ts";
+export * from "./worktreeSetup.ts";

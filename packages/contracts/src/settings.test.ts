@@ -513,8 +513,6 @@ describe("ClientSettings sidebar", () => {
     const settings = decodeClientSettings({});
     expect(settings.legacySidebarEnabled).toBe(false);
     expect(settings.sidebarExperience).toBe("grouped");
-    expect(settings.compactSidebarEnabled).toBe(false);
-    expect(settings.sidebarCompactThreadRows).toBe(false);
     expect(settings.sidebarPinnedRateLimitProviderKeys).toEqual([]);
     expect(settings.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual([]);
   });
@@ -526,19 +524,6 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettingsPatch({ sidebarExperience: "legacy" }).sidebarExperience).toBe(
       "legacy",
     );
-  });
-
-  it("preserves explicit compact sidebar preferences", () => {
-    expect(decodeClientSettings({ compactSidebarEnabled: true }).compactSidebarEnabled).toBe(true);
-    expect(decodeClientSettingsPatch({ compactSidebarEnabled: true }).compactSidebarEnabled).toBe(
-      true,
-    );
-    expect(decodeClientSettings({ sidebarCompactThreadRows: true }).sidebarCompactThreadRows).toBe(
-      true,
-    );
-    expect(
-      decodeClientSettingsPatch({ sidebarCompactThreadRows: true }).sidebarCompactThreadRows,
-    ).toBe(true);
   });
 
   it("persists per-account plan-limit pin and weekly collapse preferences", () => {
@@ -569,6 +554,14 @@ describe("ClientSettings sidebar", () => {
     expect(decoded.legacySidebarEnabled).toBe(false);
     expect(decoded).not.toHaveProperty("sidebarV2Enabled");
     expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
+  });
+
+  it("drops the retired compact sidebar keys for users who opted in", () => {
+    const stored = { compactSidebarEnabled: true, sidebarCompactThreadRows: true };
+    const decoded = decodeClientSettings(stored);
+    expect(decoded).not.toHaveProperty("compactSidebarEnabled");
+    expect(decoded).not.toHaveProperty("sidebarCompactThreadRows");
+    expect(decodeClientSettingsPatch(stored)).toEqual({});
   });
 
   it("preserves an explicit legacy sidebar opt-in", () => {
