@@ -153,6 +153,13 @@
   ],
   "packageOverrides": [
     {
+      "name": "is-mobile",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2013 Julian Gruber <julian@juliangruber.com>"]
+      }
+    },
+    {
       "license": "MIT",
       "name": "@react-grab/cli",
       "sourceUrl": "https://github.com/aidenybai/react-grab/tree/main/packages/cli",
