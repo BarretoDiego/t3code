@@ -4,6 +4,7 @@ export type SettingsSheetTarget =
   | "SettingsMarketplace"
   | "SettingsArchive"
   | "SettingsAppearance"
+  | "SettingsKeyboard"
   | "SettingsProjectGrouping"
   | "SettingsClientStorage"
   | "SettingsDiagnostics"
