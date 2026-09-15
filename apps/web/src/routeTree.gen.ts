@@ -32,7 +32,6 @@ import { Route as SettingsAppearanceRouteImport } from './routes/settings.appear
 import { Route as SettingsAiRuntimesRouteImport } from './routes/settings.ai-runtimes'
 import { Route as SettingsAgentProfilesRouteImport } from './routes/settings.agent-profiles'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
-import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
 import { Route as ChatSourceControlRouteImport } from './routes/_chat.source-control'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatBoardRouteImport } from './routes/_chat.board'
@@ -156,11 +155,6 @@ const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   path: '/projects/$projectKey',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConnectCallbackRoute = ConnectCallbackRouteImport.update({
-  id: '/connect_/callback',
-  path: '/connect/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ChatSourceControlRoute = ChatSourceControlRouteImport.update({
   id: '/source-control',
   path: '/source-control',
@@ -210,7 +204,6 @@ export interface FileRoutesByFullPath {
   '/board': typeof ChatBoardRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/source-control': typeof ChatSourceControlRoute
-  '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
   '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
@@ -241,7 +234,6 @@ export interface FileRoutesByTo {
   '/board': typeof ChatBoardRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/source-control': typeof ChatSourceControlRoute
-  '/connect/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
   '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
@@ -275,7 +267,6 @@ export interface FileRoutesById {
   '/_chat/board': typeof ChatBoardRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/_chat/source-control': typeof ChatSourceControlRoute
-  '/connect_/callback': typeof ConnectCallbackRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/agent-profiles': typeof SettingsAgentProfilesRoute
   '/settings/ai-runtimes': typeof SettingsAiRuntimesRoute
@@ -310,7 +301,6 @@ export interface FileRouteTypes {
     | '/board'
     | '/pull-requests'
     | '/source-control'
-    | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
     | '/settings/ai-runtimes'
@@ -341,7 +331,6 @@ export interface FileRouteTypes {
     | '/board'
     | '/pull-requests'
     | '/source-control'
-    | '/connect/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
     | '/settings/ai-runtimes'
@@ -374,7 +363,6 @@ export interface FileRouteTypes {
     | '/_chat/board'
     | '/_chat/pull-requests'
     | '/_chat/source-control'
-    | '/connect_/callback'
     | '/projects/$projectKey'
     | '/settings/agent-profiles'
     | '/settings/ai-runtimes'
@@ -405,7 +393,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
   WelcomeRoute: typeof WelcomeRoute
-  ConnectCallbackRoute: typeof ConnectCallbackRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
 }
 
@@ -572,13 +559,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/connect_/callback': {
-      id: '/connect_/callback'
-      path: '/connect/callback'
-      fullPath: '/connect/callback'
-      preLoaderRoute: typeof ConnectCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_chat/source-control': {
       id: '/_chat/source-control'
       path: '/source-control'
@@ -704,7 +684,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,
   WelcomeRoute: WelcomeRoute,
-  ConnectCallbackRoute: ConnectCallbackRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
 }
 export const routeTree = rootRouteImport
