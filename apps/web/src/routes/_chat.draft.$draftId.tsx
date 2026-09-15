@@ -1,10 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ThreadWorkspace } from "../components/thread-workspace/ThreadWorkspace";
-import {
-  resolveDraftPromotionNavigationTarget,
-  threadHasStarted,
-} from "../components/ChatView.logic";
+import { resolveDraftPromotionNavigationTarget } from "../components/ChatView.logic";
 import {
   DraftId,
   markPromotedDraftThreadByRef,
@@ -87,6 +84,7 @@ function DraftChatThreadRouteView() {
           environmentId: draftSession.environmentId,
           threadId: draftSession.threadId,
         }}
+        forceExpandedMobileComposer
       />
     </SidebarInset>
   );

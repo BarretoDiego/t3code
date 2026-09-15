@@ -708,12 +708,14 @@ function ServerThreadPane({
 
 function DraftThreadPane({
   active,
+  forceExpandedMobileComposer,
   onRightPanelMaximizedChange,
   reserveNativeControlsInset,
   rightPanelHost,
   target,
 }: {
   readonly active: boolean;
+  readonly forceExpandedMobileComposer: boolean;
   readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
   readonly reserveNativeControlsInset: boolean;
   readonly rightPanelHost: HTMLElement | null;
@@ -726,12 +728,14 @@ function DraftThreadPane({
       threadId={target.threadId}
       routeKind="draft"
       reserveTitleBarControlInset={reserveNativeControlsInset}
+      forceExpandedMobileComposer={forceExpandedMobileComposer}
     />
   );
 }
 
 function ThreadPaneContent(props: {
   readonly active: boolean;
+  readonly forceExpandedMobileComposer: boolean;
   readonly onRightPanelMaximizedChange: (maximized: boolean) => void;
   readonly reserveNativeControlsInset: boolean;
   readonly rightPanelHost: HTMLElement | null;
@@ -761,6 +765,7 @@ function ThreadPaneContent(props: {
   ) : (
     <DraftThreadPane
       active={props.active}
+      forceExpandedMobileComposer={props.forceExpandedMobileComposer}
       reserveNativeControlsInset={props.reserveNativeControlsInset}
       target={props.target}
       rightPanelHost={props.rightPanelHost}
@@ -834,8 +839,10 @@ function ThreadWorkspaceDivider(props: {
 }
 
 export function ThreadWorkspace({
+  forceExpandedMobileComposer = false,
   routedTarget,
 }: {
+  readonly forceExpandedMobileComposer?: boolean;
   readonly routedTarget: ThreadWorkspaceTarget;
 }) {
   const navigate = useNavigate();
@@ -1114,6 +1121,7 @@ export function ThreadWorkspace({
         ) : (
           <ThreadPaneContent
             active={active}
+            forceExpandedMobileComposer={forceExpandedMobileComposer}
             target={target}
             reserveNativeControlsInset={reserveNativeControlsInset}
             rightPanelHost={active ? rightPanelHost : null}
