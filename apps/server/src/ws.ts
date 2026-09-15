@@ -1397,6 +1397,7 @@ const makeWsRpcLayer = (
                 yield* gitWorkflow.fetchRemote({
                   cwd: prepareWorktree.projectCwd,
                   remoteName: "origin",
+                  refName: prepareWorktree.baseBranch,
                 });
                 const remoteBaseExists = yield* gitWorkflow.remoteBranchExists({
                   cwd: prepareWorktree.projectCwd,

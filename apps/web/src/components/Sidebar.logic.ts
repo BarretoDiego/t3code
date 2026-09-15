@@ -10,6 +10,10 @@ import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/c
 import type { AsyncResult } from "effect/unstable/reactivity";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@t3tools/client-runtime/state/thread-settled";
+import {
   getThreadSortTimestamp,
   resolveSettledThreadTimestamp,
   sortThreads,
@@ -23,6 +27,22 @@ import { isLatestTurnSettled } from "../session-logic";
 
 /** Compatibility alias for legacy sidebar callers that use the settled-row label helper. */
 export const resolveSettledTimestamp = resolveSettledThreadTimestamp;
+
+export function shouldNavigateAfterThreadPark(input: {
+  readonly threadKey: string;
+  readonly currentThreadKey: string | null;
+  readonly action: "settle" | "snooze";
+  readonly now: string;
+  readonly thread: (ThreadSnoozeShell & Pick<SidebarThreadSummary, "settledOverride">) | null;
+}): boolean {
+  return (
+    input.threadKey === input.currentThreadKey &&
+    input.thread !== null &&
+    (input.action === "settle"
+      ? input.thread.settledOverride === "settled"
+      : effectiveSnoozed(input.thread, { now: input.now }))
+  );
+}
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
