@@ -65,10 +65,10 @@ export function ProjectFavicon(
       faviconPath: project.faviconPath,
     }),
   );
-  if (project.projectIcon?.kind === "lucide" && project.projectIcon.monogram) {
+  if (project.projectIcon?.kind === "monogram") {
     return (
       <ProjectMonogram
-        text={project.projectIcon.monogram}
+        text={project.projectIcon.text}
         color={project.projectIcon.color}
         className={input.className}
       />
