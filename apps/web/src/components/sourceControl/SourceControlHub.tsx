@@ -19,13 +19,7 @@ import type {
   SourceControlProviderKind,
   RemotePullRequestRef,
 } from "@t3tools/contracts";
-import {
-  GitBranchIcon,
-  GitForkIcon,
-  RefreshCwIcon,
-  GitPullRequestIcon,
-  FolderGit2Icon,
-} from "lucide-react";
+import { GitBranchIcon, GitForkIcon, RefreshCwIcon, FolderGit2Icon } from "lucide-react";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -36,6 +30,7 @@ import { useHubQuery } from "./useHubQuery";
 import { HubSelect } from "./HubSelect";
 import { RemotePullRequestPanel } from "./RemotePullRequestPanel";
 import { CreatePullRequestDialog } from "./CreatePullRequestDialog";
+import { PULL_REQUEST_STATE_PRESENTATION, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 
 function RepositoryTree({
   environmentId,
@@ -500,39 +495,43 @@ function RepositoryPullRequests({
       {query.pending && <p className="text-sm text-muted-foreground">Loading pull requests…</p>}
       {query.data?.items.length === 0 && (
         <div className="rounded-lg border border-dashed p-10 text-center">
-          <GitPullRequestIcon className="mx-auto mb-3 size-6 text-muted-foreground" />
+          <PullRequestGlyph.pullRequest className="mx-auto mb-3 size-6 text-muted-foreground" />
           <p className="text-sm font-medium">No pull requests match these filters</p>
           <p className="mt-1 text-xs text-muted-foreground">Try another state or search term.</p>
         </div>
       )}
-      {query.data?.items.map((pr) => (
-        <button
-          key={pr.number}
-          type="button"
-          className="group flex w-full items-start gap-3 rounded-lg border bg-background p-4 text-left hover:border-foreground/20 hover:bg-muted/30 focus-visible:outline-ring"
-          onClick={() => onSelect({ ...reference, number: pr.number })}
-        >
-          <GitPullRequestIcon
-            className={`mt-0.5 size-4 shrink-0 ${pr.isDraft ? "text-muted-foreground" : pr.state === "open" ? "text-emerald-600 dark:text-emerald-400" : pr.state === "merged" ? "text-violet-500" : "text-red-500"}`}
-          />
-          <div className="min-w-0 flex-1">
-            <p className="break-words text-sm font-medium group-hover:text-primary">{pr.title}</p>
-            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span>#{pr.number}</span>
-              <span className="rounded bg-muted px-1.5 py-0.5 capitalize">
-                {pr.isDraft ? "Draft" : pr.state}
-              </span>
-            </p>
-            <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
-              {pr.headBranch} → {pr.baseBranch}
-            </p>
-          </div>
-          <span className="shrink-0 text-xs tabular-nums">
-            <span className="text-emerald-600 dark:text-emerald-400">+{pr.additions}</span>{" "}
-            <span className="text-red-500">−{pr.deletions}</span>
-          </span>
-        </button>
-      ))}
+      {query.data?.items.map((pr) => {
+        const presentation = pr.isDraft
+          ? PULL_REQUEST_STATE_PRESENTATION.draft
+          : PULL_REQUEST_STATE_PRESENTATION[pr.state];
+        const Icon = presentation.Icon;
+        return (
+          <button
+            key={pr.number}
+            type="button"
+            className="group flex w-full items-start gap-3 rounded-lg border bg-background p-4 text-left hover:border-foreground/20 hover:bg-muted/30 focus-visible:outline-ring"
+            onClick={() => onSelect({ ...reference, number: pr.number })}
+          >
+            <Icon className={`mt-0.5 size-4 shrink-0 ${presentation.toneClassName}`} />
+            <div className="min-w-0 flex-1">
+              <p className="break-words text-sm font-medium group-hover:text-primary">{pr.title}</p>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                <span>#{pr.number}</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 capitalize">
+                  {pr.isDraft ? "Draft" : pr.state}
+                </span>
+              </p>
+              <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+                {pr.headBranch} → {pr.baseBranch}
+              </p>
+            </div>
+            <span className="shrink-0 text-xs tabular-nums">
+              <span className="text-emerald-600 dark:text-emerald-400">+{pr.additions}</span>{" "}
+              <span className="text-red-500">−{pr.deletions}</span>
+            </span>
+          </button>
+        );
+      })}
       {query.data?.nextCursor && (
         <Button variant="outline" onClick={() => setCursor(query.data?.nextCursor ?? undefined)}>
           Next pull requests

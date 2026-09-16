@@ -1,9 +1,10 @@
 import { SourceControlAuthWizard } from "./SourceControlAuthWizard";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { FileDiffIcon, GitBranchIcon, GitPullRequestIcon, FolderGit2Icon } from "lucide-react";
+import { FileDiffIcon, GitBranchIcon, FolderGit2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 
 export function SourceControlNavigation({
   section,
@@ -39,7 +40,7 @@ export function SourceControlNavigation({
           variant={section === "pull-requests" ? "secondary" : "ghost"}
           render={<Link to="/pull-requests" search={readPullRequestListPreferences()} />}
         >
-          <GitPullRequestIcon className="size-3.5" />
+          <PullRequestGlyph.pullRequest className="size-3.5" />
           Pull requests
         </Button>
         <Button
