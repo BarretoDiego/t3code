@@ -1,6 +1,6 @@
 import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { type RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import { type RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import {
   isCompatibleUsageContractVersion,
   isModelCostUnknown,
@@ -110,7 +110,8 @@ export function UsageRouteScreen() {
     window,
     selectedEnvironmentIds,
   );
-  const limits = useRefreshLimits(selectedEnvironmentIds);
+  const isFocused = useIsFocused();
+  const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && tab === "limits");
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const refreshProviderRateLimits = useAtomCommand(serverEnvironment.refreshProviderRateLimits, {
     reportFailure: false,
