@@ -1702,6 +1702,7 @@ const makeWsRpcLayer = (
             );
 
           const settledBootstrapProgram = bootstrapProgram.pipe(
+            Effect.interruptible,
             Effect.catchCause((cause) => {
               const dispatchError = toBootstrapDispatchCommandCauseError(cause);
               if (Cause.hasInterruptsOnly(cause)) {
@@ -1769,6 +1770,8 @@ const makeWsRpcLayer = (
                   ),
               ).pipe(Effect.andThen(cleanupAndFail(cause, dispatchError)));
             }),
+            // Cancellation must finish recording and rollback after the bootstrap is interrupted.
+            Effect.uninterruptible,
           );
 
           // The bootstrap outlives the connection that asked for it: a reload
@@ -3038,7 +3041,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.pullRequestsInvalidate]: (input) =>
           observeRpcEffect(
             WS_METHODS.pullRequestsInvalidate,
-            pullRequests.invalidate(input).pipe(
+            pullRequests.invalidate(input, { notifyReaders: true }).pipe(
               // A reader asking for fresh host state also wants the thread badges it feeds to
               // catch up, including a merged link the sweep would otherwise never revisit.
               Effect.andThen(

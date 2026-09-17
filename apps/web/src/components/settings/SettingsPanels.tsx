@@ -105,7 +105,6 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   Dialog,
@@ -587,6 +586,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
         ? ["Collapse composer"]
         : []),
+      ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
+        ? ["Rich text composer"]
+        : []),
       ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
       ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
         ? ["Follow-up behavior"]
@@ -649,6 +651,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
+      settings.composerRichTextEnabled,
       settings.sendShortcut,
       settings.followUpBehavior,
       settings.addProjectBaseDirectory,
@@ -766,6 +769,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
@@ -2652,6 +2656,33 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("composer-rich-text")}
+          description="Show formatted Markdown as you type."
+          resetAction={
+            settings.composerRichTextEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled ? (
+              <SettingResetButton
+                label="rich text composer"
+                onClick={() =>
+                  updateSettings({
+                    composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.composerRichTextEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ composerRichTextEnabled: Boolean(checked) })
+              }
+              aria-label="Rich text composer"
+            />
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("composer-collapse")}
           description="Rest the composer of an existing thread into a single line when you scroll the conversation."
           resetAction={
@@ -2746,23 +2777,24 @@ export function GeneralSettingsPanel() {
             ) : null
           }
           control={
-            <ToggleGroup
-              aria-label="Follow-up behavior"
-              variant="default"
-              value={[settings.followUpBehavior]}
-              onValueChange={(values) => {
-                const value = values[0];
+            <Select
+              value={settings.followUpBehavior}
+              onValueChange={(value) => {
                 if (value === "queue" || value === "steer") {
                   updateSettings({ followUpBehavior: value });
                 }
               }}
             >
-              {(["queue", "steer"] as const).map((value) => (
-                <Toggle key={value} value={value} variant="pill">
-                  {value === "queue" ? "Queue" : "Steer"}
-                </Toggle>
-              ))}
-            </ToggleGroup>
+              <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
+                <SelectValue>
+                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="queue">Queue</SelectItem>
+                <SelectItem value="steer">Steer</SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 
@@ -3261,7 +3293,7 @@ export function GeneralSettingsPanel() {
           control={
             <Button
               render={<Link to="/settings/open-source-licenses" />}
-              size="xs"
+              size="sm"
               variant="outline"
             >
               View licenses
