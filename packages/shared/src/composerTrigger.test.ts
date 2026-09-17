@@ -2,6 +2,21 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { detectComposerTrigger, serializeComposerFileLink } from "./composerTrigger.ts";
 
+describe("detectComposerTrigger", () => {
+  it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
+    "detects %s skill prefixes and their source range",
+    (prefix) => {
+      const text = `Use ${prefix}review`;
+      expect(detectComposerTrigger(text, text.length)).toEqual({
+        kind: "skill",
+        query: "review",
+        rangeStart: 4,
+        rangeEnd: text.length,
+      });
+    },
+  );
+});
+
 describe("serializeComposerFileLink", () => {
   it("uses the basename as the markdown label", () => {
     expect(serializeComposerFileLink("path/to/package.json")).toBe(
@@ -48,12 +63,14 @@ describe("detectComposerTrigger profile shortcuts", () => {
     });
   });
 
-  it("ignores issue references and mid-text hashtags", () => {
+  it("keeps issue references and mid-text hashtags out of the profile shortcut", () => {
     const issue = "Fix #123";
-    expect(detectComposerTrigger(issue, issue.length)).toBeNull();
-    expect(detectComposerTrigger("#123", 4)).toBeNull();
+    expect(detectComposerTrigger(issue, issue.length)).toMatchObject({ kind: "pull-request" });
+    expect(detectComposerTrigger("#123", 4)).toMatchObject({ kind: "pull-request" });
     const midText = "The issue #reviewer is unrelated";
-    expect(detectComposerTrigger(midText, midText.length)).toBeNull();
+    expect(detectComposerTrigger(midText, "The issue #reviewer".length)).toMatchObject({
+      kind: "pull-request",
+    });
   });
 
   it("stops triggering once the token ends", () => {

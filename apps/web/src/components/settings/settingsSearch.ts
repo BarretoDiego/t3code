@@ -23,6 +23,7 @@ export type SettingsPath =
   | "/settings/source-control"
   | "/settings/mini-skills"
   | "/settings/agent-profiles"
+  | "/settings/storage"
   | "/settings/connections"
   | "/settings/archived";
 
@@ -94,6 +95,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/source-control": "Source Control",
   "/settings/mini-skills": "Mini Skills",
   "/settings/agent-profiles": "Agent Profiles",
+  "/settings/storage": "Storage",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
@@ -136,6 +138,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "AI Runtimes",
     to: "/settings/ai-runtimes",
     searchTerms: ["ollama local models endpoint network inference install pull"],
+  },
+  {
+    id: "storage-worktrees",
+    title: "Worktree cleanup",
+    to: "/settings/storage",
+    scope: "project-defaults",
+    searchTerms: [
+      "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
+    ],
+  },
+  {
+    id: "storage-artifacts",
+    title: "Artifacts and logs",
+    to: "/settings/storage",
+    scope: "environment-defaults",
+    searchTerms: ["disk storage browser screenshots captures rotated logs cleanup retention"],
   },
   {
     id: "project-defaults",
@@ -835,6 +853,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/providers": null,
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
+  "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
   "/settings/agent-profiles": null,

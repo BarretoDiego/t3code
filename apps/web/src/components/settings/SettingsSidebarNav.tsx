@@ -15,6 +15,7 @@ import {
   BotIcon,
   createLucideIcon,
   GitBranchIcon,
+  HardDriveIcon,
   PanelsTopLeftIcon,
   KeyboardIcon,
   Link2Icon,
@@ -88,6 +89,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/source-control": GitBranchIcon,
   "/settings/mini-skills": SparklesIcon,
   "/settings/agent-profiles": UserCogIcon,
+  "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };
