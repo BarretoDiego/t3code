@@ -143,11 +143,7 @@ export function getRenderablePatch(
 }
 
 export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
-  const raw = fileDiff.name ?? fileDiff.prevName ?? "";
-  if (raw.startsWith("a/") || raw.startsWith("b/")) {
-    return raw.slice(2);
-  }
-  return raw;
+  return fileDiff.name ?? fileDiff.prevName ?? "";
 }
 
 /**
@@ -155,11 +151,7 @@ export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
  * path, and the hosts that resolve a diff position against both sides need both names.
  */
 export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string {
-  const raw = fileDiff.prevName ?? fileDiff.name ?? "";
-  if (raw.startsWith("a/") || raw.startsWith("b/")) {
-    return raw.slice(2);
-  }
-  return raw;
+  return fileDiff.prevName ?? fileDiff.name ?? "";
 }
 
 export function buildFileDiffIdentityKey(fileDiff: FileDiffMetadata): string {
