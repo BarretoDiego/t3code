@@ -68,6 +68,7 @@ import Migration0053 from "./Migrations/050_ProjectionThreadPullRequests.ts";
 import Migration0054 from "./Migrations/051_ProjectionThreadMessageContext.ts";
 import Migration0055 from "./Migrations/055_ProjectionThreadTitleStateReconciliation.ts";
 import Migration0056 from "./Migrations/056_RepairProjectionThreadMessageContext.ts";
+import Migration0057 from "./Migrations/053_PullRequestFilesViewed.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -139,6 +140,9 @@ const migrationEntries = [
   [54, "ProjectionThreadMessageContext", Migration0054],
   [55, "ProjectionThreadTitleStateReconciliation", Migration0055],
   [56, "RepairProjectionThreadMessageContext", Migration0056],
+  // ID 53 is already published by the fork. Append the upstream viewed-file
+  // store so both migration histories remain valid.
+  [57, "PullRequestFilesViewed", Migration0057],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

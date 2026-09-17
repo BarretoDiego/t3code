@@ -2981,6 +2981,18 @@ const makeWsRpcLayer = (
             withPullRequestViewer(input, pullRequests.diffFileContents(input)),
             { "rpc.aggregate": "pull-requests" },
           ),
+        [WS_METHODS.pullRequestsFilesViewed]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestsFilesViewed,
+            withPullRequestViewer(input, pullRequests.filesViewed(input)),
+            { "rpc.aggregate": "pull-requests" },
+          ),
+        [WS_METHODS.pullRequestsSetFilesViewed]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestsSetFilesViewed,
+            withPullRequestViewer(input, pullRequests.setFilesViewed(input)),
+            { "rpc.aggregate": "pull-requests" },
+          ),
         [WS_METHODS.pullRequestsRunAction]: (input) =>
           observeRpcEffect(
             WS_METHODS.pullRequestsRunAction,
@@ -3054,7 +3066,7 @@ const makeWsRpcLayer = (
               // A reader asking for fresh host state also wants the thread badges it feeds to
               // catch up, including a merged link the sweep would otherwise never revisit.
               Effect.andThen(
-                input.reference === undefined
+                input.reference === undefined || input.filesViewedOnly === true
                   ? Effect.void
                   : resolvePullRequestSyncKey(input.reference).pipe(
                       Effect.flatMap((key) =>
