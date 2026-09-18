@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   isQueuedMessageDue,
+  isQueuedMessageRateLimited,
   latestCompletedToolActivityId,
   useQueuedMessageStore,
   type QueuedComposerMessage,
@@ -84,6 +85,31 @@ describe("queuedMessageStore", () => {
     expect(
       isQueuedMessageDue({ message: queue[0]!, phase: "ready", latestToolActivityId: null }),
     ).toBe(false);
+  });
+
+  it("holdForRateLimit parks on the reset, then releases after it passes", () => {
+    const { enqueue, take, holdForRateLimit } = useQueuedMessageStore.getState();
+    const first = enqueue("thread-a", makeMessage("first"));
+    const taken = take("thread-a", first.id, "t1")!;
+    const resetAt = new Date(Date.now() + 60_000).toISOString();
+
+    holdForRateLimit("thread-a", taken, resetAt);
+
+    const [parked] = useQueuedMessageStore.getState().queuesByThreadKey["thread-a"] ?? [];
+    expect(parked?.rateLimitedUntil).toBe(resetAt);
+    expect(parked?.holdUntilUserAction).toBe(false);
+    expect(isQueuedMessageRateLimited(parked!)).toBe(true);
+    expect(
+      isQueuedMessageDue({ message: parked!, phase: "ready", latestToolActivityId: null }),
+    ).toBe(false);
+    expect(
+      isQueuedMessageDue({
+        message: parked!,
+        phase: "ready",
+        latestToolActivityId: null,
+        nowMs: Date.now() + 61_000,
+      }),
+    ).toBe(true);
   });
 
   it("drain empties one thread's queue in order", () => {

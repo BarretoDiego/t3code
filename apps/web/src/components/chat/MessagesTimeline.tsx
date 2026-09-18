@@ -137,6 +137,7 @@ import type {
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
+import { formatRateLimitResetCountdown } from "@t3tools/shared/providerRateLimits";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -1763,11 +1764,30 @@ function QueuedMessageTimelineRow({
     queuedMessage.previewAnnotations.length +
     queuedMessage.reviewComments.length;
   const text = queuedMessage.prompt.trim();
+  // Live countdown while parked on an exhausted plan window. Ticks once per
+  // second like the mobile Limits screen; unmounts with the bubble so no
+  // timer outlives the queue.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const rateLimitedMs = queuedMessage.rateLimitedUntil
+    ? Date.parse(queuedMessage.rateLimitedUntil) - nowMs
+    : Number.NEGATIVE_INFINITY;
+  const isRateLimitedWait = Number.isFinite(rateLimitedMs) && rateLimitedMs > 0;
+  useEffect(() => {
+    if (!isRateLimitedWait) return;
+    const timer = setTimeout(() => setNowMs(Date.now()), 1_000);
+    return () => clearTimeout(timer);
+  }, [isRateLimitedWait, queuedMessage.rateLimitedUntil]);
+  const rateLimitCountdown =
+    isRateLimitedWait && queuedMessage.rateLimitedUntil
+      ? (formatRateLimitResetCountdown(queuedMessage.rateLimitedUntil, nowMs) ?? null)
+      : null;
   const statusLabel = queuedMessage.holdUntilUserAction
     ? "Waits for Send now"
-    : row.isNext
-      ? "Sends after the next tool call or when the turn ends"
-      : "Sends after the messages above it";
+    : rateLimitCountdown
+      ? `Plan limit reached. Sends automatically in ${rateLimitCountdown}. Send now to retry immediately, or Cancel to edit.`
+      : row.isNext
+        ? "Sends after the next tool call or when the turn ends"
+        : "Sends after the messages above it";
   return (
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
@@ -1798,7 +1818,7 @@ function QueuedMessageTimelineRow({
               aria-label={`Queued. ${statusLabel}.`}
             >
               <ClockIcon className="size-3.5" aria-hidden />
-              Queued
+              {rateLimitCountdown ? `Sends in ${rateLimitCountdown}` : "Queued"}
             </TooltipTrigger>
             <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
           </Tooltip>

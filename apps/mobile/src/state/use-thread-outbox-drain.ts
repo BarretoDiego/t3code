@@ -12,6 +12,10 @@ import {
   type MessageId,
 } from "@t3tools/contracts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import {
+  getExhaustedRateLimitResetAt,
+  msUntilRateLimitReset,
+} from "@t3tools/shared/providerRateLimits";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -590,6 +594,23 @@ export function useThreadOutboxDrain(): void {
     retryTimersRef.current.set(messageId, retryTimer);
   }, []);
 
+  // Parks a retry until an exhausted plan window resets instead of the
+  // transport backoff, so the message goes out on its own when quota
+  // returns. Manual send still forces it; removing the message clears it
+  // via the unmount cleanup like any other timer.
+  const scheduleQueuedMessageRetryAt = useCallback((messageId: MessageId, delayMs: number) => {
+    retryNotBeforeRef.current.set(messageId, Date.now() + Math.max(0, delayMs));
+    const pendingTimer = retryTimersRef.current.get(messageId);
+    if (pendingTimer !== undefined) {
+      clearTimeout(pendingTimer);
+    }
+    const retryTimer = setTimeout(() => {
+      retryTimersRef.current.delete(messageId);
+      setRetryTick((current) => current + 1);
+    }, Math.max(0, delayMs));
+    retryTimersRef.current.set(messageId, retryTimer);
+  }, []);
+
   const restoreQueuedMessage = useCallback(
     async (queuedMessage: QueuedThreadMessage, message: string): Promise<boolean> => {
       const result = await restoreRejectedQueuedMessage(queuedMessage, message);
@@ -1079,6 +1100,26 @@ export function useThreadOutboxDrain(): void {
         continue;
       }
 
+      // An exhausted plan window parks the message until its reset instead
+      // of burning transport backoff: arm the retry for the reset instant so
+      // it goes out on its own. Firing then and re-checking is cheaper than
+      // tracking per-window, and a message for a healthy provider simply
+      // finds no reset and proceeds.
+      const rateLimitConfig = serverConfigs.get(nextQueuedMessage.environmentId);
+      const rateLimitedUntil = rateLimitConfig
+        ? getExhaustedRateLimitResetAt(rateLimitConfig.providers, {
+            instanceId: nextQueuedMessage.modelSelection?.instanceId ?? null,
+            nowMs: Date.now(),
+          })
+        : null;
+      if (rateLimitedUntil) {
+        scheduleQueuedMessageRetryAt(
+          nextQueuedMessage.messageId,
+          msUntilRateLimitReset(rateLimitedUntil, Date.now()),
+        );
+        continue;
+      }
+
       const creation = nextQueuedMessage.creation;
       const environment = connectedEnvironments.find(
         (candidate) => candidate.environmentId === nextQueuedMessage.environmentId,
@@ -1090,6 +1131,8 @@ export function useThreadOutboxDrain(): void {
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
         threadBusy: thread?.session?.status === "running" || thread?.session?.status === "starting",
+        rateLimitedUntil,
+        nowMs: Date.now(),
       });
       // The delivery action resolves first; capability checks apply only to
       // a message that will send. Checking earlier would restore a
@@ -1254,6 +1297,7 @@ export function useThreadOutboxDrain(): void {
     retryTick,
     restoreQueuedMessage,
     scheduleQueuedMessageRetry,
+    scheduleQueuedMessageRetryAt,
     sendQueuedCreation,
     sendQueuedMessage,
     serverConfigs,

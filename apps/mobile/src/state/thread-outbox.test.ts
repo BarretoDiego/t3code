@@ -1490,6 +1490,47 @@ describe("thread outbox", () => {
     ).toBe(true);
   });
 
+  it("waits out an exhausted plan window instead of sending through it", () => {
+    const resetAt = new Date(Date.now() + 60_000).toISOString();
+    expect(
+      resolveThreadOutboxDeliveryAction({
+        isCreation: false,
+        threadExists: true,
+        shellStatus: "live",
+        environmentConnected: true,
+        threadBusy: false,
+        rateLimitedUntil: resetAt,
+      }),
+    ).toBe("wait");
+    expect(
+      resolveThreadOutboxDeliveryAction({
+        isCreation: false,
+        threadExists: true,
+        shellStatus: "live",
+        environmentConnected: true,
+        threadBusy: false,
+        rateLimitedUntil: new Date(Date.now() - 1_000).toISOString(),
+      }),
+    ).toBe("send");
+  });
+
+  it("retries usage-limit failures so the drain can park them on the reset", () => {
+    expect(
+      resolveThreadOutboxFailureAction({
+        stage: "start-turn",
+        error: new Error("Codex usage limit reached. Send the message again once it resets."),
+        interrupted: false,
+      }),
+    ).toBe("retry");
+    expect(
+      resolveThreadOutboxFailureAction({
+        stage: "start-turn",
+        error: new Error("Thread no longer exists"),
+        interrupted: false,
+      }),
+    ).toBe("restore");
+  });
+
   it("retains queued messages when settings synchronization fails before startTurn", () => {
     const deterministicFailure = new Error("Thread no longer exists");
 

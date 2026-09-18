@@ -23,6 +23,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+import { isUsageLimitErrorMessage } from "@t3tools/shared/providerRateLimits";
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
 import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
@@ -166,13 +167,33 @@ export function threadOutboxRetryDelayMs(attempt: number): number {
 
 export type ThreadOutboxDeliveryAction = "wait" | "remove" | "send";
 
+/**
+ * True while the outbox must wait for an exhausted plan window. The drain
+ * loop arms its retry for the reset instant instead of the transport backoff,
+ * so a queued message goes out on its own when quota returns. Manual Send
+ * now bypasses the gate at the call site; Cancel removes the message.
+ */
+export function isOutboxRateLimited(input: {
+  readonly rateLimitedUntil?: string | null;
+  readonly nowMs?: number;
+}): boolean {
+  if (!input.rateLimitedUntil) return false;
+  const resetMs = Date.parse(input.rateLimitedUntil);
+  return Number.isFinite(resetMs) && resetMs > (input.nowMs ?? Date.now());
+}
+
 export function resolveThreadOutboxDeliveryAction(input: {
   readonly isCreation: boolean;
   readonly threadExists: boolean;
   readonly shellStatus: EnvironmentShellStatus;
   readonly environmentConnected: boolean;
   readonly threadBusy: boolean;
+  readonly rateLimitedUntil?: string | null;
+  readonly nowMs?: number;
 }): ThreadOutboxDeliveryAction {
+  if (isOutboxRateLimited({ rateLimitedUntil: input.rateLimitedUntil, nowMs: input.nowMs })) {
+    return "wait";
+  }
   if (input.isCreation) {
     // A pending task creates its thread on delivery. If the thread already
     // exists the creation command went through and only cleanup remains.
@@ -290,6 +311,13 @@ export function resolveThreadOutboxFailureAction(input: {
   readonly error: unknown;
   readonly interrupted: boolean;
 }): ThreadOutboxFailureAction {
+  // An exhausted plan window is transport-shaped for retry purposes: the
+  // payload is fine, quota simply returns later. Retrying (with the reset
+  // instant as the delay, resolved by the drain loop) keeps the message
+  // queued with auto-send instead of restoring it into a draft.
+  if (isUsageLimitOutboxError(input.error)) {
+    return "retry";
+  }
   if (
     input.stage === "settings-sync" ||
     input.interrupted ||
@@ -298,4 +326,9 @@ export function resolveThreadOutboxFailureAction(input: {
     return "retry";
   }
   return "restore";
+}
+
+/** True when a dispatch failure reads like an exhausted plan window. */
+export function isUsageLimitOutboxError(error: unknown): boolean {
+  return isUsageLimitErrorMessage(errorMessage(error));
 }

@@ -46,6 +46,11 @@ the oldest queued message now. Change `thread.steerQueuedMessage` in
 **Settings → Keybindings** to use another shortcut. It leaves the current draft
 in the composer and waits if the agent needs an approval or an answer.
 
+When a send fails on an exhausted plan window, the queued message waits for
+the reset instead of failing on every try. The bubble shows a live countdown
+and sends on its own when the window reopens. Use Send now to retry
+immediately, or Cancel to return the message to the composer.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

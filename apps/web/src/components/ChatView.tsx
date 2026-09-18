@@ -324,11 +324,17 @@ import {
 } from "../lib/composerContextRecords";
 import {
   isQueuedMessageDue,
+  isQueuedMessageRateLimited,
   latestCompletedToolActivityId,
   type QueuedComposerMessage,
   useQueuedMessages,
   useQueuedMessageStore,
 } from "../queuedMessageStore";
+import {
+  getExhaustedRateLimitResetAt,
+  isUsageLimitErrorMessage,
+  msUntilRateLimitReset,
+} from "@t3tools/shared/providerRateLimits";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -8531,12 +8537,38 @@ export default function ChatView(props: ChatViewProps) {
           return next.length === existing.length ? existing : next;
         });
         // The optimistic row's preview URLs were just revoked, so the images
-        // need fresh ones before the row can show them again.
+        // need fresh ones before the row can show them again. A usage-limit
+        // failure parks on the window reset with auto-send instead of a
+        // manual hold, so the message goes out on its own when quota returns.
         if (activeThreadKey) {
-          useQueuedMessageStore.getState().holdAtFront(activeThreadKey, {
-            ...queuedMessage,
-            images: queuedMessage.images.map(cloneComposerImageForRetry),
-          });
+          const failureMessage = (() => {
+            try {
+              const error = squashAtomCommandFailure(failure);
+              return error instanceof Error ? error.message : null;
+            } catch {
+              return null;
+            }
+          })();
+          const limitResetAt = isUsageLimitErrorMessage(failureMessage)
+            ? (getExhaustedRateLimitResetAt(providerStatuses, { nowMs: Date.now() }) ??
+              queuedMessage.rateLimitedUntil ??
+              null)
+            : null;
+          if (limitResetAt) {
+            useQueuedMessageStore.getState().holdForRateLimit(
+              activeThreadKey,
+              {
+                ...queuedMessage,
+                images: queuedMessage.images.map(cloneComposerImageForRetry),
+              },
+              limitResetAt,
+            );
+          } else {
+            useQueuedMessageStore.getState().holdAtFront(activeThreadKey, {
+              ...queuedMessage,
+              images: queuedMessage.images.map(cloneComposerImageForRetry),
+            });
+          }
         }
       } else if (
         backgroundDraftOpened
@@ -8630,7 +8662,10 @@ export default function ChatView(props: ChatViewProps) {
 
   // Sends the oldest queued message once it is due: a tool call finished
   // after it was queued, or the turn ended. Only one leaves per boundary; the
-  // take inside onSend re-anchors the rest.
+  // take inside onSend re-anchors the rest. A message parked on an exhausted
+  // plan window waits for its reset instead: the effect below arms a timer
+  // for exactly then so it goes out on its own, while Send now still forces
+  // it and Cancel still drops it.
   const sendQueuedMessage = useEffectEvent((message: QueuedComposerMessage) => {
     void onSend(undefined, message.submissionIntent, undefined, message);
   });
@@ -8655,18 +8690,58 @@ export default function ChatView(props: ChatViewProps) {
     threadDetailLoading ||
     needsLoadBalancing ||
     activeProviderStatus === null;
+  // Soonest exhausted-window reset in this environment. Unscoped on purpose:
+  // firing then and re-checking is cheaper than tracking per-window, and a
+  // queued send for another provider simply goes out on its own boundary.
+  const exhaustedRateLimitResetAt = useMemo(
+    () =>
+      getExhaustedRateLimitResetAt(providerStatuses, {
+        nowMs: Date.now(),
+      }),
+    [providerStatuses],
+  );
   useEffect(() => {
     if (!nextQueuedMessage || isSendBusy || queueBlockedByPendingRequest || queueSendGate) return;
     if (sendInFlightRef.current) return;
-    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) return;
+    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) {
+      // Parked on a limit with auto-send: wake exactly at the reset. Manual
+      // Send now bypasses this by calling onSend directly; Cancel removes the
+      // message and this timer never fires.
+      if (nextQueuedMessage.rateLimitedUntil && activeThreadKey) {
+        const delayMs = msUntilRateLimitReset(nextQueuedMessage.rateLimitedUntil, Date.now());
+        const threadKey = activeThreadKey;
+        const messageId = nextQueuedMessage.id;
+        const timer = setTimeout(() => {
+          const current = useQueuedMessageStore
+            .getState()
+            .queuesByThreadKey[threadKey]?.find((entry) => entry.id === messageId);
+          if (!current || isQueuedMessageRateLimited(current)) return;
+          if (sendInFlightRef.current) return;
+          sendQueuedMessage(current);
+        }, delayMs);
+        return () => clearTimeout(timer);
+      }
+      return;
+    }
+    // Due by tool boundary but the plan window is exhausted: park it on the
+    // reset instead of sending through the wall on every boundary.
+    if (exhaustedRateLimitResetAt && activeThreadKey && !nextQueuedMessage.rateLimitedUntil) {
+      useQueuedMessageStore
+        .getState()
+        .holdForRateLimit(activeThreadKey, nextQueuedMessage, exhaustedRateLimitResetAt);
+      return;
+    }
     sendQueuedMessage(nextQueuedMessage);
   }, [
+    activeThreadKey,
+    exhaustedRateLimitResetAt,
     isSendBusy,
     latestToolActivityId,
     nextQueuedMessage,
     phase,
     queueBlockedByPendingRequest,
     queueSendGate,
+    sendQueuedMessage,
   ]);
 
   // The row handlers are read from refs at call-time so their identity stays

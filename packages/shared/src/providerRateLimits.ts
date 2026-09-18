@@ -64,6 +64,73 @@ const parseDateMs = (isoDate: string): number | null => {
   return Number.isNaN(timestampMs) ? null : timestampMs;
 };
 
+/**
+ * A queued message held back by an exhausted plan window is a waiting intent,
+ * not a failure. These helpers let web and mobile share one definition of
+ * "waiting for the reset" so both surfaces arm the same timer.
+ */
+
+interface ExhaustedWindowLike {
+  readonly status: ProviderRateLimitStatus;
+  readonly resetsAt: string | null;
+}
+
+const isFutureReset = (resetsAt: string | null, nowMs: number): resetsAt is string => {
+  if (resetsAt === null) return false;
+  const resetMs = parseDateMs(resetsAt);
+  return resetMs !== null && resetMs > nowMs;
+};
+
+/** Earliest future `resetsAt` among exhausted windows, or null when none waits. */
+export function getEarliestExhaustedResetAt(
+  windows: ReadonlyArray<ExhaustedWindowLike>,
+  nowMs: number,
+): string | null {
+  let earliest: { readonly iso: string; readonly ms: number } | null = null;
+  for (const window of windows) {
+    if (window.status !== "exhausted" || !isFutureReset(window.resetsAt, nowMs)) continue;
+    const resetMs = parseDateMs(window.resetsAt) ?? Number.POSITIVE_INFINITY;
+    if (earliest === null || resetMs < earliest.ms) {
+      earliest = { iso: window.resetsAt, ms: resetMs };
+    }
+  }
+  return earliest?.iso ?? null;
+}
+
+/**
+ * Earliest future reset across providers, optionally scoped to one provider
+ * instance. Unscoped callers get the soonest reason a queued send might
+ * succeed; firing then and re-checking is cheaper than tracking per-window.
+ */
+export function getExhaustedRateLimitResetAt(
+  providers: ReadonlyArray<{
+    readonly instanceId?: ProviderInstanceId | string;
+    readonly rateLimits?: { readonly windows: ReadonlyArray<ExhaustedWindowLike> } | null | undefined;
+  }>,
+  input: { readonly instanceId?: ProviderInstanceId | string | null; readonly nowMs: number },
+): string | null {
+  const windows = providers
+    .filter((provider) => input.instanceId == null || provider.instanceId === input.instanceId)
+    .flatMap((provider) => provider.rateLimits?.windows ?? []);
+  return getEarliestExhaustedResetAt(windows, input.nowMs);
+}
+
+/** Milliseconds until `resetsAt`, floored at zero so a passed reset fires now. */
+export function msUntilRateLimitReset(resetsAt: string, nowMs: number): number {
+  const resetMs = parseDateMs(resetsAt);
+  if (resetMs === null) return 0;
+  return Math.max(0, resetMs - nowMs);
+}
+
+const USAGE_LIMIT_ERROR_PATTERN =
+  /usage limit (reached|exceeded)|you'?ve hit your usage limit|limit resets|rate.?limit.*reset|exhausted.*window/i;
+
+/** True when a send failure reads like an exhausted plan window, not bad payload. */
+export function isUsageLimitErrorMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return USAGE_LIMIT_ERROR_PATTERN.test(message);
+}
+
 /** "2h 14m", "45m", "3d 4h" — enough precision to plan around. */
 export function formatRateLimitResetIn(isoDate: string, nowMs: number): string | null {
   const timestampMs = parseDateMs(isoDate);

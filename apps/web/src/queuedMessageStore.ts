@@ -32,6 +32,12 @@ export interface QueuedComposerMessage {
    * user pressing send. It waits for Send now instead of leaving on its own.
    */
   holdUntilUserAction?: boolean;
+  /**
+   * Set when the send failed on (or the queue is waiting for) an exhausted
+   * plan window. The message auto-sends after this instant; Send now still
+   * forces it and Cancel still drops it.
+   */
+  rateLimitedUntil?: string | null;
   createdAt: string;
 }
 
@@ -61,6 +67,12 @@ interface QueuedMessageStoreState {
    * send failed: the queue keeps its order and nothing behind it overtakes.
    */
   holdAtFront: (threadKey: string, message: QueuedComposerMessage) => void;
+  /**
+   * Parks a message at the head until an exhausted plan window resets. Unlike
+   * holdAtFront it stays eligible for auto-send: the drain effect fires it
+   * once `resetsAt` passes. Send now forces it, Cancel drops it.
+   */
+  holdForRateLimit: (threadKey: string, message: QueuedComposerMessage, resetsAt: string) => void;
   /** Removes and returns every queued message for the thread, oldest first. */
   drain: (threadKey: string) => QueuedComposerMessage[];
 }
@@ -133,7 +145,30 @@ export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get
       return {
         queuesByThreadKey: {
           ...state.queuesByThreadKey,
-          [threadKey]: [{ ...message, holdUntilUserAction: true }, ...rest],
+          [threadKey]: [
+            { ...message, holdUntilUserAction: true, rateLimitedUntil: null },
+            ...rest,
+          ],
+        },
+      };
+    });
+  },
+  holdForRateLimit: (threadKey, message, resetsAt) => {
+    set((state) => {
+      const rest = (state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE).filter(
+        (entry) => entry.id !== message.id,
+      );
+      return {
+        queuesByThreadKey: {
+          ...state.queuesByThreadKey,
+          [threadKey]: [
+            {
+              ...message,
+              holdUntilUserAction: false,
+              rateLimitedUntil: resetsAt,
+            },
+            ...rest,
+          ],
         },
       };
     });
@@ -186,14 +221,34 @@ export function latestCompletedToolActivityId(
  * between a send and the provider picking it up, so nothing is due there.
  */
 export function isQueuedMessageDue(input: {
-  message: Pick<QueuedComposerMessage, "queuedAfterToolActivityId" | "holdUntilUserAction">;
+  message: Pick<
+    QueuedComposerMessage,
+    "queuedAfterToolActivityId" | "holdUntilUserAction" | "rateLimitedUntil"
+  >;
   phase: "connecting" | "running" | "ready" | "disconnected";
   latestToolActivityId: string | null;
+  nowMs?: number;
 }): boolean {
   if (input.message.holdUntilUserAction) return false;
   if (input.phase === "connecting") return false;
+  // A rate-limited wait parks the message until the window resets; the drain
+  // effect arms a timer for exactly then instead of sending through the wall.
+  if (input.message.rateLimitedUntil) {
+    const resetMs = Date.parse(input.message.rateLimitedUntil);
+    if (Number.isFinite(resetMs) && resetMs > (input.nowMs ?? Date.now())) return false;
+  }
   if (input.phase !== "running") return true;
   return input.latestToolActivityId !== input.message.queuedAfterToolActivityId;
+}
+
+/** True while the message is parked waiting for an exhausted window to reset. */
+export function isQueuedMessageRateLimited(
+  message: Pick<QueuedComposerMessage, "rateLimitedUntil">,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!message.rateLimitedUntil) return false;
+  const resetMs = Date.parse(message.rateLimitedUntil);
+  return Number.isFinite(resetMs) && resetMs > nowMs;
 }
 
 export function useQueuedMessages(threadKey: string): QueuedComposerMessage[] {
