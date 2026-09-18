@@ -323,18 +323,19 @@ import {
   terminalContextReference,
 } from "../lib/composerContextRecords";
 import {
+  getQueuedMessageWaitUntil,
   isQueuedMessageDue,
-  isQueuedMessageRateLimited,
   latestCompletedToolActivityId,
   type QueuedComposerMessage,
   useQueuedMessages,
   useQueuedMessageStore,
 } from "../queuedMessageStore";
 import {
+  formatRateLimitResetIn,
   getExhaustedRateLimitResetAt,
   isUsageLimitErrorMessage,
-  msUntilRateLimitReset,
 } from "@t3tools/shared/providerRateLimits";
+import { requestScheduleSend } from "./chat/ScheduleSendDialog";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -7277,6 +7278,45 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
 
+  // Snapshots the live composer draft into the queue without sending. Used
+  // both by the running-turn fast path inside onSend and by manual Schedule
+  // send, so the two stay identical by construction.
+  const enqueueComposerSnapshot = useCallback(
+    (input: {
+      sendAt: string | null;
+      submissionIntent: ComposerSubmissionIntent;
+    }): boolean => {
+      const sendCtx = composerRef.current?.getSendContext();
+      if (!sendCtx?.providerAvailable || !activeThreadKey) return false;
+      if (composerRef.current?.validateProviderInput(promptRef.current) === false) {
+        return false;
+      }
+      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+        prompt: promptRef.current,
+        images: [...sendCtx.images],
+        files: [...sendCtx.files],
+        terminalContexts: [...sendCtx.terminalContexts],
+        previewAnnotations: [...sendCtx.previewAnnotations],
+        reviewComments: [...sendCtx.reviewComments],
+        submissionIntent: input.submissionIntent,
+        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+        sendAt: input.sendAt,
+        createdAt: new Date().toISOString(),
+      });
+      promptRef.current = "";
+      // Attachments move with the message; their uploads stay pending. The
+      // refs clear now too, so a Stop before the composer's sync effect runs
+      // does not restore the moved attachments twice.
+      composerImagesRef.current = [];
+      composerFilesRef.current = [];
+      composerTerminalContextsRef.current = [];
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      return true;
+    },
+    [activeThreadKey, clearComposerDraftContent, composerDraftTarget, threadActivities],
+  );
+
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
@@ -7648,29 +7688,7 @@ export default function ChatView(props: ChatViewProps) {
       activeThreadKey &&
       (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")
     ) {
-      if (composerRef.current?.validateProviderInput(promptForSend) === false) {
-        return;
-      }
-      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
-        prompt: promptForSend,
-        images: [...composerImages],
-        files: [...composerFiles],
-        terminalContexts: [...composerTerminalContexts],
-        previewAnnotations: [...composerPreviewAnnotations],
-        reviewComments: [...composerReviewComments],
-        submissionIntent,
-        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
-        createdAt: new Date().toISOString(),
-      });
-      promptRef.current = "";
-      // Attachments move with the message; their uploads stay pending. The
-      // refs clear now too, so a Stop before the composer's sync effect runs
-      // does not restore the moved attachments twice.
-      composerImagesRef.current = [];
-      composerFilesRef.current = [];
-      composerTerminalContextsRef.current = [];
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      enqueueComposerSnapshot({ sendAt: null, submissionIntent });
       return;
     }
     const threadIdForSend = activeThread.id;
@@ -8662,10 +8680,10 @@ export default function ChatView(props: ChatViewProps) {
 
   // Sends the oldest queued message once it is due: a tool call finished
   // after it was queued, or the turn ended. Only one leaves per boundary; the
-  // take inside onSend re-anchors the rest. A message parked on an exhausted
-  // plan window waits for its reset instead: the effect below arms a timer
-  // for exactly then so it goes out on its own, while Send now still forces
-  // it and Cancel still drops it.
+  // take inside onSend re-anchors the rest. A message waiting on a manual
+  // schedule or an exhausted plan window waits for its instant instead: the
+  // effect arms one alarm for exactly then and re-evaluates, so it goes out
+  // on its own, while Send now still forces it and Cancel still drops it.
   const sendQueuedMessage = useEffectEvent((message: QueuedComposerMessage) => {
     void onSend(undefined, message.submissionIntent, undefined, message);
   });
@@ -8700,25 +8718,17 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [providerStatuses],
   );
+  // Bumped by the wait alarm below so the effect re-evaluates with fresh
+  // values instead of sending through a stale closure.
+  const [queueWaitTick, setQueueWaitTick] = useState(0);
   useEffect(() => {
     if (!nextQueuedMessage || isSendBusy || queueBlockedByPendingRequest || queueSendGate) return;
     if (sendInFlightRef.current) return;
     if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) {
-      // Parked on a limit with auto-send: wake exactly at the reset. Manual
-      // Send now bypasses this by calling onSend directly; Cancel removes the
-      // message and this timer never fires.
-      if (nextQueuedMessage.rateLimitedUntil && activeThreadKey) {
-        const delayMs = msUntilRateLimitReset(nextQueuedMessage.rateLimitedUntil, Date.now());
-        const threadKey = activeThreadKey;
-        const messageId = nextQueuedMessage.id;
-        const timer = setTimeout(() => {
-          const current = useQueuedMessageStore
-            .getState()
-            .queuesByThreadKey[threadKey]?.find((entry) => entry.id === messageId);
-          if (!current || isQueuedMessageRateLimited(current)) return;
-          if (sendInFlightRef.current) return;
-          sendQueuedMessage(current);
-        }, delayMs);
+      const waitUntil = getQueuedMessageWaitUntil(nextQueuedMessage, Date.now());
+      if (waitUntil) {
+        const delayMs = Math.max(0, Date.parse(waitUntil) - Date.now());
+        const timer = setTimeout(() => setQueueWaitTick((tick) => tick + 1), delayMs);
         return () => clearTimeout(timer);
       }
       return;
@@ -8741,14 +8751,42 @@ export default function ChatView(props: ChatViewProps) {
     phase,
     queueBlockedByPendingRequest,
     queueSendGate,
+    queueWaitTick,
     sendQueuedMessage,
   ]);
 
+  // Schedules the live composer draft without sending. The draft moves into
+  // the queue like a running-turn follow-up, then goes out on its own when
+  // its instant arrives.
+  const onScheduleComposerDraft = useCallback(async () => {
+    if (!activeThreadKey || !activeThread || !activeProject) return;
+    const choice = await requestScheduleSend();
+    if (!choice || !choice.sendAt) return;
+    if (!enqueueComposerSnapshot({ sendAt: choice.sendAt, submissionIntent: "foreground" })) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Could not schedule message",
+          description: "Sending is unavailable right now. Try again once it is connected.",
+        }),
+      );
+      return;
+    }
+    const inLabel = formatRateLimitResetIn(choice.sendAt, Date.now());
+    toastManager.add(
+      stackedThreadToast({
+        type: "info",
+        title: "Message scheduled",
+        description: inLabel ? `Sends in ${inLabel}.` : "Sends automatically at its time.",
+      }),
+    );
+  }, [activeProject, activeThread, activeThreadKey, enqueueComposerSnapshot]);
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.
   const queuedMessageActionsRef = useRef({
     steer: (_id: string) => {},
     remove: (_id: string) => {},
+    schedule: (_id: string) => {},
   });
   queuedMessageActionsRef.current = {
     steer: (id) => {
@@ -8761,12 +8799,25 @@ export default function ChatView(props: ChatViewProps) {
       const message = useQueuedMessageStore.getState().remove(activeThreadKey, id);
       if (message) restoreQueuedMessagesToComposer([message]);
     },
+    schedule: (id) => {
+      if (!activeThreadKey) return;
+      const message = queuedMessages.find((entry) => entry.id === id);
+      if (!message) return;
+      const threadKey = activeThreadKey;
+      void requestScheduleSend(message.sendAt ?? null).then((choice) => {
+        if (!choice) return;
+        useQueuedMessageStore.getState().scheduleSend(threadKey, id, choice.sendAt);
+      });
+    },
   };
   const onSteerQueuedMessage = useCallback((id: string) => {
     queuedMessageActionsRef.current.steer(id);
   }, []);
   const onRemoveQueuedMessage = useCallback((id: string) => {
     queuedMessageActionsRef.current.remove(id);
+  }, []);
+  const onScheduleQueuedMessage = useCallback((id: string) => {
+    queuedMessageActionsRef.current.schedule(id);
   }, []);
   // Stop also cancels the queue: the messages return to the composer instead
   // of starting a new turn the moment the interrupted one settles.
@@ -10047,6 +10098,7 @@ export default function ChatView(props: ChatViewProps) {
                   { context: { terminalFocus: false } },
                 )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
+                onScheduleQueuedMessage={onScheduleQueuedMessage}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
@@ -10231,6 +10283,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onCompactContext={onCompactContext}
                             onSend={onSend}
+                            onScheduleSend={onScheduleComposerDraft}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

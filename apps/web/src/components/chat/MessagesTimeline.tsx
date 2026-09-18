@@ -1,5 +1,5 @@
 import { MessagePromptContextCard } from "./MessagePromptContextCard";
-import { ArrowUpIcon, ClockIcon } from "lucide-react";
+import { ArrowUpIcon, CalendarClockIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
 import {
@@ -136,7 +136,11 @@ import type {
   KnownComposerContextRecord,
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
-import type { QueuedComposerMessage } from "../../queuedMessageStore";
+import {
+  getQueuedMessageWaitUntil,
+  isQueuedMessageScheduled,
+  type QueuedComposerMessage,
+} from "../../queuedMessageStore";
 import { formatRateLimitResetCountdown } from "@t3tools/shared/providerRateLimits";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
@@ -300,6 +304,7 @@ interface TimelineRowSharedState {
   onSteerQueuedMessage: (id: string) => void;
   steerQueuedMessageShortcutLabel: string | null;
   onRemoveQueuedMessage: (id: string) => void;
+  onScheduleQueuedMessage: (id: string) => void;
 }
 
 interface TimelineRowActivityState {
@@ -465,6 +470,7 @@ interface MessagesTimelineProps {
   onSteerQueuedMessage?: (id: string) => void;
   steerQueuedMessageShortcutLabel?: string | null;
   onRemoveQueuedMessage?: (id: string) => void;
+  onScheduleQueuedMessage?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -522,6 +528,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onSteerQueuedMessage = NOOP_QUEUED_MESSAGE_ACTION,
   steerQueuedMessageShortcutLabel = null,
   onRemoveQueuedMessage = NOOP_QUEUED_MESSAGE_ACTION,
+  onScheduleQueuedMessage = NOOP_QUEUED_MESSAGE_ACTION,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   const rememberedPosition = useMemo(
@@ -1161,6 +1168,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
+      onScheduleQueuedMessage,
     }),
     [
       readyCitationRequest,
@@ -1196,6 +1204,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onSteerQueuedMessage,
       steerQueuedMessageShortcutLabel,
       onRemoveQueuedMessage,
+      onScheduleQueuedMessage,
     ],
   );
   const backgroundWorktreeSetup =
@@ -1764,27 +1773,26 @@ function QueuedMessageTimelineRow({
     queuedMessage.previewAnnotations.length +
     queuedMessage.reviewComments.length;
   const text = queuedMessage.prompt.trim();
-  // Live countdown while parked on an exhausted plan window. Ticks once per
-  // second like the mobile Limits screen; unmounts with the bubble so no
-  // timer outlives the queue.
+  // Live countdown while waiting on a manual schedule or an exhausted plan
+  // window. Ticks once per second like the mobile Limits screen; unmounts
+  // with the bubble so no timer outlives the queue.
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const rateLimitedMs = queuedMessage.rateLimitedUntil
-    ? Date.parse(queuedMessage.rateLimitedUntil) - nowMs
-    : Number.NEGATIVE_INFINITY;
-  const isRateLimitedWait = Number.isFinite(rateLimitedMs) && rateLimitedMs > 0;
+  const waitUntil = getQueuedMessageWaitUntil(queuedMessage, nowMs);
+  const isScheduledWait =
+    waitUntil !== null && isQueuedMessageScheduled(queuedMessage, nowMs);
   useEffect(() => {
-    if (!isRateLimitedWait) return;
+    if (waitUntil === null) return;
     const timer = setTimeout(() => setNowMs(Date.now()), 1_000);
     return () => clearTimeout(timer);
-  }, [isRateLimitedWait, queuedMessage.rateLimitedUntil]);
-  const rateLimitCountdown =
-    isRateLimitedWait && queuedMessage.rateLimitedUntil
-      ? (formatRateLimitResetCountdown(queuedMessage.rateLimitedUntil, nowMs) ?? null)
-      : null;
+  }, [waitUntil]);
+  const waitCountdown =
+    waitUntil !== null ? (formatRateLimitResetCountdown(waitUntil, nowMs) ?? null) : null;
   const statusLabel = queuedMessage.holdUntilUserAction
     ? "Waits for Send now"
-    : rateLimitCountdown
-      ? `Plan limit reached. Sends automatically in ${rateLimitCountdown}. Send now to retry immediately, or Cancel to edit.`
+    : waitCountdown
+      ? isScheduledWait
+        ? `Scheduled. Sends automatically in ${waitCountdown}. Send now to retry immediately, change the time with Schedule, or Cancel to edit.`
+        : `Plan limit reached. Sends automatically in ${waitCountdown}. Send now to retry immediately, or Cancel to edit.`
       : row.isNext
         ? "Sends after the next tool call or when the turn ends"
         : "Sends after the messages above it";
@@ -1818,11 +1826,31 @@ function QueuedMessageTimelineRow({
               aria-label={`Queued. ${statusLabel}.`}
             >
               <ClockIcon className="size-3.5" aria-hidden />
-              {rateLimitCountdown ? `Sends in ${rateLimitCountdown}` : "Queued"}
+              {waitCountdown ? `Sends in ${waitCountdown}` : "Queued"}
             </TooltipTrigger>
             <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
           </Tooltip>
           <div className="ml-auto flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-micro"
+                    variant="ghost-muted"
+                    className="size-6"
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => ctx.onScheduleQueuedMessage(queuedMessage.id)}
+                    aria-label={isScheduledWait ? "Change scheduled time" : "Schedule send"}
+                  />
+                }
+              >
+                <CalendarClockIcon className="size-3.5" aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">
+                {isScheduledWait ? "Change scheduled time" : "Schedule send"}
+              </TooltipPopup>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger
                 render={

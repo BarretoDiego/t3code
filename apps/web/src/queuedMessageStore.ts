@@ -38,6 +38,12 @@ export interface QueuedComposerMessage {
    * forces it and Cancel still drops it.
    */
   rateLimitedUntil?: string | null;
+  /**
+   * Set when the user scheduled the send for later, from the composer or the
+   * queued row. Like a rate-limit wait it auto-sends after this instant;
+   * clearing it returns the message to the normal queue boundaries.
+   */
+  sendAt?: string | null;
   createdAt: string;
 }
 
@@ -73,6 +79,11 @@ interface QueuedMessageStoreState {
    * once `resetsAt` passes. Send now forces it, Cancel drops it.
    */
   holdForRateLimit: (threadKey: string, message: QueuedComposerMessage, resetsAt: string) => void;
+  /**
+   * Schedules a queued message for later without moving it. A null `sendAt`
+   * clears the schedule and returns the message to the normal boundaries.
+   */
+  scheduleSend: (threadKey: string, id: string, sendAt: string | null) => void;
   /** Removes and returns every queued message for the thread, oldest first. */
   drain: (threadKey: string) => QueuedComposerMessage[];
 }
@@ -146,9 +157,25 @@ export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get
         queuesByThreadKey: {
           ...state.queuesByThreadKey,
           [threadKey]: [
-            { ...message, holdUntilUserAction: true, rateLimitedUntil: null },
+            { ...message, holdUntilUserAction: true, rateLimitedUntil: null, sendAt: null },
             ...rest,
           ],
+        },
+      };
+    });
+  },
+  scheduleSend: (threadKey, id, sendAt) => {
+    set((state) => {
+      const queue = state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE;
+      if (!queue.some((entry) => entry.id === id)) return state;
+      return {
+        queuesByThreadKey: {
+          ...state.queuesByThreadKey,
+          [threadKey]: queue.map((entry) =>
+            entry.id === id
+              ? { ...entry, sendAt, holdUntilUserAction: sendAt ? false : entry.holdUntilUserAction }
+              : entry,
+          ),
         },
       };
     });
@@ -223,7 +250,7 @@ export function latestCompletedToolActivityId(
 export function isQueuedMessageDue(input: {
   message: Pick<
     QueuedComposerMessage,
-    "queuedAfterToolActivityId" | "holdUntilUserAction" | "rateLimitedUntil"
+    "queuedAfterToolActivityId" | "holdUntilUserAction" | "rateLimitedUntil" | "sendAt"
   >;
   phase: "connecting" | "running" | "ready" | "disconnected";
   latestToolActivityId: string | null;
@@ -231,14 +258,47 @@ export function isQueuedMessageDue(input: {
 }): boolean {
   if (input.message.holdUntilUserAction) return false;
   if (input.phase === "connecting") return false;
-  // A rate-limited wait parks the message until the window resets; the drain
-  // effect arms a timer for exactly then instead of sending through the wall.
-  if (input.message.rateLimitedUntil) {
-    const resetMs = Date.parse(input.message.rateLimitedUntil);
-    if (Number.isFinite(resetMs) && resetMs > (input.nowMs ?? Date.now())) return false;
-  }
+  // A scheduled or rate-limited wait parks the message until its instant; the
+  // drain effect arms a timer for exactly then instead of sending early.
+  if (getQueuedMessageWaitUntil(input.message, input.nowMs ?? Date.now()) !== null) return false;
   if (input.phase !== "running") return true;
   return input.latestToolActivityId !== input.message.queuedAfterToolActivityId;
+}
+
+const futureInstantMs = (iso: string | null | undefined, nowMs: number): number | null => {
+  if (!iso) return null;
+  const timestampMs = Date.parse(iso);
+  return Number.isFinite(timestampMs) && timestampMs > nowMs ? timestampMs : null;
+};
+
+/**
+ * Latest instant a queued message must wait for: a manual schedule, an
+ * exhausted plan window, or null when nothing holds it back. The drain
+ * effect arms one timer for this instant and re-evaluates then.
+ */
+export function getQueuedMessageWaitUntil(
+  message: Pick<QueuedComposerMessage, "rateLimitedUntil" | "sendAt">,
+  nowMs: number = Date.now(),
+): string | null {
+  const candidates = [
+    futureInstantMs(message.sendAt, nowMs),
+    futureInstantMs(message.rateLimitedUntil, nowMs),
+  ].filter((candidate): candidate is number => candidate !== null);
+  if (candidates.length === 0) return null;
+  const latestMs = Math.max(...candidates);
+  return (
+    [message.sendAt, message.rateLimitedUntil].find(
+      (iso) => iso && Date.parse(iso) === latestMs,
+    ) ?? null
+  );
+}
+
+/** True while a manual schedule holds the message back. */
+export function isQueuedMessageScheduled(
+  message: Pick<QueuedComposerMessage, "sendAt">,
+  nowMs: number = Date.now(),
+): boolean {
+  return futureInstantMs(message.sendAt, nowMs) !== null;
 }
 
 /** True while the message is parked waiting for an exhausted window to reset. */
@@ -246,9 +306,7 @@ export function isQueuedMessageRateLimited(
   message: Pick<QueuedComposerMessage, "rateLimitedUntil">,
   nowMs: number = Date.now(),
 ): boolean {
-  if (!message.rateLimitedUntil) return false;
-  const resetMs = Date.parse(message.rateLimitedUntil);
-  return Number.isFinite(resetMs) && resetMs > nowMs;
+  return futureInstantMs(message.rateLimitedUntil, nowMs) !== null;
 }
 
 export function useQueuedMessages(threadKey: string): QueuedComposerMessage[] {

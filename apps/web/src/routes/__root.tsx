@@ -20,6 +20,7 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { ThreadHandoffDialogHost } from "../components/ThreadHandoffDialog";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
+import { ScheduleSendDialogHost } from "../components/chat/ScheduleSendDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
@@ -174,6 +175,7 @@ function RootRouteView() {
           <GlassAppearanceSync />
           <FontAppearanceSync />
           <CustomSnoozeDialogHost />
+          <ScheduleSendDialogHost />
           <CommandPalette>
             <AppSidebarLayout>
               <Outlet />
@@ -226,6 +228,7 @@ function RootRouteView() {
           <ThreadNotificationCoordinator />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
+          <ScheduleSendDialogHost />
           <SlowRpcRequestToastCoordinator />
           <ProjectCloneToastCoordinator />
           <HostedStaticEnvironmentBootstrap />

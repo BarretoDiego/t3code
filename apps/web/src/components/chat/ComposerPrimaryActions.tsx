@@ -1,5 +1,5 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { CalendarClockIcon, ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
@@ -29,6 +29,8 @@ interface ComposerPrimaryActionsProps {
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
+  /** Opens the schedule dialog for the current draft. Hidden when null. */
+  onScheduleSend?: (() => void) | null;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -69,6 +71,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isPreparingWorktree,
   hasSendableContent,
   preserveComposerFocusOnPointerDown = false,
+  onScheduleSend = null,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -269,8 +272,30 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     </button>
   );
 
+  const scheduleButton =
+    onScheduleSend && hasSendableContent ? (
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost-muted"
+        className="rounded-full"
+        {...pointerFocusProps}
+        onClick={onScheduleSend}
+        disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
+        aria-label="Schedule send"
+        title="Schedule send"
+      >
+        <CalendarClockIcon className="size-4" aria-hidden="true" />
+      </Button>
+    ) : null;
+
   if (!isRunning) {
-    return sendButton;
+    return (
+      <>
+        {scheduleButton}
+        {sendButton}
+      </>
+    );
   }
 
   // While a turn runs, a sendable draft queues for the next tool boundary, so
@@ -278,6 +303,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   return (
     <>
       {renderStopGenerationButton(false)}
+      {scheduleButton}
       {hasSendableContent ? sendButton : null}
     </>
   );

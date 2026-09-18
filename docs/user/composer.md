@@ -51,6 +51,11 @@ the reset instead of failing on every try. The bubble shows a live countdown
 and sends on its own when the window reopens. Use Send now to retry
 immediately, or Cancel to return the message to the composer.
 
+To send later on purpose, use the clock button in the composer or on a queued
+bubble. Pick 5, 15, 30, or 60 minutes, or choose a custom date and time. The
+bubble counts down and sends on its own; Send now still forces it, Schedule
+changes the time, and Cancel returns it to the composer.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

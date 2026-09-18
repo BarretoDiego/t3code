@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  getQueuedMessageWaitUntil,
   isQueuedMessageDue,
   isQueuedMessageRateLimited,
+  isQueuedMessageScheduled,
   latestCompletedToolActivityId,
   useQueuedMessageStore,
   type QueuedComposerMessage,
@@ -109,6 +111,34 @@ describe("queuedMessageStore", () => {
         latestToolActivityId: null,
         nowMs: Date.now() + 61_000,
       }),
+    ).toBe(true);
+  });
+
+  it("scheduleSend waits for the later of schedule and limit, then clears", () => {
+    const { enqueue, scheduleSend } = useQueuedMessageStore.getState();
+    const entry = enqueue("thread-a", makeMessage("first"));
+    const sendAt = new Date(Date.now() + 30_000).toISOString();
+    const resetAt = new Date(Date.now() + 60_000).toISOString();
+
+    scheduleSend("thread-a", entry.id, sendAt);
+
+    const [scheduled] =
+      useQueuedMessageStore.getState().queuesByThreadKey["thread-a"] ?? [];
+    expect(scheduled?.sendAt).toBe(sendAt);
+    expect(isQueuedMessageScheduled(scheduled!)).toBe(true);
+    expect(
+      isQueuedMessageDue({ message: scheduled!, phase: "ready", latestToolActivityId: null }),
+    ).toBe(false);
+    // The wait is the latest instant holding the message back.
+    expect(getQueuedMessageWaitUntil({ sendAt, rateLimitedUntil: resetAt })).toBe(resetAt);
+    expect(getQueuedMessageWaitUntil({ sendAt, rateLimitedUntil: null })).toBe(sendAt);
+    expect(getQueuedMessageWaitUntil({ sendAt: null, rateLimitedUntil: null })).toBeNull();
+
+    scheduleSend("thread-a", entry.id, null);
+    const [cleared] = useQueuedMessageStore.getState().queuesByThreadKey["thread-a"] ?? [];
+    expect(cleared?.sendAt).toBeNull();
+    expect(
+      isQueuedMessageDue({ message: cleared!, phase: "ready", latestToolActivityId: null }),
     ).toBe(true);
   });
 
