@@ -36,7 +36,7 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
   const accounts = yield* Effect.serviceOption(SourceControlAccounts);
-  const environmentWorkspace = yield* Config.string("T3CODE_BITBUCKET_WORKSPACE").pipe(
+  const environmentWorkspace = yield* Config.String("T3CODE_BITBUCKET_WORKSPACE").pipe(
     Config.withDefault(""),
   );
 

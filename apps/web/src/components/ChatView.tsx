@@ -149,6 +149,7 @@ import {
 } from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
+  carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -6663,6 +6664,8 @@ export default function ChatView(props: ChatViewProps) {
       previewFocus: isPreviewFocused(),
       previewOpen: previewPanelOpen,
       modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+      isWeb: !isElectron,
+      isDesktop: isElectron,
     }),
     [composerRef, previewPanelOpen, terminalUiState.terminalOpen],
   );
@@ -7282,10 +7285,7 @@ export default function ChatView(props: ChatViewProps) {
   // both by the running-turn fast path inside onSend and by manual Schedule
   // send, so the two stay identical by construction.
   const enqueueComposerSnapshot = useCallback(
-    (input: {
-      sendAt: string | null;
-      submissionIntent: ComposerSubmissionIntent;
-    }): boolean => {
+    (input: { sendAt: string | null; submissionIntent: ComposerSubmissionIntent }): boolean => {
       const sendCtx = composerRef.current?.getSendContext();
       if (!sendCtx?.providerAvailable || !activeThreadKey) return false;
       if (composerRef.current?.validateProviderInput(promptRef.current) === false) {
@@ -8964,6 +8964,16 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // The option replaces the custom answer. Anything typed there is the
+      // user's text, so it goes back to the thread draft instead of vanishing.
+      const displacedAnswer =
+        pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+      if (nextPrompt !== currentPrompt) {
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      }
       setPendingUserInputAnswersByRequestId((existing) => {
         const question =
           (activePendingProgress?.activeQuestion?.id === questionId
@@ -8993,7 +9003,10 @@ export default function ChatView(props: ChatViewProps) {
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       activePendingRequestKey,
+      composerDraftTarget,
       composerRef,
+      pendingUserInputAnswersByRequestId,
+      setComposerDraftPrompt,
     ],
   );
 

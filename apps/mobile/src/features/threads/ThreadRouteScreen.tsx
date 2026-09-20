@@ -11,7 +11,10 @@ import {
 } from "../../state/use-composer-drafts";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { ScreenHeader } from "../../components/ScreenHeader";
+import { ScreenHeaderButton } from "../../components/ScreenHeaderButton";
+import type { ScreenHeaderAction } from "../../components/ScreenHeader.types";
+import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 import {
   StackActions,
   useFocusEffect,
@@ -49,12 +52,6 @@ import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vc
 import { vcsEnvironment } from "../../state/vcs";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
-import {
-  AndroidHeaderIconButton,
-  AndroidScreenHeader,
-  type AndroidHeaderAction,
-} from "../../components/AndroidScreenHeader";
-import { AndroidWorkspaceSidebarButton } from "../layout/workspace-sidebar-toolbar";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
@@ -79,11 +76,6 @@ import {
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
-import {
-  ThreadGitControls,
-  useThreadGitCenterHeaderItems,
-  useThreadGitRightHeaderItems,
-} from "./ThreadGitControls";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
@@ -99,7 +91,6 @@ import {
   useAdaptiveWorkspacePaneRole,
   useRegisterWorkspaceInspector,
 } from "../layout/AdaptiveWorkspaceLayout";
-import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import {
   ThreadInspectorContentStack,
@@ -107,12 +98,122 @@ import {
 } from "./thread-inspector-content-stack";
 import { threadRouteIsHydrating } from "./thread-route-hydration";
 
+function ThreadHeader(
+  props: Parameters<typeof useThreadHeaderOptions>[0] & {
+    readonly hasThreadCwd: boolean;
+    readonly hasWorkspaceRoot: boolean;
+    readonly fileInspectorSupported: boolean;
+    readonly inspectorMode: ThreadInspectorMode | null;
+    readonly onToggleInspector: () => void;
+    readonly onOpenGitInspector: () => void;
+    readonly onOpenFilesInspector: () => void;
+    readonly handoffSupported: boolean;
+    readonly onOpenHandoff: () => void;
+  },
+) {
+  const navigation = useNavigation();
+  const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
+  const { onOpenTerminal } = props.gitControls;
+  const native = useThreadHeaderOptions({
+    ...props,
+    handoff: props.handoffSupported ? { onPress: props.onOpenHandoff } : undefined,
+  });
+  const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
+    const actions: ScreenHeaderAction[] = [];
+    if (props.handoffSupported) {
+      actions.push({
+        accessibilityLabel: "Continue on…",
+        icon: "arrow.right",
+        onPress: props.onOpenHandoff,
+      });
+    }
+    if (props.onReturnToThread) {
+      actions.push({
+        accessibilityLabel: "Return to chat",
+        icon: "chevron.left",
+        onPress: props.onReturnToThread,
+      });
+    }
+    if (props.hasThreadCwd) {
+      const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
+      actions.push({
+        accessibilityLabel: filesVisible ? "Close files" : "Open files",
+        selected: filesVisible,
+        icon: "folder",
+        onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+      });
+    }
+    if (props.hasWorkspaceRoot) {
+      actions.push({
+        accessibilityLabel: "Open terminal",
+        icon: "terminal",
+        onPress: () => onOpenTerminal(null),
+      });
+    }
+    actions.push({
+      accessibilityLabel: "Open git controls",
+      icon: "point.topleft.down.curvedto.point.bottomright.up",
+      onPress: props.onOpenGitInspector,
+    });
+    return actions;
+  }, [
+    props.inspectorMode,
+    panes.auxiliaryPaneVisible,
+    props.onOpenFilesInspector,
+    onOpenTerminal,
+    props.onOpenGitInspector,
+    toggleAuxiliaryPane,
+    props.onReturnToThread,
+    props.hasThreadCwd,
+    props.hasWorkspaceRoot,
+    props.handoffSupported,
+    props.onOpenHandoff,
+  ]);
+
+  return (
+    <>
+      <ScreenHeader
+        title={props.title}
+        subtitle={props.subtitle}
+        sidebar={native.sidebar}
+        options={native.options}
+        optionsVersion={[props.gitControls.projectScripts, props.handoffSupported]}
+        trailing={
+          props.fileInspectorSupported && props.hasThreadCwd ? (
+            <ScreenHeaderButton
+              accessibilityLabel={
+                props.inspectorMode !== null && panes.auxiliaryPaneVisible
+                  ? "Hide inspector"
+                  : "Show inspector"
+              }
+              icon="sidebar.right"
+              selected={props.inspectorMode !== null && panes.auxiliaryPaneVisible}
+              onPress={props.onToggleInspector}
+            />
+          ) : null
+        }
+        onBack={
+          layout.usesSplitView
+            ? undefined
+            : () => {
+                // A deep link or cold start has no previous route; Home is the way out.
+                // Read the history at press time: it changes without re-rendering this screen.
+                if (navigation.canGoBack()) navigation.goBack();
+                else navigation.dispatch(StackActions.replace("Home"));
+              }
+        }
+        actions={androidHeaderActions}
+        hideBottomBorder
+      />
+      {native.fallback}
+    </>
+  );
+}
+
 interface ThreadInspectorSelection {
   readonly routeThreadIdentity: string | null;
   readonly mode: ThreadInspectorMode;
 }
-
-type NativeHeaderItems = ReadonlyArray<Record<string, unknown>>;
 
 function InspectorPaneRoleActivation() {
   useAdaptiveWorkspacePaneRole("inspector");
@@ -243,14 +344,8 @@ function ThreadRouteContent(
 ) {
   const { themeVariables } = useAppearancePreferences();
   const headerColor = themeVariables["--color-header"];
-  const {
-    fileInspector,
-    layout,
-    panes,
-    showAuxiliaryPane,
-    toggleAuxiliaryPane,
-    togglePrimarySidebar,
-  } = useAdaptiveWorkspaceLayout();
+  const { fileInspector, layout, panes, showAuxiliaryPane, toggleAuxiliaryPane } =
+    useAdaptiveWorkspaceLayout();
   const { connectionState, connectedEnvironments } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
   const {
@@ -728,101 +823,6 @@ function ThreadRouteContent(
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
-  const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
-  const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
-  const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      {
-        // Match Mail's split-view detail toolbar: the first detail action sits
-        // inside the content pane, not flush against the sidebar divider.
-        spacing: 18,
-        type: "spacing" as const,
-      },
-      ...(props.onReturnToThread
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
-              icon: { name: "chevron.left", type: "sfSymbol" as const },
-              identifier: "thread-left-return",
-              onPress: props.onReturnToThread,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: panes.primarySidebarVisible
-          ? "Maximize content"
-          : "Show thread sidebar",
-        icon: {
-          name: panes.primarySidebarVisible ? "arrow.up.left.and.arrow.down.right" : "sidebar.left",
-          type: "sfSymbol" as const,
-        },
-        identifier: "thread-left-sidebar",
-        onPress: togglePrimarySidebar,
-        type: "button" as const,
-      }),
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "New task",
-        icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-        identifier: "thread-left-new-task",
-        onPress: () => navigation.navigate("NewTaskSheet", { screen: "NewTask" }),
-        type: "button" as const,
-      }),
-    ],
-    [panes.primarySidebarVisible, props.onReturnToThread, navigation, togglePrimarySidebar],
-  );
-  const androidHeaderActions = useMemo<ReadonlyArray<AndroidHeaderAction>>(() => {
-    if (Platform.OS !== "android") return [];
-
-    const actions: AndroidHeaderAction[] = [];
-    if (handoffSupported)
-      actions.push({
-        accessibilityLabel: "Continue on…",
-        icon: "arrow.right",
-        onPress: () => setHandoffOpen(true),
-      });
-    if (props.onReturnToThread) {
-      actions.push({
-        accessibilityLabel: "Return to chat",
-        icon: "chevron.left",
-        onPress: props.onReturnToThread,
-      });
-    }
-    if (selectedThreadCwd !== null) {
-      const filesVisible = inspectorMode === "files" && panes.auxiliaryPaneVisible;
-      actions.push({
-        accessibilityLabel: filesVisible ? "Close files" : "Open files",
-        selected: filesVisible,
-        icon: "folder",
-        onPress: filesVisible ? toggleAuxiliaryPane : handleOpenFilesInspector,
-      });
-    }
-    if (selectedThreadProject?.workspaceRoot) {
-      actions.push({
-        accessibilityLabel: "Open terminal",
-        icon: "terminal",
-        onPress: () => handleOpenTerminal(null),
-      });
-    }
-    actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: handleOpenGitInspector,
-    });
-    return actions;
-  }, [
-    handoffSupported,
-    inspectorMode,
-    panes.auxiliaryPaneVisible,
-    handleOpenFilesInspector,
-    handleOpenTerminal,
-    handleOpenGitInspector,
-    toggleAuxiliaryPane,
-    props.onReturnToThread,
-    selectedThreadCwd,
-    selectedThreadProject?.workspaceRoot,
-  ]);
-
   const handleEditFailedCreation = useCallback(async () => {
     const creation = selectedThreadCreation?.message;
     if (!creation?.creation || routeThreadIdentity === null) {
@@ -963,23 +963,6 @@ function ThreadRouteContent(
       preparingWorktree: selectedThreadCreation.message.creation?.workspaceMode === "worktree",
     };
   })();
-  // Deep links / cold starts land with Thread as the ONLY route, where the
-  // native back button does not render. Provide an explicit Home escape for
-  // that case; when history exists the native back button is used instead.
-  const canGoBack = navigation.canGoBack();
-  const compactHomeHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to threads list",
-        icon: { name: "list.bullet", type: "sfSymbol" as const },
-        identifier: "thread-left-home",
-        onPress: () => navigation.dispatch(StackActions.replace("Home")),
-        type: "button" as const,
-      }),
-    ],
-    [navigation],
-  );
-
   if (!environmentId || !threadId) {
     return <OpeningThreadLoadingScreen />;
   }
@@ -1001,10 +984,8 @@ function ThreadRouteContent(
           connectionState: routeConnectionState,
         });
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
-  const renderThreadRouteBody = (showActionControls: boolean) => (
+  const renderThreadRouteBody = () => (
     <>
-      <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
-
       <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
 
       <View
@@ -1119,91 +1100,23 @@ function ThreadRouteContent(
         />
       ) : null}
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
-      <NativeStackScreenOptions
-        optionsVersion={threadGitControlProps.projectScripts}
-        options={{
-          // Android draws its own in-flow header (AndroidScreenHeader below);
-          // the native stack header stays iOS-only.
-          headerShown: Platform.OS !== "android",
-          headerTitle: selectedThread.title,
-          headerTitleStyle: usesNativeHeaderGlass
-            ? {
-                fontSize: 17,
-                fontWeight: "800",
-              }
-            : undefined,
-          title: selectedThread.title,
-          headerBackVisible: !layout.usesSplitView,
-          // Compact uses the NATIVE back button when a previous route exists;
-          // deep links / cold starts get an explicit Home button instead.
-          // Split view always uses its custom left items.
-          unstable_headerLeftItems:
-            Platform.OS === "ios"
-              ? layout.usesSplitView
-                ? () => splitLeftHeaderItems
-                : canGoBack
-                  ? undefined
-                  : () => compactHomeHeaderItems
-              : undefined,
-          // Search lives in the persistent sidebar, so the split header keeps
-          // the git controls on the RIGHT (no center items — center space is
-          // reserved for future breadcrumbs/status).
-          unstable_headerRightItems:
-            Platform.OS === "ios"
-              ? () => [
-                  ...(layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems),
-                  ...(handoffSupported
-                    ? [
-                        withNativeGlassHeaderItem({
-                          type: "button" as const,
-                          identifier: "thread-handoff",
-                          accessibilityLabel: "Continue on…",
-                          icon: { name: "arrow.right", type: "sfSymbol" as const },
-                          onPress: () => setHandoffOpen(true),
-                        }),
-                      ]
-                    : []),
-                ]
-              : undefined,
-          unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
-          contentStyle:
-            Platform.OS === "android" && true ? { backgroundColor: headerColor } : undefined,
-        }}
+      <ThreadHeader
+        title={selectedThread.title}
+        subtitle={headerSubtitle}
+        headerColor={headerColor}
+        usesNativeHeaderGlass={usesNativeHeaderGlass}
+        gitControls={threadGitControlProps}
+        hasThreadCwd={selectedThreadCwd !== null}
+        hasWorkspaceRoot={Boolean(selectedThreadProject?.workspaceRoot)}
+        fileInspectorSupported={fileInspector.supported}
+        inspectorMode={inspectorMode}
+        onToggleInspector={handleToggleInspector}
+        onOpenGitInspector={handleOpenGitInspector}
+        onOpenFilesInspector={handleOpenFilesInspector}
+        onReturnToThread={props.onReturnToThread}
+        handoffSupported={handoffSupported}
+        onOpenHandoff={() => setHandoffOpen(true)}
       />
-
-      {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title={selectedThread.title}
-          subtitle={headerSubtitle}
-          leading={<AndroidWorkspaceSidebarButton />}
-          trailing={
-            fileInspector.supported && selectedThreadCwd !== null ? (
-              <AndroidHeaderIconButton
-                accessibilityLabel={
-                  inspectorMode !== null && panes.auxiliaryPaneVisible
-                    ? "Hide inspector"
-                    : "Show inspector"
-                }
-                icon="sidebar.right"
-                selected={inspectorMode !== null && panes.auxiliaryPaneVisible}
-                onPress={handleToggleInspector}
-              />
-            ) : null
-          }
-          onBack={
-            layout.usesSplitView
-              ? undefined
-              : () => {
-                  // A deep link or cold start has no previous route; Home is the way out.
-                  // Read the history at press time: it changes without re-rendering this screen.
-                  if (navigation.canGoBack()) navigation.goBack();
-                  else navigation.dispatch(StackActions.replace("Home"));
-                }
-          }
-          actions={androidHeaderActions}
-          hideBottomBorder
-        />
-      ) : null}
 
       <View className="bg-screen px-4 py-2">
         <Text className="text-muted-foreground">
@@ -1235,11 +1148,7 @@ function ThreadRouteContent(
           </Pressable>
         ) : null}
       </View>
-      {/* Android surfaces the git/files/inspector actions in its in-flow
-          header above, so the fallback action toolbar stays iOS-only. */}
-      {renderThreadRouteBody(
-        Platform.OS !== "android" && !layout.usesSplitView && !usesNativeHeaderGlass,
-      )}
+      {renderThreadRouteBody()}
     </>
   );
 }

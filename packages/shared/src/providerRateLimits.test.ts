@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
 
 import {
   getEarliestExhaustedResetAt,
@@ -8,7 +9,7 @@ import {
 } from "./providerRateLimits.ts";
 
 const NOW = Date.parse("2026-09-18T12:00:00.000Z");
-const inMs = (ms: number): string => new Date(NOW + ms).toISOString();
+const inMs = (ms: number): string => DateTime.formatIso(DateTime.makeUnsafe(NOW + ms));
 
 describe("queued auto-send on reset", () => {
   it("picks the earliest future reset among exhausted windows", () => {
@@ -19,7 +20,7 @@ describe("queued auto-send on reset", () => {
           { status: "exhausted", resetsAt: inMs(600_000) },
           { status: "warning", resetsAt: inMs(60_000) },
           { status: "exhausted", resetsAt: null },
-          { status: "exhausted", resetsAt: new Date(NOW - 1_000).toISOString() },
+          { status: "exhausted", resetsAt: inMs(-1_000) },
         ],
         NOW,
       ),
@@ -42,10 +43,10 @@ describe("queued auto-send on reset", () => {
         instanceId: "claude-b",
         rateLimits: { windows: [{ status: "exhausted", resetsAt: inMs(3_600_000) }] },
       },
-    ];
-    expect(
-      getExhaustedRateLimitResetAt(providers, { instanceId: "claude-b", nowMs: NOW }),
-    ).toBe(inMs(3_600_000));
+    ] as const;
+    expect(getExhaustedRateLimitResetAt(providers, { instanceId: "claude-b", nowMs: NOW })).toBe(
+      inMs(3_600_000),
+    );
     expect(getExhaustedRateLimitResetAt(providers, { nowMs: NOW })).toBe(inMs(600_000));
     expect(
       getExhaustedRateLimitResetAt(providers, { instanceId: "missing", nowMs: NOW }),
@@ -54,7 +55,7 @@ describe("queued auto-send on reset", () => {
 
   it("floors past resets at zero", () => {
     expect(msUntilRateLimitReset(inMs(90_000), NOW)).toBe(90_000);
-    expect(msUntilRateLimitReset(new Date(NOW - 5_000).toISOString(), NOW)).toBe(0);
+    expect(msUntilRateLimitReset(inMs(-5_000), NOW)).toBe(0);
   });
 
   it("recognizes usage-limit failures", () => {

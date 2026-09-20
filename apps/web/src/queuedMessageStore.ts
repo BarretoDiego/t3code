@@ -173,7 +173,7 @@ export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get
           ...state.queuesByThreadKey,
           [threadKey]: queue.map((entry) =>
             entry.id === id
-              ? { ...entry, sendAt, holdUntilUserAction: sendAt ? false : entry.holdUntilUserAction }
+              ? { ...entry, sendAt, ...(sendAt ? { holdUntilUserAction: false } : {}) }
               : entry,
           ),
         },
@@ -287,9 +287,8 @@ export function getQueuedMessageWaitUntil(
   if (candidates.length === 0) return null;
   const latestMs = Math.max(...candidates);
   return (
-    [message.sendAt, message.rateLimitedUntil].find(
-      (iso) => iso && Date.parse(iso) === latestMs,
-    ) ?? null
+    [message.sendAt, message.rateLimitedUntil].find((iso) => iso && Date.parse(iso) === latestMs) ??
+    null
   );
 }
 

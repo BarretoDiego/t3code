@@ -12,7 +12,14 @@ import {
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/AppText";
@@ -31,6 +38,7 @@ import {
 import { ReviewCommentComposerSheet } from "./features/review/ReviewCommentComposerSheet";
 import { ReviewSheet } from "./features/review/ReviewSheet";
 import { ThreadTerminalRouteScreen } from "./features/terminal/ThreadTerminalRouteScreen";
+import { DevicePreviewRouteScreen } from "./features/devices/DevicePreviewRouteScreen";
 import { GitBranchesSheet } from "./features/threads/git/GitBranchesSheet";
 import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
@@ -94,6 +102,7 @@ import {
   transitionIncomingSharePresentation,
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
+import { deriveLayout } from "./lib/layout";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
@@ -353,9 +362,8 @@ const SettingsSheetStack = createNativeStackNavigator({
 // the same deep-link URLs the nested config produced.
 const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 
-// New-task / add-project flow: nested navigator inside the formSheet (Settings-sheet
-// pattern — a plain formSheet screen cannot render a stack header; the header and
-// in-sheet pushes come from this nested stack).
+// New-task / add-project flow: the nested navigator owns the header and pushes
+// whether the flow opens in the workspace or in a compact form sheet.
 const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
   screenOptions: {
@@ -464,6 +472,7 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "SettingsLegal",
   "SettingsSheet",
   "ThreadReviewComment",
+  "ThreadDevicePreview",
   "ThreadSettingsSheet",
 ]);
 
@@ -583,7 +592,7 @@ function NotFoundScreen() {
   );
 }
 
-export const RootStack = createNativeStackNavigator({
+const RootStackConfig = createNativeStackNavigator({
   initialRouteName: "Home",
   layout: RootStackLayout,
   screenOptions: {
@@ -614,6 +623,15 @@ export const RootStack = createNativeStackNavigator({
       screen: ThreadTerminalRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/terminal`,
       options: SOLID_HEADER_OPTIONS,
+    }),
+    ThreadDevicePreview: createNativeStackScreen({
+      screen: DevicePreviewRouteScreen,
+      linking: `${THREAD_LINKING_PREFIX}/devices`,
+      options: {
+        presentation: "fullScreenModal",
+        headerShown: false,
+        gestureEnabled: false,
+      },
     }),
     ThreadReview: createNativeStackScreen({
       screen: ReviewSheet,
@@ -707,15 +725,6 @@ export const RootStack = createNativeStackNavigator({
       options: {
         gestureEnabled: true,
         headerShown: false,
-        // Android pushes settings as a regular full page with an in-screen
-        // back header; iOS keeps the detented form sheet.
-        ...(Platform.OS === "android"
-          ? { presentation: "card" as const }
-          : {
-              ...FORM_SHEET_PRESENTATION_OPTIONS,
-              sheetAllowedDetents: [0.92],
-              sheetGrabberVisible: true,
-            }),
       },
     }),
     SettingsLegal: createNativeStackScreen({
@@ -779,15 +788,6 @@ export const RootStack = createNativeStackNavigator({
       options: {
         gestureEnabled: true,
         headerShown: false,
-        // Android pushes the flow as a regular full page — the draft should
-        // read like a thread that just doesn't exist yet; iOS keeps the sheet.
-        ...(Platform.OS === "android"
-          ? { presentation: "card" as const }
-          : {
-              ...FORM_SHEET_PRESENTATION_OPTIONS,
-              sheetAllowedDetents: [0.92],
-              sheetGrabberVisible: true,
-            }),
       },
     }),
     NotFound: createNativeStackScreen({
@@ -796,6 +796,32 @@ export const RootStack = createNativeStackNavigator({
     }),
   },
 });
+
+export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navigator }) {
+  const { width, height } = useWindowDimensions();
+  const usesWorkspaceFlowScreens =
+    Platform.OS === "android" || deriveLayout({ width, height }).usesSplitView;
+
+  return (
+    <Navigator
+      screenOptions={({ route }) => {
+        if (route.name !== "SettingsSheet" && route.name !== "NewTaskSheet") {
+          return {};
+        }
+
+        // Follow the workspace viewport as it resizes; compact iOS keeps sheets.
+        return usesWorkspaceFlowScreens
+          ? { presentation: "card" }
+          : {
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
+              sheetAllowedDetents: [0.92],
+              sheetGrabberVisible: true,
+            };
+      }}
+    />
+  );
+});
+
 type RootStackType = typeof RootStack;
 
 const navigationPathConfig = {

@@ -3682,10 +3682,24 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const threadProjectGroup =
+          projectGroupsRef.current.find((project) =>
+            project.memberProjectRefs.some(
+              (projectRef) =>
+                projectRef.environmentId === thread.environmentId &&
+                projectRef.projectId === thread.projectId,
+            ),
+          ) ?? null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              projectFilter: threadProjectGroup
+                ? {
+                    label: threadProjectGroup.displayName,
+                    isActive: projectScopeKey === threadProjectGroup.projectKey,
+                  }
+                : null,
               isPinned,
               isSettled,
               isSnoozed,
@@ -3716,6 +3730,15 @@ export default function Sidebar() {
         switch (clicked.value) {
           case "continue-on":
             openThreadHandoff(threadRef);
+            return;
+          case "filter-by-project":
+            if (threadProjectGroup) {
+              setProjectScopeKey(
+                projectScopeKey === threadProjectGroup.projectKey
+                  ? null
+                  : threadProjectGroup.projectKey,
+              );
+            }
             return;
           case "project-settings": {
             const projectGroup = projectGroupsRef.current.find((group) =>

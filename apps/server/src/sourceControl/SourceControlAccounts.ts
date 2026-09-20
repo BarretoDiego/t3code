@@ -59,10 +59,10 @@ export class SourceControlAccounts extends Context.Service<
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore;
   const environment = yield* Config.all({
-    email: Config.string("T3CODE_BITBUCKET_EMAIL").pipe(Config.withDefault("")),
-    token: Config.string("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.withDefault("")),
-    accessToken: Config.string("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.withDefault("")),
-    workspace: Config.string("T3CODE_BITBUCKET_WORKSPACE").pipe(Config.withDefault("")),
+    email: Config.String("T3CODE_BITBUCKET_EMAIL").pipe(Config.withDefault("")),
+    token: Config.String("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.withDefault("")),
+    accessToken: Config.String("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.withDefault("")),
+    workspace: Config.String("T3CODE_BITBUCKET_WORKSPACE").pipe(Config.withDefault("")),
   });
   const gate = yield* Semaphore.make(1);
   const key = (provider: Provider) => `source-control-account-${provider}`;

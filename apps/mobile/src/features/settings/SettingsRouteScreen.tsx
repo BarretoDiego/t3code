@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
-import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
+import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
@@ -19,6 +20,8 @@ import {
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 
 export function SettingsRouteScreen() {
+  const navigation = useNavigation();
+  const { layout } = useAdaptiveWorkspaceLayout();
   const content = hasCloudPublicConfig() ? (
     <ConfiguredSettingsRouteScreen />
   ) : (
@@ -27,7 +30,15 @@ export function SettingsRouteScreen() {
 
   return (
     <>
-      <WorkspaceSidebarToolbar />
+      {Platform.OS === "ios" && layout.usesSplitView ? (
+        <NativeHeaderToolbar placement="left">
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="Go back"
+            icon="chevron.left"
+            onPress={() => navigation.goBack()}
+          />
+        </NativeHeaderToolbar>
+      ) : null}
       <SettingsEnvironmentFilterHeader closeSettings />
       {Platform.OS === "android" ? (
         <SettingsScreen title="Settings" trailing={<AndroidSettingsEnvironmentFilter />}>

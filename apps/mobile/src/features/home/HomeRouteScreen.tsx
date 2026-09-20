@@ -11,10 +11,6 @@ import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
-import {
-  AndroidWorkspaceSidebarButton,
-  WorkspaceSidebarToolbar,
-} from "../layout/workspace-sidebar-toolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../updates/app-updates";
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
@@ -121,25 +117,21 @@ export function HomeRouteScreen() {
               : { title: "", headerTitle: "", unstable_headerLeftItems: () => [] }
           }
         />
-        <WorkspaceSidebarToolbar
-          afterSidebarButton={
-            <>
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="Open Agent Operations"
-                icon="rectangle.3.group"
-                onPress={() => navigation.navigate("AgentBoard")}
-              />
-              <NativeHeaderToolbar.Button
-                accessibilityLabel="New task"
-                icon="square.and.pencil"
-                onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
-              />
-            </>
-          }
-        />
-        {Platform.OS === "android" ? (
-          <AndroidScreenHeader title="Threads" leading={<AndroidWorkspaceSidebarButton />} />
+        {Platform.OS === "ios" ? (
+          <NativeHeaderToolbar placement="left">
+            <NativeHeaderToolbar.Button
+              accessibilityLabel="Open Agent Operations"
+              icon="rectangle.3.group"
+              onPress={() => navigation.navigate("AgentBoard")}
+            />
+            <NativeHeaderToolbar.Button
+              accessibilityLabel="New task"
+              icon="square.and.pencil"
+              onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+            />
+          </NativeHeaderToolbar>
         ) : null}
+        {Platform.OS === "android" ? <AndroidScreenHeader title="Threads" /> : null}
         <WorkspaceEmptyDetail
           onAddConnection={
             Platform.OS === "android" && !catalogState.hasConnections
