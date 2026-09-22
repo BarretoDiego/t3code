@@ -137,7 +137,7 @@ export interface ComposerPromptEditorProps {
   ) => void;
   onVisibleSelectionChange?: () => void;
   onCommandKeyDown?: (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
+    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab" | "Escape",
     event: KeyboardEvent,
     isTaskItem?: boolean,
   ) => boolean;
@@ -237,12 +237,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
     <NodeViewWrapper as="span" className={COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME}>
       <Tooltip>
         <TooltipTrigger render={chip} />
-        <TooltipPopup
-          side="top"
-          className="max-w-120 whitespace-normal leading-tight wrap-anywhere"
-        >
-          {path}
-        </TooltipPopup>
+        <TooltipPopup side="top">{path}</TooltipPopup>
       </Tooltip>
     </NodeViewWrapper>
   );
@@ -912,7 +907,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
                 ? ("ArrowDown" as const)
                 : event.key === "ArrowUp"
                   ? ("ArrowUp" as const)
-                  : null;
+                  : event.key === "Escape"
+                    ? ("Escape" as const)
+                    : null;
           if (!key) return false;
           const handled = handler(key, event);
           if (handled) {

@@ -264,6 +264,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         icon,
         enabled,
         snapshot,
+        invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
         snapshotForCwd,
         adapter,
         textGeneration,
