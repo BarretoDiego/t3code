@@ -11237,6 +11237,166 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("persists the selected conversation history before starting a forked turn", () =>
+    Effect.gen(function* () {
+      const sourceThreadId = ThreadId.make("thread-fork-source");
+      const targetThreadId = ThreadId.make("thread-fork-target");
+      const forkPointMessageId = MessageId.make("msg-fork-assistant");
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const sourceHistory: ReadonlyArray<OrchestrationEvent> = [
+        {
+          sequence: 1,
+          eventId: EventId.make("event-fork-user"),
+          aggregateKind: "thread",
+          aggregateId: sourceThreadId,
+          type: "thread.message-sent",
+          occurredAt: createdAt,
+          commandId: CommandId.make("command-fork-user"),
+          causationEventId: null,
+          correlationId: CommandId.make("command-fork-user"),
+          metadata: {},
+          payload: {
+            threadId: sourceThreadId,
+            messageId: MessageId.make("msg-fork-user"),
+            role: "user",
+            text: "Explain the bug",
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        },
+        {
+          sequence: 2,
+          eventId: EventId.make("event-fork-assistant"),
+          aggregateKind: "thread",
+          aggregateId: sourceThreadId,
+          type: "thread.message-sent",
+          occurredAt: "2026-01-01T00:01:00.000Z",
+          commandId: CommandId.make("command-fork-assistant"),
+          causationEventId: null,
+          correlationId: CommandId.make("command-fork-assistant"),
+          metadata: {},
+          payload: {
+            threadId: sourceThreadId,
+            messageId: forkPointMessageId,
+            role: "assistant",
+            text: "The bug is in the handoff.",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-01-01T00:01:00.000Z",
+            updatedAt: "2026-01-01T00:01:00.000Z",
+          },
+        },
+        {
+          sequence: 3,
+          eventId: EventId.make("event-fork-later"),
+          aggregateKind: "thread",
+          aggregateId: sourceThreadId,
+          type: "thread.message-sent",
+          occurredAt: "2026-01-01T00:02:00.000Z",
+          commandId: CommandId.make("command-fork-later"),
+          causationEventId: null,
+          correlationId: CommandId.make("command-fork-later"),
+          metadata: {},
+          payload: {
+            threadId: sourceThreadId,
+            messageId: MessageId.make("msg-fork-later"),
+            role: "user",
+            text: "This must not be copied",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-01-01T00:02:00.000Z",
+            updatedAt: "2026-01-01T00:02:00.000Z",
+          },
+        },
+      ];
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readThreadEvents: () => Stream.fromIterable(sourceHistory),
+            latestSequence: Effect.succeed(3),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: (threadId) =>
+              Effect.succeed(
+                threadId === sourceThreadId
+                  ? Option.some(makeDefaultOrchestrationThreadShell({ id: sourceThreadId }))
+                  : Option.none(),
+              ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-fork-turn-start"),
+            threadId: targetThreadId,
+            message: {
+              messageId: MessageId.make("msg-fork-new"),
+              role: "user",
+              text: "Continue from there",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Forked thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+                createdAt,
+              },
+              forkConversation: {
+                sourceThreadId,
+                throughMessageId: forkPointMessageId,
+              },
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.deepEqual(
+        dispatchedCommands.map((command) => command.type),
+        [
+          "thread.create",
+          "thread.history.import",
+          "thread.message.user.append",
+          "thread.turn.start",
+        ],
+      );
+      const importCommand = dispatchedCommands[1];
+      assertTrue(importCommand?.type === "thread.history.import");
+      if (importCommand?.type === "thread.history.import") {
+        assert.deepEqual(
+          importCommand.messages.map((message) => ({ role: message.role, text: message.text })),
+          [
+            { role: "user", text: "Explain the bug" },
+            { role: "assistant", text: "The bug is in the handoff." },
+          ],
+        );
+        assert.deepEqual(importCommand.messages[0]?.attachments, []);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect.each([
     { caseName: "the origin remote is missing", hasOrigin: false },
     { caseName: "the base branch exists only locally", hasOrigin: true },
