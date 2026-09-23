@@ -66,10 +66,12 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
       >
         <Empty className="flex-1">
           <EmptyHeader className="max-w-md">
-            <EmptyTitle className="text-foreground text-xl">Environment not connected</EmptyTitle>
-            <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-              This link points at a server this device is not connected to. Add it under
-              Connections, then open the link again.
+            <EmptyTitle>Environment not connected</EmptyTitle>
+            <EmptyDescription className="mt-2">
+              <span className="text-muted-foreground/78">
+                This link points at a server this device is not connected to. Add it under
+                Connections, then open the link again.
+              </span>
             </EmptyDescription>
             <div className="mt-5 flex justify-center">
               <Button render={<Link to="/settings/connections" />} size="sm">
@@ -101,9 +103,11 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
       {summaries.length === 0 ? (
         <Empty>
           <EmptyHeader className="max-w-md">
-            <EmptyTitle className="text-foreground text-xl">No projects here yet</EmptyTitle>
-            <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-              Add a project on {environmentLabel} to start working on it.
+            <EmptyTitle>No projects here yet</EmptyTitle>
+            <EmptyDescription className="mt-2">
+              <span className="text-muted-foreground/78">
+                Add a project on {environmentLabel} to start working on it.
+              </span>
             </EmptyDescription>
             <div className="mt-5 flex justify-center">
               <Button size="sm" onClick={openAddProject}>

@@ -9,7 +9,7 @@ export const Route = createFileRoute("/_chat/source-control")({
 function SourceControlRoute() {
   const { section } = Route.useSearch();
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <SourceControlHub key={section ?? "changes"} initialSection={section ?? "changes"} />
     </SidebarInset>
   );

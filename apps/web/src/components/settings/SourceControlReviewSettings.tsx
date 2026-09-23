@@ -92,7 +92,8 @@ export function SourceControlReviewSettingsSection() {
         <label className="grid gap-2 text-sm font-medium">
           Reviewer instructions
           <Textarea
-            className="min-h-40 font-mono text-xs font-normal"
+            className="min-h-40"
+            variant="code"
             value={promptDraft ?? review.prompt}
             maxLength={32_000}
             onChange={(event) => setPromptDraft(event.target.value)}

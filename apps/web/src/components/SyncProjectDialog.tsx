@@ -485,9 +485,11 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       <DialogPopup className="max-w-xl overflow-hidden" showCloseButton={!busy}>
         <div className="flex min-h-0 flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FolderSyncIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-              Sync project between environments
+            <DialogTitle>
+              <span className="flex items-center gap-2">
+                <FolderSyncIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+                Sync project between environments
+              </span>
             </DialogTitle>
             <DialogDescription>
               Copy a project's files from one environment to another, or keep an existing project in
@@ -810,7 +812,7 @@ function ModeStep(props: {
         <label className="grid gap-2">
           <span className="text-xs font-medium text-foreground">Destination folder</span>
           <Input
-            className="bg-background font-mono text-sm"
+            font="mono"
             value={props.sendDestinationPath}
             onChange={(event) => props.onSendDestinationPathChange(event.target.value)}
           />

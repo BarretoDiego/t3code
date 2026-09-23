@@ -231,7 +231,7 @@ export function AgentProfilesSettingsPanel() {
           <Textarea
             value={wrapperText}
             rows={10}
-            className="font-mono text-xs"
+            variant="code"
             aria-label="Default profile wrapper"
             onChange={(event) => {
               setWrapperText(event.target.value);

@@ -288,7 +288,7 @@ export function AgentBoardPage() {
   );
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspacePageHeader electron={isElectron} className="border-b border-border">
           <div className="flex min-w-0 flex-1 items-center gap-2">

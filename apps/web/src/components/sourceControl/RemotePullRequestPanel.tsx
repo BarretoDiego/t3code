@@ -139,9 +139,8 @@ export function RemotePullRequestPanel({
                 setTab(value);
                 if (value === "review") setReviewVisited(true);
               }}
-              className="capitalize"
             >
-              {value}
+              <span className="capitalize">{value}</span>
             </Button>
           ))}
         </div>

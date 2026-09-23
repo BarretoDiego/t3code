@@ -264,9 +264,9 @@ function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }
                 render={
                   <Button
                     aria-label="Configure thread layout"
-                    className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                    className="size-6 shrink-0"
                     size="icon-xs"
-                    variant="ghost"
+                    variant="ghost-muted"
                   />
                 }
               />
@@ -316,7 +316,7 @@ function ThreadLayoutMenu({ layout }: { readonly layout: ThreadWorkspaceLayout }
                 <MenuItem
                   key={entry.id}
                   closeOnClick
-                  className="group/saved gap-2"
+                  className="group/saved"
                   onClick={() => {
                     restoreWorkspace(entry.id);
                     // Without this the URL still names the thread that was open,
@@ -627,9 +627,9 @@ function SplitPaneDragHandle(props: {
         render={
           <Button
             aria-label="Drag to split this pane"
-            className="mr-0.5 size-6 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            className="mr-0.5 size-6 cursor-grab active:cursor-grabbing"
             size="icon-xs"
-            variant="ghost"
+            variant="ghost-muted"
             onClick={(event) => {
               if (splitOnPointerUpRef.current) {
                 splitOnPointerUpRef.current = false;

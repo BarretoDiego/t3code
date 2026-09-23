@@ -61,13 +61,7 @@ export function ProjectScopePage(props: {
         supportsSnooze: (id) =>
           serverConfigs.get(id)?.environment.capabilities.threadSnooze === true,
       }),
-    [
-      environmentId,
-      nowMinute,
-      projectId,
-      serverConfigs,
-      threads,
-    ],
+    [environmentId, nowMinute, projectId, serverConfigs, threads],
   );
 
   const label = project?.title ?? "Unknown project";
@@ -96,9 +90,11 @@ export function ProjectScopePage(props: {
       <WorkspaceScopePage breadcrumbLabel="Project" breadcrumb={breadcrumb}>
         <Empty>
           <EmptyHeader className="max-w-md">
-            <EmptyTitle className="text-foreground text-xl">Project not found</EmptyTitle>
-            <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-              It may have been removed, or its environment may still be connecting.
+            <EmptyTitle>Project not found</EmptyTitle>
+            <EmptyDescription className="mt-2">
+              <span className="text-muted-foreground/78">
+                It may have been removed, or its environment may still be connecting.
+              </span>
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -122,9 +118,11 @@ export function ProjectScopePage(props: {
       {total === 0 ? (
         <Empty>
           <EmptyHeader className="max-w-md">
-            <EmptyTitle className="text-foreground text-xl">No threads yet</EmptyTitle>
-            <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-              Start one in {project.title} and it will show up here.
+            <EmptyTitle>No threads yet</EmptyTitle>
+            <EmptyDescription className="mt-2">
+              <span className="text-muted-foreground/78">
+                Start one in {project.title} and it will show up here.
+              </span>
             </EmptyDescription>
             <div className="mt-5 flex justify-center">
               <Button size="sm" onClick={startNewThread}>

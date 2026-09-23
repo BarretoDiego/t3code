@@ -7,7 +7,6 @@ import type {
   SidebarThreadSortOrder,
 } from "@t3tools/contracts";
 
-import { cn } from "../../lib/utils";
 import type { SidebarThreadProviderIdentity } from "../sidebarThreadGrouping";
 import {
   Menu,
@@ -78,16 +77,10 @@ const GROUPING_AXES: ReadonlyArray<SidebarThreadGroupingAxis> = [
   "provider",
 ];
 
-const TRIGGER_CLASS =
-  "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-icon-muted transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0";
-
-const ACTIVE_TRIGGER_CLASS = "text-foreground";
-
 // Group labels are small caps so they can never be mistaken for a choice;
 // choices keep the menu's normal item size and show a check when selected.
 const MENU_LABEL_CLASS =
   "px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70";
-const MENU_ITEM_CLASS = "min-h-7 py-1 sm:text-xs";
 
 /** Radio item body with a trailing check that only the selected option shows. */
 function Choice(props: { children: string }) {
@@ -198,10 +191,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
         <Tooltip>
           <TooltipTrigger
             render={
-              <MenuTrigger
-                aria-label="Group threads"
-                className={cn(TRIGGER_CLASS, groupingActive && ACTIVE_TRIGGER_CLASS)}
-              />
+              <MenuTrigger aria-label="Group threads" active={groupingActive} variant="toolbar" />
             }
           >
             <GroupIcon />
@@ -218,7 +208,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
             <div className={MENU_LABEL_CLASS}>Group by</div>
             <MenuRadioGroup value={props.primaryAxis} onValueChange={handlePrimaryAxisChange}>
               {GROUPING_AXES.map((axis) => (
-                <MenuRadioItem key={axis} value={axis} className={MENU_ITEM_CLASS}>
+                <MenuRadioItem density="compact" key={axis} value={axis}>
                   <Choice>
                     {axis === "none" ? "Nothing (flat list)" : GROUPING_AXIS_LABELS[axis]}
                   </Choice>
@@ -236,7 +226,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
                   onValueChange={handleSecondaryAxisChange}
                 >
                   {GROUPING_AXES.filter((axis) => axis !== props.primaryAxis).map((axis) => (
-                    <MenuRadioItem key={axis} value={axis} className={MENU_ITEM_CLASS}>
+                    <MenuRadioItem density="compact" key={axis} value={axis}>
                       <Choice>{axis === "none" ? "Nothing" : GROUPING_AXIS_LABELS[axis]}</Choice>
                     </MenuRadioItem>
                   ))}
@@ -256,7 +246,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
                   PROJECT_GROUPING_MODE_LABELS,
                 ) as ReadonlyArray<SidebarProjectGroupingMode>
               ).map((mode) => (
-                <MenuRadioItem key={mode} value={mode} className={MENU_ITEM_CLASS}>
+                <MenuRadioItem density="compact" key={mode} value={mode}>
                   <Choice>{PROJECT_GROUPING_MODE_LABELS[mode]}</Choice>
                 </MenuRadioItem>
               ))}
@@ -272,7 +262,8 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
               render={
                 <MenuTrigger
                   aria-label="Filter threads by provider"
-                  className={cn(TRIGGER_CLASS, providerFilterActive && ACTIVE_TRIGGER_CLASS)}
+                  active={providerFilterActive}
+                  variant="toolbar"
                 />
               }
             >
@@ -292,14 +283,14 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
                 value={props.providerFilter ?? "all"}
                 onValueChange={handleProviderFilterChange}
               >
-                <MenuRadioItem value="all" className={MENU_ITEM_CLASS}>
+                <MenuRadioItem density="compact" value="all">
                   <Choice>All providers</Choice>
                 </MenuRadioItem>
                 {props.providerOptions.map((option) => (
                   <MenuRadioItem
                     key={option.driverKind}
                     value={option.driverKind}
-                    className={MENU_ITEM_CLASS}
+                    density="compact"
                   >
                     <Choice>{option.label}</Choice>
                   </MenuRadioItem>
@@ -313,9 +304,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
       <Menu>
         <Tooltip>
           <TooltipTrigger
-            render={
-              <MenuTrigger aria-label="Sort threads" className={cn(TRIGGER_CLASS, "ms-auto")} />
-            }
+            render={<MenuTrigger aria-label="Sort threads" className="ms-auto" variant="toolbar" />}
           >
             <ArrowUpDownIcon />
             <span className="min-w-0 truncate">
@@ -335,7 +324,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
             >
               {(Object.keys(THREAD_SORT_ORDER_LABELS) as ReadonlyArray<SidebarThreadSortOrder>).map(
                 (sortOrder) => (
-                  <MenuRadioItem key={sortOrder} value={sortOrder} className={MENU_ITEM_CLASS}>
+                  <MenuRadioItem density="compact" key={sortOrder} value={sortOrder}>
                     <Choice>{THREAD_SORT_ORDER_LABELS[sortOrder]}</Choice>
                   </MenuRadioItem>
                 ),
@@ -357,7 +346,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
                   {(
                     Object.keys(SECTION_ORDER_MODE_LABELS) as ReadonlyArray<SidebarSectionOrderMode>
                   ).map((mode) => (
-                    <MenuRadioItem key={mode} value={mode} className={MENU_ITEM_CLASS}>
+                    <MenuRadioItem density="compact" key={mode} value={mode}>
                       <Choice>{SECTION_ORDER_MODE_LABELS[mode]}</Choice>
                     </MenuRadioItem>
                   ))}
@@ -365,7 +354,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
                 {/* Only offered once there is an arrangement to undo: with
                     Busiest first selected there is nothing stored to reset. */}
                 {props.sectionOrderMode === "activity" ? null : (
-                  <MenuItem className={MENU_ITEM_CLASS} onClick={props.onSectionOrderReset}>
+                  <MenuItem density="compact" onClick={props.onSectionOrderReset}>
                     Reset section order
                   </MenuItem>
                 )}

@@ -155,12 +155,7 @@ function SidebarExperienceSelector() {
       <Menu>
         <Tooltip>
           <TooltipTrigger
-            render={
-              <MenuTrigger
-                aria-label="Choose sidebar layout"
-                className="flex size-8 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground outline-hidden transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-              />
-            }
+            render={<MenuTrigger aria-label="Choose sidebar layout" variant="sidebar-layout" />}
           >
             <PanelsTopLeftIcon />
           </TooltipTrigger>

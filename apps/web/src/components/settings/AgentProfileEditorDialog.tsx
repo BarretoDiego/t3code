@@ -361,7 +361,7 @@ export function AgentProfileEditorDialog(props: {
                   value={draft.instructions}
                   onChange={(event) => update({ instructions: event.target.value })}
                   rows={8}
-                  className="font-mono text-xs"
+                  variant="code"
                   placeholder="Act as a pre-commit reviewer…"
                 />
               </label>
@@ -435,7 +435,7 @@ export function AgentProfileEditorDialog(props: {
                   value={draft.promptTemplate}
                   onChange={(event) => update({ promptTemplate: event.target.value })}
                   rows={10}
-                  className="font-mono text-xs"
+                  variant="code"
                   aria-label="Custom prompt template"
                 />
               ) : null}
