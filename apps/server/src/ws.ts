@@ -1529,20 +1529,21 @@ const makeWsRpcLayer = (
               // real from here on, so any client (or a reload) sees the message
               // while the worktree is still being prepared. The turn start
               // later references this id instead of re-sending the text.
-              yield* dispatchFromClient({
-                type: "thread.message.user.append",
-                commandId: yield* serverCommandId("bootstrap-thread-message"),
-                threadId: command.threadId,
-                message: {
-                  messageId: command.message.messageId,
-                  text: command.message.text,
-                  attachments: command.message.attachments,
-                  ...(command.message.context !== undefined
-                    ? { context: command.message.context }
-                    : {}),
-                },
-                createdAt: command.createdAt,
-              });
+              if (!command.sendAt)
+                yield* dispatchFromClient({
+                  type: "thread.message.user.append",
+                  commandId: yield* serverCommandId("bootstrap-thread-message"),
+                  threadId: command.threadId,
+                  message: {
+                    messageId: command.message.messageId,
+                    text: command.message.text,
+                    attachments: command.message.attachments,
+                    ...(command.message.context !== undefined
+                      ? { context: command.message.context }
+                      : {}),
+                  },
+                  createdAt: command.createdAt,
+                });
               if (tracked) {
                 const running = yield* worktreeSetupTracker.get(threadId);
                 if (running) yield* recordWorktreeSetup(running);
@@ -1550,7 +1551,7 @@ const makeWsRpcLayer = (
             }
 
             if (prepareWorktree && shouldPrepareWorktree && worktreeBaseRef) {
-              if (bootstrap?.createThread && createdThread) {
+              if (bootstrap?.createThread && createdThread && !command.sendAt) {
                 // The checkout and setup script can run for minutes before the
                 // turn starts, and the created thread carries no message or
                 // turn until then. Project a starting session now so every
@@ -1682,14 +1683,22 @@ const makeWsRpcLayer = (
 
             const pendingSetupScript = yield* runSetupProgram();
 
-            yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "running"));
+            if (!command.sendAt)
+              yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "running"));
             // Past this point a cancel would roll back a thread whose turn has
             // started. Drop the cancel handle and make the handoff atomic.
             yield* track(worktreeSetupTracker.markUncancellable(threadId));
             const started = yield* Effect.uninterruptible(
               dispatchFromClient(finalTurnStartCommand),
             );
-            yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "done"));
+            yield* track(
+              worktreeSetupTracker.stageStatus(
+                threadId,
+                "agent",
+                command.sendAt ? "skipped" : "done",
+                command.sendAt ? "message scheduled" : undefined,
+              ),
+            );
             // An async setup script outlives the handoff: the snapshot stays
             // running so the client keeps its row next to the agent's work,
             // and settles when the script exits. The turn already started, so
@@ -3593,6 +3602,16 @@ const makeWsRpcLayer = (
             worktreeSetupTracker.stream(input.threadId),
             { "rpc.aggregate": "vcs" },
           ),
+        [WS_METHODS.subscribeScheduledMessages]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeScheduledMessages,
+            orchestrationEngine.scheduledMessages?.stream(input.threadId) ?? Stream.empty,
+          ),
+        [WS_METHODS.scheduledMessageUpdate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.scheduledMessageUpdate,
+            orchestrationEngine.scheduledMessages?.update(input) ?? Effect.void,
+          ),
         [WS_METHODS.worktreeSetupCancel]: (input) =>
           observeRpcEffect(
             WS_METHODS.worktreeSetupCancel,
@@ -4101,6 +4120,14 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
+    const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+    if (engine.scheduledMessages) {
+      yield* startup.awaitCommandReady.pipe(
+        Effect.andThen(engine.scheduledMessages.start),
+        Effect.forkScoped,
+      );
+    }
+
     const serverSelfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
       mode: config.mode,
       selfUpdate: baseServerSelfUpdate,

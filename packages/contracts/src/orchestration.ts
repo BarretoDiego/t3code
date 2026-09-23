@@ -1379,6 +1379,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
    * edited later.
    */
   agentProfile: Schema.optionalKey(TurnAgentProfileContext),
+  /** Persist the prepared turn on the server until this instant. */
+  sendAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 
@@ -1401,6 +1403,8 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
   agentProfile: Schema.optionalKey(TurnAgentProfileContext),
+  /** Persist the prepared turn on the server until this instant. */
+  sendAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 

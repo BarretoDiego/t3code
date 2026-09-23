@@ -39,7 +39,7 @@ On web and desktop, a message sent during a running turn waits at the end of the
 dashed bubble. It goes out on its own when the agent finishes its next tool
 call, or when the turn ends. Use the arrow under the bubble to send it right
 away, or the X to move it back into the composer. Stop returns every queued
-message to the composer.
+follow-up to the composer and cancels pending scheduled messages.
 
 In **Settings → General → Follow-up behavior**, choose **Queue** to keep this
 behavior or **Steer** to send new messages immediately. This setting applies to
@@ -57,8 +57,11 @@ immediately, or Cancel to return the message to the composer.
 
 To send later on purpose, use the clock button in the composer or on a queued
 bubble. Pick 5, 15, 30, or 60 minutes, or choose a custom date and time. The
-bubble counts down and sends on its own; Send now still forces it, Schedule
-changes the time, and Cancel returns it to the composer.
+environment stores the message and sends it even if you switch threads or close
+the client. It must remain running; after a restart it resumes overdue schedules.
+Messages wait for the current turn and any pending approval or question to finish.
+Send now advances the send time, Schedule changes it, and Cancel removes the
+scheduled message.
 
 ## Queue messages offline on mobile
 
