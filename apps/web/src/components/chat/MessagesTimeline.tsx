@@ -119,6 +119,7 @@ import {
   DownloadIcon,
   EyeIcon,
   GlobeIcon,
+  GitForkIcon,
   HammerIcon,
   MessageCircleIcon,
   Minimize2Icon,
@@ -289,6 +290,7 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
+  onForkConversation: ((messageId: MessageId) => void) | null;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
@@ -438,6 +440,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   supportsConversationRollback: boolean;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
+  onForkConversation?: (messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -508,6 +511,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   supportsConversationRollback,
   onRevertToTurnCount,
+  onForkConversation,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   isRevertingCheckpoint,
   onImageExpand,
@@ -1153,6 +1157,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertToTurnCount,
+      onForkConversation: onForkConversation ?? null,
       onUseArtifactTemplate,
       onImageExpand,
       onFileOpen,
@@ -2265,6 +2270,23 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
+            {ctx.onForkConversation && !row.message.streaming && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      size="icon-xs"
+                      variant="ghost-muted"
+                      aria-label="Fork conversation from this message"
+                      onClick={() => ctx.onForkConversation?.(row.message.id)}
+                    />
+                  }
+                >
+                  <GitForkIcon />
+                </TooltipTrigger>
+                <TooltipPopup>Fork conversation here</TooltipPopup>
+              </Tooltip>
+            )}
             {resolvedContext.text && (
               <MessageCopyButton
                 // Structured paste needs the canonical links to retain their positions.
@@ -2500,6 +2522,23 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      {ctx.onForkConversation && !message.streaming && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Fork conversation from this message"
+                onClick={() => ctx.onForkConversation?.(message.id)}
+              />
+            }
+          >
+            <GitForkIcon />
+          </TooltipTrigger>
+          <TooltipPopup>Fork conversation here</TooltipPopup>
+        </Tooltip>
+      )}
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>

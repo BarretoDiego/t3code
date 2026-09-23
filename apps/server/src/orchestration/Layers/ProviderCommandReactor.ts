@@ -12,6 +12,7 @@ import {
   type ProjectId,
   type OrchestrationSession,
   ThreadId,
+  ThreadHandoffId,
   type ProviderSession,
   type RuntimeMode,
   type ThreadMiniSkillSnapshot,
@@ -40,6 +41,8 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { installConversationHandoffContext } from "../../handoff/ConversationHandoffContext.ts";
+import * as ServerConfig from "../../config.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import {
   ProviderAdapterProcessError,
@@ -228,6 +231,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const serverConfig = yield* ServerConfig.ServerConfig;
   /** Environment settings with the thread's project overrides applied. */
   const projectSettingsForThread = Effect.fnUntraced(function* (threadId: ThreadId) {
     const settings = yield* serverSettingsService.getSettings;
@@ -578,12 +582,67 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const prepareForkConversationContext = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly providerInstanceId: ModelSelection["instanceId"];
+    readonly sourceThreadId: ThreadId;
+    readonly throughMessageId: MessageId;
+  }) {
+    if (input.sourceThreadId === input.threadId) {
+      return yield* new ProviderAdapterRequestError({
+        provider: String(input.providerInstanceId),
+        method: "thread.turn.start",
+        detail: "A conversation fork must target a new thread.",
+      });
+    }
+    const history = yield* Stream.runCollect(
+      orchestrationEngine.readThreadEvents({
+        threadId: input.sourceThreadId,
+        fromSequenceExclusive: 0,
+        toSequenceInclusive: yield* orchestrationEngine.latestSequence,
+        limit: 1_000_000,
+      }),
+    );
+    const boundary = history.findIndex(
+      (event) =>
+        event.type === "thread.message-sent" && event.payload.messageId === input.throughMessageId,
+    );
+    if (boundary < 0) {
+      return yield* new ProviderAdapterRequestError({
+        provider: String(input.providerInstanceId),
+        method: "thread.turn.start",
+        detail: "The selected fork point is no longer available in this conversation.",
+      });
+    }
+    const handoffId = yield* crypto.randomUUIDv4.pipe(
+      Effect.map((uuid) => ThreadHandoffId.make(`fork_${uuid}`)),
+    );
+    return yield* Effect.tryPromise({
+      try: () =>
+        installConversationHandoffContext({
+          stateDir: serverConfig.stateDir,
+          handoffId,
+          threadId: input.threadId,
+          providerInstanceId: input.providerInstanceId,
+          events: history.slice(0, boundary + 1),
+        }),
+      catch: (cause) =>
+        new ProviderAdapterRequestError({
+          provider: String(input.providerInstanceId),
+          method: "thread.turn.start",
+          detail:
+            cause instanceof Error ? cause.message : "Could not prepare the conversation fork.",
+        }),
+    });
+  });
+
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
     options?: {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
+      readonly handoffContext?: unknown;
     },
   ) {
     const thread = yield* resolveThreadShell(threadId);
@@ -734,6 +793,9 @@ const make = Effect.gen(function* () {
           ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
           ...(thread.title ? { title: thread.title } : {}),
           modelSelection: desiredModelSelection,
+          ...(options?.handoffContext !== undefined
+            ? { handoffContext: options.handoffContext }
+            : {}),
           ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
           runtimeMode: desiredRuntimeMode,
         })
@@ -861,6 +923,10 @@ const make = Effect.gen(function* () {
     readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
     /** Active agent profile snapshot for this turn, when the composer had one. */
     readonly agentProfile?: TurnAgentProfileContext;
+    readonly forkConversation?: {
+      readonly sourceThreadId: ThreadId;
+      readonly throughMessageId: MessageId;
+    };
     readonly createdAt: string;
   }) {
     const thread = yield* resolveThreadShell(input.threadId);
@@ -869,8 +935,16 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    const forkContext = input.forkConversation
+      ? yield* prepareForkConversationContext({
+          threadId: input.threadId,
+          providerInstanceId: (input.modelSelection ?? thread.modelSelection).instanceId,
+          ...input.forkConversation,
+        })
+      : undefined;
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
+      ...(forkContext !== undefined ? { handoffContext: forkContext } : {}),
       pendingTurnStart: true,
     });
     if (input.modelSelection !== undefined) {
@@ -1581,6 +1655,9 @@ const make = Effect.gen(function* () {
       ...(requestMiniSkillIds.length > 0 ? { miniSkillIds: requestMiniSkillIds } : {}),
       ...(event.payload.agentProfile !== undefined
         ? { agentProfile: event.payload.agentProfile }
+        : {}),
+      ...(event.payload.forkConversation !== undefined
+        ? { forkConversation: event.payload.forkConversation }
         : {}),
       createdAt: event.payload.createdAt,
     }).pipe(
