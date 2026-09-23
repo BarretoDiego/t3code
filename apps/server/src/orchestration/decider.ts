@@ -1460,6 +1460,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { miniSkillIds: command.miniSkillIds }
             : {}),
           ...(command.agentProfile !== undefined ? { agentProfile: command.agentProfile } : {}),
+          ...(command.bootstrap?.forkConversation !== undefined
+            ? { forkConversation: command.bootstrap.forkConversation }
+            : {}),
           createdAt: command.createdAt,
         },
       };

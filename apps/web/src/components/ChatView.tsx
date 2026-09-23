@@ -2279,6 +2279,19 @@ export default function ChatView(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const handleForkConversation = useCallback(
+    (throughMessageId: MessageId) => {
+      const sourceThread = activeThread;
+      if (!isServerThread || !activeProject || !sourceThread) return;
+      void handleNewThread(scopeProjectRef(sourceThread.environmentId, activeProject.id), {
+        forkConversation: {
+          sourceThreadId: sourceThread.id,
+          throughMessageId,
+        },
+      });
+    },
+    [activeProject, activeThread, handleNewThread, isServerThread],
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
@@ -8427,6 +8440,9 @@ export default function ChatView(props: ChatViewProps) {
                     runSetupScript: true,
                   }
                 : {}),
+              ...(isLocalDraftThread && draftThread?.forkConversation !== undefined
+                ? { forkConversation: draftThread.forkConversation }
+                : {}),
             }
           : undefined;
       const backgroundThreadRef =
@@ -10086,6 +10102,9 @@ export default function ChatView(props: ChatViewProps) {
                 onRevertToTurnCount={
                   paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
                 }
+                {...(!paintOnlyDisplayedTimeline && isServerThread
+                  ? { onForkConversation: handleForkConversation }
+                  : {})}
                 isRevertingCheckpoint={!paintOnlyDisplayedTimeline && isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}
