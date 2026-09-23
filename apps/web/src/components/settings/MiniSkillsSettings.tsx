@@ -135,7 +135,7 @@ function MiniSkillEditorDialogContent(props: {
                 onChange={(event) => setDraft({ ...draft, content: event.target.value })}
                 rows={10}
                 placeholder="Markdown instructions for the agent."
-                className="font-mono text-xs"
+                variant="code"
               />
             </label>
             <label className="flex items-center justify-between gap-4">
@@ -156,12 +156,14 @@ function MiniSkillEditorDialogContent(props: {
             </label>
           </form>
         </DialogPanel>
-        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-          <Button disabled={nameInvalid || contentInvalid} type="submit" form={formId}>
-            Save
-          </Button>
-        </DialogFooter>
+        <div className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <DialogFooter>
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button disabled={nameInvalid || contentInvalid} type="submit" form={formId}>
+              Save
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogPopup>
     </Dialog>
   );
@@ -199,7 +201,7 @@ function PromptWrapperEditor(props: {
       <Textarea
         value={text}
         rows={8}
-        className="font-mono text-xs"
+        variant="code"
         aria-label={props.title}
         onChange={(event) => {
           setText(event.target.value);

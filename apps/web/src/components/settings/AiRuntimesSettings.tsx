@@ -73,7 +73,7 @@ function RuntimeSelect<Value extends string>({
       <SelectTrigger size={size} aria-label={label} className="min-w-0">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false} popupClassName="max-w-[calc(100vw-2rem)]">
+      <SelectPopup alignItemWithTrigger={false} className="max-w-[calc(100vw-2rem)]">
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
             <span className="block break-words">{option.label}</span>

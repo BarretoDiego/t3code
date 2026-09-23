@@ -141,7 +141,6 @@ export const AgentProfilePicker = memo(function AgentProfilePicker(
         render={
           <ComposerControl
             size={size}
-            variant="ghost"
             className={cn(
               "shrink-0 whitespace-nowrap",
               unavailable && "text-destructive hover:text-destructive",

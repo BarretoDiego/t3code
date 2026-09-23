@@ -495,7 +495,7 @@ function AddPickerSelect(props: {
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectPopup alignItemWithTrigger={false} popupClassName="max-w-[calc(100vw-2rem)]">
+      <SelectPopup alignItemWithTrigger={false} className="max-w-[calc(100vw-2rem)]">
         {props.options.map((option) => (
           <SelectItem key={option.value} hideIndicator value={option.value}>
             <span className="block break-words">{option.label}</span>

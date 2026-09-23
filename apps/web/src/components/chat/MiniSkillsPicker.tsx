@@ -127,7 +127,6 @@ export const MiniSkillsPicker = memo(function MiniSkillsPicker(props: {
               render={
                 <ComposerControl
                   size={size}
-                  variant="ghost"
                   className="shrink-0 whitespace-nowrap"
                   aria-label={
                     selectedCount > 0
