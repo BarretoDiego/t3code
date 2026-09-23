@@ -13,6 +13,7 @@ import {
   createAtomCommandScheduler,
   createEnvironmentCommand,
   createEnvironmentRpcCommand,
+  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import {
   type ArchiveThreadInput,
@@ -104,6 +105,15 @@ export function createThreadEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.threadId]),
   };
   const commands = {
+    scheduledMessages: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:thread:scheduled-messages",
+      tag: WS_METHODS.subscribeScheduledMessages,
+      idleTtlMs: 10_000,
+    }),
+    updateScheduledMessage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread:update-scheduled-message",
+      tag: WS_METHODS.scheduledMessageUpdate,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),

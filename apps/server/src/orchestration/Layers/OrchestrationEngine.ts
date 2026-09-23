@@ -44,6 +44,7 @@ import {
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
+import { makeScheduledMessages } from "../ScheduledMessages.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
@@ -509,6 +510,70 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       return yield* Deferred.await(result);
     });
 
+  const scheduledMessages = yield* makeScheduledMessages({
+    dispatch: (command) => dispatch(command),
+    canDispatch: (threadId) =>
+      Effect.gen(function* () {
+        const thread = yield* projectionSnapshotQuery.getThreadShellById(threadId);
+        if (
+          Option.isNone(thread) ||
+          thread.value.hasPendingApprovals ||
+          thread.value.hasPendingUserInput
+        )
+          return false;
+        // A turn-start receipt precedes the provider's running session event.
+        // Respect its durable placeholder so two due schedules cannot overtake it.
+        const pending =
+          yield* sql`SELECT 1 FROM projection_turns WHERE thread_id = ${threadId} AND turn_id IS NULL LIMIT 1`.pipe(
+            Effect.mapError(toPersistenceSqlError("ScheduledMessages.pendingTurn")),
+          );
+        return pending.length === 0;
+      }),
+    threadState: (threadId) => {
+      const thread = commandReadModel.threads.find((entry) => entry.id === threadId);
+      if (!thread || thread.deletedAt !== null || thread.archivedAt !== null) return "deleted";
+      return thread.latestTurn?.state === "running" ||
+        thread.session?.status === "starting" ||
+        thread.session?.status === "running"
+        ? "busy"
+        : "ready";
+    },
+  });
+  yield* Stream.runForEach(eventPubSub.stream, () => scheduledMessages.notify).pipe(
+    Effect.forkScoped,
+  );
+  const dispatchOrSchedule: OrchestrationEngineShape["dispatch"] = (command, options) => {
+    if (command.type === "thread.turn.interrupt" || command.type === "thread.session.stop") {
+      return scheduledMessages.cancelThread(command.threadId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: cause.message,
+            }),
+        ),
+        Effect.andThen(dispatch(command, options)),
+      );
+    }
+    if (command.type !== "thread.turn.start" || !command.sendAt) return dispatch(command, options);
+    return Effect.gen(function* () {
+      const receipt = yield* commandReceiptRepository.getByCommandId({
+        commandId: command.commandId,
+      });
+      if (Option.isSome(receipt)) return yield* dispatch(command, options);
+      yield* scheduledMessages.schedule(command).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: cause.message,
+            }),
+        ),
+      );
+      return { sequence: commandReadModel.snapshotSequence };
+    });
+  };
+
   const importHandoffEvents: NonNullable<OrchestrationEngineShape["importHandoffEvents"]> = (
     input,
   ) =>
@@ -729,7 +794,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     readEvents,
     readThreadEvents,
     getThreadReplayStats,
-    dispatch,
+    dispatch: dispatchOrSchedule,
+    scheduledMessages,
     importHandoffEvents,
     subscribeDomainEvents: eventPubSub.subscribeUntracked,
     subscribeHandoffEvents: eventPubSub.subscribe,

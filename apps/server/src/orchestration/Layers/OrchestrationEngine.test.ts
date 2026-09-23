@@ -139,6 +139,89 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  effectIt.effect("persists a schedule without starting a turn and deduplicates delivery", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("scheduled-project");
+      const threadId = ThreadId.make("scheduled-thread");
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("schedule-project-create"),
+        projectId,
+        title: "Project",
+        workspaceRoot: "/tmp/scheduled-project",
+        createdAt: now(),
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("schedule-thread-create"),
+        projectId,
+        threadId,
+        title: "Thread",
+        createdAt: now(),
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const command = {
+        type: "thread.turn.start" as const,
+        commandId: CommandId.make("scheduled-send"),
+        threadId,
+        message: {
+          messageId: MessageId.make("scheduled-message"),
+          role: "user" as const,
+          text: "Run checks",
+          attachments: [],
+        },
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        createdAt: now(),
+        sendAt: "1970-01-01T00:01:00.000Z",
+      };
+      yield* engine.dispatch(command);
+      yield* engine.dispatch(command);
+      expect((yield* snapshots.getSnapshot()).threads[0]?.messages).toHaveLength(0);
+      const scheduler = engine.scheduledMessages!;
+      yield* TestClock.adjust("1 minute");
+      yield* scheduler.runDue;
+      const after = yield* snapshots.getSnapshot();
+      expect(after.threads[0]?.messages.filter((message) => message.role === "user")).toHaveLength(
+        1,
+      );
+      const events = yield* Stream.runCollect(
+        engine.readThreadEvents({
+          threadId,
+          fromSequenceExclusive: 0,
+          toSequenceInclusive: after.snapshotSequence,
+        }),
+      );
+      expect(events.filter((event) => event.type === "thread.turn-start-requested")).toHaveLength(
+        1,
+      );
+      // A reconnect can replay the registration after delivery already committed.
+      yield* engine.dispatch(command);
+      expect(yield* engine.latestSequence).toBe(after.snapshotSequence);
+      expect(yield* Stream.runCollect(Stream.take(scheduler.stream(threadId), 1))).toEqual([[]]);
+      yield* engine.dispatch({
+        ...command,
+        commandId: CommandId.make("second-scheduled-send"),
+        message: { ...command.message, messageId: MessageId.make("second-scheduled-message") },
+      });
+      yield* scheduler.runDue;
+      expect((yield* snapshots.getSnapshot()).threads[0]?.messages).toHaveLength(1);
+      yield* engine.dispatch({
+        type: "thread.session.stop",
+        commandId: CommandId.make("stop-schedules"),
+        threadId,
+        createdAt: now(),
+      });
+      expect(yield* Stream.runCollect(Stream.take(scheduler.stream(threadId), 1))).toEqual([[]]);
+    }).pipe(Effect.provide(makeOrchestrationLayer())),
+  );
+
   it.each(["running", "stopped"] as const)(
     "sends async answers with a %s session and rejects old duplicate replies",
     async (status) => {

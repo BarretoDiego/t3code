@@ -57,3 +57,4 @@ export * from "./aiReview.ts";
 export * from "./threadHandoff.ts";
 export * from "./threadHandoffRpc.ts";
 export * from "./worktreeSetup.ts";
+export * from "./scheduledMessages.ts";

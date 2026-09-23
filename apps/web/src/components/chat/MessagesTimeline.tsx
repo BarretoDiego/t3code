@@ -1779,7 +1779,9 @@ function QueuedMessageTimelineRow({
 }) {
   const ctx = use(TimelineRowCtx);
   const { queuedMessage } = row;
-  const attachmentCount = queuedMessage.images.length + queuedMessage.files.length;
+  const attachmentCount =
+    queuedMessage.serverSchedule?.command.message.attachments.length ??
+    queuedMessage.images.length + queuedMessage.files.length;
   const contextCount =
     queuedMessage.terminalContexts.length +
     queuedMessage.previewAnnotations.length +
@@ -1798,15 +1800,21 @@ function QueuedMessageTimelineRow({
   }, [waitUntil]);
   const waitCountdown =
     waitUntil !== null ? (formatRateLimitResetCountdown(waitUntil, nowMs) ?? null) : null;
-  const statusLabel = queuedMessage.holdUntilUserAction
-    ? "Waits for Send now"
-    : waitCountdown
-      ? isScheduledWait
-        ? `Scheduled. Sends automatically in ${waitCountdown}. Send now to retry immediately, change the time with Schedule, or Cancel to edit.`
-        : `Plan limit reached. Sends automatically in ${waitCountdown}. Send now to retry immediately, or Cancel to edit.`
-      : row.isNext
-        ? "Sends after the next tool call or when the turn ends"
-        : "Sends after the messages above it";
+  const statusLabel = queuedMessage.serverSchedule
+    ? queuedMessage.serverSchedule.error
+      ? `Could not send: ${queuedMessage.serverSchedule.error}`
+      : waitCountdown
+        ? `Scheduled in ${waitCountdown}. Sends even with this window closed.`
+        : "Scheduled. Waiting for the current turn to finish."
+    : queuedMessage.holdUntilUserAction
+      ? "Waits for Send now"
+      : waitCountdown
+        ? isScheduledWait
+          ? `Scheduled. Sends automatically in ${waitCountdown}. Send now to retry immediately, change the time with Schedule, or Cancel to edit.`
+          : `Plan limit reached. Sends automatically in ${waitCountdown}. Send now to retry immediately, or Cancel to edit.`
+        : row.isNext
+          ? "Sends after the next tool call or when the turn ends"
+          : "Sends after the messages above it";
   return (
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
@@ -1893,13 +1901,21 @@ function QueuedMessageTimelineRow({
                     variant="ghost-muted"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => ctx.onRemoveQueuedMessage(queuedMessage.id)}
-                    aria-label="Cancel and return to the composer"
+                    aria-label={
+                      queuedMessage.serverSchedule
+                        ? "Cancel scheduled message"
+                        : "Cancel and return to the composer"
+                    }
                   />
                 }
               >
                 <XIcon className="size-3.5" aria-hidden />
               </TooltipTrigger>
-              <TooltipPopup side="bottom">Cancel and return to the composer</TooltipPopup>
+              <TooltipPopup side="bottom">
+                {queuedMessage.serverSchedule
+                  ? "Cancel scheduled message"
+                  : "Cancel and return to the composer"}
+              </TooltipPopup>
             </Tooltip>
           </div>
         </div>
