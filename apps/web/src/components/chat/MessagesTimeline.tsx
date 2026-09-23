@@ -1795,8 +1795,15 @@ function QueuedMessageTimelineRow({
   const isScheduledWait = waitUntil !== null && isQueuedMessageScheduled(queuedMessage, nowMs);
   useEffect(() => {
     if (waitUntil === null) return;
-    const timer = setTimeout(() => setNowMs(Date.now()), 1_000);
-    return () => clearTimeout(timer);
+    const syncNow = () => setNowMs(Date.now());
+    const timer = window.setInterval(syncNow, 1_000);
+    // Browsers throttle intervals in background tabs. The server owns sending,
+    // but the label catches up immediately when this timeline becomes visible.
+    document.addEventListener("visibilitychange", syncNow);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncNow);
+    };
   }, [waitUntil]);
   const waitCountdown =
     waitUntil !== null ? (formatRateLimitResetCountdown(waitUntil, nowMs) ?? null) : null;
