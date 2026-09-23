@@ -1,4 +1,4 @@
-import type { PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { PreviewAnnotationPayload, ScheduledMessage } from "@t3tools/contracts";
 import { create } from "zustand";
 
 import type { ComposerSubmissionIntent } from "./composer-logic";
@@ -14,6 +14,8 @@ import type { ReviewCommentContext } from "./reviewCommentContext";
  */
 export interface QueuedComposerMessage {
   id: string;
+  /** Present for durable schedules owned and dispatched by the environment. */
+  serverSchedule?: ScheduledMessage;
   prompt: string;
   images: ComposerImageAttachment[];
   files: ComposerFileAttachment[];

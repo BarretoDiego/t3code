@@ -333,7 +333,6 @@ import {
   useQueuedMessageStore,
 } from "../queuedMessageStore";
 import {
-  formatRateLimitResetIn,
   getExhaustedRateLimitResetAt,
   isUsageLimitErrorMessage,
 } from "@t3tools/shared/providerRateLimits";
@@ -373,6 +372,7 @@ import {
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
+import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -482,7 +482,6 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
-  toolGroupConsumesUpwardNavigation,
   waitForStartedServerThread,
   shouldRefocusComposerOnWindowFocus,
 } from "./ChatView.logic";
@@ -1518,6 +1517,7 @@ export default function ChatView(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
+  const updateScheduledMessage = useAtomCommand(threadEnvironment.updateScheduledMessage);
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -2279,6 +2279,19 @@ export default function ChatView(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const handleForkConversation = useCallback(
+    (throughMessageId: MessageId) => {
+      const sourceThread = activeThread;
+      if (!isServerThread || !activeProject || !sourceThread) return;
+      void handleNewThread(scopeProjectRef(sourceThread.environmentId, activeProject.id), {
+        forkConversation: {
+          sourceThreadId: sourceThread.id,
+          throughMessageId,
+        },
+      });
+    },
+    [activeProject, activeThread, handleNewThread, isServerThread],
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
@@ -5477,6 +5490,8 @@ export default function ChatView(props: ChatViewProps) {
         // Only an upward wheel is a navigation intent; wheeling down while
         // following either does nothing (at the end) or moves toward it.
         const handleWheel = (event: WheelEvent) => {
+          if (event.ctrlKey || !isTimelineScrollTarget(event.target, scrollNode, event.deltaY))
+            return;
           if (event.deltaY > 0) {
             timelineScrollIntentRef.current = "toward-end";
             if (isAtEndRef.current) {
@@ -5485,11 +5500,7 @@ export default function ChatView(props: ChatViewProps) {
           } else if (event.deltaY < 0) {
             timelineScrollIntentRef.current = "away-from-end";
           }
-          if (
-            event.deltaY < 0 &&
-            contentScrollsUp() &&
-            !toolGroupConsumesUpwardNavigation(event.target)
-          ) {
+          if (event.deltaY < 0 && contentScrollsUp()) {
             handleManualNavigation();
           }
         };
@@ -5539,12 +5550,20 @@ export default function ChatView(props: ChatViewProps) {
           ) {
             return;
           }
+          if (!["PageUp", "Home", "ArrowUp", "PageDown", "End", "ArrowDown"].includes(event.key))
+            return;
+          const scrollDirection = ["PageUp", "Home", "ArrowUp"].includes(event.key) ? -1 : 1;
+          if (
+            scrollNode.contains(event.target) &&
+            !isTimelineScrollTarget(event.target, scrollNode, scrollDirection)
+          )
+            return;
           switch (event.key) {
             case "PageUp":
             case "Home":
             case "ArrowUp":
               timelineScrollIntentRef.current = "away-from-end";
-              if (contentScrollsUp() && !toolGroupConsumesUpwardNavigation(event.target)) {
+              if (contentScrollsUp()) {
                 handleManualNavigation();
                 composerRef.current?.collapseForTimelineScrollKey(event.key);
               }
@@ -7212,7 +7231,41 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const queuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  const localQueuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  const supportsScheduledMessages =
+    serverConfig?.environment.capabilities.scheduledMessages === true;
+  // The server scheduler owns an already-created thread. Bootstrap commands
+  // still require the request-scoped worktree and draft setup path, so start
+  // those threads first and schedule their follow-ups once they exist.
+  const canScheduleActiveThread = supportsScheduledMessages && !isLocalDraftThread;
+  const scheduledMessagesQuery = useEnvironmentQuery(
+    canScheduleActiveThread
+      ? threadEnvironment.scheduledMessages({
+          environmentId: routeThreadRef.environmentId,
+          input: { threadId: routeThreadRef.threadId },
+        })
+      : null,
+  );
+  const queuedMessages = useMemo(
+    () => [
+      ...localQueuedMessages,
+      ...(scheduledMessagesQuery.data ?? []).map((entry): QueuedComposerMessage => ({
+        id: entry.command.commandId,
+        serverSchedule: entry,
+        prompt: entry.command.message.text,
+        images: [],
+        files: [],
+        terminalContexts: [],
+        previewAnnotations: [],
+        reviewComments: [],
+        submissionIntent: "foreground",
+        queuedAfterToolActivityId: null,
+        sendAt: entry.sendAt,
+        createdAt: entry.command.createdAt,
+      })),
+    ],
+    [localQueuedMessages, scheduledMessagesQuery.data],
+  );
   // Puts queued messages back into the composer, e.g. after Stop or a failed
   // send. Prompts join with blank lines; attachments and contexts are added.
   const restoreQueuedMessagesToComposer = (messages: ReadonlyArray<QueuedComposerMessage>) => {
@@ -7291,13 +7344,16 @@ export default function ChatView(props: ChatViewProps) {
   // both by the running-turn fast path inside onSend and by manual Schedule
   // send, so the two stay identical by construction.
   const enqueueComposerSnapshot = useCallback(
-    (input: { sendAt: string | null; submissionIntent: ComposerSubmissionIntent }): boolean => {
+    (input: {
+      sendAt: string | null;
+      submissionIntent: ComposerSubmissionIntent;
+    }): QueuedComposerMessage | null => {
       const sendCtx = composerRef.current?.getSendContext();
-      if (!sendCtx?.providerAvailable || !activeThreadKey) return false;
+      if (!sendCtx?.providerAvailable || !activeThreadKey) return null;
       if (composerRef.current?.validateProviderInput(promptRef.current) === false) {
-        return false;
+        return null;
       }
-      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+      const entry = useQueuedMessageStore.getState().enqueue(activeThreadKey, {
         prompt: promptRef.current,
         images: [...sendCtx.images],
         files: [...sendCtx.files],
@@ -7307,6 +7363,7 @@ export default function ChatView(props: ChatViewProps) {
         submissionIntent: input.submissionIntent,
         queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
         sendAt: input.sendAt,
+        holdUntilUserAction: input.sendAt !== null,
         createdAt: new Date().toISOString(),
       });
       promptRef.current = "";
@@ -7318,7 +7375,7 @@ export default function ChatView(props: ChatViewProps) {
       composerTerminalContextsRef.current = [];
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      return true;
+      return entry;
     },
     [activeThreadKey, clearComposerDraftContent, composerDraftTarget, threadActivities],
   );
@@ -7332,7 +7389,17 @@ export default function ChatView(props: ChatViewProps) {
     },
     /** A queued message being sent now instead of the live composer draft. */
     queuedMessage?: QueuedComposerMessage,
+    sendAt?: string,
   ) => {
+    if (sendAt && !canScheduleActiveThread) {
+      toastManager.add({
+        type: "warning",
+        title: isLocalDraftThread
+          ? "Start this thread before scheduling a message"
+          : "Update this environment to schedule messages.",
+      });
+      return;
+    }
     e?.preventDefault();
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
@@ -7401,7 +7468,7 @@ export default function ChatView(props: ChatViewProps) {
       });
       return;
     }
-    if (activePendingProgress) {
+    if (activePendingProgress && !sendAt) {
       // A queued message waits until the question is answered; it must not
       // be submitted as the answer.
       if (directAnnotation || queuedMessage) {
@@ -7420,7 +7487,8 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(activeThread.id, sendCtx.profileSendBlockReason);
       return;
     }
-    const multipleModelSelections = queuedMessage ? null : sendCtx.multipleModelSelections;
+    const multipleModelSelections =
+      queuedMessage || sendAt ? null : sendCtx.multipleModelSelections;
     if (
       multipleModelSelections !== null &&
       serverConfig?.environment.capabilities.requiredWorktreeBootstrap !== true
@@ -7689,6 +7757,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     if (
       !queuedMessage &&
+      !sendAt &&
       !directAnnotation &&
       phase === "running" &&
       activeThreadKey &&
@@ -8243,60 +8312,62 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
-    const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
-      attachment.type === "image"
-        ? {
-            type: "image" as const,
-            id: attachment.id,
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-            previewUrl: attachment.previewUrl,
-            ...(attachment.source ? { source: attachment.source } : {}),
-          }
-        : {
-            type: "file" as const,
-            id: attachment.id,
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-            downloadable: false,
-            ...(attachment.source ? { source: attachment.source } : {}),
-          },
-    );
-    const shouldAnchorFirstMessage =
-      activeThread.latestTurn === null &&
-      !timelineMessages.some((message) => message.role === "user");
-    if (shouldAnchorFirstMessage) {
-      isAtEndRef.current = true;
-      timelineScrollModeRef.current = "anchoring-new-turn";
-      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-      setTimelineLiveFollowEnabled(true);
-      pendingTimelineAnchorRef.current = messageIdForSend;
-      activeTimelineAnchorIndexRef.current = null;
-      showScrollDebouncer.current.cancel();
-      setShowScrollToBottom(false);
-      setTimelineAnchor({
-        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-        messageId: messageIdForSend,
-      });
-    } else {
-      scrollToEnd();
+    if (!sendAt) {
+      const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
+        attachment.type === "image"
+          ? {
+              type: "image" as const,
+              id: attachment.id,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              previewUrl: attachment.previewUrl,
+              ...(attachment.source ? { source: attachment.source } : {}),
+            }
+          : {
+              type: "file" as const,
+              id: attachment.id,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              downloadable: false,
+              ...(attachment.source ? { source: attachment.source } : {}),
+            },
+      );
+      const shouldAnchorFirstMessage =
+        activeThread.latestTurn === null &&
+        !timelineMessages.some((message) => message.role === "user");
+      if (shouldAnchorFirstMessage) {
+        isAtEndRef.current = true;
+        timelineScrollModeRef.current = "anchoring-new-turn";
+        liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+        setTimelineLiveFollowEnabled(true);
+        pendingTimelineAnchorRef.current = messageIdForSend;
+        activeTimelineAnchorIndexRef.current = null;
+        showScrollDebouncer.current.cancel();
+        setShowScrollToBottom(false);
+        setTimelineAnchor({
+          threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+          messageId: messageIdForSend,
+        });
+      } else {
+        scrollToEnd();
+      }
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          role: "user",
+          text: outgoingMessageText,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+          ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
+          turnId: null,
+          createdAt: messageCreatedAt,
+          updatedAt: messageCreatedAt,
+          streaming: false,
+        },
+      ]);
     }
-    setOptimisticUserMessages((existing) => [
-      ...existing,
-      {
-        id: messageIdForSend,
-        role: "user",
-        text: outgoingMessageText,
-        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
-        ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
-        turnId: null,
-        createdAt: messageCreatedAt,
-        updatedAt: messageCreatedAt,
-        streaming: false,
-      },
-    ]);
     setThreadError(threadIdForSend, null);
     if (expiredTerminalContextCount > 0) {
       const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -8421,6 +8492,9 @@ export default function ChatView(props: ChatViewProps) {
                     runSetupScript: true,
                   }
                 : {}),
+              ...(isLocalDraftThread && draftThread?.forkConversation !== undefined
+                ? { forkConversation: draftThread.forkConversation }
+                : {}),
             }
           : undefined;
       const backgroundThreadRef =
@@ -8473,6 +8547,7 @@ export default function ChatView(props: ChatViewProps) {
           ...(effectiveMiniSkillIds.length > 0 ? { miniSkillIds: effectiveMiniSkillIds } : {}),
           ...(ctxAgentProfileTurnContext ? { agentProfile: ctxAgentProfileTurnContext } : {}),
           ...(bootstrap ? { bootstrap } : {}),
+          ...(sendAt ? { sendAt } : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -8505,6 +8580,18 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (sendAt) {
+          for (const image of composerImagesSnapshot) revokeBlobPreviewUrl(image.previewUrl);
+          resetLocalDispatch();
+          toastManager.add(
+            stackedThreadToast({
+              type: "info",
+              title: "Message scheduled",
+              description:
+                "The environment will send it automatically, even with this window closed.",
+            }),
+          );
+        }
         // Request-scoped mini skills are single-use: the selection only
         // survives a failed send, never a successful one.
         if (ctxSelectedMiniSkillIds.length > 0) {
@@ -8699,7 +8786,7 @@ export default function ChatView(props: ChatViewProps) {
   const sendQueuedMessage = useEffectEvent((message: QueuedComposerMessage) => {
     void onSend(undefined, message.submissionIntent, undefined, message);
   });
-  const nextQueuedMessage = queuedMessages[0] ?? null;
+  const nextQueuedMessage = localQueuedMessages[0] ?? null;
   const latestToolActivityId = useMemo(
     () => (nextQueuedMessage ? latestCompletedToolActivityId(threadActivities) : null),
     [nextQueuedMessage, threadActivities],
@@ -8770,29 +8857,25 @@ export default function ChatView(props: ChatViewProps) {
   // Schedules the live composer draft without sending. The draft moves into
   // the queue like a running-turn follow-up, then goes out on its own when
   // its instant arrives.
-  const onScheduleComposerDraft = useCallback(async () => {
+  const onScheduleComposerDraft = async () => {
     if (!activeThreadKey || !activeThread || !activeProject) return;
     const choice = await requestScheduleSend();
-    if (!choice || !choice.sendAt) return;
-    if (!enqueueComposerSnapshot({ sendAt: choice.sendAt, submissionIntent: "foreground" })) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "warning",
-          title: "Could not schedule message",
-          description: "Sending is unavailable right now. Try again once it is connected.",
-        }),
-      );
+    if (!choice?.sendAt || currentRouteThreadKeyRef.current !== routeThreadKey) return;
+    if (!canScheduleActiveThread) {
+      toastManager.add({
+        type: "warning",
+        title: isLocalDraftThread
+          ? "Start this thread before scheduling a message"
+          : "Update this environment to schedule messages.",
+      });
       return;
     }
-    const inLabel = formatRateLimitResetIn(choice.sendAt, Date.now());
-    toastManager.add(
-      stackedThreadToast({
-        type: "info",
-        title: "Message scheduled",
-        description: inLabel ? `Sends in ${inLabel}.` : "Sends automatically at its time.",
-      }),
-    );
-  }, [activeProject, activeThread, activeThreadKey, enqueueComposerSnapshot]);
+    const message = enqueueComposerSnapshot({
+      sendAt: choice.sendAt,
+      submissionIntent: "foreground",
+    });
+    if (message) await onSend(undefined, "foreground", undefined, message, choice.sendAt);
+  };
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.
   const queuedMessageActionsRef = useRef({
@@ -8803,10 +8886,34 @@ export default function ChatView(props: ChatViewProps) {
   queuedMessageActionsRef.current = {
     steer: (id) => {
       const message = queuedMessages.find((entry) => entry.id === id);
-      if (!message || sendInFlightRef.current || queueBlockedByPendingRequest) return;
+      if (!message) return;
+      if (message.serverSchedule) {
+        void updateScheduledMessage({
+          environmentId,
+          input: {
+            threadId: message.serverSchedule.command.threadId,
+            commandId: message.serverSchedule.command.commandId,
+            action: "send",
+          },
+        });
+        return;
+      }
+      if (sendInFlightRef.current || queueBlockedByPendingRequest) return;
       void onSend(undefined, message.submissionIntent, undefined, message);
     },
     remove: (id) => {
+      const scheduled = queuedMessages.find((entry) => entry.id === id)?.serverSchedule;
+      if (scheduled) {
+        void updateScheduledMessage({
+          environmentId,
+          input: {
+            threadId: scheduled.command.threadId,
+            commandId: scheduled.command.commandId,
+            action: "cancel",
+          },
+        });
+        return;
+      }
       if (!activeThreadKey) return;
       const message = useQueuedMessageStore.getState().remove(activeThreadKey, id);
       if (message) restoreQueuedMessagesToComposer([message]);
@@ -8818,7 +8925,21 @@ export default function ChatView(props: ChatViewProps) {
       const threadKey = activeThreadKey;
       void requestScheduleSend(message.sendAt ?? null).then((choice) => {
         if (!choice) return;
-        useQueuedMessageStore.getState().scheduleSend(threadKey, id, choice.sendAt);
+        if (message.serverSchedule) {
+          void updateScheduledMessage({
+            environmentId,
+            input: {
+              threadId: message.serverSchedule.command.threadId,
+              commandId: message.serverSchedule.command.commandId,
+              action: choice.sendAt ? "reschedule" : "send",
+              ...(choice.sendAt ? { sendAt: choice.sendAt } : {}),
+            },
+          });
+        } else if (choice.sendAt && currentRouteThreadKeyRef.current === routeThreadKey) {
+          void onSend(undefined, message.submissionIntent, undefined, message, choice.sendAt);
+        } else if (!choice.sendAt) {
+          useQueuedMessageStore.getState().scheduleSend(threadKey, id, null);
+        }
       });
     },
   };
@@ -10080,6 +10201,9 @@ export default function ChatView(props: ChatViewProps) {
                 onRevertToTurnCount={
                   paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
                 }
+                {...(!paintOnlyDisplayedTimeline && isServerThread
+                  ? { onForkConversation: handleForkConversation }
+                  : {})}
                 isRevertingCheckpoint={!paintOnlyDisplayedTimeline && isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}

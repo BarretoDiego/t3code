@@ -108,6 +108,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands canonical inline context links plus their message context records.
       Absent on servers from before inline context shipped, which drop the records and forward
       the links as literal text -- so a client must serialize context the legacy way for them. */
+  scheduledMessages: Schema.optionalKey(Schema.Boolean),
   inlineMessageContext: Schema.optionalKey(Schema.Boolean),
   /** Server rejects required worktrees instead of falling back to the project checkout. */
   requiredWorktreeBootstrap: Schema.optionalKey(Schema.Boolean),

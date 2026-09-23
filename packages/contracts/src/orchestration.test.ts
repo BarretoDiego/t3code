@@ -559,6 +559,10 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
           startFromOrigin: true,
           requireWorktree: true,
         },
+        forkConversation: {
+          sourceThreadId: "thread-source",
+          throughMessageId: "msg-fork-point",
+        },
         runSetupScript: true,
       },
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -567,6 +571,8 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.startFromOrigin, true);
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.requireWorktree, true);
+    assert.strictEqual(parsed.bootstrap?.forkConversation?.sourceThreadId, "thread-source");
+    assert.strictEqual(parsed.bootstrap?.forkConversation?.throughMessageId, "msg-fork-point");
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
   }),
 );

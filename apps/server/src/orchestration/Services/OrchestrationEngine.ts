@@ -37,6 +37,7 @@ export interface OrchestrationThreadReplayRange {
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
  */
 export interface OrchestrationEngineShape {
+  readonly scheduledMessages?: import("../ScheduledMessages.ts").ScheduledMessages;
   /**
    * Replay persisted orchestration events from an exclusive sequence cursor.
    *

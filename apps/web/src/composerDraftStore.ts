@@ -22,6 +22,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  MessageId,
   SnapShotSource,
 } from "@t3tools/contracts";
 import {
@@ -470,6 +471,7 @@ export interface DraftSessionState {
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
   startFromOrigin: boolean;
+  forkConversation?: { sourceThreadId: ThreadId; throughMessageId: MessageId };
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -544,6 +546,7 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
+      forkConversation?: { sourceThreadId: ThreadId; throughMessageId: MessageId };
     },
   ) => void;
   /** Creates or updates the draft session tracked for a concrete project ref. */
@@ -561,6 +564,7 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
+      forkConversation?: { sourceThreadId: ThreadId; throughMessageId: MessageId };
     },
   ) => void;
   /** Updates mutable draft-session metadata without touching composer content. */
@@ -577,6 +581,7 @@ interface ComposerDraftStoreState {
       interactionMode?: ProviderInteractionMode;
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
+      forkConversation?: { sourceThreadId: ThreadId; throughMessageId: MessageId };
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1546,6 +1551,7 @@ function createDraftThreadState(
     interactionMode?: ProviderInteractionMode;
     environmentSelection?: "auto" | "manual";
     loadBalancedEnvironmentId?: EnvironmentId | null;
+    forkConversation?: { sourceThreadId: ThreadId; throughMessageId: MessageId };
   },
 ): DraftThreadState {
   // A project change (including switching environments within a logical
@@ -1598,6 +1604,11 @@ function createDraftThreadState(
     envMode:
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
+    ...(options?.forkConversation !== undefined
+      ? { forkConversation: options.forkConversation }
+      : existingThread?.forkConversation !== undefined
+        ? { forkConversation: existingThread.forkConversation }
+        : {}),
     promotedTo: null,
   };
 }
@@ -1632,6 +1643,8 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.worktreePath === right.worktreePath &&
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
+    left.forkConversation?.sourceThreadId === right.forkConversation?.sourceThreadId &&
+    left.forkConversation?.throughMessageId === right.forkConversation?.throughMessageId &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -2836,6 +2849,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               envMode:
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
+              ...(options.forkConversation !== undefined
+                ? { forkConversation: options.forkConversation }
+                : existing.forkConversation !== undefined
+                  ? { forkConversation: existing.forkConversation }
+                  : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2851,6 +2869,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.worktreePath === existing.worktreePath &&
               nextDraftThread.envMode === existing.envMode &&
               nextDraftThread.startFromOrigin === existing.startFromOrigin &&
+              nextDraftThread.forkConversation?.sourceThreadId ===
+                existing.forkConversation?.sourceThreadId &&
+              nextDraftThread.forkConversation?.throughMessageId ===
+                existing.forkConversation?.throughMessageId &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;

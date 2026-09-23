@@ -1328,9 +1328,20 @@ const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
   requireWorktree: Schema.optional(Schema.Boolean),
 });
 
+/**
+ * A draft may continue an earlier conversation without reusing the source
+ * provider session. The marker is a message id (rather than a sequence number)
+ * so clients never get to choose an event-store boundary.
+ */
+const ThreadTurnStartBootstrapForkConversation = Schema.Struct({
+  sourceThreadId: ThreadId,
+  throughMessageId: MessageId,
+});
+
 const ThreadTurnStartBootstrap = Schema.Struct({
   createThread: Schema.optional(ThreadTurnStartBootstrapCreateThread),
   prepareWorktree: Schema.optional(ThreadTurnStartBootstrapPrepareWorktree),
+  forkConversation: Schema.optional(ThreadTurnStartBootstrapForkConversation),
   runSetupScript: Schema.optional(Schema.Boolean),
 });
 
@@ -1368,6 +1379,8 @@ export const ThreadTurnStartCommand = Schema.Struct({
    * edited later.
    */
   agentProfile: Schema.optionalKey(TurnAgentProfileContext),
+  /** Persist the prepared turn on the server until this instant. */
+  sendAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 
@@ -1390,6 +1403,8 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   miniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
   agentProfile: Schema.optionalKey(TurnAgentProfileContext),
+  /** Persist the prepared turn on the server until this instant. */
+  sendAt: Schema.optional(IsoDateTime),
   createdAt: IsoDateTime,
 });
 
@@ -1967,6 +1982,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   // Active agent profile snapshot for this turn. Optional for pre-feature
   // events; present turns keep it even if the profile is edited or deleted.
   agentProfile: Schema.optional(TurnAgentProfileContext),
+  forkConversation: Schema.optional(ThreadTurnStartBootstrapForkConversation),
   createdAt: IsoDateTime,
 });
 
