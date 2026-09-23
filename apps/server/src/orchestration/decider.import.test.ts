@@ -114,6 +114,7 @@ it.layer(NodeServices.layer)("thread history import", (it) => {
               messageId: MessageId.make(`${threadId}:000000`),
               role: "user",
               text: "Fix the bug",
+              attachments: [],
               createdAt,
             },
             {
@@ -131,7 +132,13 @@ it.layer(NodeServices.layer)("thread history import", (it) => {
         {
           type: "thread.message-sent",
           metadata: { historyImport: true },
-          payload: { role: "user", text: "Fix the bug", turnId: null, streaming: false },
+          payload: {
+            role: "user",
+            text: "Fix the bug",
+            attachments: [],
+            turnId: null,
+            streaming: false,
+          },
         },
         {
           type: "thread.message-sent",

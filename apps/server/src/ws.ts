@@ -79,6 +79,7 @@ import {
   AssetWorkspaceContextResolutionError,
   RpcClientId,
   EnvironmentAuthorizationError,
+  MessageId,
   ThreadId,
   type ThreadMiniSkillSnapshot,
   type TerminalAttachStreamEvent,
@@ -557,6 +558,75 @@ const makeWsRpcLayer = (
           command,
           hasClientOrigin ? { origin: clientOrigin } : undefined,
         );
+      const importForkHistory = Effect.fnUntraced(function* (input: {
+        readonly sourceThreadId: ThreadId;
+        readonly throughMessageId: MessageId;
+        readonly targetThreadId: ThreadId;
+        readonly targetProjectId: ProjectId;
+      }) {
+        if (input.sourceThreadId === input.targetThreadId) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: "A conversation fork must target a new thread.",
+          });
+        }
+        const sourceThread = yield* projectionSnapshotQuery
+          .getThreadShellById(input.sourceThreadId)
+          .pipe(Effect.map(Option.getOrUndefined));
+        if (!sourceThread || sourceThread.projectId !== input.targetProjectId) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: "The selected fork point is no longer available in this project.",
+          });
+        }
+        const history = yield* Stream.runCollect(
+          orchestrationEngine.readThreadEvents({
+            threadId: input.sourceThreadId,
+            fromSequenceExclusive: 0,
+            toSequenceInclusive: yield* orchestrationEngine.latestSequence,
+            limit: 1_000_000,
+          }),
+        );
+        const boundary = history.findIndex(
+          (event) =>
+            event.type === "thread.message-sent" &&
+            event.payload.messageId === input.throughMessageId,
+        );
+        if (boundary < 0) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: "The selected fork point is no longer available in this conversation.",
+          });
+        }
+        const messages = Array.from(history.slice(0, boundary + 1)).flatMap((event, index) => {
+          if (
+            event.type !== "thread.message-sent" ||
+            (event.payload.role !== "user" && event.payload.role !== "assistant")
+          ) {
+            return [];
+          }
+          return [
+            {
+              messageId: MessageId.make(`${input.targetThreadId}:fork:${index}`),
+              role: event.payload.role,
+              text: event.payload.text,
+              ...(event.payload.attachments !== undefined
+                ? { attachments: event.payload.attachments }
+                : {}),
+              ...(event.payload.context !== undefined ? { context: event.payload.context } : {}),
+              createdAt: event.payload.createdAt,
+            },
+          ];
+        });
+        if (messages.length === 0) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: "The selected fork point has no conversation messages to copy.",
+          });
+        }
+        yield* dispatchFromClient({
+          type: "thread.history.import",
+          commandId: yield* serverCommandId("bootstrap-thread-fork-history"),
+          threadId: input.targetThreadId,
+          messages,
+        });
+      });
       const recordClientCommandAnalytics = (command: OrchestrationCommand) => {
         switch (command.type) {
           case "thread.create":
@@ -1525,6 +1595,13 @@ const makeWsRpcLayer = (
               // terminals and provider sessions under the reused thread id.
               createdThread = true;
               yield* threadDeletionReactor.drainThrough(created.sequence);
+              if (bootstrap?.forkConversation) {
+                yield* importForkHistory({
+                  ...bootstrap.forkConversation,
+                  targetThreadId: command.threadId,
+                  targetProjectId: bootstrap.createThread.projectId,
+                });
+              }
               // Persist the send now rather than with the turn: the thread is
               // real from here on, so any client (or a reload) sees the message
               // while the worktree is still being prepared. The turn start
