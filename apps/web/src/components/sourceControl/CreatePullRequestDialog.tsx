@@ -89,7 +89,7 @@ export function CreatePullRequestDialog({
             }
           }}
         >
-          <DialogPanel className="space-y-4">
+          <DialogPanel>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-sm">
                 Source branch

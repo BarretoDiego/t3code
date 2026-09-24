@@ -617,11 +617,22 @@ function SidebarContent({
   );
 }
 
-function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
+function SidebarGroup({
+  className,
+  spacing = "default",
+  inset = "default",
+  ...props
+}: React.ComponentProps<"div"> & {
+  spacing?: "default" | "sm";
+  inset?: "default" | "content";
+}) {
   return (
     <div
       className={cn(
         "relative flex w-full min-w-0 flex-col p-[var(--sidebar-content-inset)]",
+        spacing === "sm" && "gap-1",
+        inset === "content" &&
+          "ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0",
         className,
       )}
       data-sidebar="group"
@@ -681,17 +692,26 @@ function SidebarMenuButton({
   variant = "default",
   size = "default",
   tooltip,
+  focusRing = "default",
+  inset = "default",
   className,
   render,
   ...props
 }: useRender.ComponentProps<"button"> & {
   isActive?: boolean;
   tooltip?: string | React.ComponentProps<typeof TooltipPopup>;
+  focusRing?: "default" | "sidebar";
+  inset?: "default" | "row";
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const { isMobile, state } = useSidebar();
 
   const defaultProps = {
-    className: cn(sidebarMenuButtonVariants({ size, variant }), className),
+    className: cn(
+      sidebarMenuButtonVariants({ size, variant }),
+      focusRing === "sidebar" && "focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+      inset === "row" && "ps-[calc(var(--sidebar-row-content-inset)-1px)]",
+      className,
+    ),
     "data-active": isActive,
     "data-sidebar": "menu-button",
     "data-size": size,

@@ -179,7 +179,6 @@ import {
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import {
   Combobox,
   ComboboxEmpty,
@@ -190,7 +189,13 @@ import {
   ComboboxTrigger,
   useComboboxFilter,
 } from "./ui/combobox";
-import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
+import {
+  SidebarContent,
+  SidebarGroup,
+  SidebarInput,
+  SidebarMenuButton,
+  useSidebar,
+} from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -309,7 +314,8 @@ function SidebarThreadTooltip({
       align="start"
       sideOffset={4}
       variant="glass"
-      className="max-w-80 text-left whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0"
+      padding="none"
+      className="max-w-80 text-left whitespace-normal"
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
@@ -3480,18 +3486,16 @@ export default function Sidebar() {
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent
-        className="gap-0"
         fixedHeader={
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
-          <SidebarGroup className="relative z-[1] gap-1 p-[var(--sidebar-content-inset)]">
+          <SidebarGroup className="relative z-[1]" spacing="sm">
             <div className="flex items-center gap-1">
               <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
-                <Input
+                <SidebarInput
                   ref={threadSearchInputRef}
                   nativeInput
-                  unstyled
                   type="search"
                   value={threadSearchQuery}
                   onChange={(event) => {
@@ -3514,14 +3518,14 @@ export default function Sidebar() {
                       ? `sidebar-thread-search-result-${activeSearchResultIndex}`
                       : undefined
                   }
-                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:p-0 [&_[data-slot=input]]:leading-normal [&_[data-slot=input]]:text-sm [&_[data-slot=input]]:font-medium [&_[data-slot=input]]:text-sidebar-foreground [&_[data-slot=input]]:placeholder:text-sidebar-muted-foreground"
+                  className="min-w-0 flex-1 [&_[data-slot=input]]:h-auto"
                 />
                 {isSearchingThreads ? (
                   <Button
                     type="button"
                     size="icon-micro"
-                    variant="ghost"
-                    className="shrink-0 text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+                    variant="sidebar-control"
+                    className="shrink-0"
                     aria-label="Clear thread search"
                     onClick={() => {
                       clearThreadSearch();
@@ -3539,7 +3543,8 @@ export default function Sidebar() {
                       <SidebarMenuButton
                         size="icon"
                         type="button"
-                        className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        className="relative"
+                        focusRing="sidebar"
                         onClick={handleNewThreadClick}
                         disabled={projects.length === 0}
                         aria-label="New thread"
@@ -3598,7 +3603,9 @@ export default function Sidebar() {
                     render={
                       <SidebarMenuButton
                         aria-label="Filter threads by project"
-                        className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        className="min-w-0 flex-1"
+                        focusRing="sidebar"
+                        inset="row"
                       />
                     }
                   >
@@ -3633,7 +3640,8 @@ export default function Sidebar() {
                         />
                         <ComboboxInput
                           aria-label="Search projects"
-                          className="[&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5"
+                          className="[&_input]:h-6.5"
+                          sidebarSearch
                           placeholder="Search projects..."
                           showTrigger={false}
                           size="sm"
@@ -3653,12 +3661,7 @@ export default function Sidebar() {
                       {(item: (typeof projectScopeItems)[number]) => {
                         const project = projectGroupByScopeKey.get(item.value) ?? null;
                         return (
-                          <ComboboxItem
-                            key={item.value}
-                            hideIndicator
-                            value={item}
-                            className="h-8 min-h-8 py-0 font-medium"
-                          >
+                          <ComboboxItem key={item.value} hideIndicator value={item} sidebar>
                             {project ? (
                               <ProjectFavicon
                                 environmentId={project.environmentId}
@@ -3675,10 +3678,10 @@ export default function Sidebar() {
                             {project ? (
                               <Button
                                 size="icon-xs"
-                                variant="ghost-muted"
+                                variant="sidebar-icon"
                                 aria-label={`Project settings for ${project.displayName}`}
                                 title={`Project settings for ${project.displayName}`}
-                                className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
+                                className="ml-auto size-6"
                                 onPointerDown={(event) => event.stopPropagation()}
                                 onClick={(event) => {
                                   void handleProjectSettings(event, project);
@@ -3698,7 +3701,8 @@ export default function Sidebar() {
                     render={
                       <SidebarMenuButton
                         size="icon"
-                        className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        className="relative shrink-0"
+                        focusRing="sidebar"
                         onClick={openAddProjectCommandPalette}
                         type="button"
                         aria-label="New project"
@@ -3718,7 +3722,7 @@ export default function Sidebar() {
           </SidebarGroup>
         }
       >
-        <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+        <SidebarGroup inset="content">
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider

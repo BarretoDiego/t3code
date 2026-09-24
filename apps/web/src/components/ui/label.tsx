@@ -5,10 +5,16 @@ import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "~/lib/utils";
 
-function Label({ className, render, ...props }: useRender.ComponentProps<"label">) {
+function Label({
+  className,
+  stacked = false,
+  render,
+  ...props
+}: useRender.ComponentProps<"label"> & { stacked?: boolean }) {
   const defaultProps = {
     className: cn(
       "inline-flex items-center gap-2 text-base/4.5 sm:text-sm/4 font-medium text-foreground",
+      stacked && "flex-col items-stretch gap-1.5",
       className,
     ),
     "data-slot": "label",

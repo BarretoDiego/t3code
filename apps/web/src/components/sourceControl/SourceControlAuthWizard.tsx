@@ -89,7 +89,7 @@ export function SourceControlAuthWizard({
               Connect the account used to browse repositories and publish your reviews.
             </DialogDescription>
           </DialogHeader>
-          <DialogPanel className="space-y-5">
+          <DialogPanel layout="spacious">
             <ol className="flex items-center gap-2 text-xs text-muted-foreground">
               {["Provider", "Authenticate", "Connected"].map((label, index) => (
                 <li

@@ -621,9 +621,9 @@ export function AiReviewPanel({
                         )}
                         {finding.filePath && (
                           <Button
-                            size="xs"
+                            size="bare"
                             variant="link"
-                            className="h-auto max-w-full whitespace-normal break-all p-0"
+                            className="max-w-full whitespace-normal break-all"
                             onClick={() => onFinding?.(finding.filePath!, finding.line, finding)}
                           >
                             {finding.filePath}

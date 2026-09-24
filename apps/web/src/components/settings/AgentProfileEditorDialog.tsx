@@ -263,7 +263,7 @@ export function AgentProfileEditorDialog(props: {
                       #
                     </span>
                     <Input
-                      className="[&_[data-slot=input]]:pl-7"
+                      startAdornment
                       value={draft.slug}
                       onChange={(event) =>
                         update({
@@ -452,7 +452,7 @@ export function AgentProfileEditorDialog(props: {
             ) : null}
           </form>
         </DialogPanel>
-        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <DialogFooter className="shrink-0" safeArea>
           <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
           <Button type="submit" form={formId} disabled={issues.length > 0}>
             Save

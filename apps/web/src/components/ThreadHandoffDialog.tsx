@@ -357,7 +357,7 @@ export function ThreadHandoffDialog({
             Move this thread and its working changes, choosing how the provider continues.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="grid gap-4 text-sm">
+        <DialogPanel layout="stacked-small">
           <div className="rounded-md border bg-muted/30 p-3">
             <p className="font-medium">{thread?.title ?? "Development thread"}</p>
             <p className="mt-1 text-xs text-muted-foreground">

@@ -60,8 +60,8 @@ function RepositoryTree({
         <Button
           key={repository.nameWithOwner}
           variant="ghost"
-          size="sm"
-          className="h-auto w-full justify-start py-2 text-left"
+          size="list"
+          className="w-full justify-start text-left"
           onClick={() => onSelect(repository)}
         >
           <span className="break-all">{repository.nameWithOwner}</span>

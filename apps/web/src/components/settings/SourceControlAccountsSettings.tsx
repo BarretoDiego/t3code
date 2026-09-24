@@ -149,7 +149,7 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                 }
               }}
             >
-              <DialogPanel className="space-y-4">
+              <DialogPanel>
                 <label className="grid gap-2 text-sm">
                   Name
                   <Input

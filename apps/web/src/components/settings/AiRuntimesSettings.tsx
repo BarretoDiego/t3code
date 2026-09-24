@@ -276,7 +276,7 @@ function RuntimeEditor({
             )}
           </form>
         </DialogPanel>
-        <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <DialogFooter className="shrink-0" safeArea>
           <Button variant="ghost" disabled={pending} onClick={onClose}>
             Cancel
           </Button>
@@ -862,14 +862,14 @@ export function AiRuntimesSettingsPanel() {
             }}
           >
             <DialogPopup>
-              <DialogHeader className="shrink-0 pr-12">
+              <DialogHeader className="shrink-0" reserveCloseButton>
                 <DialogTitle className="break-words">Use {remote.name} on another node</DialogTitle>
                 <DialogDescription className="break-words">
                   The consuming environment will test the explicit network address. Its API key
                   stays in that environment's secret store.
                 </DialogDescription>
               </DialogHeader>
-              <DialogPanel className="space-y-3">
+              <DialogPanel layout="compact">
                 <RuntimeSelect
                   label="Consuming node"
                   value={targetId}
@@ -895,7 +895,7 @@ export function AiRuntimesSettingsPanel() {
                   </p>
                 )}
               </DialogPanel>
-              <DialogFooter className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <DialogFooter className="shrink-0" safeArea>
                 <Button variant="ghost" onClick={() => setRemote(null)}>
                   Cancel
                 </Button>

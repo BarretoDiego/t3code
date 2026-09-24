@@ -78,7 +78,7 @@ export function SourceControlReviewSettingsSection() {
           Review language
           <DraftInput
             aria-label="Review language"
-            className="text-sm font-normal text-foreground"
+            textSize="sm"
             maxLength={100}
             placeholder={DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE}
             value={review.language}

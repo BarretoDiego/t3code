@@ -43,11 +43,11 @@ const PRESETS: ReadonlyArray<{ readonly label: string; readonly minutes: number 
  * custom date/time resolves on submit. Resolves null on dismiss, and
  * `{ sendAt: null }` when the user removes an existing schedule.
  */
-export function requestScheduleSend(initialSendAt: string | null = null): Promise<ScheduleSendChoice | null> {
+export function requestScheduleSend(
+  initialSendAt: string | null = null,
+): Promise<ScheduleSendChoice | null> {
   useRequest.getState().request?.resolve(null);
-  return new Promise((resolve) =>
-    useRequest.setState({ request: { resolve, initialSendAt } }),
-  );
+  return new Promise((resolve) => useRequest.setState({ request: { resolve, initialSendAt } }));
 }
 
 function finish(choice: ScheduleSendChoice | null) {
@@ -102,14 +102,15 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
               Cancel still drops it.
             </DialogDescription>
           </DialogHeader>
-          <DialogPanel className="flex flex-col gap-4 text-base sm:text-sm">
+          <DialogPanel layout="stacked">
             <div className="flex flex-col gap-1" role="group" aria-label="Quick times">
               {PRESETS.map((preset) => (
                 <Button
                   key={preset.minutes}
                   type="button"
                   variant="ghost"
-                  className="justify-start font-normal"
+                  className="justify-start"
+                  weight="normal"
                   onClick={() =>
                     finish({ sendAt: new Date(Date.now() + preset.minutes * 60_000).toISOString() })
                   }
@@ -127,7 +128,8 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
                       <Button
                         id={`${id}-date`}
                         variant="outline"
-                        className="w-full justify-between font-normal"
+                        className="w-full justify-between"
+                        weight="normal"
                       />
                     }
                   >
@@ -154,10 +156,7 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
                   </PopoverPopup>
                 </Popover>
               </div>
-              <Label
-                className="flex min-w-0 flex-col items-stretch gap-1.5"
-                htmlFor={`${id}-time`}
-              >
+              <Label className="flex min-w-0 flex-col items-stretch" stacked htmlFor={`${id}-time`}>
                 Time
                 <Input
                   nativeInput

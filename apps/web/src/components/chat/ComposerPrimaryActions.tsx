@@ -274,7 +274,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         type="button"
         size="icon-sm"
         variant="ghost-muted"
-        className="rounded-full"
+        shape="pill"
         {...pointerFocusProps}
         onClick={onScheduleSend}
         disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}

@@ -72,7 +72,7 @@ export function RepositoryMappingDialog({
               }
             }}
           >
-            <DialogPanel className="space-y-4">
+            <DialogPanel>
               <HubSelect
                 label="Local project"
                 value={projectId}

@@ -162,11 +162,11 @@ export function AgentProfilesSettingsPanel() {
                 <div className="grid min-w-0 flex-1 basis-40 gap-0.5">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="truncate font-medium text-sm">{profile.name}</span>
-                    <Badge variant="outline" className="max-w-full truncate font-normal">
+                    <Badge className="max-w-full" truncate variant="outline" weight="normal">
                       #{profile.slug}
                     </Badge>
                     {profile.enabled ? null : (
-                      <Badge variant="secondary" className="shrink-0 font-normal">
+                      <Badge className="shrink-0" variant="secondary" weight="normal">
                         Disabled
                       </Badge>
                     )}

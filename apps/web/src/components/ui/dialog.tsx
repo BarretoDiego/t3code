@@ -106,11 +106,16 @@ function DialogPopup({
   );
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({
+  className,
+  reserveCloseButton = false,
+  ...props
+}: React.ComponentProps<"div"> & { reserveCloseButton?: boolean }) {
   return (
     <div
       className={cn(
         "flex flex-col gap-2 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pb-3 max-sm:pb-4",
+        reserveCloseButton && "pr-12",
         className,
       )}
       data-slot="dialog-header"
@@ -122,9 +127,11 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 function DialogFooter({
   className,
   variant = "default",
+  safeArea = false,
   ...props
 }: React.ComponentProps<"div"> & {
   variant?: "default" | "bare";
+  safeArea?: boolean;
 }) {
   return (
     <div
@@ -132,6 +139,7 @@ function DialogFooter({
         "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]",
         variant === "default" && "border-t bg-muted/72 py-4",
         variant === "bare" && "py-4",
+        safeArea && "pb-[max(1rem,env(safe-area-inset-bottom))]",
         className,
       )}
       data-slot="dialog-footer"
@@ -163,13 +171,22 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
 function DialogPanel({
   className,
   scrollFade = true,
+  layout = "default",
   ...props
-}: React.ComponentProps<"div"> & { scrollFade?: boolean }) {
+}: React.ComponentProps<"div"> & {
+  scrollFade?: boolean;
+  layout?: "default" | "compact" | "spacious" | "stacked" | "stacked-small";
+}) {
   return (
     <ScrollArea scrollFade={scrollFade}>
       <div
         className={cn(
-          "space-y-4 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-header])]:pt-1 in-[[data-slot=dialog-popup]:has([data-slot=dialog-footer]:not(.border-t))]:pb-1",
+          "p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-header])]:pt-1 in-[[data-slot=dialog-popup]:has([data-slot=dialog-footer]:not(.border-t))]:pb-1",
+          layout === "default" && "space-y-4",
+          layout === "compact" && "space-y-3",
+          layout === "spacious" && "space-y-5",
+          layout === "stacked" && "flex flex-col gap-4 text-base sm:text-sm",
+          layout === "stacked-small" && "grid gap-4 text-sm",
           className,
         )}
         data-slot="dialog-panel"

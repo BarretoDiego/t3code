@@ -89,7 +89,7 @@ export function LocalCloneActions({
               }
             }}
           >
-            <DialogPanel className="space-y-4">
+            <DialogPanel>
               <HubSelect
                 label="Git action"
                 value={action}

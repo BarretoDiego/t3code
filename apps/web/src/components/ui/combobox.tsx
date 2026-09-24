@@ -35,6 +35,7 @@ function ComboboxInput({
   startAddon,
   size,
   unstyled = false,
+  sidebarSearch = false,
   ...props
 }: Omit<ComboboxPrimitive.Input.Props, "size"> & {
   showTrigger?: boolean;
@@ -42,6 +43,7 @@ function ComboboxInput({
   startAddon?: React.ReactNode;
   size?: "sm" | "default" | "lg" | number;
   unstyled?: boolean;
+  sidebarSearch?: boolean;
   ref?: React.Ref<HTMLInputElement>;
 }) {
   const sizeValue = (size ?? "default") as "sm" | "default" | "lg" | number;
@@ -72,6 +74,8 @@ function ComboboxInput({
             className={cn(
               "has-disabled:opacity-100",
               unstyled && "rounded-none bg-transparent text-sm",
+              sidebarSearch &&
+                "[&_[data-slot=input]]:ps-5 [&_[data-slot=input]]:font-sans [&_[data-slot=input]]:leading-6.5",
             )}
             nativeInput
             size={sizeValue}
@@ -187,14 +191,17 @@ function ComboboxItem({
   className,
   children,
   hideIndicator: _hideIndicator = false,
+  sidebar = false,
   ...props
 }: ComboboxPrimitive.Item.Props & {
   hideIndicator?: boolean;
+  sidebar?: boolean;
 }) {
   return (
     <ComboboxPrimitive.Item
       className={cn(
         "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base outline-none not-data-disabled:hover:bg-accent data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-selected:bg-foreground/[0.08] data-selected:text-foreground data-highlighted:bg-accent data-highlighted:text-accent-foreground [&[data-highlighted][data-selected]]:bg-accent [&[data-highlighted][data-selected]]:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        sidebar && "h-8 min-h-8 py-0 font-medium",
         className,
       )}
       data-slot="combobox-item"

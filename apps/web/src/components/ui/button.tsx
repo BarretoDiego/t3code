@@ -35,6 +35,8 @@ const buttonVariants = cva(
         sm: "h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] sm:h-7",
         "sm-multiline":
           "min-h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)] whitespace-normal sm:min-h-7",
+        bare: "h-auto p-0",
+        list: "h-auto py-2",
         xl: "h-11 px-[calc(--spacing(4)-1px)] text-lg sm:h-10 sm:text-base [&_svg:not([class*='size-'])]:size-5 sm:[&_svg:not([class*='size-'])]:size-4.5",
         xs: "h-7 gap-1 px-[calc(--spacing(2)-1px)] text-sm sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
       },
@@ -49,6 +51,10 @@ const buttonVariants = cva(
           "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent",
         "ghost-muted":
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
+        "sidebar-control":
+          "[--control-icon-color:currentColor] border-transparent text-sidebar-muted-foreground [:hover,[data-pressed]]:bg-sidebar-control-surface [:hover,[data-pressed]]:text-sidebar-foreground",
+        "sidebar-icon":
+          "[--control-icon-color:currentColor] border-transparent text-icon-muted [:hover,[data-pressed]]:text-foreground focus-visible:bg-accent focus-visible:text-foreground",
         "ghost-destructive":
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-destructive",
         glass:
@@ -76,15 +82,32 @@ type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>["size"]>;
 interface ButtonProps extends useRender.ComponentProps<"button"> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  weight?: "medium" | "normal";
+  shape?: "default" | "pill";
+  visibility?: "visible" | "hidden";
 }
 
-function Button({ className, variant, size, render, ...props }: ButtonProps) {
+function Button({
+  className,
+  variant,
+  size,
+  weight = "medium",
+  shape = "default",
+  visibility = "visible",
+  render,
+  ...props
+}: ButtonProps) {
   const typeValue: React.ButtonHTMLAttributes<HTMLButtonElement>["type"] = render
     ? undefined
     : "button";
 
   const defaultProps = {
-    className: cn(buttonVariants({ className, size, variant })),
+    className: cn(
+      buttonVariants({ className, size, variant }),
+      weight === "normal" && "font-normal",
+      shape === "pill" && "rounded-full",
+      visibility === "hidden" && "pointer-events-none opacity-0",
+    ),
     "data-slot": "button",
     type: typeValue,
   };

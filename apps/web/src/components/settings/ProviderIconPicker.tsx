@@ -81,12 +81,7 @@ export function ProviderIconPicker(props: {
               </button>
             }
           />
-          <PopoverPopup
-            side="bottom"
-            align="start"
-            sideOffset={6}
-            className="overflow-hidden rounded-md p-0 [--viewport-inline-padding:0px] [&_[data-slot=popover-viewport]]:p-0"
-          >
+          <PopoverPopup side="bottom" align="start" sideOffset={6} corner="md" padding="none">
             <ProviderIconPickerPanel value={props.value} onCommit={props.onCommit} />
           </PopoverPopup>
         </Popover>
@@ -96,11 +91,9 @@ export function ProviderIconPicker(props: {
         <Button
           type="button"
           size="icon"
-          variant="ghost"
-          className={cn(
-            "size-7 shrink-0 text-muted-foreground transition-opacity",
-            selected ? "opacity-100" : "pointer-events-none opacity-0",
-          )}
+          className="size-7 shrink-0"
+          variant="ghost-muted"
+          visibility={selected ? "visible" : "hidden"}
           onClick={() => props.onCommit(undefined)}
           aria-label={`Clear custom icon for ${props.displayName}`}
           aria-hidden={!selected}
