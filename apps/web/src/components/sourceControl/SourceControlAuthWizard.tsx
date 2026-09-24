@@ -281,7 +281,7 @@ export function SourceControlAuthWizard({
             )}
             {step === 2 && (
               <div className="space-y-4 py-4 text-center">
-                <CheckCircle2Icon className="mx-auto size-10 text-emerald-600" />
+                <CheckCircle2Icon className="mx-auto size-10 text-success" />
                 <div>
                   <h3 className="font-semibold">{identity}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">

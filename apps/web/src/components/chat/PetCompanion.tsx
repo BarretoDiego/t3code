@@ -146,7 +146,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
       aria-label="Pixel pet companion"
     >
       {expanded ? (
-        <div className="relative w-full border-2 border-foreground bg-popover p-3 font-mono shadow-[5px_5px_0_var(--foreground)]">
+        <div className="relative w-full border-2 border-foreground bg-popover p-3 font-mono shadow-pet-message">
           <span className="absolute -bottom-2 left-7 size-3 rotate-45 border-b-2 border-r-2 border-foreground bg-popover" />
           <div className="mb-3 flex items-center justify-between gap-3 text-xs uppercase tracking-wider text-muted-foreground">
             <span>
@@ -181,7 +181,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
       ) : needsAttention ? (
         <button
           type="button"
-          className="relative max-w-full border-2 border-foreground bg-popover px-3 py-2 text-left font-mono text-xs leading-5 shadow-[4px_4px_0_var(--foreground)]"
+          className="relative max-w-full border-2 border-foreground bg-popover px-3 py-2 text-left font-mono text-xs leading-5 shadow-pet-question"
           onClick={() => setExpanded(true)}
         >
           <span className="absolute -bottom-2 right-7 size-3 rotate-45 border-b-2 border-r-2 border-foreground bg-popover" />
@@ -192,7 +192,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
         type="button"
         className={cn(
           "group relative size-[88px] touch-none select-none rounded-none bg-transparent p-0",
-          props.isWorking && "animate-[pet-pixel-bob_1.2s_steps(2,end)_infinite]",
+          props.isWorking && "animate-pet-pixel-bob",
         )}
         onPointerDown={(event) => {
           dragStart.current = { x: event.clientX, y: event.clientY };
@@ -212,7 +212,7 @@ export const PetCompanion = memo(function PetCompanion(props: {
           className="size-full object-contain [image-rendering:pixelated]"
         />
         {needsAttention ? (
-          <span className="absolute right-1 top-1 flex size-6 items-center justify-center border-2 border-foreground bg-primary text-primary-foreground shadow-[2px_2px_0_var(--foreground)]">
+          <span className="absolute right-1 top-1 flex size-6 items-center justify-center border-2 border-foreground bg-primary text-primary-foreground shadow-pet-notification">
             <BellRingIcon className="size-3.5" aria-hidden />
           </span>
         ) : null}

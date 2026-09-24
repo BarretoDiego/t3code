@@ -261,14 +261,14 @@ function LocalRepositoryChanges({
               >
                 <span className="truncate">{file.path}</span>
                 <span className="ml-auto shrink-0 tabular-nums">
-                  <span className="text-emerald-600 dark:text-emerald-400">+{file.insertions}</span>{" "}
-                  <span className="text-red-500">−{file.deletions}</span>
+                  <span className="text-success ">+{file.insertions}</span>{" "}
+                  <span className="text-error">−{file.deletions}</span>
                 </span>
               </button>
             </div>
           ))}
         </div>
-        <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">
+        <p className="border-t px-4 py-2 text-2xs text-muted-foreground">
           Checked files are staged when you confirm the commit.
         </p>
       </aside>

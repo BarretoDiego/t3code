@@ -38,10 +38,10 @@ export function ReviewActivityTimeline({ run }: { run: AiReviewRun }) {
                 )}
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.status === "completed" ? (
-                  <CheckIcon className="size-3.5 text-emerald-600" />
+                  <CheckIcon className="size-3.5 text-success" />
                 ) : (
                   <CircleIcon
-                    className={`size-2 ${active ? "fill-amber-500 text-amber-500" : "text-muted-foreground"}`}
+                    className={`size-2 ${active ? "fill-warning text-warning" : "text-muted-foreground"}`}
                   />
                 )}
                 <span className="text-muted-foreground">
@@ -71,7 +71,7 @@ export function ReviewActivityTimeline({ run }: { run: AiReviewRun }) {
                   </p>
                 )}
                 {active && (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-2xs text-muted-foreground">
                     Draft findings become selectable after validation.
                   </p>
                 )}

@@ -16,9 +16,9 @@ const menuTriggerVariants = cva("inline-flex cursor-pointer items-center outline
     variant: {
       default: "",
       "sidebar-layout":
-        "size-8 justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        "size-8 justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-border",
       toolbar:
-        "h-6 min-w-0 gap-1 rounded-md px-1.5 text-[11px] font-medium text-icon-muted transition-colors hover:bg-accent hover:text-foreground data-[active=true]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0",
+        "h-6 min-w-0 gap-1 rounded-md px-1.5 text-2xs font-medium text-icon-muted transition-colors hover:bg-accent hover:text-foreground data-[active=true]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0",
     },
   },
 });

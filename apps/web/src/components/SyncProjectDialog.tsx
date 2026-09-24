@@ -688,7 +688,7 @@ function OriginStep(props: {
           </SelectPopup>
         </Select>
         {props.eligibleEnvironments.length === 0 ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             No connected environment supports project sync yet.
           </span>
         ) : null}
@@ -744,11 +744,11 @@ function DestinationStep(props: {
           </SelectPopup>
         </Select>
         {props.eligibleEnvironments.length === 0 ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             No connected environment supports project sync yet.
           </span>
         ) : (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-2xs text-muted-foreground">
             Only environments that are connected and support project sync are listed.
           </span>
         )}
@@ -782,11 +782,11 @@ function ModeStep(props: {
             "rounded-lg border px-3 py-3 text-left ring-1 ring-black/5 transition-colors dark:ring-white/5",
             props.mode === "send"
               ? "border-primary bg-primary/8 dark:bg-primary/15"
-              : "border-transparent bg-card hover:bg-zinc-50 dark:bg-white/3 dark:hover:bg-white/5",
+              : "border-transparent bg-card hover:bg-zinc-25 dark:bg-white/3 dark:hover:bg-white/5",
           )}
         >
           <div className="text-sm font-medium text-foreground">Send as a new project</div>
-          <div className="text-[13px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             Copies the source into a brand-new project at a folder you choose.
           </div>
         </button>
@@ -798,11 +798,11 @@ function ModeStep(props: {
             "rounded-lg border px-3 py-3 text-left ring-1 ring-black/5 transition-colors dark:ring-white/5",
             props.mode === "sync"
               ? "border-primary bg-primary/8 dark:bg-primary/15"
-              : "border-transparent bg-card hover:bg-zinc-50 dark:bg-white/3 dark:hover:bg-white/5",
+              : "border-transparent bg-card hover:bg-zinc-25 dark:bg-white/3 dark:hover:bg-white/5",
           )}
         >
           <div className="text-sm font-medium text-foreground">Sync an existing project</div>
-          <div className="text-[13px] text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             Mirrors the source onto an existing project — this can delete files on the destination.
           </div>
         </button>
@@ -824,7 +824,7 @@ function ModeStep(props: {
             />
             <label
               htmlFor="sync-project-set-default-folder"
-              className="text-[13px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
             >
               Set as default projects folder for this environment
             </label>
@@ -855,7 +855,7 @@ function ModeStep(props: {
             </SelectPopup>
           </Select>
           {props.destProjectCandidates.length === 0 ? (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-2xs text-muted-foreground">
               No other projects exist on this environment yet — use "Send as a new project" instead.
             </span>
           ) : null}
@@ -868,7 +868,7 @@ function ModeStep(props: {
           onCheckedChange={(checked) => props.onIncludeGitChange(checked === true)}
           id="sync-project-include-git"
         />
-        <label htmlFor="sync-project-include-git" className="text-[13px] text-muted-foreground">
+        <label htmlFor="sync-project-include-git" className="text-xs text-muted-foreground">
           Include <code className="font-mono">.git</code> — copies version-control history along
           with the files.
         </label>
@@ -949,10 +949,7 @@ function ReviewStep(props: {
                     onCheckedChange={(checked) => props.onDeleteConfirmedChange(checked === true)}
                     id="sync-project-confirm-delete"
                   />
-                  <label
-                    htmlFor="sync-project-confirm-delete"
-                    className="text-[13px] text-foreground"
-                  >
+                  <label htmlFor="sync-project-confirm-delete" className="text-xs text-foreground">
                     I understand these files will be deleted.
                   </label>
                 </div>
@@ -1019,7 +1016,7 @@ function ProgressStep({ runState }: { readonly runState: SyncRunState }) {
         />
       </div>
       {progress && progress.totalFiles > 0 ? (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {progress.transferredFiles} of {progress.totalFiles} files
         </p>
       ) : null}

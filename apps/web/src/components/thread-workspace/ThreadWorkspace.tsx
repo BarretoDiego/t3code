@@ -165,11 +165,11 @@ function LayoutPreview({ columns, rows }: { readonly columns: number; readonly r
   return (
     <span
       aria-hidden
-      className="grid size-4 shrink-0 gap-px rounded-[3px] border border-current/45 p-0.5"
+      className="grid size-4 shrink-0 gap-px rounded-xs border border-current/45 p-0.5"
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
     >
       {Array.from({ length: columns * rows }, (_, index) => (
-        <span key={index} className="rounded-[1px] bg-current/55" />
+        <span key={index} className="rounded-xs bg-current/55" />
       ))}
     </span>
   );
@@ -565,7 +565,7 @@ function ThreadPaneTabs(props: {
         "flex h-8 min-h-8 items-center border-b border-border/75 bg-background px-1.5",
         isElectron && props.windowDragRegion && "drag-region",
         props.reserveCollapsedSidebarInset && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        props.reserveNativeControlsInset && "wco:pr-[var(--workspace-native-controls-inset)]",
+        props.reserveNativeControlsInset && "wco:pr-(--workspace-native-controls-inset)",
       )}
     >
       <div

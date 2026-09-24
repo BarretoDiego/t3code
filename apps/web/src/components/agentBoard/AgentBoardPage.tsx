@@ -76,9 +76,9 @@ const COLUMN_DEFINITIONS = [
     key: "needsYou",
     label: "Needs You",
     icon: HandIcon,
-    tone: "text-amber-600 dark:text-amber-300",
+    tone: "text-warning ",
   },
-  { key: "working", label: "Working", icon: PlayIcon, tone: "text-sky-600 dark:text-sky-300" },
+  { key: "working", label: "Working", icon: PlayIcon, tone: "text-info dark:text-sky-300" },
   {
     key: "review",
     label: "Review",
@@ -89,7 +89,7 @@ const COLUMN_DEFINITIONS = [
     key: "settled",
     label: "Settled",
     icon: CheckCircle2Icon,
-    tone: "text-emerald-600 dark:text-emerald-300",
+    tone: "text-success dark:text-emerald-300",
   },
   { key: "issue", label: "Issue", icon: OctagonXIcon, tone: "text-rose-600 dark:text-rose-300" },
 ] as const;
@@ -346,7 +346,7 @@ export function AgentBoardPage() {
             </div>
 
             {model.staleFilterCount > 0 ? (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-xs text-warning ">
                 <AlertCircleIcon className="size-4" />
                 {model.staleFilterCount} unavailable filter{" "}
                 {model.staleFilterCount === 1 ? "was" : "were"} ignored.
@@ -543,7 +543,7 @@ function BoardCard(props: {
         >
           {card.threadTitle}
         </Link>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-3xs font-semibold uppercase tracking-wide text-muted-foreground">
           {STATE_LABELS[card.runtime.kind]}
         </span>
         <CardActions card={card} sources={props.sources} actions={props.actions} />
@@ -554,7 +554,7 @@ function BoardCard(props: {
         </p>
       ) : null}
       {card.planProgress !== null ? (
-        <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+        <p className="mt-1 text-2xs tabular-nums text-muted-foreground">
           Step {card.planProgress.completedSteps + 1} of {card.planProgress.totalSteps}
         </p>
       ) : null}
@@ -590,7 +590,7 @@ function BoardCard(props: {
           {card.worktreePath === null ? null : (
             <Tooltip>
               <TooltipTrigger
-                render={<span className="rounded bg-muted px-1 text-[10px] uppercase" />}
+                render={<span className="rounded bg-muted px-1 text-3xs uppercase" />}
               >
                 worktree
               </TooltipTrigger>
@@ -599,7 +599,7 @@ function BoardCard(props: {
           )}
         </CardMeta>
       )}
-      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+      <div className="mt-2 flex items-center justify-between gap-2 text-3xs text-muted-foreground">
         <ConnectivityBadge connectivity={card.environment.connectivity} />
         {elapsed === null ? null : (
           <span className="flex items-center gap-1 tabular-nums">
@@ -614,7 +614,7 @@ function BoardCard(props: {
 
 function CardMeta({ icon, children }: { readonly icon: ReactNode; readonly children: ReactNode }) {
   return (
-    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground [&>svg]:size-3 [&>svg]:shrink-0">
+    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground [&>svg]:size-3 [&>svg]:shrink-0">
       {icon}
       {children}
     </div>
@@ -625,7 +625,7 @@ function ConnectivityBadge({ connectivity }: { readonly connectivity: BoardConne
   if (connectivity === "connected")
     return (
       <span className="flex items-center gap-1">
-        <CircleDotIcon className="size-3 text-emerald-500" />
+        <CircleDotIcon className="size-3 text-success" />
         Connected
       </span>
     );
@@ -810,7 +810,7 @@ function CardActions(props: {
         </MenuPopup>
       </Menu>
       {error === null ? null : (
-        <p className="mt-1 max-w-52 text-[10px] text-destructive-foreground" role="alert">
+        <p className="mt-1 max-w-52 text-3xs text-destructive-foreground" role="alert">
           {error}
         </p>
       )}

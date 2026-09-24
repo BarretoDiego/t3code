@@ -139,7 +139,7 @@ export function LocalRepositoryCatalog({
                           <Tooltip>
                             <TooltipTrigger
                               render={
-                                <span className="mt-1 block truncate font-mono text-[11px] text-muted-foreground" />
+                                <span className="mt-1 block truncate font-mono text-2xs text-muted-foreground" />
                               }
                             >
                               {project.workspaceRoot}

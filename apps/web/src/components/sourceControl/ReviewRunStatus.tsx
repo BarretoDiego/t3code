@@ -21,7 +21,7 @@ export function ReviewRunStatus({ run }: { run: AiReviewRun }) {
         {running ? ` · Last update ${quietSeconds}s ago` : ""}
       </p>
       {running && quietSeconds >= 60 && (
-        <p role="status" className="text-amber-600 dark:text-amber-400">
+        <p role="status" className="text-warning ">
           No updates for over a minute. The provider may be waiting. You can cancel and retry;
           nothing has been published.
         </p>

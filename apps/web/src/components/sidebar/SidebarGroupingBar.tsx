@@ -80,7 +80,7 @@ const GROUPING_AXES: ReadonlyArray<SidebarThreadGroupingAxis> = [
 // Group labels are small caps so they can never be mistaken for a choice;
 // choices keep the menu's normal item size and show a check when selected.
 const MENU_LABEL_CLASS =
-  "px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70";
+  "px-2 pb-1 pt-1.5 text-3xs font-semibold uppercase tracking-wider text-muted-foreground/70";
 
 /** Radio item body with a trailing check that only the selected option shows. */
 function Choice(props: { children: string }) {
@@ -185,7 +185,7 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
   return (
     <div
       data-testid="sidebar-grouping-bar"
-      className="flex items-center gap-0.5 ps-[calc(var(--sidebar-row-content-inset)-1px)] pe-1"
+      className="flex items-center gap-0.5 ps-(--sidebar-grouping-inset) pe-1"
     >
       <Menu>
         <Tooltip>

@@ -833,7 +833,7 @@ export function AiRuntimesSettingsPanel() {
       <div className="space-y-8">
         <SettingsSearchTarget id="ai-runtimes" className="px-3 sm:px-4">
           <h1 className="text-sm font-medium">AI Runtimes</h1>
-          <p className="mt-1 text-[13px] leading-[1.45] text-muted-foreground/80">
+          <p className="mt-1 text-xs leading-normal text-muted-foreground/80">
             Discover model endpoints on your environments and connect them to agent providers.
           </p>
         </SettingsSearchTarget>

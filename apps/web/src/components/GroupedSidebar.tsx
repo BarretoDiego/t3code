@@ -270,7 +270,7 @@ function JumpHintBadge(props: { label: string }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute right-1.5 top-1/2 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-[10px] font-medium tracking-tight text-foreground shadow-sm"
+      className="pointer-events-none absolute right-1.5 top-1/2 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-3xs font-medium tracking-tight text-foreground shadow-sm"
     >
       {props.label}
     </span>
@@ -340,7 +340,7 @@ function SidebarThreadTooltip({
       padding="none"
       className="max-w-80 text-left whitespace-normal"
     >
-      <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
+      <div className="flex min-w-0 max-w-80 flex-col gap-2 p-(--floating-content-inset)">
         <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
           {thread.title}
         </div>
@@ -410,7 +410,7 @@ function SidebarThreadTooltip({
             </div>
           ) : null}
           {thread.session?.lastError ? (
-            <div className="flex min-w-0 items-center gap-2 text-red-600 dark:text-red-400">
+            <div className="flex min-w-0 items-center gap-2 text-error ">
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
               <div className="min-w-0 truncate">Error occurred</div>
             </div>
@@ -475,7 +475,7 @@ function SnoozePopoverButton(props: {
               className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground/90 hover:bg-accent hover:text-foreground"
             >
               <span className="flex-1">{preset.label}</span>
-              <span className="font-mono text-[10px] text-muted-foreground/60 tabular-nums">
+              <span className="font-mono text-3xs text-muted-foreground/60 tabular-nums">
                 {preset.whenLabel}
               </span>
             </button>
@@ -588,19 +588,14 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         data-testid="sidebar-draft-row"
         className={cn(
           "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none",
-          props.isActive
-            ? "bg-sidebar-row-active"
-            : "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]",
+          props.isActive ? "bg-sidebar-row-active" : "bg-warning/4 hover:bg-warning/8",
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
       >
-        <div className="relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]">
+        <div className="relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
-            <SquarePenIcon
-              aria-hidden
-              className="size-3 shrink-0 text-amber-600 dark:text-amber-300/80"
-            />
+            <SquarePenIcon aria-hidden className="size-3 shrink-0 text-warning " />
             <ProjectFavicon
               environmentId={session.environmentId}
               cwd={props.projectCwd ?? ""}
@@ -769,7 +764,7 @@ const ATTENTION_DOT_CLASS: Record<SidebarAttentionClass, string> = {
   approval: "bg-amber-600 dark:bg-amber-300",
   input: "bg-indigo-600 dark:bg-indigo-300",
   failed: "bg-red-600 dark:bg-red-300",
-  unread: "bg-emerald-600 dark:bg-emerald-400",
+  unread: "bg-success ",
   working: "bg-sky-600 dark:bg-sky-400",
 };
 
@@ -791,7 +786,7 @@ const SidebarGroupAttentionChips = memo(function SidebarGroupAttentionChips(prop
   }
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground/70"
+      className="inline-flex shrink-0 items-center gap-1.5 text-2xs tabular-nums text-muted-foreground/70"
       aria-label={active
         .map((kind) => `${props.attention[kind]} ${ATTENTION_LABEL[kind]}`)
         .join(", ")}
@@ -979,7 +974,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           // Working is a background state, so it rests at the dim end of what
           // the old pulse cycled through; only the thread you have open gets
           // the label at full strength.
-          className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
+          className: cn("text-info ", !props.isActive && "opacity-75"),
         }
       : status === "monitoring"
         ? {
@@ -987,13 +982,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             // (monitoring-pill D6), so it keeps the label at full strength.
             label: "Monitoring",
             icon: null,
-            className: "text-sky-600 dark:text-sky-400",
+            className: "text-info ",
           }
         : status === "approval"
           ? {
               label: "Approval",
               icon: null,
-              className: "text-amber-700 dark:text-amber-300",
+              className: "text-warning ",
             }
           : status === "input"
             ? {
@@ -1011,7 +1006,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 ? {
                     label: "Woke",
                     icon: "woke" as const,
-                    className: "text-amber-700 dark:text-amber-300",
+                    className: "text-warning ",
                   }
                 : isUnread
                   ? {
@@ -1256,7 +1251,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   ? "text-muted-foreground"
                   : "text-secondary-label/70",
             ),
-        isRegeneratingTitle && "opacity-[0.55]",
+        isRegeneratingTitle && "opacity-50",
       )}
     >
       {thread.title}
@@ -1386,7 +1381,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                   // Snoozed rows show when they come BACK, not when they were
                   // last touched — the return ticket is the row's whole story.
-                  <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
+                  <span className="text-xs text-info tabular-nums ">
                     {props.snoozeWakeLabelText}
                   </span>
                 ) : isWoke ? (
@@ -1399,7 +1394,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           type="button"
                           aria-label="Dismiss Woke notification"
                           onClick={handleAcknowledgeWokeClick}
-                          className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
+                          className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-warning outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring "
                         >
                           <AlarmClockIcon aria-hidden className="size-3" />
                           <span role="status">Woke</span>
@@ -1618,7 +1613,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         >
           <div
             className={cn(
-              "relative z-10 px-[var(--sidebar-row-content-inset)] py-[var(--sidebar-content-inset)]",
+              "relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
               compact === null
                 ? "h-[4.875rem]"
                 : compact.showProject
@@ -1677,7 +1672,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         showBadge={showInstanceBadge}
                         // Glyph dims, badge stays saturated; offset matches the composer trigger.
                         iconClassName="size-3.5 opacity-60"
-                        badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
+                        badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-3xs"
                       />
                     </span>
                   ) : null}
@@ -1748,10 +1743,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   {prBadge}
                   {diff ? (
                     <span className="shrink-0 font-mono">
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        +{diff.insertions}
-                      </span>{" "}
-                      <span className="text-red-600 dark:text-red-400">−{diff.deletions}</span>
+                      <span className="text-success ">+{diff.insertions}</span>{" "}
+                      <span className="text-error ">−{diff.deletions}</span>
                     </span>
                   ) : null}
                   <span
@@ -1777,7 +1770,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           showBadge={showInstanceBadge}
                           // Glyph dims, badge stays saturated; offset matches the composer trigger.
                           iconClassName="size-3.5 opacity-60"
-                          badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-[7px]"
+                          badgeClassName="right-[-0.1875rem] bottom-[-0.1875rem] h-3 min-w-3 px-0.5 text-3xs"
                         />
                       </span>
                     ) : null}
@@ -4795,10 +4788,10 @@ export default function Sidebar() {
                                 className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sidebar-muted-foreground/55 transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                               >
                                 <ArchiveIcon aria-hidden className="size-3 shrink-0" />
-                                <span className="min-w-0 truncate text-[11px] font-medium">
+                                <span className="min-w-0 truncate text-2xs font-medium">
                                   Settled
                                 </span>
-                                <span className="text-[11px] tabular-nums">
+                                <span className="text-2xs tabular-nums">
                                   {group.settledThreads.length}
                                 </span>
                                 <span className="h-px flex-1 bg-sidebar-border/40" />
@@ -4827,7 +4820,7 @@ export default function Sidebar() {
                                 <button
                                   type="button"
                                   onClick={() => showAllSectionSettled(shelfKey)}
-                                  className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[11px] text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                                  className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-2xs text-sidebar-muted-foreground/55 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                                 >
                                   <PlusIcon aria-hidden className="size-3 shrink-0" />
                                   Show {hiddenCount} more
@@ -4924,7 +4917,7 @@ export default function Sidebar() {
                                             ? "text-xs font-semibold text-sidebar-foreground/90"
                                             : isProject
                                               ? "text-xs font-medium text-sidebar-foreground/85"
-                                              : "text-[11px] font-medium text-sidebar-muted-foreground/75",
+                                              : "text-2xs font-medium text-sidebar-muted-foreground/75",
                                         )}
                                       >
                                         {group.label}
@@ -4934,7 +4927,7 @@ export default function Sidebar() {
                                       ) : null}
                                       <span
                                         className={cn(
-                                          "ml-auto rounded-full px-1.5 text-[10px] tabular-nums",
+                                          "ml-auto rounded-full px-1.5 text-3xs tabular-nums",
                                           isEnvironment
                                             ? "bg-sidebar-row-active/70 text-sidebar-muted-foreground/70"
                                             : "bg-sidebar-control-surface/65 text-sidebar-muted-foreground/55",
@@ -4996,16 +4989,16 @@ export default function Sidebar() {
                               data-testid="sidebar-snoozed-shelf-toggle"
                               className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
                             >
-                              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                              <span className="text-xs font-medium text-info ">
                                 {snoozedShelfExpanded
                                   ? "Snoozed"
                                   : `Snoozed (${snoozedThreads.length})`}
                               </span>
-                              <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+                              <span className="h-px flex-1 bg-info/20 dark:bg-info/15" />
                               <ChevronDownIcon
                                 aria-hidden
                                 className={cn(
-                                  "size-3 text-blue-600 transition-transform dark:text-blue-400",
+                                  "size-3 text-info transition-transform ",
                                   snoozedShelfExpanded && "rotate-180",
                                 )}
                               />
@@ -5089,7 +5082,7 @@ export default function Sidebar() {
                   <button
                     type="button"
                     onClick={() => openAddProjectCommandPalette()}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
                     Add project

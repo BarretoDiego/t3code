@@ -76,7 +76,7 @@ export function ProviderIconPicker(props: {
                 {selected ? (
                   <selected.Icon className="size-5" aria-hidden />
                 ) : (
-                  <span className="text-[10px] font-medium text-muted-foreground">Auto</span>
+                  <span className="text-3xs font-medium text-muted-foreground">Auto</span>
                 )}
               </button>
             }

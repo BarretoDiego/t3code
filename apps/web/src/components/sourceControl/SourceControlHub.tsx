@@ -521,13 +521,13 @@ function RepositoryPullRequests({
                   {pr.isDraft ? "Draft" : pr.state}
                 </span>
               </p>
-              <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+              <p className="mt-2 truncate font-mono text-2xs text-muted-foreground">
                 {pr.headBranch} → {pr.baseBranch}
               </p>
             </div>
             <span className="shrink-0 text-xs tabular-nums">
-              <span className="text-emerald-600 dark:text-emerald-400">+{pr.additions}</span>{" "}
-              <span className="text-red-500">−{pr.deletions}</span>
+              <span className="text-success ">+{pr.additions}</span>{" "}
+              <span className="text-error">−{pr.deletions}</span>
             </span>
           </button>
         );
@@ -607,7 +607,7 @@ function RemoteRepositoryHub({
           On your devices
           <span className="ml-auto text-xs text-muted-foreground">{projects.length}</span>
         </Button>
-        <p className="mt-5 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="mt-5 px-2 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
           Remote accounts
         </p>
         <nav className="mt-2 space-y-3" aria-label="Source control repositories">

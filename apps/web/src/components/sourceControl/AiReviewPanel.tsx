@@ -567,7 +567,7 @@ export function AiReviewPanel({
                             }
                           />
                           <div className="min-w-0">
-                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <p className="mb-1 text-3xs font-semibold uppercase tracking-wide text-muted-foreground">
                               AI analysis ·{" "}
                               {published
                                 ? "Published comment"

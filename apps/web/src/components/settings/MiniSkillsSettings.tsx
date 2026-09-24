@@ -156,7 +156,7 @@ function MiniSkillEditorDialogContent(props: {
             </label>
           </form>
         </DialogPanel>
-        <div className="shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="shrink-0 pb-(--safe-bottom-inset)">
           <DialogFooter>
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
             <Button disabled={nameInvalid || contentInvalid} type="submit" form={formId}>
@@ -310,7 +310,7 @@ export function MiniSkillsSettingsPanel() {
           </Button>
         }
       >
-        <p className="px-3 py-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+        <p className="px-3 py-3 text-xs leading-normal text-muted-foreground/80 sm:px-4">
           Reusable instructions that can be attached to threads and requests.
         </p>
         {miniSkills.length === 0 ? (
@@ -365,7 +365,7 @@ export function MiniSkillsSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection {...searchableSetting("mini-skills-prompt-wrappers")}>
-        <p className="px-3 pt-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
+        <p className="px-3 pt-3 text-xs leading-normal text-muted-foreground/80 sm:px-4">
           The text surrounding Mini Skills when they are sent to the agent.{" "}
           {MINI_SKILLS_WRAPPER_PLACEHOLDER}
           {" marks where the skills are inserted."}
