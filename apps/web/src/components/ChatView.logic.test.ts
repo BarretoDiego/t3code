@@ -72,6 +72,7 @@ import {
   rememberReadyThreadTimeline,
   resetHeldThreadTimeline,
   resolveThreadSwitchTimeline,
+  selectForkPreviewMessages,
   threadKeysShareEnvironment,
   timelineHasEphemeralPreviewUrls,
   scheduleEnvironmentReconnectWarning,
@@ -89,6 +90,20 @@ import {
   waitForRevertedMessage,
   prepareRevertedMessageAttachments,
 } from "./ChatView.logic";
+
+describe("conversation fork preview", () => {
+  it("shows history through the selected message before the first send", () => {
+    const messages = [
+      { id: MessageId.make("first"), text: "First" },
+      { id: MessageId.make("fork-point"), text: "Continue from here" },
+      { id: MessageId.make("later"), text: "Later" },
+    ];
+    expect(selectForkPreviewMessages(messages, MessageId.make("fork-point"))).toEqual(
+      messages.slice(0, 2),
+    );
+    expect(selectForkPreviewMessages(messages, MessageId.make("missing"))).toEqual([]);
+  });
+});
 
 describe("agent browser close confirmation", () => {
   const surfaces = [

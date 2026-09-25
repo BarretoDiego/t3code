@@ -91,6 +91,33 @@ test("preserves the complete source archive and enriches only the supplied real 
   expect((await NodeFSP.stat(file)).mode & 0o777).toBe(0o600);
 });
 
+test("accepts a fork source while binding the context to the new thread", async () => {
+  const { input } = await fixture();
+  const targetThreadId = ThreadId.make("fork-target");
+  const context = await installConversationHandoffContext({
+    ...input,
+    threadId: targetThreadId,
+    sourceThreadId: threadId,
+  });
+  const prompt = await prepareConversationHandoffInput({
+    ...input,
+    threadId: targetThreadId,
+    context,
+    input: "Continue the conversation",
+    maxChars: 120_000,
+  });
+  expect(prompt).toContain('"sourceThreadId":"context-thread"');
+  expect(prompt).toContain("Original complete conversation");
+  await expect(
+    installConversationHandoffContext({
+      ...input,
+      handoffId: ThreadHandoffId.make("foreign-fork-source"),
+      threadId: targetThreadId,
+      sourceThreadId: ThreadId.make("another-source"),
+    }),
+  ).rejects.toThrow("foreign or unordered");
+});
+
 test("oversized context references the complete canonical file without truncating it", async () => {
   const { input, file } = await fixture();
   const many = Array.from({ length: 100 }, (_, index): OrchestrationEvent => ({

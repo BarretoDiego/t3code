@@ -63,6 +63,14 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export function selectForkPreviewMessages<T extends { readonly id: MessageId }>(
+  messages: ReadonlyArray<T>,
+  throughMessageId: MessageId,
+): ReadonlyArray<T> {
+  const boundary = messages.findIndex((message) => message.id === throughMessageId);
+  return boundary < 0 ? [] : messages.slice(0, boundary + 1);
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
 export function agentControlledBrowserCloseConfirmation(

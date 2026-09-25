@@ -42,6 +42,7 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { installConversationHandoffContext } from "../../handoff/ConversationHandoffContext.ts";
+import { selectForkHistory } from "../ForkConversationHistory.ts";
 import * as ServerConfig from "../../config.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import {
@@ -603,11 +604,8 @@ const make = Effect.gen(function* () {
         limit: 1_000_000,
       }),
     );
-    const boundary = history.findIndex(
-      (event) =>
-        event.type === "thread.message-sent" && event.payload.messageId === input.throughMessageId,
-    );
-    if (boundary < 0) {
+    const selectedHistory = selectForkHistory(Array.from(history), input.throughMessageId);
+    if (selectedHistory === null) {
       return yield* new ProviderAdapterRequestError({
         provider: String(input.providerInstanceId),
         method: "thread.turn.start",
@@ -623,8 +621,9 @@ const make = Effect.gen(function* () {
           stateDir: serverConfig.stateDir,
           handoffId,
           threadId: input.threadId,
+          sourceThreadId: input.sourceThreadId,
           providerInstanceId: input.providerInstanceId,
-          events: history.slice(0, boundary + 1),
+          events: selectedHistory,
         }),
       catch: (cause) =>
         new ProviderAdapterRequestError({
