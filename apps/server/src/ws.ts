@@ -108,6 +108,10 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { makeThreadLiveEventCoalescer } from "./orchestration/ThreadLiveEventCoalescer.ts";
+import {
+  forkMessagesFromHistory,
+  selectForkHistory,
+} from "./orchestration/ForkConversationHistory.ts";
 import { makeLiveStreamBudget, type RetainedLiveItem } from "./orchestration/LiveStreamBudget.ts";
 import {
   cleanupFailedUploadedAttachments,
@@ -585,36 +589,16 @@ const makeWsRpcLayer = (
             limit: 1_000_000,
           }),
         );
-        const boundary = history.findIndex(
-          (event) =>
-            event.type === "thread.message-sent" &&
-            event.payload.messageId === input.throughMessageId,
-        );
-        if (boundary < 0) {
+        const selectedHistory = selectForkHistory(Array.from(history), input.throughMessageId);
+        if (selectedHistory === null) {
           return yield* new OrchestrationDispatchCommandError({
             message: "The selected fork point is no longer available in this conversation.",
           });
         }
-        const messages = Array.from(history.slice(0, boundary + 1)).flatMap((event, index) => {
-          if (
-            event.type !== "thread.message-sent" ||
-            (event.payload.role !== "user" && event.payload.role !== "assistant")
-          ) {
-            return [];
-          }
-          return [
-            {
-              messageId: MessageId.make(`${input.targetThreadId}:fork:${index}`),
-              role: event.payload.role,
-              text: event.payload.text,
-              ...(event.payload.attachments !== undefined
-                ? { attachments: event.payload.attachments }
-                : {}),
-              ...(event.payload.context !== undefined ? { context: event.payload.context } : {}),
-              createdAt: event.payload.createdAt,
-            },
-          ];
-        });
+        const messages = forkMessagesFromHistory(selectedHistory).map((message, index) => ({
+          ...message,
+          messageId: MessageId.make(`${input.targetThreadId}:fork:${index}`),
+        }));
         if (messages.length === 0) {
           return yield* new OrchestrationDispatchCommandError({
             message: "The selected fork point has no conversation messages to copy.",

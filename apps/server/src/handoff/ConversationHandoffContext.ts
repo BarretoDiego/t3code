@@ -29,6 +29,7 @@ const Archive = Schema.Struct({
   version: Schema.Literal(1),
   handoffId: ThreadHandoffId,
   threadId: ThreadId,
+  sourceThreadId: Schema.optional(ThreadId),
   providerInstanceId: ProviderInstanceId,
   events: Schema.Array(OrchestrationEvent),
 });
@@ -124,7 +125,7 @@ async function load(input: Identity) {
     archive.providerInstanceId !== ref.providerInstanceId
   )
     throw failure("Conversation context archive identity does not match.");
-  validateEvents(archive.events, ref.threadId);
+  validateEvents(archive.events, archive.sourceThreadId ?? ref.threadId);
   return { ref, directory, file, text };
 }
 
@@ -134,6 +135,7 @@ export async function installConversationHandoffContext(input: {
   readonly stateDir: string;
   readonly handoffId: ThreadHandoffId;
   readonly threadId: ThreadId;
+  readonly sourceThreadId?: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly events: readonly OrchestrationEvent[];
 }): Promise<ConversationHandoffContextRef> {
@@ -141,10 +143,11 @@ export async function installConversationHandoffContext(input: {
     version: 1,
     handoffId: input.handoffId,
     threadId: input.threadId,
+    ...(input.sourceThreadId !== undefined ? { sourceThreadId: input.sourceThreadId } : {}),
     providerInstanceId: input.providerInstanceId,
     events: input.events,
   });
-  validateEvents(archive.events, archive.threadId);
+  validateEvents(archive.events, archive.sourceThreadId ?? archive.threadId);
   const text = JSON.stringify(archive);
   const ref = decodeConversationHandoffContextRef({
     version: 1,
