@@ -68,6 +68,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly preloadPath: string;
     /** Minimal preload used solely by the local always-on-top pet window. */
     readonly petPreloadPath: string;
+    // Preload that turns on the V8 compile cache for the local backend.
+    readonly compileCachePath: string;
     readonly appUpdateYmlPath: string;
     readonly devServerUrl: Option.Option<URL>;
     readonly devRemoteT3ServerEntryPath: Option.Option<string>;
@@ -224,6 +226,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     backendCwd: input.isPackaged ? homeDirectory : appRoot,
     preloadPath: path.join(input.dirname, "preload.cjs"),
     petPreloadPath: path.join(input.dirname, "pet-preload.cjs"),
+    compileCachePath: path.join(input.dirname, "compileCache.cjs"),
     appUpdateYmlPath: input.isPackaged
       ? path.join(resourcesPath, "app-update.yml")
       : path.join(input.appPath, "dev-app-update.yml"),
