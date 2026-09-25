@@ -403,7 +403,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.flatMap((runtimeRowOption) =>
         Option.match(runtimeRowOption, {
-          onNone: () => Effect.succeed(Option.none()),
+          onNone: () => Effect.succeedNone,
           onSome: (row) =>
             decodeRuntimeRow(row).pipe(
               Effect.mapError((cause) =>
@@ -422,9 +422,8 @@ export const make = Effect.gen(function* () {
                       { threadId: input.threadId },
                     ),
                   ),
-                  Effect.map((fence) =>
-                    Option.some(fence ? { ...runtime, executionFence: fence } : runtime),
-                  ),
+                  Effect.map((fence) => (fence ? { ...runtime, executionFence: fence } : runtime)),
+                  Effect.asSome,
                 ),
               ),
             ),
@@ -446,7 +445,7 @@ export const make = Effect.gen(function* () {
         // every consumer that enumerates sessions, such as the reaper.
         Effect.forEach(rows, (row) =>
           decodeRuntimeRow(row).pipe(
-            Effect.map(Option.some),
+            Effect.asSome,
             Effect.catch((cause) =>
               Effect.logWarning("provider.session.runtime.row-skipped", {
                 threadId: row.threadId,

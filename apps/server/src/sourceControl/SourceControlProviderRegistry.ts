@@ -290,14 +290,14 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       get,
       resolveHandle,
       resolve: (input) => resolveHandle(input).pipe(Effect.map((handle) => handle.provider)),
-      discover: Effect.all(
-        discoverySpecs.map((spec) =>
+      discover: Effect.forEach(
+        discoverySpecs,
+        (spec) =>
           probeSourceControlProvider({
             spec,
             process,
             cwd: config.cwd,
           }),
-        ),
         { concurrency: "unbounded" },
       ),
     });

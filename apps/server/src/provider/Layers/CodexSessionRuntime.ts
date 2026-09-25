@@ -1522,7 +1522,7 @@ export const makeCodexSessionRuntime = (
               }
             }),
           ),
-          Effect.catch(() => Effect.void),
+          Effect.ignore,
           Effect.forkIn(runtimeScope),
         );
     });
@@ -2625,7 +2625,7 @@ export const makeCodexSessionRuntime = (
             threadId: providerThreadId,
           });
         }),
-      readRateLimits: client.request("account/rateLimits/read", undefined),
+      readRateLimits: client.request("account/rateLimits/read", null),
       respondToRequest: (requestId, decision) =>
         Effect.gen(function* () {
           const pending = (yield* Ref.get(pendingApprovalsRef)).get(requestId);
