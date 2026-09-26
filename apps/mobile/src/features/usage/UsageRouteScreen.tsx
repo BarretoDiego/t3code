@@ -167,8 +167,8 @@ export function UsageRouteScreen() {
   const refreshLimits = useCallback(async () => {
     await Promise.all([limits.refresh(), refreshPlanLimits()]);
   }, [limits, refreshPlanLimits]);
-  const cursorAccessEnvironments = selectedEnvironments.filter((environment) =>
-    environment.summary?.sources.some((source) => source.action === "enableCursorKeychain"),
+  const cursorAccessEnvironments = selectedEnvironments.filter(
+    (environment) => environment.needsCursorKeychainAccess,
   );
   const refreshAfterCursorEnable = () => {
     void refresh();
