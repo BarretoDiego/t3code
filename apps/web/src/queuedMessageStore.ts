@@ -1,11 +1,31 @@
-import type { PreviewAnnotationPayload, ScheduledMessage } from "@t3tools/contracts";
+import type {
+  ModelSelection,
+  PreviewAnnotationPayload,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ScheduledMessage,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
+import type { LocalDispatchSnapshot } from "./components/ChatView.logic";
 import type { ComposerSubmissionIntent } from "./composer-logic";
 import type { ComposerFileAttachment, ComposerImageAttachment } from "./composerDraftStore";
 import type { TerminalContextDraft } from "./lib/terminalContext";
 import { randomUUID } from "./lib/utils";
 import type { ReviewCommentContext } from "./reviewCommentContext";
+
+/**
+ * The composer's model and modes when the message was queued. The send uses
+ * these instead of the live composer, so it can go out while the user is on
+ * another thread.
+ */
+export interface QueuedMessageSendSettings {
+  modelSelection: ModelSelection;
+  runtimeMode: RuntimeMode;
+  interactionMode: ProviderInteractionMode;
+  /** Effort written into the prompt text, for providers that read it there. */
+  promptEffort: string | null;
+}
 
 /**
  * A composer submission held back while the thread's turn is running. It
@@ -22,7 +42,9 @@ export interface QueuedComposerMessage {
   terminalContexts: TerminalContextDraft[];
   previewAnnotations: PreviewAnnotationPayload[];
   reviewComments: ReviewCommentContext[];
-  submissionIntent: ComposerSubmissionIntent;
+  sendSettings: QueuedMessageSendSettings;
+  /** Preserved for the foreground/background fork workflow. */
+  submissionIntent?: ComposerSubmissionIntent;
   /**
    * The newest completed tool activity at queue time. A different id later
    * means a tool call finished after the user queued, which is the boundary
@@ -34,187 +56,209 @@ export interface QueuedComposerMessage {
    * user pressing send. It waits for Send now instead of leaving on its own.
    */
   holdUntilUserAction?: boolean;
-  /**
-   * Set when the send failed on (or the queue is waiting for) an exhausted
-   * plan window. The message auto-sends after this instant; Send now still
-   * forces it and Cancel still drops it.
-   */
+  /** Plan-window and local schedule waits are released automatically. */
   rateLimitedUntil?: string | null;
-  /**
-   * Set when the user scheduled the send for later, from the composer or the
-   * queued row. Like a rate-limit wait it auto-sends after this instant;
-   * clearing it returns the message to the normal queue boundaries.
-   */
   sendAt?: string | null;
+  /**
+   * Set while a send is under way; the row stays until it settles. Stop can
+   * still take a "preparing" message back (uploads, thread settings), but not
+   * a "dispatching" one, whose turn start is already on the wire.
+   */
+  sending?: "preparing" | "dispatching";
   createdAt: string;
+}
+
+/**
+ * The thread as it was when its last queued turn start went out. The next
+ * message waits until the server has moved past it, so a send that starts a
+ * new turn and the message after it do not leave on one boundary.
+ */
+interface QueuedDispatch {
+  /** The message that went out, or null for a dispatch restored after a failure. */
+  messageId: string | null;
+  thread: LocalDispatchSnapshot;
+  /** The dispatch this one replaced. If this send fails, that one still counts. */
+  previous: LocalDispatchSnapshot | null;
 }
 
 interface QueuedMessageStoreState {
   queuesByThreadKey: Record<string, QueuedComposerMessage[]>;
-  /**
-   * Bumped by `drain`. A send that took a message before a drain and finishes
-   * its upload after it compares this to the value it captured and gives up,
-   * so Stop cannot be followed by a queued message starting a new turn.
-   */
-  drainGeneration: number;
+  lastDispatchByThreadKey: Record<string, QueuedDispatch>;
   enqueue: (threadKey: string, message: Omit<QueuedComposerMessage, "id">) => QueuedComposerMessage;
   /**
-   * Removes one message and returns it, or null when another caller already
-   * took it. The remaining messages are re-anchored to `toolActivityId` so
-   * only one queued message leaves per tool boundary.
+   * Marks one message as sending and returns it, or null when it is gone or
+   * the thread already has a send under way. The other messages are
+   * re-anchored to `toolActivityId` so only one leaves per tool boundary.
    */
-  take: (
+  beginSend: (
     threadKey: string,
     id: string,
     toolActivityId: string | null,
   ) => QueuedComposerMessage | null;
-  /** Removes one message without touching the others' anchors. Null when already gone. */
-  remove: (threadKey: string, id: string) => QueuedComposerMessage | null;
+  /** The turn start is going out. False when Stop took the message back first. */
+  markDispatching: (threadKey: string, id: string, thread: LocalDispatchSnapshot) => boolean;
+  /** Drops a message whose send went out, or that had nothing left to send. */
+  finishSend: (threadKey: string, id: string) => void;
   /**
-   * Puts a message back at the head, held for user action. Used when its
-   * send failed: the queue keeps its order and nothing behind it overtakes.
+   * Moves a message whose send failed back to the head, held for user action.
+   * The queue keeps its order and nothing behind it overtakes. False when
+   * Stop already took the message back.
    */
+  failSend: (threadKey: string, id: string) => boolean;
+  /** Re-holds a failed local send without losing the newer dispatch guard. */
   holdAtFront: (threadKey: string, message: QueuedComposerMessage) => void;
-  /**
-   * Parks a message at the head until an exhausted plan window resets. Unlike
-   * holdAtFront it stays eligible for auto-send: the drain effect fires it
-   * once `resetsAt` passes. Send now forces it, Cancel drops it.
-   */
+  /** Parks a failed turn until its provider plan window resets. */
   holdForRateLimit: (threadKey: string, message: QueuedComposerMessage, resetsAt: string) => void;
-  /**
-   * Schedules a queued message for later without moving it. A null `sendAt`
-   * clears the schedule and returns the message to the normal boundaries.
-   */
+  /** Changes a local wait without moving the message. */
   scheduleSend: (threadKey: string, id: string, sendAt: string | null) => void;
-  /** Removes and returns every queued message for the thread, oldest first. */
+  /** Removes one message without touching the others' anchors. Null when gone or sending. */
+  remove: (threadKey: string, id: string) => QueuedComposerMessage | null;
+  /** Removes and returns every message for the thread that is not already on the wire. */
   drain: (threadKey: string) => QueuedComposerMessage[];
 }
 
 const EMPTY_QUEUE: QueuedComposerMessage[] = [];
 
+type QueueState = Pick<QueuedMessageStoreState, "queuesByThreadKey" | "lastDispatchByThreadKey">;
+
+/** Replaces one thread's queue. `lastDispatch` null forgets it; an empty queue always does. */
+function withQueue(
+  state: QueueState,
+  threadKey: string,
+  queue: QueuedComposerMessage[],
+  lastDispatch?: QueuedDispatch | null,
+): QueueState {
+  const queuesByThreadKey = { ...state.queuesByThreadKey, [threadKey]: queue };
+  const lastDispatchByThreadKey = { ...state.lastDispatchByThreadKey };
+  if (lastDispatch) lastDispatchByThreadKey[threadKey] = lastDispatch;
+  if (queue.length === 0) delete queuesByThreadKey[threadKey];
+  if (queue.length === 0 || lastDispatch === null) delete lastDispatchByThreadKey[threadKey];
+  return { queuesByThreadKey, lastDispatchByThreadKey };
+}
+
 /** In-memory only: a queued message is a live intent, not a draft worth persisting. */
-export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get) => ({
-  queuesByThreadKey: {},
-  drainGeneration: 0,
-  enqueue: (threadKey, message) => {
-    const entry: QueuedComposerMessage = { ...message, id: randomUUID() };
-    set((state) => ({
-      queuesByThreadKey: {
-        ...state.queuesByThreadKey,
-        [threadKey]: [...(state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE), entry],
-      },
-    }));
-    return entry;
-  },
-  take: (threadKey, id, toolActivityId) => {
-    const queue = get().queuesByThreadKey[threadKey];
-    const entry = queue?.find((message) => message.id === id);
-    if (!queue || !entry) {
-      return null;
-    }
-    set((state) => {
-      const remaining = (state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE)
-        .filter((message) => message.id !== id)
-        .map((message) =>
-          message.queuedAfterToolActivityId === toolActivityId
-            ? message
-            : { ...message, queuedAfterToolActivityId: toolActivityId },
-        );
-      const queuesByThreadKey = { ...state.queuesByThreadKey };
-      if (remaining.length === 0) {
-        delete queuesByThreadKey[threadKey];
-      } else {
-        queuesByThreadKey[threadKey] = remaining;
-      }
-      return { queuesByThreadKey };
-    });
-    return entry;
-  },
-  remove: (threadKey, id) => {
-    const queue = get().queuesByThreadKey[threadKey];
-    const entry = queue?.find((message) => message.id === id);
-    if (!queue || !entry) {
-      return null;
-    }
-    set((state) => {
-      const remaining = (state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE).filter(
-        (message) => message.id !== id,
+export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get) => {
+  const queueOf = (threadKey: string) => get().queuesByThreadKey[threadKey] ?? EMPTY_QUEUE;
+  const update = (
+    threadKey: string,
+    queue: QueuedComposerMessage[],
+    lastDispatch?: QueuedDispatch | null,
+  ) => set((state) => withQueue(state, threadKey, queue, lastDispatch));
+  return {
+    queuesByThreadKey: {},
+    lastDispatchByThreadKey: {},
+    enqueue: (threadKey, message) => {
+      const entry: QueuedComposerMessage = { ...message, id: randomUUID() };
+      update(threadKey, [...queueOf(threadKey), entry]);
+      return entry;
+    },
+    beginSend: (threadKey, id, toolActivityId) => {
+      const queue = queueOf(threadKey);
+      const entry = queue.find((message) => message.id === id);
+      if (!entry || queue.some((message) => message.sending)) return null;
+      update(
+        threadKey,
+        queue.map((message) =>
+          message.id === id
+            ? { ...message, sending: "preparing" }
+            : message.queuedAfterToolActivityId === toolActivityId
+              ? message
+              : { ...message, queuedAfterToolActivityId: toolActivityId },
+        ),
       );
-      const queuesByThreadKey = { ...state.queuesByThreadKey };
-      if (remaining.length === 0) {
-        delete queuesByThreadKey[threadKey];
-      } else {
-        queuesByThreadKey[threadKey] = remaining;
-      }
-      return { queuesByThreadKey };
-    });
-    return entry;
-  },
-  holdAtFront: (threadKey, message) => {
-    set((state) => {
-      const rest = (state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE).filter(
-        (entry) => entry.id !== message.id,
+      return entry;
+    },
+    markDispatching: (threadKey, id, thread) => {
+      const queue = queueOf(threadKey);
+      if (!queue.some((message) => message.id === id && message.sending)) return false;
+      update(
+        threadKey,
+        queue.map((message) =>
+          message.id === id ? { ...message, sending: "dispatching" } : message,
+        ),
+        {
+          messageId: id,
+          thread,
+          previous: get().lastDispatchByThreadKey[threadKey]?.thread ?? null,
+        },
       );
-      return {
-        queuesByThreadKey: {
-          ...state.queuesByThreadKey,
-          [threadKey]: [
-            { ...message, holdUntilUserAction: true, rateLimitedUntil: null, sendAt: null },
-            ...rest,
-          ],
-        },
-      };
-    });
-  },
-  scheduleSend: (threadKey, id, sendAt) => {
-    set((state) => {
-      const queue = state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE;
-      if (!queue.some((entry) => entry.id === id)) return state;
-      return {
-        queuesByThreadKey: {
-          ...state.queuesByThreadKey,
-          [threadKey]: queue.map((entry) =>
-            entry.id === id
-              ? { ...entry, sendAt, ...(sendAt ? { holdUntilUserAction: false } : {}) }
-              : entry,
-          ),
-        },
-      };
-    });
-  },
-  holdForRateLimit: (threadKey, message, resetsAt) => {
-    set((state) => {
-      const rest = (state.queuesByThreadKey[threadKey] ?? EMPTY_QUEUE).filter(
-        (entry) => entry.id !== message.id,
+      return true;
+    },
+    finishSend: (threadKey, id) => {
+      const queue = queueOf(threadKey);
+      if (!queue.some((message) => message.id === id)) return;
+      update(
+        threadKey,
+        queue.filter((message) => message.id !== id),
       );
-      return {
-        queuesByThreadKey: {
-          ...state.queuesByThreadKey,
-          [threadKey]: [
-            {
-              ...message,
-              holdUntilUserAction: false,
-              rateLimitedUntil: resetsAt,
-            },
-            ...rest,
-          ],
-        },
-      };
-    });
-  },
-  drain: (threadKey) => {
-    const queue = get().queuesByThreadKey[threadKey];
-    if (!queue || queue.length === 0) {
-      return EMPTY_QUEUE;
-    }
-    set((state) => {
-      const queuesByThreadKey = { ...state.queuesByThreadKey };
-      delete queuesByThreadKey[threadKey];
-      return { queuesByThreadKey, drainGeneration: state.drainGeneration + 1 };
-    });
-    return queue;
-  },
-}));
+    },
+    failSend: (threadKey, id) => {
+      const queue = queueOf(threadKey);
+      const entry = queue.find((message) => message.id === id);
+      if (!entry) return false;
+      const { sending: _sending, ...rest } = entry;
+      // This send never reached the server, so only an earlier one is worth
+      // waiting for.
+      const dispatch = get().lastDispatchByThreadKey[threadKey];
+      update(
+        threadKey,
+        [{ ...rest, holdUntilUserAction: true }, ...queue.filter((message) => message.id !== id)],
+        dispatch?.messageId !== id
+          ? undefined
+          : dispatch.previous && { messageId: null, thread: dispatch.previous, previous: null },
+      );
+      return true;
+    },
+    holdAtFront: (threadKey, message) => {
+      const queue = queueOf(threadKey);
+      const { sending: _sending, ...rest } = message;
+      update(threadKey, [
+        { ...rest, holdUntilUserAction: true, rateLimitedUntil: null, sendAt: null },
+        ...queue.filter((entry) => entry.id !== message.id),
+      ]);
+    },
+    holdForRateLimit: (threadKey, message, resetsAt) => {
+      const queue = queueOf(threadKey);
+      const { sending: _sending, ...rest } = message;
+      update(threadKey, [
+        { ...rest, holdUntilUserAction: false, rateLimitedUntil: resetsAt },
+        ...queue.filter((entry) => entry.id !== message.id),
+      ]);
+    },
+    scheduleSend: (threadKey, id, sendAt) => {
+      const queue = queueOf(threadKey);
+      if (!queue.some((entry) => entry.id === id && !entry.sending)) return;
+      update(
+        threadKey,
+        queue.map((entry) =>
+          entry.id === id
+            ? { ...entry, sendAt, ...(sendAt ? { holdUntilUserAction: false } : {}) }
+            : entry,
+        ),
+      );
+    },
+    remove: (threadKey, id) => {
+      const queue = queueOf(threadKey);
+      const entry = queue.find((message) => message.id === id);
+      if (!entry || entry.sending) return null;
+      update(
+        threadKey,
+        queue.filter((message) => message.id !== id),
+      );
+      return entry;
+    },
+    drain: (threadKey) => {
+      const queue = queueOf(threadKey);
+      const drained = queue.filter((message) => message.sending !== "dispatching");
+      if (drained.length === 0) return EMPTY_QUEUE;
+      update(
+        threadKey,
+        queue.filter((message) => message.sending === "dispatching"),
+      );
+      return drained;
+    },
+  };
+});
 
 /**
  * The newest finished tool call. Its id changing is the boundary a queued
@@ -252,16 +296,19 @@ export function latestCompletedToolActivityId(
 export function isQueuedMessageDue(input: {
   message: Pick<
     QueuedComposerMessage,
-    "queuedAfterToolActivityId" | "holdUntilUserAction" | "rateLimitedUntil" | "sendAt"
+    | "queuedAfterToolActivityId"
+    | "holdUntilUserAction"
+    | "rateLimitedUntil"
+    | "sendAt"
+    | "serverSchedule"
   >;
   phase: "connecting" | "running" | "ready" | "disconnected";
   latestToolActivityId: string | null;
   nowMs?: number;
 }): boolean {
+  if (input.message.serverSchedule) return false;
   if (input.message.holdUntilUserAction) return false;
   if (input.phase === "connecting") return false;
-  // A scheduled or rate-limited wait parks the message until its instant; the
-  // drain effect arms a timer for exactly then instead of sending early.
   if (getQueuedMessageWaitUntil(input.message, input.nowMs ?? Date.now()) !== null) return false;
   if (input.phase !== "running") return true;
   return input.latestToolActivityId !== input.message.queuedAfterToolActivityId;
@@ -269,15 +316,11 @@ export function isQueuedMessageDue(input: {
 
 const futureInstantMs = (iso: string | null | undefined, nowMs: number): number | null => {
   if (!iso) return null;
-  const timestampMs = Date.parse(iso);
-  return Number.isFinite(timestampMs) && timestampMs > nowMs ? timestampMs : null;
+  const timestamp = Date.parse(iso);
+  return Number.isFinite(timestamp) && timestamp > nowMs ? timestamp : null;
 };
 
-/**
- * Latest instant a queued message must wait for: a manual schedule, an
- * exhausted plan window, or null when nothing holds it back. The drain
- * effect arms one timer for this instant and re-evaluates then.
- */
+/** Latest local instant preventing a queued send. */
 export function getQueuedMessageWaitUntil(
   message: Pick<QueuedComposerMessage, "rateLimitedUntil" | "sendAt">,
   nowMs: number = Date.now(),
@@ -285,16 +328,16 @@ export function getQueuedMessageWaitUntil(
   const candidates = [
     futureInstantMs(message.sendAt, nowMs),
     futureInstantMs(message.rateLimitedUntil, nowMs),
-  ].filter((candidate): candidate is number => candidate !== null);
+  ].filter((value): value is number => value !== null);
   if (candidates.length === 0) return null;
-  const latestMs = Math.max(...candidates);
+  const latest = Math.max(...candidates);
   return (
-    [message.sendAt, message.rateLimitedUntil].find((iso) => iso && Date.parse(iso) === latestMs) ??
-    null
+    [message.sendAt, message.rateLimitedUntil].find(
+      (value) => value && Date.parse(value) === latest,
+    ) ?? null
   );
 }
 
-/** True while a manual schedule holds the message back. */
 export function isQueuedMessageScheduled(
   message: Pick<QueuedComposerMessage, "sendAt">,
   nowMs: number = Date.now(),
@@ -302,7 +345,6 @@ export function isQueuedMessageScheduled(
   return futureInstantMs(message.sendAt, nowMs) !== null;
 }
 
-/** True while the message is parked waiting for an exhausted window to reset. */
 export function isQueuedMessageRateLimited(
   message: Pick<QueuedComposerMessage, "rateLimitedUntil">,
   nowMs: number = Date.now(),

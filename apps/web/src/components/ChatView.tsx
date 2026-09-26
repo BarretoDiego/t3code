@@ -103,7 +103,6 @@ import {
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { mergeProfileMiniSkillIds } from "@t3tools/shared/agentProfiles";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import { isMacPlatform } from "../lib/utils";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -325,18 +324,13 @@ import {
   terminalContextReference,
 } from "../lib/composerContextRecords";
 import {
-  getQueuedMessageWaitUntil,
-  isQueuedMessageDue,
   latestCompletedToolActivityId,
   type QueuedComposerMessage,
+  type QueuedMessageSendSettings,
   useQueuedMessages,
   useQueuedMessageStore,
 } from "../queuedMessageStore";
-import {
-  getExhaustedRateLimitResetAt,
-  isUsageLimitErrorMessage,
-} from "@t3tools/shared/providerRateLimits";
-import { requestScheduleSend } from "./chat/ScheduleSendDialog";
+import { sendQueuedMessage } from "./chat/sendQueuedMessage";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -472,7 +466,6 @@ import {
   peekRememberedThreadTimeline,
   rememberReadyThreadTimeline,
   resolveThreadSwitchTimeline,
-  selectForkPreviewMessages,
   timelineHasEphemeralPreviewUrls,
   observeProactivePanelUserChoice,
   resolveProactiveTurnDiffAction,
@@ -1527,7 +1520,6 @@ export default function ChatView(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
-  const updateScheduledMessage = useAtomCommand(threadEnvironment.updateScheduledMessage);
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -1571,11 +1563,6 @@ export default function ChatView(props: ChatViewProps) {
       : draftId
         ? store.getDraftSession(draftId)
         : null,
-  );
-  const forkSourceThread = useThread(
-    draftThread?.forkConversation
-      ? scopeThreadRef(draftThread.environmentId, draftThread.forkConversation.sourceThreadId)
-      : null,
   );
   const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
@@ -1662,9 +1649,6 @@ export default function ChatView(props: ChatViewProps) {
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
-  );
-  const setComposerDraftSelectedMiniSkillIds = useComposerDraftStore(
-    (store) => store.setSelectedMiniSkillIds,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
@@ -2294,19 +2278,6 @@ export default function ChatView(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
-  const handleForkConversation = useCallback(
-    (throughMessageId: MessageId) => {
-      const sourceThread = activeThread;
-      if (!isServerThread || !activeProject || !sourceThread) return;
-      void handleNewThread(scopeProjectRef(sourceThread.environmentId, activeProject.id), {
-        forkConversation: {
-          sourceThreadId: sourceThread.id,
-          throughMessageId,
-        },
-      });
-    },
-    [activeProject, activeThread, handleNewThread, isServerThread],
-  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
@@ -3365,21 +3336,7 @@ export default function ChatView(props: ChatViewProps) {
       return next;
     });
   }, []);
-  const serverMessages = useMemo(
-    () =>
-      isLocalDraftThread && draftThread?.forkConversation
-        ? selectForkPreviewMessages(
-            forkSourceThread?.messages ?? [],
-            draftThread.forkConversation.throughMessageId,
-          )
-        : activeThread?.messages,
-    [
-      activeThread?.messages,
-      draftThread?.forkConversation,
-      forkSourceThread?.messages,
-      isLocalDraftThread,
-    ],
-  );
+  const serverMessages = activeThread?.messages;
   const [projectServerMessagePreviews] = useState(createMessageAttachmentPreviewProjector);
   const [projectHandoffMessagePreviews] = useState(createMessageAttachmentPreviewProjector);
   const downloadFileAttachment = useCallback(
@@ -7291,45 +7248,28 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const localQueuedMessages = useQueuedMessages(activeThreadKey ?? "");
-  const supportsScheduledMessages =
-    serverConfig?.environment.capabilities.scheduledMessages === true;
-  // The server scheduler owns an already-created thread. Bootstrap commands
-  // still require the request-scoped worktree and draft setup path, so start
-  // those threads first and schedule their follow-ups once they exist.
-  const canScheduleActiveThread = supportsScheduledMessages && !isLocalDraftThread;
-  const scheduledMessagesQuery = useEnvironmentQuery(
-    canScheduleActiveThread
-      ? threadEnvironment.scheduledMessages({
-          environmentId: routeThreadRef.environmentId,
-          input: { threadId: routeThreadRef.threadId },
-        })
-      : null,
-  );
-  const queuedMessages = useMemo(
-    () => [
-      ...localQueuedMessages,
-      ...(scheduledMessagesQuery.data ?? []).map((entry): QueuedComposerMessage => ({
-        id: entry.command.commandId,
-        serverSchedule: entry,
-        prompt: entry.command.message.text,
-        images: [],
-        files: [],
-        terminalContexts: [],
-        previewAnnotations: [],
-        reviewComments: [],
-        submissionIntent: "foreground",
-        queuedAfterToolActivityId: null,
-        sendAt: entry.sendAt,
-        createdAt: entry.command.createdAt,
-      })),
-    ],
-    [localQueuedMessages, scheduledMessagesQuery.data],
-  );
-  // Puts queued messages back into the composer, e.g. after Stop or a failed
-  // send. Prompts join with blank lines; attachments and contexts are added.
+  const queuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  // The composer's model and modes, as a queued message keeps them for its send.
+  const readComposerSendSettings = (
+    sendCtx: ReturnType<ChatComposerHandle["getSendContext"]>,
+  ): QueuedMessageSendSettings => ({
+    modelSelection: sendCtx.selectedModelSelection,
+    runtimeMode,
+    interactionMode: sendCtx.interactionMode,
+    promptEffort: resolvePromptInjectedEffort(
+      getProviderModelCapabilities(
+        sendCtx.selectedProviderModels,
+        sendCtx.selectedModel,
+        sendCtx.selectedProvider,
+      ),
+      sendCtx.selectedPromptEffort,
+    ),
+  });
+  // Puts queued messages back into the composer after Stop or Cancel. Prompts
+  // join with blank lines; attachments and contexts are added.
   const restoreQueuedMessagesToComposer = (messages: ReadonlyArray<QueuedComposerMessage>) => {
-    if (messages.length === 0) return;
+    const [firstMessage] = messages;
+    if (!firstMessage) return;
     const prompts = [promptRef.current, ...messages.map((message) => message.prompt)]
       .map((prompt) => prompt.trim())
       .filter((prompt) => prompt.length > 0);
@@ -7357,6 +7297,8 @@ export default function ChatView(props: ChatViewProps) {
     if (restoredImages.length > 0) addComposerDraftImages(composerDraftTarget, restoredImages);
     if (restoredFiles.length > 0) addComposerDraftFiles(composerDraftTarget, restoredFiles);
     if (overflow.length > 0 && activeThreadKey) {
+      // The overflow is the rest of the restored draft, so it follows the composer.
+      const sendCtx = composerRef.current?.getSendContext();
       useQueuedMessageStore.getState().enqueue(activeThreadKey, {
         prompt: "",
         images: overflow.filter((attachment) => attachment.type === "image"),
@@ -7364,7 +7306,7 @@ export default function ChatView(props: ChatViewProps) {
         terminalContexts: [],
         previewAnnotations: [],
         reviewComments: [],
-        submissionIntent: "foreground",
+        sendSettings: sendCtx ? readComposerSendSettings(sendCtx) : firstMessage.sendSettings,
         queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
         // Restoration is not a send. The user decides when the overflow goes.
         holdUntilUserAction: true,
@@ -7400,46 +7342,6 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
 
-  // Snapshots the live composer draft into the queue without sending. Used
-  // both by the running-turn fast path inside onSend and by manual Schedule
-  // send, so the two stay identical by construction.
-  const enqueueComposerSnapshot = useCallback(
-    (input: {
-      sendAt: string | null;
-      submissionIntent: ComposerSubmissionIntent;
-    }): QueuedComposerMessage | null => {
-      const sendCtx = composerRef.current?.getSendContext();
-      if (!sendCtx?.providerAvailable || !activeThreadKey) return null;
-      if (composerRef.current?.validateProviderInput(promptRef.current) === false) {
-        return null;
-      }
-      const entry = useQueuedMessageStore.getState().enqueue(activeThreadKey, {
-        prompt: promptRef.current,
-        images: [...sendCtx.images],
-        files: [...sendCtx.files],
-        terminalContexts: [...sendCtx.terminalContexts],
-        previewAnnotations: [...sendCtx.previewAnnotations],
-        reviewComments: [...sendCtx.reviewComments],
-        submissionIntent: input.submissionIntent,
-        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
-        sendAt: input.sendAt,
-        holdUntilUserAction: input.sendAt !== null,
-        createdAt: new Date().toISOString(),
-      });
-      promptRef.current = "";
-      // Attachments move with the message; their uploads stay pending. The
-      // refs clear now too, so a Stop before the composer's sync effect runs
-      // does not restore the moved attachments twice.
-      composerImagesRef.current = [];
-      composerFilesRef.current = [];
-      composerTerminalContextsRef.current = [];
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return entry;
-    },
-    [activeThreadKey, clearComposerDraftContent, composerDraftTarget, threadActivities],
-  );
-
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
@@ -7447,19 +7349,7 @@ export default function ChatView(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
-    /** A queued message being sent now instead of the live composer draft. */
-    queuedMessage?: QueuedComposerMessage,
-    sendAt?: string,
   ) => {
-    if (sendAt && !canScheduleActiveThread) {
-      toastManager.add({
-        type: "warning",
-        title: isLocalDraftThread
-          ? "Start this thread before scheduling a message"
-          : "Update this environment to schedule messages.",
-      });
-      return;
-    }
     e?.preventDefault();
     // Typed out in full rather than picked from the menu. Attachments or contexts
     // mean the user is sending a prompt, so those go through as usual.
@@ -7467,7 +7357,6 @@ export default function ChatView(props: ChatViewProps) {
       usageLimitsOffered &&
       usageLimitsKey !== null &&
       !directAnnotation &&
-      !queuedMessage &&
       !composerHasNonPromptContent &&
       isUsageLimitsCommand(promptRef.current)
     ) {
@@ -7528,10 +7417,8 @@ export default function ChatView(props: ChatViewProps) {
       });
       return;
     }
-    if (activePendingProgress && !sendAt) {
-      // A queued message waits until the question is answered; it must not
-      // be submitted as the answer.
-      if (directAnnotation || queuedMessage) {
+    if (activePendingProgress) {
+      if (directAnnotation) {
         notifyDirectAnnotationAttached();
         return;
       }
@@ -7543,12 +7430,7 @@ export default function ChatView(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
-    if (sendCtx.profileSendBlockReason !== null) {
-      setThreadError(activeThread.id, sendCtx.profileSendBlockReason);
-      return;
-    }
-    const multipleModelSelections =
-      queuedMessage || sendAt ? null : sendCtx.multipleModelSelections;
+    const multipleModelSelections = sendCtx.multipleModelSelections;
     if (
       multipleModelSelections !== null &&
       serverConfig?.environment.capabilities.requiredWorktreeBootstrap !== true
@@ -7579,8 +7461,6 @@ export default function ChatView(props: ChatViewProps) {
       terminalContexts: composerTerminalContexts,
       previewAnnotations: sendContextPreviewAnnotations,
       reviewComments: composerReviewComments,
-    } = queuedMessage ?? sendCtx;
-    const {
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
@@ -7588,9 +7468,6 @@ export default function ChatView(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
-      selectedMiniSkillIds: ctxSelectedMiniSkillIds,
-      profileMiniSkillIds: ctxProfileMiniSkillIds,
-      agentProfileTurnContext: ctxAgentProfileTurnContext,
     } = sendCtx;
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
@@ -7626,13 +7503,11 @@ export default function ChatView(props: ChatViewProps) {
         : sendContextPreviewAnnotations;
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
-    const promptForSend = queuedMessage
-      ? queuedMessage.prompt
-      : directAnnotation
-        ? ensureInlineContextReferences(promptRef.current, [
-            previewAnnotationContextReference(directAnnotation.annotation),
-          ])
-        : promptRef.current;
+    const promptForSend = directAnnotation
+      ? ensureInlineContextReferences(promptRef.current, [
+          previewAnnotationContextReference(directAnnotation.annotation),
+        ])
+      : promptRef.current;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -7653,7 +7528,7 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseCodexFeedbackCommand(trimmed)
         : null;
-    if (feedbackCommand && !queuedMessage && multipleModelSelections === null) {
+    if (feedbackCommand && multipleModelSelections === null) {
       if (!isServerThread || activeThread.session === null) {
         toastManager.add(
           stackedThreadToast({
@@ -7704,7 +7579,6 @@ export default function ChatView(props: ChatViewProps) {
     }
     if (
       !directAnnotation &&
-      !queuedMessage &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -7776,7 +7650,7 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
-    if (standaloneSlashCommand && !queuedMessage && multipleModelSelections === null) {
+    if (standaloneSlashCommand && multipleModelSelections === null) {
       handleInteractionModeChange(standaloneSlashCommand);
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
@@ -7797,12 +7671,6 @@ export default function ChatView(props: ChatViewProps) {
           }),
         );
       }
-      // A queued message whose only content expired would retry on every
-      // boundary and block the rest of the queue. Nothing sendable is left
-      // in it, so drop it and let the queue move on.
-      if (queuedMessage && activeThreadKey) {
-        useQueuedMessageStore.getState().remove(activeThreadKey, queuedMessage.id);
-      }
       return;
     }
     if (!activeProject) {
@@ -7815,24 +7683,51 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
+    // A queued message that will still leave on its own goes first, so a new
+    // send lines up behind it instead of overtaking it.
+    const queueStillSending =
+      activeThreadKey !== null &&
+      (useQueuedMessageStore.getState().queuesByThreadKey[activeThreadKey] ?? []).some(
+        (message) => message.sending !== undefined || !message.holdUntilUserAction,
+      );
     if (
-      !queuedMessage &&
-      !sendAt &&
       !directAnnotation &&
-      phase === "running" &&
       activeThreadKey &&
-      (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")
+      (queueStillSending ||
+        (phase === "running" &&
+          (settings.followUpBehavior === "queue") !== (submissionIntent === "alternate")))
     ) {
-      enqueueComposerSnapshot({ sendAt: null, submissionIntent });
+      const sendSettings = readComposerSendSettings(sendCtx);
+      if (
+        composerRef.current?.validateProviderInput(
+          applyClaudePromptEffortPrefix(promptForSend, sendSettings.promptEffort),
+        ) === false
+      ) {
+        return;
+      }
+      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+        prompt: promptForSend,
+        images: [...composerImages],
+        files: [...composerFiles],
+        terminalContexts: [...composerTerminalContexts],
+        previewAnnotations: [...composerPreviewAnnotations],
+        reviewComments: [...composerReviewComments],
+        sendSettings,
+        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+        createdAt: new Date().toISOString(),
+      });
+      promptRef.current = "";
+      // Attachments move with the message; their uploads stay pending. The
+      // refs clear now too, so a Stop before the composer's sync effect runs
+      // does not restore the moved attachments twice.
+      composerImagesRef.current = [];
+      composerFilesRef.current = [];
+      composerTerminalContextsRef.current = [];
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
       return;
     }
     const threadIdForSend = activeThread.id;
-    // Profile skills merge with the manual selection (deduped by id); only
-    // the manual selection clears after a successful send.
-    const effectiveMiniSkillIds = mergeProfileMiniSkillIds(
-      ctxProfileMiniSkillIds,
-      ctxSelectedMiniSkillIds,
-    );
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath
@@ -7887,11 +7782,6 @@ export default function ChatView(props: ChatViewProps) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
-      // A queued message that no longer fits is held at the head for the
-      // user to edit via Cancel, instead of failing on every boundary.
-      if (queuedMessage && activeThreadKey) {
-        useQueuedMessageStore.getState().holdAtFront(activeThreadKey, queuedMessage);
-      }
       return;
     }
 
@@ -7958,41 +7848,10 @@ export default function ChatView(props: ChatViewProps) {
 
     sendInFlightRef.current = true;
     const sendGeneration = ++composerSendGenerationRef.current;
-    // Every early return above leaves a queued message in the queue for a
-    // later retry. From here on a failure hands it back to the composer.
-    if (queuedMessage) {
-      const taken = activeThreadKey
-        ? useQueuedMessageStore
-            .getState()
-            .take(
-              activeThreadKey,
-              queuedMessage.id,
-              latestCompletedToolActivityId(threadActivities),
-            )
-        : null;
-      if (!taken) {
-        sendInFlightRef.current = false;
-        return;
-      }
-    }
-    // Stop drains the queue. A queued send whose upload was still running at
-    // that moment must not start a turn afterwards; it checks this before
-    // dispatch and hands the message back to the composer instead.
-    const drainGenerationAtTake = useQueuedMessageStore.getState().drainGeneration;
-    // A queued send that fails goes back to the head of the queue, held. The
-    // messages behind it keep their order and wait; the composer is not
-    // touched, which also keeps a failure after navigation off the new
-    // thread's draft. The user retries with Send now or edits with Cancel.
-    const abortQueuedReplay = () => {
-      if (queuedMessage && activeThreadKey) {
-        useQueuedMessageStore.getState().holdAtFront(activeThreadKey, queuedMessage);
-      }
-    };
     const attachmentCapabilitiesBeforeUpload = readLiveAttachmentCapabilities();
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
       sendInFlightRef.current = false;
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
-      abortQueuedReplay();
       return;
     }
     const turnUsesAttachmentUploads =
@@ -8012,24 +7871,13 @@ export default function ChatView(props: ChatViewProps) {
       if (attachmentCapabilitiesAfterUpload.fileBlockReason !== null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, attachmentCapabilitiesAfterUpload.fileBlockReason);
-        abortQueuedReplay();
         return;
       }
       if (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, "Retry or remove failed uploads before sending.");
-        abortQueuedReplay();
         return;
       }
-    }
-
-    if (
-      queuedMessage &&
-      useQueuedMessageStore.getState().drainGeneration !== drainGenerationAtTake
-    ) {
-      sendInFlightRef.current = false;
-      restoreQueuedMessagesToComposer([queuedMessage]);
-      return;
     }
 
     const resolvedSubmissionIntent =
@@ -8072,7 +7920,6 @@ export default function ChatView(props: ChatViewProps) {
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
-      abortQueuedReplay();
       return;
     }
     beginLocalDispatch({
@@ -8183,12 +8030,6 @@ export default function ChatView(props: ChatViewProps) {
                   titleSeed: title,
                   runtimeMode,
                   interactionMode: target.interactionMode,
-                  ...(effectiveMiniSkillIds.length > 0
-                    ? { miniSkillIds: effectiveMiniSkillIds }
-                    : {}),
-                  ...(ctxAgentProfileTurnContext
-                    ? { agentProfile: ctxAgentProfileTurnContext }
-                    : {}),
                   bootstrap: {
                     createThread: {
                       projectId: activeProject.id,
@@ -8372,62 +8213,60 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
-    if (!sendAt) {
-      const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
-        attachment.type === "image"
-          ? {
-              type: "image" as const,
-              id: attachment.id,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              previewUrl: attachment.previewUrl,
-              ...(attachment.source ? { source: attachment.source } : {}),
-            }
-          : {
-              type: "file" as const,
-              id: attachment.id,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-              sizeBytes: attachment.sizeBytes,
-              downloadable: false,
-              ...(attachment.source ? { source: attachment.source } : {}),
-            },
-      );
-      const shouldAnchorFirstMessage =
-        activeThread.latestTurn === null &&
-        !timelineMessages.some((message) => message.role === "user");
-      if (shouldAnchorFirstMessage) {
-        isAtEndRef.current = true;
-        timelineScrollModeRef.current = "anchoring-new-turn";
-        liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-        setTimelineLiveFollowEnabled(true);
-        pendingTimelineAnchorRef.current = messageIdForSend;
-        activeTimelineAnchorIndexRef.current = null;
-        showScrollDebouncer.current.cancel();
-        setShowScrollToBottom(false);
-        setTimelineAnchor({
-          threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-          messageId: messageIdForSend,
-        });
-      } else {
-        scrollToEnd();
-      }
-      setOptimisticUserMessages((existing) => [
-        ...existing,
-        {
-          id: messageIdForSend,
-          role: "user",
-          text: outgoingMessageText,
-          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
-          ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
-          turnId: null,
-          createdAt: messageCreatedAt,
-          updatedAt: messageCreatedAt,
-          streaming: false,
-        },
-      ]);
+    const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
+      attachment.type === "image"
+        ? {
+            type: "image" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            previewUrl: attachment.previewUrl,
+            ...(attachment.source ? { source: attachment.source } : {}),
+          }
+        : {
+            type: "file" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            downloadable: false,
+            ...(attachment.source ? { source: attachment.source } : {}),
+          },
+    );
+    const shouldAnchorFirstMessage =
+      activeThread.latestTurn === null &&
+      !timelineMessages.some((message) => message.role === "user");
+    if (shouldAnchorFirstMessage) {
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = "anchoring-new-turn";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = messageIdForSend;
+      activeTimelineAnchorIndexRef.current = null;
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      setTimelineAnchor({
+        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageId: messageIdForSend,
+      });
+    } else {
+      scrollToEnd();
     }
+    setOptimisticUserMessages((existing) => [
+      ...existing,
+      {
+        id: messageIdForSend,
+        role: "user",
+        text: outgoingMessageText,
+        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+        ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
+        turnId: null,
+        createdAt: messageCreatedAt,
+        updatedAt: messageCreatedAt,
+        streaming: false,
+      },
+    ]);
     setThreadError(threadIdForSend, null);
     if (expiredTerminalContextCount > 0) {
       const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -8442,11 +8281,9 @@ export default function ChatView(props: ChatViewProps) {
         }),
       );
     }
-    if (!queuedMessage) {
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-    }
+    promptRef.current = "";
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -8552,9 +8389,6 @@ export default function ChatView(props: ChatViewProps) {
                     runSetupScript: true,
                   }
                 : {}),
-              ...(isLocalDraftThread && draftThread?.forkConversation !== undefined
-                ? { forkConversation: draftThread.forkConversation }
-                : {}),
             }
           : undefined;
       const backgroundThreadRef =
@@ -8604,10 +8438,7 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
-          ...(effectiveMiniSkillIds.length > 0 ? { miniSkillIds: effectiveMiniSkillIds } : {}),
-          ...(ctxAgentProfileTurnContext ? { agentProfile: ctxAgentProfileTurnContext } : {}),
           ...(bootstrap ? { bootstrap } : {}),
-          ...(sendAt ? { sendAt } : {}),
           createdAt: messageCreatedAt,
         },
       });
@@ -8640,23 +8471,6 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
-        if (sendAt) {
-          for (const image of composerImagesSnapshot) revokeBlobPreviewUrl(image.previewUrl);
-          resetLocalDispatch();
-          toastManager.add(
-            stackedThreadToast({
-              type: "info",
-              title: "Message scheduled",
-              description:
-                "The environment will send it automatically, even with this window closed.",
-            }),
-          );
-        }
-        // Request-scoped mini skills are single-use: the selection only
-        // survives a failed send, never a successful one.
-        if (ctxSelectedMiniSkillIds.length > 0) {
-          setComposerDraftSelectedMiniSkillIds(composerDraftTarget, []);
-        }
         // The turn is under way and will spend quota, so that thread's limits
         // snapshot is stale. Uploads may have outlasted a navigation, so only
         // the sending thread's panel clears.
@@ -8704,50 +8518,7 @@ export default function ChatView(props: ChatViewProps) {
         );
         clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
       }
-      if (queuedMessage) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
-        // The optimistic row's preview URLs were just revoked, so the images
-        // need fresh ones before the row can show them again. A usage-limit
-        // failure parks on the window reset with auto-send instead of a
-        // manual hold, so the message goes out on its own when quota returns.
-        if (activeThreadKey) {
-          const failureMessage = (() => {
-            try {
-              const error = squashAtomCommandFailure(failure);
-              return error instanceof Error ? error.message : null;
-            } catch {
-              return null;
-            }
-          })();
-          const limitResetAt = isUsageLimitErrorMessage(failureMessage)
-            ? (getExhaustedRateLimitResetAt(providerStatuses, { nowMs: Date.now() }) ??
-              queuedMessage.rateLimitedUntil ??
-              null)
-            : null;
-          if (limitResetAt) {
-            useQueuedMessageStore.getState().holdForRateLimit(
-              activeThreadKey,
-              {
-                ...queuedMessage,
-                images: queuedMessage.images.map(cloneComposerImageForRetry),
-              },
-              limitResetAt,
-            );
-          } else {
-            useQueuedMessageStore.getState().holdAtFront(activeThreadKey, {
-              ...queuedMessage,
-              images: queuedMessage.images.map(cloneComposerImageForRetry),
-            });
-          }
-        }
-      } else if (
+      if (
         backgroundDraftOpened
           ? !composerDraftHasUserContent(
               useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
@@ -8837,170 +8608,28 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  // Sends the oldest queued message once it is due: a tool call finished
-  // after it was queued, or the turn ended. Only one leaves per boundary; the
-  // take inside onSend re-anchors the rest. A message waiting on a manual
-  // schedule or an exhausted plan window waits for its instant instead: the
-  // effect arms one alarm for exactly then and re-evaluates, so it goes out
-  // on its own, while Send now still forces it and Cancel still drops it.
-  const sendQueuedMessage = useEffectEvent((message: QueuedComposerMessage) => {
-    void onSend(undefined, message.submissionIntent, undefined, message);
-  });
-  const nextQueuedMessage = localQueuedMessages[0] ?? null;
-  const latestToolActivityId = useMemo(
-    () => (nextQueuedMessage ? latestCompletedToolActivityId(threadActivities) : null),
-    [nextQueuedMessage, threadActivities],
-  );
-  // Approvals and questions block the agent; a steer landing on top of them
-  // would answer nothing and confuse the turn, so the queue holds until the
-  // user resolves them.
+  // Queued messages go out from QueuedMessageSender, which also covers
+  // threads that are not on screen. Send now uses the same path but skips the
+  // wait for a boundary. Approvals and questions still hold it: a steer on
+  // top of them would answer nothing and confuse the turn.
   const queueBlockedByPendingRequest =
     activePendingApproval !== null || pendingUserInputs.length > 0;
-  // onSend bails early on transient gates (environment offline, settings not
-  // hydrated, checkpoint rewinding, messages loading, machine not chosen) and
-  // leaves the message queued. Re-run when any of them clear so a due message
-  // does not wait for an unrelated phase change.
-  const queueSendGate =
-    activeEnvironmentUnavailable ||
-    !clientSettingsHydrated ||
-    isRevertingCheckpoint ||
-    threadDetailLoading ||
-    needsLoadBalancing ||
-    activeProviderStatus === null;
-  // Soonest exhausted-window reset in this environment. Unscoped on purpose:
-  // firing then and re-checking is cheaper than tracking per-window, and a
-  // queued send for another provider simply goes out on its own boundary.
-  const exhaustedRateLimitResetAt = useMemo(
-    () =>
-      getExhaustedRateLimitResetAt(providerStatuses, {
-        nowMs: Date.now(),
-      }),
-    [providerStatuses],
-  );
-  // Bumped by the wait alarm below so the effect re-evaluates with fresh
-  // values instead of sending through a stale closure.
-  const [queueWaitTick, setQueueWaitTick] = useState(0);
-  useEffect(() => {
-    if (!nextQueuedMessage || isSendBusy || queueBlockedByPendingRequest || queueSendGate) return;
-    if (sendInFlightRef.current) return;
-    if (!isQueuedMessageDue({ message: nextQueuedMessage, phase, latestToolActivityId })) {
-      const waitUntil = getQueuedMessageWaitUntil(nextQueuedMessage, Date.now());
-      if (waitUntil) {
-        const delayMs = Math.max(0, Date.parse(waitUntil) - Date.now());
-        const timer = setTimeout(() => setQueueWaitTick((tick) => tick + 1), delayMs);
-        return () => clearTimeout(timer);
-      }
-      return;
-    }
-    // Due by tool boundary but the plan window is exhausted: park it on the
-    // reset instead of sending through the wall on every boundary.
-    if (exhaustedRateLimitResetAt && activeThreadKey && !nextQueuedMessage.rateLimitedUntil) {
-      useQueuedMessageStore
-        .getState()
-        .holdForRateLimit(activeThreadKey, nextQueuedMessage, exhaustedRateLimitResetAt);
-      return;
-    }
-    sendQueuedMessage(nextQueuedMessage);
-  }, [
-    activeThreadKey,
-    exhaustedRateLimitResetAt,
-    isSendBusy,
-    latestToolActivityId,
-    nextQueuedMessage,
-    phase,
-    queueBlockedByPendingRequest,
-    queueSendGate,
-    queueWaitTick,
-    sendQueuedMessage,
-  ]);
 
-  // Schedules the live composer draft without sending. The draft moves into
-  // the queue like a running-turn follow-up, then goes out on its own when
-  // its instant arrives.
-  const onScheduleComposerDraft = async () => {
-    if (!activeThreadKey || !activeThread || !activeProject) return;
-    const choice = await requestScheduleSend();
-    if (!choice?.sendAt || currentRouteThreadKeyRef.current !== routeThreadKey) return;
-    if (!canScheduleActiveThread) {
-      toastManager.add({
-        type: "warning",
-        title: isLocalDraftThread
-          ? "Start this thread before scheduling a message"
-          : "Update this environment to schedule messages.",
-      });
-      return;
-    }
-    const message = enqueueComposerSnapshot({
-      sendAt: choice.sendAt,
-      submissionIntent: "foreground",
-    });
-    if (message) await onSend(undefined, "foreground", undefined, message, choice.sendAt);
-  };
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.
   const queuedMessageActionsRef = useRef({
     steer: (_id: string) => {},
     remove: (_id: string) => {},
-    schedule: (_id: string) => {},
   });
   queuedMessageActionsRef.current = {
     steer: (id) => {
-      const message = queuedMessages.find((entry) => entry.id === id);
-      if (!message) return;
-      if (message.serverSchedule) {
-        void updateScheduledMessage({
-          environmentId,
-          input: {
-            threadId: message.serverSchedule.command.threadId,
-            commandId: message.serverSchedule.command.commandId,
-            action: "send",
-          },
-        });
-        return;
-      }
-      if (sendInFlightRef.current || queueBlockedByPendingRequest) return;
-      void onSend(undefined, message.submissionIntent, undefined, message);
+      if (!activeThreadRef || queueBlockedByPendingRequest) return;
+      void sendQueuedMessage(activeThreadRef, id);
     },
     remove: (id) => {
-      const scheduled = queuedMessages.find((entry) => entry.id === id)?.serverSchedule;
-      if (scheduled) {
-        void updateScheduledMessage({
-          environmentId,
-          input: {
-            threadId: scheduled.command.threadId,
-            commandId: scheduled.command.commandId,
-            action: "cancel",
-          },
-        });
-        return;
-      }
       if (!activeThreadKey) return;
       const message = useQueuedMessageStore.getState().remove(activeThreadKey, id);
       if (message) restoreQueuedMessagesToComposer([message]);
-    },
-    schedule: (id) => {
-      if (!activeThreadKey) return;
-      const message = queuedMessages.find((entry) => entry.id === id);
-      if (!message) return;
-      const threadKey = activeThreadKey;
-      void requestScheduleSend(message.sendAt ?? null).then((choice) => {
-        if (!choice) return;
-        if (message.serverSchedule) {
-          void updateScheduledMessage({
-            environmentId,
-            input: {
-              threadId: message.serverSchedule.command.threadId,
-              commandId: message.serverSchedule.command.commandId,
-              action: choice.sendAt ? "reschedule" : "send",
-              ...(choice.sendAt ? { sendAt: choice.sendAt } : {}),
-            },
-          });
-        } else if (choice.sendAt && currentRouteThreadKeyRef.current === routeThreadKey) {
-          void onSend(undefined, message.submissionIntent, undefined, message, choice.sendAt);
-        } else if (!choice.sendAt) {
-          useQueuedMessageStore.getState().scheduleSend(threadKey, id, null);
-        }
-      });
     },
   };
   const onSteerQueuedMessage = useCallback((id: string) => {
@@ -9008,9 +8637,6 @@ export default function ChatView(props: ChatViewProps) {
   }, []);
   const onRemoveQueuedMessage = useCallback((id: string) => {
     queuedMessageActionsRef.current.remove(id);
-  }, []);
-  const onScheduleQueuedMessage = useCallback((id: string) => {
-    queuedMessageActionsRef.current.schedule(id);
   }, []);
   // Stop also cancels the queue: the messages return to the composer instead
   // of starting a new turn the moment the interrupted one settles.
@@ -10220,12 +9846,6 @@ export default function ChatView(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
-              {isLocalDraftThread && draftThread?.forkConversation && (
-                <div className="border-b px-4 py-2 text-sm text-muted-foreground">
-                  Fork of {forkSourceThread?.title ?? "this conversation"}. Continue from the
-                  selected message; the history is copied when you send.
-                </div>
-              )}
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
@@ -10268,9 +9888,6 @@ export default function ChatView(props: ChatViewProps) {
                 onRevertToTurnCount={
                   paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
                 }
-                {...(!paintOnlyDisplayedTimeline && isServerThread
-                  ? { onForkConversation: handleForkConversation }
-                  : {})}
                 isRevertingCheckpoint={!paintOnlyDisplayedTimeline && isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}
@@ -10314,7 +9931,6 @@ export default function ChatView(props: ChatViewProps) {
                   { context: { terminalFocus: false } },
                 )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
-                onScheduleQueuedMessage={onScheduleQueuedMessage}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
@@ -10499,7 +10115,6 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onCompactContext={onCompactContext}
                             onSend={onSend}
-                            onScheduleSend={onScheduleComposerDraft}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

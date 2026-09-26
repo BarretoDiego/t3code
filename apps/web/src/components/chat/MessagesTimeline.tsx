@@ -1826,21 +1826,24 @@ function QueuedMessageTimelineRow({
   }, [waitUntil]);
   const waitCountdown =
     waitUntil !== null ? (formatRateLimitResetCountdown(waitUntil, nowMs) ?? null) : null;
-  const statusLabel = queuedMessage.serverSchedule
-    ? queuedMessage.serverSchedule.error
-      ? `Could not send: ${queuedMessage.serverSchedule.error}`
-      : waitCountdown
-        ? `Scheduled in ${waitCountdown}. Sends even with this window closed.`
-        : "Scheduled. Waiting for the current turn to finish."
-    : queuedMessage.holdUntilUserAction
-      ? "Waits for Send now"
-      : waitCountdown
-        ? isScheduledWait
-          ? `Scheduled. Sends automatically in ${waitCountdown}. Send now to retry immediately, change the time with Schedule, or Cancel to edit.`
-          : `Plan limit reached. Sends automatically in ${waitCountdown}. Send now to retry immediately, or Cancel to edit.`
-        : row.isNext
-          ? "Sends after the next tool call or when the turn ends"
-          : "Sends after the messages above it";
+  const sending = queuedMessage.sending !== undefined;
+  const statusLabel = sending
+    ? "Sending to the agent"
+    : queuedMessage.serverSchedule
+      ? queuedMessage.serverSchedule.error
+        ? `Could not send: ${queuedMessage.serverSchedule.error}`
+        : waitCountdown
+          ? `Scheduled in ${waitCountdown}. Sends even with this window closed.`
+          : "Scheduled. Waiting for the current turn to finish."
+      : queuedMessage.holdUntilUserAction
+        ? "Waits for Send now"
+        : waitCountdown
+          ? isScheduledWait
+            ? `Scheduled. Sends automatically in ${waitCountdown}. Send now to retry immediately, change the time with Schedule, or Cancel to edit.`
+            : `Plan limit reached. Sends automatically in ${waitCountdown}. Send now to retry immediately, or Cancel to edit.`
+          : row.isNext
+            ? "Sends after the next tool call or when the turn ends"
+            : "Sends after the messages above it";
   return (
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
@@ -1868,14 +1871,14 @@ function QueuedMessageTimelineRow({
           <Tooltip>
             <TooltipTrigger
               render={<span className="inline-flex h-6 items-center gap-1" />}
-              aria-label={`Queued. ${statusLabel}.`}
+              aria-label={`${sending ? "Sending" : "Queued"}. ${statusLabel}.`}
             >
               <ClockIcon className="size-3.5" aria-hidden />
-              {waitCountdown ? `Sends in ${waitCountdown}` : "Queued"}
+              {sending ? "Sending" : waitCountdown ? `Sends in ${waitCountdown}` : "Queued"}
             </TooltipTrigger>
             <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
           </Tooltip>
-          <div className="ml-auto flex items-center gap-0.5">
+          <div className={cn("ml-auto flex items-center gap-0.5", sending && "invisible")}>
             <Tooltip>
               <TooltipTrigger
                 render={

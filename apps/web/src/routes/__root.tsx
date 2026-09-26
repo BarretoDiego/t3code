@@ -31,6 +31,7 @@ import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAp
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
+import { QueuedMessageSender } from "../components/QueuedMessageSender";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
@@ -230,6 +231,7 @@ function RootRouteView() {
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
+          <QueuedMessageSender />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
           <ScheduleSendDialogHost />

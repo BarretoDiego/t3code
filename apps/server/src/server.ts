@@ -43,6 +43,7 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
+  untracedRequestsLayer,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
@@ -624,6 +625,8 @@ export const makeRoutesLayer = Layer.mergeAll(
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  // Last, so no route layer can replace the server's one TracerDisabledWhen.
+  untracedRequestsLayer,
 ).pipe(
   Layer.provide(MarketplaceService.layer),
   Layer.provide(AiRuntimeService.layer),
