@@ -2,6 +2,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollVie
 import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { type RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
+import { cursorKeychainAccessEnvironments } from "@t3tools/client-runtime/state/usage";
 import {
   isCompatibleUsageContractVersion,
   isModelCostUnknown,
@@ -168,9 +169,7 @@ export function UsageRouteScreen() {
   const refreshLimits = useCallback(async () => {
     await Promise.all([limits.refresh(), refreshPlanLimits()]);
   }, [limits, refreshPlanLimits]);
-  const cursorAccessEnvironments = selectedEnvironments.filter(
-    (environment) => environment.needsCursorKeychainAccess,
-  );
+  const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
   const refreshAfterCursorEnable = () => {
     void refresh();
     void limits.refreshAfterEnable();
