@@ -54,9 +54,11 @@ import {
   flatToPm,
   pmToFlat,
   serializeEditorDoc,
+  type RichDocMap,
   type SkillMeta,
 } from "~/composer-rich-text-doc";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
+import { findComposerCodeBlocks } from "~/composerCodeBlocks";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { basenameOfPath } from "~/pierre-icons";
 import { FileTagChipContent } from "./chat/FileTagChip";
@@ -476,9 +478,8 @@ type StyledRange = {
   markers: { at: number; side: number; text: string }[];
 };
 
-function collectStyledRanges(doc: ProseMirrorNode): StyledRange[] {
+function collectStyledRanges(map: RichDocMap): StyledRange[] {
   const ranges: StyledRange[] = [];
-  const map = serializeEditorDoc(doc);
   let range: StyledRange | null = null;
   let openLength = 0;
   for (const run of map.runs) {
@@ -530,6 +531,31 @@ function decorationsForSelection(
   selection: { from: number; to: number; empty: boolean },
 ): DecorationSet {
   const decorations: Decoration[] = [];
+  const map = serializeEditorDoc(doc);
+  const prompt = map.value;
+  const codeLines = new Map<number, "start" | "middle" | "end">();
+  for (const block of findComposerCodeBlocks(prompt)) {
+    const first = prompt.slice(0, block.start).split("\n").length - 1;
+    const last = prompt.slice(0, block.end).split("\n").length - 1;
+    for (let line = first; line <= last; line += 1) {
+      codeLines.set(line, line === first ? "start" : line === last ? "end" : "middle");
+    }
+  }
+  if (codeLines.size > 0) {
+    let line = 0;
+    doc.descendants((node, pos, parent) => {
+      if (node.type.name !== "paragraph") return true;
+      const role = codeLines.get(line++);
+      if (role && parent?.type.name === "doc") {
+        decorations.push(
+          Decoration.node(pos, pos + node.nodeSize, {
+            class: `composer-code-line composer-code-line-${role}`,
+          }),
+        );
+      }
+      return true;
+    });
+  }
   if (!selection.empty) {
     doc.nodesBetween(selection.from, selection.to, (node, pos) => {
       if (node.type.name.startsWith("composer-")) {
@@ -541,7 +567,7 @@ function decorationsForSelection(
       return true;
     });
   }
-  for (const range of collectStyledRanges(doc)) {
+  for (const range of collectStyledRanges(map)) {
     const active = selection.empty
       ? selection.from >= range.from && selection.from <= range.to
       : selection.from < range.to && selection.to > range.from;

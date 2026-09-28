@@ -619,6 +619,15 @@ it("preserves the caret before trailing text after mixed-width skill chips", () 
 });
 
 describe("clampCollapsedComposerCursor", () => {
+  it("keeps every cursor position inside an editable code fence", () => {
+    const text = "before\n```ts\nconst x = **literal**;\n```\nafter";
+    for (let cursor = 0; cursor <= text.length; cursor += 1) {
+      expect(expandCollapsedComposerCursor(text, cursor)).toBe(cursor);
+      expect(collapseExpandedComposerCursor(text, cursor)).toBe(cursor);
+    }
+    expect(clampCollapsedComposerCursor(text, text.length)).toBe(text.length);
+  });
+
   it("clamps to collapsed prompt length when mentions are present", () => {
     const text = "open @AGENTS.md then ";
 

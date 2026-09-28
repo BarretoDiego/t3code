@@ -36,11 +36,7 @@ export type ComposerPromptSegment =
       context: TerminalContextDraft | null;
     }
   | {
-      /**
-       * A closed fenced block. The composer renders it as a container and hides
-       * the fences, so `content` is what the caret can reach while `source` is
-       * what the prompt actually carries.
-       */
+      /** A closed fenced block. `source` includes the editable fences. */
       type: "code-block";
       info: string;
       content: string;

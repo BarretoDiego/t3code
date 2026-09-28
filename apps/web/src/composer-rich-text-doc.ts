@@ -5,6 +5,7 @@ import { TaskItem } from "@tiptap/extension-task-item";
 import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
 import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
+import { findComposerCodeBlocks } from "~/composerCodeBlocks";
 
 /**
  * Pure document model for the rich text (Tiptap) composer.
@@ -200,11 +201,19 @@ export function buildTiptapContent(
       return sentinel;
     })
     .join("");
+  const codeLines = new Set<number>();
+  for (const block of findComposerCodeBlocks(text)) {
+    const firstLine = text.slice(0, block.start).split("\n").length - 1;
+    const lastLine = text.slice(0, block.end).split("\n").length - 1;
+    for (let line = firstLine; line <= lastLine; line += 1) codeLines.add(line);
+  }
   let atomIndex = 0;
-  const lines: DocLine[] = text.split("\n").map((line) => {
-    const parsed = styling ? parseTaskPrefix(line) : null;
+  const lines: DocLine[] = text.split("\n").map((line, lineIndex) => {
+    const isCodeLine = codeLines.has(lineIndex);
+    const parsed = styling && !isCodeLine ? parseTaskPrefix(line) : null;
     const content = parsed ? line.slice(parsed.markerLength) : line;
-    const spans = styling ? parseInlineMarkdown(content) : [{ text: content, marks: [] }];
+    const spans =
+      styling && !isCodeLine ? parseInlineMarkdown(content) : [{ text: content, marks: [] }];
     const inline: InlineJson[] = [];
     for (const span of spans) {
       span.text.split(sentinel).forEach((piece, index) => {

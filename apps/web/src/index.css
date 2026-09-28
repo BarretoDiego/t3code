@@ -1924,6 +1924,25 @@ code {
   user-select: none;
 }
 
+/* Tiptap stores fenced prompts as editable paragraphs. Paint adjacent lines as
+   one block while leaving the Markdown fences in the document for exact edits. */
+.composer-tiptap .composer-code-line {
+  background: var(--muted);
+  color: var(--code-foreground);
+  font-family: var(--font-mono);
+  padding-inline: 0.6rem;
+}
+
+.composer-tiptap .composer-code-line-start {
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding-top: 0.4rem;
+}
+
+.composer-tiptap .composer-code-line-end {
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding-bottom: 0.4rem;
+}
+
 /* Code painted live inside the prompt composer. Deliberately lighter than the
    rendered `.chat-markdown` variant: no border, no padding, and no font-size
    change, so the caret and the line boxes never shift as the user types. */

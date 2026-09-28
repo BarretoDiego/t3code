@@ -1,17 +1,11 @@
 /**
  * Finds fenced code blocks in a composer prompt.
  *
- * The composer renders a closed fence as a container the user types inside,
- * with the fence characters themselves hidden. That makes the fences part of
- * the prompt string but absent from the visible text, so every offset the
- * composer tracks exists in two spaces: "expanded" (the prompt as submitted)
- * and "collapsed" (what the caret can actually reach). This module is the one
- * place that decides where a block starts and ends, so the structural node, the
- * segmentation, and the syntax scanner cannot drift apart.
+ * The composer paints a closed fence as a code block while keeping the fence
+ * characters editable. This module decides where blocks start and end so
+ * segmentation and the editor's visual decoration agree.
  *
- * Only *closed* fences qualify. A half-typed fence stays plain text and is left
- * to the inline highlighter, because promoting it would move the caret out from
- * under the user mid-keystroke.
+ * Only *closed* fences qualify. A half-typed fence stays plain text.
  */
 
 export interface ComposerCodeBlockMatch {

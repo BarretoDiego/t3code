@@ -76,6 +76,21 @@ describe("queuedMessageStore", () => {
     expect(useQueuedMessageStore.getState().queuesByThreadKey["thread-a"]).toBeUndefined();
   });
 
+  it("submits a durable schedule without holding the next message for a local turn", () => {
+    const { enqueue, beginSend, markScheduling, finishSend, drain } =
+      useQueuedMessageStore.getState();
+    const scheduled = enqueue("thread-a", makeMessage("later"));
+    enqueue("thread-a", makeMessage("next"));
+    beginSend("thread-a", scheduled.id, null);
+
+    expect(markScheduling("thread-a", scheduled.id)).toBe(true);
+    expect(drain("thread-a").map((message) => message.prompt)).toEqual(["next"]);
+    expect(useQueuedMessageStore.getState().lastDispatchByThreadKey["thread-a"]).toBeUndefined();
+
+    finishSend("thread-a", scheduled.id);
+    expect(useQueuedMessageStore.getState().queuesByThreadKey["thread-a"]).toBeUndefined();
+  });
+
   it("failSend returns the message to the head, held", () => {
     const { enqueue, beginSend, failSend } = useQueuedMessageStore.getState();
     enqueue("thread-a", makeMessage("first"));

@@ -146,6 +146,8 @@ describe("composer rich text document model", () => {
     "**a `code` c**",
     "***bold italic*** keeps nesting",
     "line one\nline two",
+    "before\n```ts\nconst answer = **literal**;\n- [ ] literal\n```\nafter",
+    "~~~bash\necho `literal`\n~~~",
     "trailing newline\n",
     "1. foo\n2. asdf\n",
     "- [ ] buy milk",
@@ -174,6 +176,11 @@ describe("composer rich text document model", () => {
     "**bold** then @README.md then *italic*",
   ])("round-trips %s through a real ProseMirror document", (value) => {
     expect(roundTrip(value).value).toBe(value);
+  });
+
+  it("keeps fenced code literal in plain mode too", () => {
+    const value = "```ts\nconst answer = **literal**;\n```";
+    expect(roundTripPlain(value).value).toBe(value);
   });
 
   it.each([

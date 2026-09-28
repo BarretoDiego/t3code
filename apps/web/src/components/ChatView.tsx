@@ -331,6 +331,7 @@ import {
   useQueuedMessageStore,
 } from "../queuedMessageStore";
 import { sendQueuedMessage } from "./chat/sendQueuedMessage";
+import { requestScheduleSend } from "./chat/ScheduleSendDialog";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -1521,6 +1522,7 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const updateScheduledMessage = useAtomCommand(threadEnvironment.updateScheduledMessage);
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -7220,7 +7222,43 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const queuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  const localQueuedMessages = useQueuedMessages(activeThreadKey ?? "");
+  const supportsScheduledMessages =
+    serverConfig?.environment.capabilities.scheduledMessages === true;
+  const canScheduleActiveThread = supportsScheduledMessages && isServerThread;
+  const scheduledMessagesQuery = useEnvironmentQuery(
+    canScheduleActiveThread
+      ? threadEnvironment.scheduledMessages({
+          environmentId,
+          input: { threadId: routeThreadRef.threadId },
+        })
+      : null,
+  );
+  const queuedMessages = useMemo(
+    () => [
+      ...localQueuedMessages,
+      ...(scheduledMessagesQuery.data ?? []).map((entry): QueuedComposerMessage => ({
+        id: entry.command.commandId,
+        serverSchedule: entry,
+        prompt: entry.command.message.text,
+        images: [],
+        files: [],
+        terminalContexts: [],
+        previewAnnotations: [],
+        reviewComments: [],
+        sendSettings: {
+          modelSelection: entry.command.modelSelection ?? activeServerThread!.modelSelection,
+          runtimeMode: entry.command.runtimeMode,
+          interactionMode: entry.command.interactionMode,
+          promptEffort: null,
+        },
+        queuedAfterToolActivityId: null,
+        sendAt: entry.sendAt,
+        createdAt: entry.command.createdAt,
+      })),
+    ],
+    [localQueuedMessages, scheduledMessagesQuery.data, activeServerThread],
+  );
   // The composer's model and modes, as a queued message keeps them for its send.
   const readComposerSendSettings = (
     sendCtx: ReturnType<ChatComposerHandle["getSendContext"]>,
@@ -8587,21 +8625,112 @@ export default function ChatView(props: ChatViewProps) {
   const queueBlockedByPendingRequest =
     activePendingApproval !== null || pendingUserInputs.length > 0;
 
+  const onScheduleComposerDraft = async () => {
+    if (!activeThreadRef || !activeThreadKey || !activeProject) return;
+    if (!canScheduleActiveThread) {
+      toastManager.add({
+        type: "warning",
+        title: isLocalDraftThread
+          ? "Start this thread before scheduling a message"
+          : "Update this environment to schedule messages.",
+      });
+      return;
+    }
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable || sendCtx.multipleModelSelections !== null) return;
+    const sendSettings = readComposerSendSettings(sendCtx);
+    if (
+      composerRef.current?.validateProviderInput(
+        applyClaudePromptEffortPrefix(promptRef.current, sendSettings.promptEffort),
+      ) === false
+    ) {
+      return;
+    }
+    const choice = await requestScheduleSend();
+    if (!choice?.sendAt || currentRouteThreadKeyRef.current !== routeThreadKey) return;
+    const message = useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+      prompt: promptRef.current,
+      images: [...composerImagesRef.current],
+      files: [...composerFilesRef.current],
+      terminalContexts: [...composerTerminalContextsRef.current],
+      previewAnnotations: [...sendCtx.previewAnnotations],
+      reviewComments: [...sendCtx.reviewComments],
+      sendSettings,
+      queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+      holdUntilUserAction: true,
+      createdAt: new Date().toISOString(),
+    });
+    promptRef.current = "";
+    composerImagesRef.current = [];
+    composerFilesRef.current = [];
+    composerTerminalContextsRef.current = [];
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
+    await sendQueuedMessage(activeThreadRef, message.id, { scheduleAt: choice.sendAt });
+  };
+
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.
   const queuedMessageActionsRef = useRef({
     steer: (_id: string) => {},
     remove: (_id: string) => {},
+    schedule: (_id: string) => {},
   });
   queuedMessageActionsRef.current = {
     steer: (id) => {
+      const scheduled = queuedMessages.find((message) => message.id === id)?.serverSchedule;
+      if (scheduled) {
+        void updateScheduledMessage({
+          environmentId,
+          input: {
+            threadId: scheduled.command.threadId,
+            commandId: scheduled.command.commandId,
+            action: "send",
+          },
+        });
+        return;
+      }
       if (!activeThreadRef || queueBlockedByPendingRequest) return;
       void sendQueuedMessage(activeThreadRef, id);
     },
     remove: (id) => {
+      const scheduled = queuedMessages.find((message) => message.id === id)?.serverSchedule;
+      if (scheduled) {
+        void updateScheduledMessage({
+          environmentId,
+          input: {
+            threadId: scheduled.command.threadId,
+            commandId: scheduled.command.commandId,
+            action: "cancel",
+          },
+        });
+        return;
+      }
       if (!activeThreadKey) return;
       const message = useQueuedMessageStore.getState().remove(activeThreadKey, id);
       if (message) restoreQueuedMessagesToComposer([message]);
+    },
+    schedule: (id) => {
+      const message = queuedMessages.find((entry) => entry.id === id);
+      if (!message) return;
+      void requestScheduleSend(message.sendAt ?? null).then((choice) => {
+        if (!choice) return;
+        if (message.serverSchedule) {
+          void updateScheduledMessage({
+            environmentId,
+            input: {
+              threadId: message.serverSchedule.command.threadId,
+              commandId: message.serverSchedule.command.commandId,
+              action: choice.sendAt ? "reschedule" : "send",
+              ...(choice.sendAt ? { sendAt: choice.sendAt } : {}),
+            },
+          });
+        } else if (choice.sendAt && activeThreadRef && canScheduleActiveThread) {
+          void sendQueuedMessage(activeThreadRef, id, { scheduleAt: choice.sendAt });
+        } else if (!choice.sendAt && activeThreadKey) {
+          useQueuedMessageStore.getState().scheduleSend(activeThreadKey, id, null);
+        }
+      });
     },
   };
   const onSteerQueuedMessage = useCallback((id: string) => {
@@ -8609,6 +8738,9 @@ export default function ChatView(props: ChatViewProps) {
   }, []);
   const onRemoveQueuedMessage = useCallback((id: string) => {
     queuedMessageActionsRef.current.remove(id);
+  }, []);
+  const onScheduleQueuedMessage = useCallback((id: string) => {
+    queuedMessageActionsRef.current.schedule(id);
   }, []);
   // Stop also cancels the queue: the messages return to the composer instead
   // of starting a new turn the moment the interrupted one settles.
@@ -9903,6 +10035,7 @@ export default function ChatView(props: ChatViewProps) {
                   { context: { terminalFocus: false } },
                 )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
+                onScheduleQueuedMessage={onScheduleQueuedMessage}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
@@ -10087,6 +10220,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onCompactContext={onCompactContext}
                             onSend={onSend}
+                            onScheduleSend={onScheduleComposerDraft}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

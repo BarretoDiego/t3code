@@ -48,6 +48,7 @@ async function run<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A>
 export async function sendQueuedMessage(
   threadRef: ScopedThreadRef,
   messageId: string,
+  options?: { scheduleAt?: string },
 ): Promise<void> {
   const { environmentId, threadId } = threadRef;
   const threadKey = scopedThreadKey(threadRef);
@@ -163,7 +164,13 @@ export async function sendQueuedMessage(
     // Stop hands a preparing message back to the composer. Past this point
     // the send can no longer be taken back.
     const thread = readThread(threadRef) ?? undefined;
-    if (!queue.markDispatching(threadKey, message.id, createLocalDispatchSnapshot(thread))) return;
+    if (
+      options?.scheduleAt
+        ? !queue.markScheduling(threadKey, message.id)
+        : !queue.markDispatching(threadKey, message.id, createLocalDispatchSnapshot(thread))
+    ) {
+      return;
+    }
     const context = buildMessageContext({
       terminalContexts: sendableTerminalContexts,
       reviewComments: message.reviewComments,
@@ -193,6 +200,7 @@ export async function sendQueuedMessage(
         modelSelection: sendSettings.modelSelection,
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
+        ...(options?.scheduleAt ? { sendAt: options.scheduleAt } : {}),
         createdAt,
       },
     });

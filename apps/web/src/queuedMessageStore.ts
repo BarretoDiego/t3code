@@ -97,6 +97,8 @@ interface QueuedMessageStoreState {
   ) => QueuedComposerMessage | null;
   /** The turn start is going out. False when Stop took the message back first. */
   markDispatching: (threadKey: string, id: string, thread: LocalDispatchSnapshot) => boolean;
+  /** Marks a durable schedule as submitted without waiting for a turn to start now. */
+  markScheduling: (threadKey: string, id: string) => boolean;
   /** Drops a message whose send went out, or that had nothing left to send. */
   finishSend: (threadKey: string, id: string) => void;
   /**
@@ -181,6 +183,19 @@ export const useQueuedMessageStore = create<QueuedMessageStoreState>()((set, get
           thread,
           previous: get().lastDispatchByThreadKey[threadKey]?.thread ?? null,
         },
+      );
+      return true;
+    },
+    markScheduling: (threadKey, id) => {
+      const queue = queueOf(threadKey);
+      if (!queue.some((message) => message.id === id && message.sending === "preparing")) {
+        return false;
+      }
+      update(
+        threadKey,
+        queue.map((message) =>
+          message.id === id ? { ...message, sending: "dispatching" } : message,
+        ),
       );
       return true;
     },

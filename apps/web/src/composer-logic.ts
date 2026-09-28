@@ -110,19 +110,17 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       continue;
     }
     if (segment.type === "code-block") {
-      const collapsedLength = segment.content.length;
-      if (remaining <= collapsedLength) {
-        return expandedCursor + segment.prefixLength + remaining;
+      const length = segment.source.length;
+      if (remaining < length) {
+        return expandedCursor + remaining;
       }
-      remaining -= collapsedLength;
-      expandedCursor += segment.source.length;
+      remaining -= length;
+      expandedCursor += length;
       continue;
     }
 
     const segmentLength = segment.text.length;
-    // Strict, so a cursor landing exactly on the seam falls through to whatever
-    // follows. A code block must claim that seam: the caret is drawn inside the
-    // container there, and text typed at it belongs inside the fences.
+    // Strict, so a cursor landing exactly on the seam falls through to whatever follows.
     if (remaining < segmentLength) {
       return expandedCursor + remaining;
     }
@@ -137,9 +135,8 @@ function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
   }
-  // Only the block's content is reachable; the fences are hidden.
   if (segment.type === "code-block") {
-    return segment.content.length;
+    return segment.source.length;
   }
   return 1;
 }
@@ -213,17 +210,12 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
       continue;
     }
     if (segment.type === "code-block") {
-      const expandedLength = segment.source.length;
-      if (remaining <= expandedLength) {
-        // Anywhere in the hidden fences resolves to the nearest content edge.
-        const inner = Math.min(
-          segment.content.length,
-          Math.max(0, remaining - segment.prefixLength),
-        );
-        return collapsedCursor + inner;
+      const length = segment.source.length;
+      if (remaining <= length) {
+        return collapsedCursor + remaining;
       }
-      remaining -= expandedLength;
-      collapsedCursor += segment.content.length;
+      remaining -= length;
+      collapsedCursor += length;
       continue;
     }
 

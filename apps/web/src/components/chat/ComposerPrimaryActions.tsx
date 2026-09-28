@@ -268,22 +268,27 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     </button>
   );
 
-  const scheduleButton =
-    onScheduleSend && hasSendableContent ? (
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost-muted"
-        shape="pill"
-        {...pointerFocusProps}
-        onClick={onScheduleSend}
-        disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-        aria-label="Schedule send"
-        title="Schedule send"
-      >
-        <CalendarClockIcon className="size-4" aria-hidden="true" />
-      </Button>
-    ) : null;
+  const scheduleButton = onScheduleSend ? (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="ghost-muted"
+      shape="pill"
+      {...pointerFocusProps}
+      onClick={onScheduleSend}
+      disabled={
+        !hasSendableContent ||
+        isSendBusy ||
+        isSendDisabled ||
+        isConnecting ||
+        isEnvironmentUnavailable
+      }
+      aria-label="Schedule send"
+      title="Schedule send"
+    >
+      <CalendarClockIcon className="size-4" aria-hidden="true" />
+    </Button>
+  ) : null;
 
   if (!isRunning) {
     return (
