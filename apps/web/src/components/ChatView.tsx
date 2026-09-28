@@ -467,6 +467,7 @@ import {
   peekRememberedThreadTimeline,
   rememberReadyThreadTimeline,
   resolveThreadSwitchTimeline,
+  selectForkPreviewMessages,
   timelineHasEphemeralPreviewUrls,
   observeProactivePanelUserChoice,
   resolveProactiveTurnDiffAction,
@@ -1566,6 +1567,11 @@ export default function ChatView(props: ChatViewProps) {
         ? store.getDraftSession(draftId)
         : null,
   );
+  const forkSourceThread = useThread(
+    draftThread?.forkConversation
+      ? scopeThreadRef(draftThread.environmentId, draftThread.forkConversation.sourceThreadId)
+      : null,
+  );
   const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
   const loadingServerThread = useMemo(
@@ -2280,6 +2286,16 @@ export default function ChatView(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const handleForkConversation = useCallback(
+    (throughMessageId: MessageId) => {
+      const sourceThread = activeThread;
+      if (!isServerThread || !activeProject || !sourceThread) return;
+      void handleNewThread(scopeProjectRef(sourceThread.environmentId, activeProject.id), {
+        forkConversation: { sourceThreadId: sourceThread.id, throughMessageId },
+      });
+    },
+    [activeProject, activeThread, handleNewThread, isServerThread],
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
@@ -3310,7 +3326,21 @@ export default function ChatView(props: ChatViewProps) {
       return next;
     });
   }, []);
-  const serverMessages = activeThread?.messages;
+  const serverMessages = useMemo(
+    () =>
+      isLocalDraftThread && draftThread?.forkConversation
+        ? selectForkPreviewMessages(
+            forkSourceThread?.messages ?? [],
+            draftThread.forkConversation.throughMessageId,
+          )
+        : activeThread?.messages,
+    [
+      activeThread?.messages,
+      draftThread?.forkConversation,
+      forkSourceThread?.messages,
+      isLocalDraftThread,
+    ],
+  );
   const [projectServerMessagePreviews] = useState(createMessageAttachmentPreviewProjector);
   const [projectHandoffMessagePreviews] = useState(createMessageAttachmentPreviewProjector);
   const downloadFileAttachment = useCallback(
@@ -8399,6 +8429,9 @@ export default function ChatView(props: ChatViewProps) {
                     runSetupScript: true,
                   }
                 : {}),
+              ...(isLocalDraftThread && draftThread?.forkConversation !== undefined
+                ? { forkConversation: draftThread.forkConversation }
+                : {}),
             }
           : undefined;
       const backgroundThreadRef =
@@ -9950,6 +9983,12 @@ export default function ChatView(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+              {isLocalDraftThread && draftThread?.forkConversation && (
+                <div className="border-b px-4 py-2 text-sm text-muted-foreground">
+                  Fork of {forkSourceThread?.title ?? "this conversation"}. Continue from the
+                  selected message; the history is copied when you send.
+                </div>
+              )}
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
@@ -10035,6 +10074,9 @@ export default function ChatView(props: ChatViewProps) {
                   { context: { terminalFocus: false } },
                 )}
                 onRemoveQueuedMessage={onRemoveQueuedMessage}
+                {...(!paintOnlyDisplayedTimeline && isServerThread
+                  ? { onForkConversation: handleForkConversation }
+                  : {})}
                 onScheduleQueuedMessage={onScheduleQueuedMessage}
               />
 

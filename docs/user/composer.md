@@ -75,6 +75,14 @@ On web and desktop, use Settings → Providers → **Models** to add an unlisted
 name and options. Only options supported by the provider integration affect turns. Antigravity
 uses its account catalog and does not support custom models.
 
+## Continue a conversation with another model
+
+On web and desktop, choose **Fork conversation here** on a message to open a new
+draft with the conversation through that message. Select the model or provider
+for the new thread, then send a prompt to start it. T3 Code copies the selected
+history and gives its context to the new provider. The original thread remains
+available and unchanged.
+
 ## Model defaults
 
 T3 Code remembers your provider, model, and model options for new threads. A
