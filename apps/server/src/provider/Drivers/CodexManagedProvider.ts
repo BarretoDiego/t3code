@@ -25,7 +25,7 @@ const DRIVER = ProviderDriverKind.make("codex");
 export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(function* (
   input: ProviderDriverCreateInput<CodexSettings>,
 ) {
-  const { instanceId, enabled, displayName, accentColor, config } = input;
+  const { instanceId, enabled, displayName, accentColor, icon, config } = input;
   const http = yield* HttpClient.HttpClient;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const settings = yield* ServerSettingsService;
@@ -41,6 +41,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     driverKind: DRIVER,
     displayName,
     accentColor,
+    icon,
     continuationGroupKey: continuationIdentity.continuationKey,
   });
   const setup = { canAuthenticate: true, canInstall: true };
