@@ -1,9 +1,11 @@
 import type {
   ModelSelection,
+  MiniSkillId,
   PreviewAnnotationPayload,
   ProviderInteractionMode,
   RuntimeMode,
   ScheduledMessage,
+  TurnAgentProfileContext,
 } from "@t3tools/contracts";
 import { create } from "zustand";
 
@@ -25,6 +27,8 @@ export interface QueuedMessageSendSettings {
   interactionMode: ProviderInteractionMode;
   /** Effort written into the prompt text, for providers that read it there. */
   promptEffort: string | null;
+  miniSkillIds?: ReadonlyArray<MiniSkillId>;
+  agentProfile?: TurnAgentProfileContext;
 }
 
 /**

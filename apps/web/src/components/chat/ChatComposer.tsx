@@ -56,11 +56,7 @@ import {
   getProviderOptionDescriptors,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-import {
-  mergeProfileMiniSkillIds,
-  resolveAgentProfile,
-  type AgentProfileResolution,
-} from "@t3tools/shared/agentProfiles";
+import { resolveAgentProfile, type AgentProfileResolution } from "@t3tools/shared/agentProfiles";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {

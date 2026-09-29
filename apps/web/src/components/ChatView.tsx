@@ -77,6 +77,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { mergeProfileMiniSkillIds } from "@t3tools/shared/agentProfiles";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
@@ -7282,6 +7283,8 @@ export default function ChatView(props: ChatViewProps) {
           runtimeMode: entry.command.runtimeMode,
           interactionMode: entry.command.interactionMode,
           promptEffort: null,
+          ...(entry.command.miniSkillIds ? { miniSkillIds: entry.command.miniSkillIds } : {}),
+          ...(entry.command.agentProfile ? { agentProfile: entry.command.agentProfile } : {}),
         },
         queuedAfterToolActivityId: null,
         sendAt: entry.sendAt,
@@ -7305,6 +7308,11 @@ export default function ChatView(props: ChatViewProps) {
       ),
       sendCtx.selectedPromptEffort,
     ),
+    miniSkillIds: mergeProfileMiniSkillIds(
+      sendCtx.profileMiniSkillIds,
+      sendCtx.selectedMiniSkillIds,
+    ),
+    ...(sendCtx.agentProfileTurnContext ? { agentProfile: sendCtx.agentProfileTurnContext } : {}),
   });
   // Puts queued messages back into the composer after Stop or Cancel. Prompts
   // join with blank lines; attachments and contexts are added.
@@ -7510,6 +7518,14 @@ export default function ChatView(props: ChatViewProps) {
       interactionMode: sendInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
     } = sendCtx;
+    const miniSkillIds = mergeProfileMiniSkillIds(
+      sendCtx.profileMiniSkillIds,
+      sendCtx.selectedMiniSkillIds,
+    );
+    const requestContext = {
+      ...(miniSkillIds.length > 0 ? { miniSkillIds } : {}),
+      ...(sendCtx.agentProfileTurnContext ? { agentProfile: sendCtx.agentProfileTurnContext } : {}),
+    };
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
       sendContextImages.some((image) => image.id === directAnnotation.image?.id);
@@ -8071,6 +8087,7 @@ export default function ChatView(props: ChatViewProps) {
                   titleSeed: title,
                   runtimeMode,
                   interactionMode: target.interactionMode,
+                  ...requestContext,
                   bootstrap: {
                     createThread: {
                       projectId: activeProject.id,
@@ -8482,6 +8499,7 @@ export default function ChatView(props: ChatViewProps) {
           titleSeed: title,
           runtimeMode,
           interactionMode: sendInteractionMode,
+          ...requestContext,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },

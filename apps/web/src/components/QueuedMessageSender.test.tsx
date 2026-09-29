@@ -1,5 +1,11 @@
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  AgentProfileId,
+  EnvironmentId,
+  MiniSkillId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { act, createElement } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -142,6 +148,32 @@ describe("QueuedMessageSender", () => {
       input: { threadId: "thread-a", message: { text: "follow up" }, modelSelection },
     });
     expect(queue()).toBeUndefined();
+  });
+
+  it("sends the selected mini skills and profile snapshot with a queued turn", async () => {
+    const skillId = MiniSkillId.make("review-diff");
+    const agentProfile = {
+      profileId: AgentProfileId.make("reviewer"),
+      profileName: "Reviewer",
+      instructions: "Review the diff.",
+      promptTemplate: "{{user_message}}",
+    };
+    enqueue({
+      sendSettings: {
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        promptEffort: null,
+        miniSkillIds: [skillId],
+        agentProfile,
+      },
+    });
+    io.thread = thread("ready");
+    await render();
+
+    expect(io.run.mock.calls[0]?.[2]).toMatchObject({
+      input: { miniSkillIds: [skillId], agentProfile },
+    });
   });
 
   it("holds the next message until the server picks up the one before it", async () => {

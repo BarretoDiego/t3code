@@ -200,6 +200,8 @@ export async function sendQueuedMessage(
         modelSelection: sendSettings.modelSelection,
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
+        ...(sendSettings.miniSkillIds?.length ? { miniSkillIds: sendSettings.miniSkillIds } : {}),
+        ...(sendSettings.agentProfile ? { agentProfile: sendSettings.agentProfile } : {}),
         ...(options?.scheduleAt ? { sendAt: options.scheduleAt } : {}),
         createdAt,
       },
