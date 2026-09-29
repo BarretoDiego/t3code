@@ -1,11 +1,9 @@
 /**
  * Finds fenced code blocks in a composer prompt.
  *
- * The composer paints a closed fence as a code block while keeping the fence
+ * The composer paints a fence while it is being written and keeps its
  * characters editable. This module decides where blocks start and end so
  * segmentation and the editor's visual decoration agree.
- *
- * Only *closed* fences qualify. A half-typed fence stays plain text.
  */
 
 export interface ComposerCodeBlockMatch {
@@ -77,6 +75,17 @@ export function findComposerCodeBlocks(prompt: string): ComposerCodeBlockMatch[]
 
     if (newline === -1) break;
     lineStart = newline + 1;
+  }
+
+  if (open) {
+    const contentStart = Math.min(open.lineEnd + 1, prompt.length);
+    blocks.push({
+      start: open.start,
+      end: prompt.length,
+      info: open.info,
+      content: prompt.slice(contentStart),
+      prefixLength: contentStart - open.start,
+    });
   }
 
   return blocks;

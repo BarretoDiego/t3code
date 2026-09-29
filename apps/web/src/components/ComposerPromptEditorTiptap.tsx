@@ -533,12 +533,21 @@ function decorationsForSelection(
   const decorations: Decoration[] = [];
   const map = serializeEditorDoc(doc);
   const prompt = map.value;
-  const codeLines = new Map<number, "start" | "middle" | "end">();
+  const codeLines = new Map<number, "start" | "middle" | "end" | "single">();
   for (const block of findComposerCodeBlocks(prompt)) {
     const first = prompt.slice(0, block.start).split("\n").length - 1;
     const last = prompt.slice(0, block.end).split("\n").length - 1;
     for (let line = first; line <= last; line += 1) {
-      codeLines.set(line, line === first ? "start" : line === last ? "end" : "middle");
+      codeLines.set(
+        line,
+        line === first && line === last
+          ? "single"
+          : line === first
+            ? "start"
+            : line === last
+              ? "end"
+              : "middle",
+      );
     }
   }
   if (codeLines.size > 0) {

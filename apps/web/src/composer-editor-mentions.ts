@@ -36,7 +36,7 @@ export type ComposerPromptSegment =
       context: TerminalContextDraft | null;
     }
   | {
-      /** A closed fenced block. `source` includes the editable fences. */
+      /** A fenced block, including one still being typed. `source` includes the editable fences. */
       type: "code-block";
       info: string;
       content: string;

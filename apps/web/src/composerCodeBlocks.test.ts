@@ -36,13 +36,16 @@ describe("findComposerCodeBlocks", () => {
     expect(sliceBlocks("```\n```")).toEqual([{ source: "```\n```", info: "", content: "" }]);
   });
 
-  it("ignores an unclosed fence so half-typed input stays plain text", () => {
-    expect(findComposerCodeBlocks("```ts\nstill typing")).toEqual([]);
+  it("paints an unclosed fence through the end of the draft", () => {
+    expect(sliceBlocks("before\n```ts\nstill typing")).toEqual([
+      { source: "```ts\nstill typing", info: "ts", content: "still typing" },
+    ]);
+    expect(sliceBlocks("```ts")).toEqual([{ source: "```ts", info: "ts", content: "" }]);
   });
 
   it("requires the closing fence to match the opening marker and width", () => {
-    expect(findComposerCodeBlocks("```\nbody\n~~~")).toEqual([]);
-    expect(findComposerCodeBlocks("````\nbody\n```")).toEqual([]);
+    expect(sliceBlocks("```\nbody\n~~~")[0]?.content).toBe("body\n~~~");
+    expect(sliceBlocks("````\nbody\n```")[0]?.content).toBe("body\n```");
     expect(sliceBlocks("```\nbody\n````")[0]?.content).toBe("body");
   });
 

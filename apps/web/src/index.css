@@ -1943,6 +1943,11 @@ code {
   padding-bottom: 0.4rem;
 }
 
+.composer-tiptap .composer-code-line-single {
+  border-radius: var(--radius);
+  padding-block: 0.4rem;
+}
+
 /* Code painted live inside the prompt composer. Deliberately lighter than the
    rendered `.chat-markdown` variant: no border, no padding, and no font-size
    change, so the caret and the line boxes never shift as the user types. */

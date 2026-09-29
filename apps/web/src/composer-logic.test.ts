@@ -210,6 +210,8 @@ describe("detectComposerTrigger", () => {
     const text = "```\n#reviewer\n```";
     const trigger = detectComposerTrigger(text, 10);
     expect(trigger).toBeNull();
+    const unfinished = "```ts\n#reviewer";
+    expect(detectComposerTrigger(unfinished, unfinished.length)).toBeNull();
   });
 
   it("detects slash command token while typing command name", () => {

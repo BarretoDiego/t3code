@@ -147,6 +147,7 @@ describe("composer rich text document model", () => {
     "***bold italic*** keeps nesting",
     "line one\nline two",
     "before\n```ts\nconst answer = **literal**;\n- [ ] literal\n```\nafter",
+    "before\n```ts\nconst answer = **literal**;",
     "~~~bash\necho `literal`\n~~~",
     "trailing newline\n",
     "1. foo\n2. asdf\n",
