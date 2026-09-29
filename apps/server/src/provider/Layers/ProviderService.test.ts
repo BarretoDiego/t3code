@@ -422,6 +422,7 @@ function makeProviderServiceLayer(
     readonly directory?: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
     readonly supportsConversationRollback?: boolean;
     readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
+    readonly settingsLayer?: typeof defaultServerSettingsLayer;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
     readonly configLayer?: typeof serverConfigTestLayer;
   } = {},
@@ -455,7 +456,7 @@ function makeProviderServiceLayer(
         Layer.provide(NodeServices.layer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(input.settingsLayer ?? defaultServerSettingsLayer),
         Layer.provide(input.configLayer ?? serverConfigTestLayer),
         Layer.provideMerge(input.analyticsLayer ?? AnalyticsService.layerTest),
         Layer.provide(
@@ -5561,3 +5562,88 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
     );
   });
 }
+const chatGptAnalytics = makeRecordingAnalytics();
+const chatGptAdapter = makeFakeCodexAdapter();
+const chatGptTelemetry = makeProviderServiceLayer({
+  analyticsLayer: chatGptAnalytics.layer,
+  settingsLayer: ServerSettings.ServerSettingsService.layerTest({
+    providerInstances: {
+      [secondaryCodexInstanceId]: { driver: CODEX_DRIVER, config: { setupMode: "managed" } },
+    },
+  }),
+  registry: makeStaticInstanceRegistry([[secondaryCodexInstanceId, chatGptAdapter.adapter]]),
+});
+chatGptTelemetry.layer("ChatGPT connector turn analytics", (it) => {
+  it.effect("tags attempts, sends, and one terminal outcome without recording the prompt", () =>
+    Effect.gen(function* () {
+      chatGptAnalytics.reset();
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("chatgpt-analytics-success");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: secondaryCodexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* provider.sendTurn({ threadId, input: "private test prompt" });
+      const drain = yield* Stream.take(provider.streamEvents, 2).pipe(
+        Stream.runDrain,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      const completion: LegacyProviderRuntimeEvent = {
+        type: "turn.completed",
+        eventId: asEventId("chatgpt-completed"),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: turn.turnId,
+        payload: { state: "completed" },
+      };
+      chatGptAdapter.emit(completion);
+      chatGptAdapter.emit({ ...completion, eventId: asEventId("chatgpt-completed-duplicate") });
+      yield* Fiber.join(drain);
+      for (const event of [
+        "provider.turn.attempted",
+        "provider.turn.sent",
+        "provider.turn.completed",
+      ]) {
+        const events = chatGptAnalytics.eventsByName(event);
+        assert.equal(events.length, 1);
+        assert.equal(events[0]?.properties?.subscriptionSharing, true);
+        assert.notProperty(events[0]?.properties ?? {}, "input");
+        assert.notProperty(events[0]?.properties ?? {}, "threadId");
+        assert.notProperty(events[0]?.properties ?? {}, "providerInstanceId");
+      }
+    }),
+  );
+  it.effect("records rejected sends as failures without an accepted-turn event", () =>
+    Effect.gen(function* () {
+      chatGptAnalytics.reset();
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("chatgpt-analytics-rejection");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: secondaryCodexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      chatGptAdapter.sendTurn.mockImplementationOnce(() =>
+        Effect.fail(new ProviderAdapterSessionNotFoundError({ provider: CODEX_DRIVER, threadId })),
+      );
+      const result = yield* provider
+        .sendTurn({ threadId, input: "private rejected prompt" })
+        .pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+      assert.equal(chatGptAnalytics.eventsByName("provider.turn.attempted").length, 1);
+      assert.equal(chatGptAnalytics.eventsByName("provider.turn.sent").length, 0);
+      const rejected = chatGptAnalytics.eventsByName("provider.turn.rejected");
+      assert.equal(rejected.length, 1);
+      assert.deepStrictEqual(rejected[0]?.properties, {
+        provider: CODEX_DRIVER,
+        subscriptionSharing: true,
+        errorType: "ProviderAdapterSessionNotFoundError",
+      });
+    }),
+  );
+});

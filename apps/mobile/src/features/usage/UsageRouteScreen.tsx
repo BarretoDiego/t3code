@@ -1,3 +1,4 @@
+import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
@@ -396,6 +397,7 @@ export function UsageRouteScreen() {
                 merged={merged}
                 isPartial={isPartial}
               />
+              <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
               {isPending ? (
                 <Text className="py-16 text-center text-base text-foreground-muted">
                   Scanning provider transcripts…
