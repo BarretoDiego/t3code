@@ -429,6 +429,33 @@ describe("composerDraftStore mini skill selection", () => {
     const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
     expect(persisted.draftsByThreadKey[key]?.selectedMiniSkillIds).toEqual([skillA, skillB]);
   });
+
+  it("clears selected mini skills with the submitted prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "implement the feature");
+    store.setSelectedMiniSkillIds(threadRef, [skillA, skillB]);
+
+    store.clearComposerContent(threadRef);
+
+    expect(store.getComposerDraft(threadRef)).toBeNull();
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+    expect(
+      persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)],
+    ).toBeUndefined();
+  });
+
+  it("clears request mini skills while keeping the active agent profile", () => {
+    const store = useComposerDraftStore.getState();
+    const profileId = AgentProfileId.make("profile-mini-skills");
+    store.setPrompt(threadRef, "review the change");
+    store.setSelectedMiniSkillIds(threadRef, [skillA]);
+    store.setSelectedProfileId(threadRef, profileId);
+
+    store.clearComposerContent(threadRef);
+
+    expect(store.getComposerDraft(threadRef)?.selectedMiniSkillIds).toEqual([]);
+    expect(store.getComposerDraft(threadRef)?.selectedProfileId).toBe(profileId);
+  });
 });
 
 describe("composerDraftStore agent profile selection", () => {
