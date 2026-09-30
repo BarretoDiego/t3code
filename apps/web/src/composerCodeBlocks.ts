@@ -1,9 +1,8 @@
 /**
  * Finds fenced code blocks in a composer prompt.
  *
- * The composer paints a fence while it is being written and keeps its
- * characters editable. This module decides where blocks start and end so
- * segmentation and the editor's visual decoration agree.
+ * The editor imports their contents as editable block nodes. The stored
+ * prompt retains the fences, which cursor mapping excludes from editable text.
  */
 
 export interface ComposerCodeBlockMatch {

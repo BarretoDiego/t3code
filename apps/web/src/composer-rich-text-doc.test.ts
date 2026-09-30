@@ -1,5 +1,6 @@
 import { getSchemaByResolvedExtensions, Node, resolveExtensions } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { ComposerCodeBlockExtension } from "./composerCodeBlockExtension";
 import { TaskList } from "@tiptap/extension-task-list";
 import { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { describe, expect, it } from "vite-plus/test";
@@ -42,6 +43,7 @@ const schema = getSchemaByResolvedExtensions(
       code: false,
     }),
     ComposerCodeExtension,
+    ComposerCodeBlockExtension,
     stubAtom("composer-mention", { path: { default: "" }, source: { default: "" } }),
     stubAtom("composer-skill", {
       skillName: { default: "" },
@@ -92,6 +94,7 @@ const plainSchema = getSchemaByResolvedExtensions(
       strike: false,
       code: false,
     }),
+    ComposerCodeBlockExtension,
     stubAtom("composer-mention", { path: { default: "" }, source: { default: "" } }),
     stubAtom("composer-skill", {
       skillName: { default: "" },
@@ -182,6 +185,37 @@ describe("composer rich text document model", () => {
   it("keeps fenced code literal in plain mode too", () => {
     const value = "```ts\nconst answer = **literal**;\n```";
     expect(roundTripPlain(value).value).toBe(value);
+  });
+
+  it("imports fences as an editable code block without fence text", () => {
+    const doc = buildDocJson("```ts\nconst answer = 42;\n```", (name) => ({
+      label: name,
+      description: null,
+    }));
+    expect(doc.content).toMatchObject([
+      { type: "codeBlock", content: [{ type: "text", text: "const answer = 42;" }] },
+    ]);
+  });
+
+  it("preserves code pasted into a task item", () => {
+    const doc = schema.nodeFromJSON({
+      type: "doc",
+      content: [
+        {
+          type: "taskList",
+          content: [
+            {
+              type: "taskItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "task" }] },
+                { type: "codeBlock", content: [{ type: "text", text: "const x = 1;" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(serializeEditorDoc(doc).value).toBe("- [ ] task\n```\nconst x = 1;\n```");
   });
 
   it.each([

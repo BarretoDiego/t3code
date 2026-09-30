@@ -98,6 +98,7 @@ type InlineJson = Record<string, unknown>;
 interface DocLine {
   task: TaskLinePrefix | null;
   inline: InlineJson[];
+  codeBlock?: InlineJson;
 }
 
 function atomJsonForSegment(
@@ -194,22 +195,36 @@ export function buildTiptapContent(
       // Legacy terminal placeholders are migrated to context references before
       // editing. Ignore an orphan rather than rendering its private marker.
       if (segment.type === "terminal-context") return "";
-      // Tiptap's plain composer keeps fenced blocks byte-for-byte as prompt
-      // text; treating them as an inline atom would discard their contents.
       if (segment.type === "code-block") return segment.source;
       atoms.push(atomJsonForSegment(segment, skillLabelFor));
       return sentinel;
     })
     .join("");
   const codeLines = new Set<number>();
+  const codeBlocks = new Map<number, InlineJson>();
   for (const block of findComposerCodeBlocks(text)) {
     const firstLine = text.slice(0, block.start).split("\n").length - 1;
     const lastLine = text.slice(0, block.end).split("\n").length - 1;
     for (let line = firstLine; line <= lastLine; line += 1) codeLines.add(line);
+    const suffix = text.slice(block.start + block.prefixLength + block.content.length, block.end);
+    codeBlocks.set(firstLine, {
+      type: "codeBlock",
+      attrs: {
+        info: block.info,
+        openingFence: text.slice(block.start, block.start + block.prefixLength),
+        closingFence: suffix.length > 0 ? suffix.replace(/^\n/, "") : null,
+        closingNewline: suffix.startsWith("\n"),
+      },
+      content: block.content ? [{ type: "text", text: block.content }] : [],
+    });
   }
   let atomIndex = 0;
   const lines: DocLine[] = text.split("\n").map((line, lineIndex) => {
     const isCodeLine = codeLines.has(lineIndex);
+    if (isCodeLine) {
+      const codeBlock = codeBlocks.get(lineIndex);
+      return { task: null, inline: [], ...(codeBlock ? { codeBlock } : {}) };
+    }
     const parsed = styling && !isCodeLine ? parseTaskPrefix(line) : null;
     const content = parsed ? line.slice(parsed.markerLength) : line;
     const spans =
@@ -237,7 +252,12 @@ export function buildTiptapContent(
       stack = [];
     }
   };
-  for (const line of lines) {
+  for (const [lineIndex, line] of lines.entries()) {
+    if (codeLines.has(lineIndex)) {
+      flushTasks();
+      if (line.codeBlock) blocks.push(line.codeBlock);
+      continue;
+    }
     if (!line.task) {
       flushTasks();
       blocks.push({ type: "paragraph", content: line.inline });
@@ -291,7 +311,7 @@ export function buildDocJson(
 }
 
 export interface RichRun {
-  kind: "text" | "token" | "break" | "prefix";
+  kind: "text" | "token" | "break" | "prefix" | "fence";
   /** Flat document offset (atoms count 1, markers excluded). */
   flatStart: number;
   docLen: number;
@@ -507,6 +527,46 @@ function appendInlineRuns(
   }
 }
 
+function appendCodeBlock(block: ProseMirrorNode, position: number, acc: RichAccumulator): void {
+  const content = block.textContent;
+  let opening = block.attrs.openingFence as string;
+  let closing = block.attrs.closingFence as string | null;
+  const marker = /^[ \t]*(`{3,}|~{3,})/.exec(opening)?.[1] ?? "```";
+  const conflictingWidths = [...content.matchAll(/^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/gm)]
+    .map((match) => match[1]!)
+    .filter((candidate) => candidate[0] === marker[0] && candidate.length >= marker.length)
+    .map((candidate) => candidate.length);
+  if (conflictingWidths.length > 0) {
+    const safeMarker = marker[0]!.repeat(Math.max(...conflictingWidths) + 1);
+    opening = opening.replace(marker, safeMarker);
+    if (closing !== null) closing = closing.replace(/`{3,}|~{3,}/, safeMarker);
+  }
+  const prefix = content.length > 0 && !opening.endsWith("\n") ? `${opening}\n` : opening;
+  const suffix =
+    closing === null
+      ? ""
+      : `${content.length > 0 || block.attrs.closingNewline ? "\n" : ""}${closing}`;
+  const appendFence = (source: string, pmPos: number) => {
+    acc.runs.push({
+      kind: "fence",
+      flatStart: acc.flat,
+      docLen: 0,
+      collapsedLen: 0,
+      mdLen: source.length,
+      openLen: 0,
+      closeLen: 0,
+      pmPos,
+      mdStart: acc.md,
+      collapsedStart: acc.collapsed,
+    });
+    acc.value += source;
+    acc.md += source.length;
+  };
+  appendFence(prefix, position + 1);
+  appendInlineRuns(block, position + 1, acc);
+  appendFence(suffix, position + 1 + block.content.size);
+}
+
 function walkTaskList(list: ProseMirrorNode, listStart: number, acc: RichAccumulator): void {
   let itemPos = listStart + 1;
   let firstItem = true;
@@ -553,6 +613,8 @@ function walkTaskList(list: ProseMirrorNode, listStart: number, acc: RichAccumul
         walkTaskList(child, childPos, acc);
       } else if (child.type.name === "paragraph") {
         appendInlineRuns(child, childPos + 1, acc);
+      } else if (child.type.name === "codeBlock") {
+        appendCodeBlock(child, childPos, acc);
       }
       childPos += child.nodeSize;
     });
@@ -574,6 +636,8 @@ export function serializeEditorDoc(doc: ProseMirrorNode): RichDocMap {
       walkTaskList(block, pmBlockStart, acc);
     } else if (block.type.name === "paragraph") {
       appendInlineRuns(block, pmBlockStart + 1, acc);
+    } else if (block.type.name === "codeBlock") {
+      appendCodeBlock(block, pmBlockStart, acc);
     }
     pmBlockStart += block.nodeSize;
   });
@@ -609,7 +673,14 @@ export function flatToCollapsed(map: RichDocMap, flatOffset: number): number {
 
 export function flatToMarkdown(map: RichDocMap, flatOffset: number): number {
   const bounded = Math.max(0, Math.min(flatOffset, map.docLength));
-  for (const run of map.runs) {
+  for (const [index, run] of map.runs.entries()) {
+    if (
+      run.kind === "text" &&
+      bounded === run.flatStart + run.docLen &&
+      map.runs[index + 1]?.kind === "fence"
+    ) {
+      return run.mdStart + run.mdLen;
+    }
     if (bounded < run.flatStart + run.docLen) {
       if (run.kind === "text" || run.kind === "token") {
         return run.mdStart + run.openLen + (bounded - run.flatStart);

@@ -110,12 +110,12 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       continue;
     }
     if (segment.type === "code-block") {
-      const length = segment.source.length;
-      if (remaining < length) {
-        return expandedCursor + remaining;
+      const length = segment.content.length;
+      if (remaining <= length) {
+        return expandedCursor + segment.prefixLength + remaining;
       }
       remaining -= length;
-      expandedCursor += length;
+      expandedCursor += segment.source.length;
       continue;
     }
 
@@ -136,7 +136,7 @@ function collapsedSegmentLength(segment: ComposerPromptSegment): number {
     return segment.text.length;
   }
   if (segment.type === "code-block") {
-    return segment.source.length;
+    return segment.content.length;
   }
   return 1;
 }
@@ -212,10 +212,13 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
     if (segment.type === "code-block") {
       const length = segment.source.length;
       if (remaining <= length) {
-        return collapsedCursor + remaining;
+        return (
+          collapsedCursor +
+          Math.max(0, Math.min(segment.content.length, remaining - segment.prefixLength))
+        );
       }
       remaining -= length;
-      collapsedCursor += length;
+      collapsedCursor += segment.content.length;
       continue;
     }
 

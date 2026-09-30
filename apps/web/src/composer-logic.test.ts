@@ -621,13 +621,14 @@ it("preserves the caret before trailing text after mixed-width skill chips", () 
 });
 
 describe("clampCollapsedComposerCursor", () => {
-  it("keeps every cursor position inside an editable code fence", () => {
+  it("keeps editable code positions reachable while excluding the fences", () => {
     const text = "before\n```ts\nconst x = **literal**;\n```\nafter";
-    for (let cursor = 0; cursor <= text.length; cursor += 1) {
-      expect(expandCollapsedComposerCursor(text, cursor)).toBe(cursor);
-      expect(collapseExpandedComposerCursor(text, cursor)).toBe(cursor);
+    const editable = "before\nconst x = **literal**;\nafter";
+    for (let cursor = 0; cursor <= editable.length; cursor += 1) {
+      const expanded = expandCollapsedComposerCursor(text, cursor);
+      expect(collapseExpandedComposerCursor(text, expanded)).toBe(cursor);
     }
-    expect(clampCollapsedComposerCursor(text, text.length)).toBe(text.length);
+    expect(clampCollapsedComposerCursor(text, text.length)).toBe(editable.length);
   });
 
   it("clamps to collapsed prompt length when mentions are present", () => {

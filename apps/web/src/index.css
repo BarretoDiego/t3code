@@ -1405,7 +1405,8 @@ html[data-theme-id] [data-chat-header] [data-slot="separator"] {
 /* Chat code blocks join the other code surfaces on the code tokens. The
    default look keeps its secondary/input tints; themed palettes tint those
    surfaces with the accent, which fights syntax highlighting. */
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock {
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock,
+html[data-theme-id] .composer-code-block {
   background-color: var(--code-background);
   border-color: var(--contrast-border);
   color: var(--code-foreground);
@@ -1420,7 +1421,8 @@ html[data-theme-id] .chat-markdown .chat-markdown-codeblock pre {
   background-color: transparent;
 }
 
-html[data-theme-id] .chat-markdown .chat-markdown-codeblock-header {
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock-header,
+html[data-theme-id] .composer-code-block-header {
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
@@ -1896,56 +1898,22 @@ code {
   font-size: 0.75rem;
 }
 
-/* The fenced code container in the prompt composer. One surface wrapping every
-   line, so a pasted block reads as a block instead of ragged highlighted runs.
-   Padding and radius live on the container, never on the inline runs, so the
-   caret keeps landing exactly where the glyphs are. */
-.composer-code-block {
-  position: relative;
-  margin: 0.35rem 0;
-  border-radius: var(--radius);
-  background: var(--muted);
-  padding: 0.4rem 0.6rem;
+.composer-code-block .composer-code-content {
+  margin: 0;
+  min-height: 2.5rem;
+  padding: 0.8rem 0.9rem;
   color: var(--code-foreground);
   font-family: var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-/* The language hint is drawn, never edited: keeping it out of the DOM flow
-   means it cannot be selected, deleted, or land in the prompt. */
-.composer-code-block[data-language]::after {
-  position: absolute;
-  top: 0.15rem;
-  right: 0.4rem;
-  opacity: 0.55;
-  content: attr(data-language);
-  font-size: 0.625rem;
-  user-select: none;
+.composer-code-token {
+  color: var(--composer-code-light);
 }
 
-/* Tiptap stores fenced prompts as editable paragraphs. Paint adjacent lines as
-   one block while leaving the Markdown fences in the document for exact edits. */
-.composer-tiptap .composer-code-line {
-  background: var(--muted);
-  color: var(--code-foreground);
-  font-family: var(--font-mono);
-  padding-inline: 0.6rem;
-}
-
-.composer-tiptap .composer-code-line-start {
-  border-radius: var(--radius) var(--radius) 0 0;
-  padding-top: 0.4rem;
-}
-
-.composer-tiptap .composer-code-line-end {
-  border-radius: 0 0 var(--radius) var(--radius);
-  padding-bottom: 0.4rem;
-}
-
-.composer-tiptap .composer-code-line-single {
-  border-radius: var(--radius);
-  padding-block: 0.4rem;
+.dark .composer-code-token {
+  color: var(--composer-code-dark);
 }
 
 /* Code painted live inside the prompt composer. Deliberately lighter than the
@@ -1984,7 +1952,8 @@ code {
   background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
 }
 
-.chat-markdown .chat-markdown-codeblock-header {
+.chat-markdown .chat-markdown-codeblock-header,
+.composer-code-block-header {
   color: color-mix(in srgb, var(--contrast-foreground) 72%, transparent);
 }
 
@@ -2229,7 +2198,7 @@ code {
   outline: none;
 }
 
-.composer-tiptap code {
+.composer-tiptap :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   background: color-mix(in oklab, var(--muted-foreground) 12%, transparent);

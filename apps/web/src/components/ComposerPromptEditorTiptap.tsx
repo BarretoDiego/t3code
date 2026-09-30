@@ -58,7 +58,12 @@ import {
   type SkillMeta,
 } from "~/composer-rich-text-doc";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
-import { findComposerCodeBlocks } from "~/composerCodeBlocks";
+import {
+  ComposerCodeBlockExtension,
+  handleComposerCodeBlockKey,
+} from "~/composerCodeBlockExtension";
+import { ComposerCodeBlockHighlight } from "~/composerCodeBlockHighlight";
+import { ComposerCodeBlock } from "./chat/ComposerCodeBlock";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { basenameOfPath } from "~/pierre-icons";
 import { FileTagChipContent } from "./chat/FileTagChip";
@@ -532,39 +537,6 @@ function decorationsForSelection(
 ): DecorationSet {
   const decorations: Decoration[] = [];
   const map = serializeEditorDoc(doc);
-  const prompt = map.value;
-  const codeLines = new Map<number, "start" | "middle" | "end" | "single">();
-  for (const block of findComposerCodeBlocks(prompt)) {
-    const first = prompt.slice(0, block.start).split("\n").length - 1;
-    const last = prompt.slice(0, block.end).split("\n").length - 1;
-    for (let line = first; line <= last; line += 1) {
-      codeLines.set(
-        line,
-        line === first && line === last
-          ? "single"
-          : line === first
-            ? "start"
-            : line === last
-              ? "end"
-              : "middle",
-      );
-    }
-  }
-  if (codeLines.size > 0) {
-    let line = 0;
-    doc.descendants((node, pos, parent) => {
-      if (node.type.name !== "paragraph") return true;
-      const role = codeLines.get(line++);
-      if (role && parent?.type.name === "doc") {
-        decorations.push(
-          Decoration.node(pos, pos + node.nodeSize, {
-            class: `composer-code-line composer-code-line-${role}`,
-          }),
-        );
-      }
-      return true;
-    });
-  }
   if (!selection.empty) {
     doc.nodesBetween(selection.from, selection.to, (node, pos) => {
       if (node.type.name.startsWith("composer-")) {
@@ -817,6 +789,12 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         ComposerCitationExtension,
         ComposerContextReferenceExtension,
         ComposerMarkersExtension,
+        ComposerCodeBlockExtension.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(ComposerCodeBlock);
+          },
+        }),
+        ComposerCodeBlockHighlight,
         ...(richText
           ? [
               ComposerCodeExtension,
@@ -858,6 +836,19 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       editorProps: {
         attributes: editorAttributes,
         handleKeyDown: (view, event) => {
+          const inCodeBlock = view.state.selection.$from.parent.type.name === "codeBlock";
+          if (
+            handleComposerCodeBlockKey(
+              view.state,
+              event,
+              (transaction) => view.dispatch(transaction),
+              event.key !== "ArrowDown" || !inCodeBlock || view.endOfTextblock("down"),
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
+          }
           if (
             isMacPlatform(navigator.platform) &&
             (event.key === "Home" || event.key === "End") &&
@@ -1035,6 +1026,10 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           const pastedText = clipboardData.getData("text/plain");
           if (!pastedText) return false;
           event.preventDefault();
+          if (view.state.selection.$from.parent.type.name === "codeBlock") {
+            view.dispatch(view.state.tr.insertText(pastedText).scrollIntoView());
+            return true;
+          }
           const importFragment = importFragmentRef.current;
           let text = importFragment
             ? importPastedComposerText(clipboardData, importFragment)

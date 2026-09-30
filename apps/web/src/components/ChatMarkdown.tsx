@@ -135,6 +135,7 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import { CODE_BLOCK_FRAME_CLASS, CODE_BLOCK_HEADER_CLASS } from "./chat/codeBlockPresentation";
 import { GitHubIcon } from "./Icons";
 import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
@@ -1008,11 +1009,11 @@ function MarkdownCodeBlock({
 
   return (
     <div
-      className="chat-markdown-codeblock my-[0.65rem] overflow-hidden rounded-lg border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
+      className={`chat-markdown-codeblock ${CODE_BLOCK_FRAME_CLASS}`}
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
     >
-      <div className="chat-markdown-codeblock-header flex items-center justify-between gap-2 pt-1.5 pr-1.5 pb-0 pl-3 select-none">
+      <div className={`chat-markdown-codeblock-header ${CODE_BLOCK_HEADER_CLASS}`}>
         <span className="inline-flex min-w-0 items-center gap-1.5 font-mono text-2xs">
           <MarkdownCodeBlockTitleContent
             fenceTitle={fenceTitle}
