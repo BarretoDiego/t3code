@@ -68,10 +68,9 @@ export const make = Effect.fn("background.hostPower.make")(function* (
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.void,
-          onSome: (next) => PubSub.publish(changes, next),
+          onSome: (next) => Effect.asVoid(PubSub.publish(changes, next)),
         }),
       ),
-      Effect.asVoid,
     );
 
   return HostPowerMonitor.of({
