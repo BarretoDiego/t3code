@@ -25,6 +25,7 @@ import {
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
   scopeProjectRef,
   scopeThreadRef,
@@ -146,7 +147,6 @@ import {
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
-  planPinnedReorder,
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
   resolveSettledTimestamp,
