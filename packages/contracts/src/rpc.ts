@@ -226,6 +226,7 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  ProjectEnsureScratchResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -373,6 +374,7 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsEnsureScratch: "projects.ensureScratch",
 
   sourceControlHubAccounts: "sourceControlHub.accounts",
   sourceControlHubConnectAccount: "sourceControlHub.connectAccount",
@@ -1473,6 +1475,13 @@ export const WsProjectSyncApplyDeletionsRpc = Rpc.make(WS_METHODS.projectSyncApp
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
 });
 
+// Finds or creates the Scratch project rooted at ServerConfig.scratchWorkspaceRoot.
+const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
+  payload: Schema.Struct({}),
+  success: ProjectEnsureScratchResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -2061,6 +2070,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
+  WsProjectsEnsureScratchRpc,
   WsProjectsWriteFileRpc,
   WsProjectSyncManifestRpc,
   WsThreadHandoffRpc,
