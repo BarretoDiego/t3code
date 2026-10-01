@@ -11856,6 +11856,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
         assert.deepEqual(importCommand.messages[0]?.attachments, []);
       }
+      const turnCommand = dispatchedCommands[3];
+      assertTrue(turnCommand?.type === "thread.turn.start");
+      if (turnCommand?.type === "thread.turn.start") {
+        assert.deepEqual(turnCommand.bootstrap, {
+          forkConversation: { sourceThreadId, throughMessageId: forkPointMessageId },
+        });
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

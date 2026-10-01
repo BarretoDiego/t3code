@@ -5364,17 +5364,18 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
     ),
   });
   contextFixture.layer(`Conversation context admission: ${driverName}`, (it) => {
-    const prepare = Effect.fnUntraced(function* (suffix: string) {
+    const prepare = Effect.fnUntraced(function* (suffix: string, fork = false) {
       const threadId = asThreadId(`context-${driverName}-${suffix}`);
+      const historyThreadId = fork ? asThreadId(`${threadId}-source`) : threadId;
       const provider = yield* ProviderService.ProviderService;
       const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
       const config = yield* ServerConfig.ServerConfig;
-      const events: readonly OrchestrationEvent[] = [
+      const events: OrchestrationEvent[] = [
         {
           sequence: 1,
           eventId: asEventId(`${threadId}-creation`),
           aggregateKind: "thread",
-          aggregateId: threadId,
+          aggregateId: historyThreadId,
           occurredAt: "2026-09-08T12:00:00.000Z",
           commandId: null,
           causationEventId: null,
@@ -5382,7 +5383,7 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
           metadata: {},
           type: "thread.created",
           payload: {
-            threadId,
+            threadId: historyThreadId,
             projectId: ProjectId.make("context-project"),
             title: "Complete prior history",
             modelSelection: { instanceId: codexInstanceId, model: "original-model" },
@@ -5395,6 +5396,28 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
           },
         },
       ];
+      if (fork) {
+        for (let exchange = 0; exchange < 12; exchange += 1) {
+          for (const role of ["user", "assistant"] as const) {
+            events.push({
+              ...events[0]!,
+              type: "thread.message-sent",
+              sequence: events.length + 1,
+              eventId: asEventId(`${threadId}-${role}-${exchange}`),
+              payload: {
+                threadId: historyThreadId,
+                messageId: MessageId.make(`${role}-${exchange}`),
+                role,
+                text: `${role} exchange ${exchange}: project decision`,
+                streaming: false,
+                turnId: null,
+                createdAt: "2026-09-08T12:00:00.000Z",
+                updatedAt: "2026-09-08T12:00:00.000Z",
+              },
+            });
+          }
+        }
+      }
       const context = yield* Effect.promise(() =>
         installConversationHandoffContext({
           stateDir: config.stateDir,
@@ -5402,6 +5425,7 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
           threadId,
           providerInstanceId: instanceId,
           events,
+          ...(fork ? { sourceThreadId: historyThreadId } : {}),
         }),
       );
       yield* provider.startSession(threadId, {
@@ -5418,6 +5442,25 @@ for (const driverName of ["codex", "claudeAgent", "cursor", "grok", "opencode", 
       });
       return { threadId, provider, directory, context, events };
     });
+
+    it.effect(
+      "passes the last ten fork exchanges to the adapter only on the first accepted turn",
+      () =>
+        Effect.gen(function* () {
+          const f = yield* prepare("fork", true);
+          adapter.sendTurn.mockClear();
+          yield* f.provider.sendTurn({ threadId: f.threadId, input: "Continue this project" });
+          const received = adapter.sendTurn.mock.calls[0]?.[0].input ?? "";
+          for (let exchange = 2; exchange < 12; exchange += 1) {
+            assert.include(received, `user exchange ${exchange}: project decision`);
+            assert.include(received, `assistant exchange ${exchange}: project decision`);
+          }
+          assert.notInclude(received, "user exchange 0:");
+          assert.include(received, "Current user request:\nContinue this project");
+          yield* f.provider.sendTurn({ threadId: f.threadId, input: "Next request" });
+          assert.equal(adapter.sendTurn.mock.calls[1]?.[0].input, "Next request");
+        }),
+    );
 
     it.effect(
       "delivers all historical events on the next real request and consumes only after admission",

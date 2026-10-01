@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import {
   EventId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadHandoffId,
@@ -69,6 +70,92 @@ async function fixture() {
   const file = NodePath.join(stateDir, "handoff-context", input.handoffId, "conversation.json");
   return { input, file };
 }
+
+function conversationEvents(turns: number, textPadding = ""): OrchestrationEvent[] {
+  const history = [...events()];
+  for (let turn = 0; turn < turns; turn += 1) {
+    for (const [role, id, text, streaming] of [
+      ["user", `user-${turn}`, `request-${turn}\n${textPadding}`, false],
+      ["assistant", `commentary-${turn}`, `progress-${turn}`, false],
+      ["assistant", `reply-${turn}`, `result-${turn}: `, true],
+      ["assistant", `reply-${turn}`, "implemented and tested", true],
+      ["assistant", `reply-${turn}`, "", false],
+    ] as const) {
+      history.push({
+        ...events()[0]!,
+        type: "thread.message-sent",
+        sequence: history.length + 1,
+        eventId: EventId.make(`message-event-${history.length}`),
+        payload: {
+          threadId,
+          messageId: MessageId.make(id),
+          role,
+          text,
+          streaming,
+          turnId: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+    }
+  }
+  return history;
+}
+
+test("forks deliver the latest ten exchanges inline even when the full archive is oversized", async () => {
+  const { input, file } = await fixture();
+  const targetThreadId = ThreadId.make("fork-with-recent-context");
+  const history = conversationEvents(12);
+  const context = await installConversationHandoffContext({
+    ...input,
+    threadId: targetThreadId,
+    sourceThreadId: threadId,
+    events: history,
+  });
+  const prompt = await prepareConversationHandoffInput({
+    ...input,
+    threadId: targetThreadId,
+    context,
+    input: "Continue the implementation",
+    maxChars: 12_000,
+  });
+  for (let turn = 2; turn < 12; turn += 1) {
+    expect(prompt).toContain(`request-${turn}`);
+    expect(prompt).toContain(`progress-${turn}`);
+    expect(prompt).toContain(`result-${turn}: implemented and tested`);
+  }
+  expect(prompt).not.toContain("request-0");
+  expect(prompt).not.toContain("result-1:");
+  expect(prompt.length).toBeLessThanOrEqual(12_000);
+  expect(prompt.endsWith("Current user request:\nContinue the implementation")).toBe(true);
+  expect(JSON.parse(await NodeFSP.readFile(file, "utf8")).events).toEqual(history);
+});
+
+test("forks keep both ends of oversized messages from all ten exchanges in the prompt", async () => {
+  const { input } = await fixture();
+  const targetThreadId = ThreadId.make("fork-with-long-recent-context");
+  const history = conversationEvents(10, "details ".repeat(3000) + "FINAL DECISION");
+  const context = await installConversationHandoffContext({
+    ...input,
+    threadId: targetThreadId,
+    sourceThreadId: threadId,
+    events: history,
+  });
+  const prompt = await prepareConversationHandoffInput({
+    ...input,
+    threadId: targetThreadId,
+    context,
+    input: "Continue",
+    maxChars: 10_000,
+  });
+  for (let turn = 0; turn < 10; turn += 1) {
+    expect(prompt).toContain(`request-${turn}`);
+    expect(prompt).toContain(`result-${turn}: implemented and tested`);
+  }
+  expect(prompt.match(/FINAL DECISION/g)).toHaveLength(10);
+  expect(prompt).toContain('"truncated":true');
+  expect(prompt.length).toBeLessThanOrEqual(10_000);
+});
 
 test("preserves the complete source archive and enriches only the supplied real request", async () => {
   const { input, file } = await fixture();

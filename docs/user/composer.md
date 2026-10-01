@@ -80,8 +80,10 @@ uses its account catalog and does not support custom models.
 On web and desktop, choose **Fork conversation here** on a message to open a new
 draft with the conversation through that message. Select the model or provider
 for the new thread, then send a prompt to start it. T3 Code copies the selected
-history and gives its context to the new provider. The original thread remains
-available and unchanged.
+history and includes the last 10 user-to-agent exchanges in the first prompt
+sent to the new provider. Shorter conversations include all available exchanges.
+Long messages may appear as excerpts, with the complete history available to
+the agent in an archive. The original thread remains available and unchanged.
 
 ## Model defaults
 

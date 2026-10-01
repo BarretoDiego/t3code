@@ -47,3 +47,12 @@ export function forkMessagesFromHistory(events: ReadonlyArray<OrchestrationEvent
   }
   return [...messages.values()];
 }
+
+/** Count user-to-agent exchanges, retaining all assistant replies in each one. */
+export function recentForkMessagesFromHistory(events: ReadonlyArray<OrchestrationEvent>) {
+  const messages = forkMessagesFromHistory(events);
+  const userPositions = messages.flatMap((message, index) =>
+    message.role === "user" ? [index] : [],
+  );
+  return messages.slice(userPositions.at(-10) ?? 0);
+}

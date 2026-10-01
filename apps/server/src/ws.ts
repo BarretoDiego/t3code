@@ -1214,7 +1214,15 @@ const makeWsRpcLayer = (
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
         Effect.gen(function* () {
           const bootstrap = command.bootstrap;
-          const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
+          const { bootstrap: _bootstrap, ...turnStartCommand } = command;
+          // Creation and checkout are complete here; the provider reactor still
+          // needs the fork source to prepare the new session's first prompt.
+          const finalTurnStartCommand = {
+            ...turnStartCommand,
+            ...(bootstrap?.forkConversation !== undefined
+              ? { bootstrap: { forkConversation: bootstrap.forkConversation } }
+              : {}),
+          };
           let createdThread = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
