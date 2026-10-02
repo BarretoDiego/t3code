@@ -1,9 +1,39 @@
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 
 import { ServerConfig, type StartupPresentation } from "../config.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
+
+export class UnknownCommandError extends Schema.TaggedError<UnknownCommandError>()(
+  "UnknownCommandError",
+  { word: Schema.String },
+) {
+  override get message(): string {
+    return `Unknown command '${this.word}'. Run \`t3 --help\` to see the commands. To start the server in a new folder, pass a path such as ./${this.word}.`;
+  }
+}
+
+/**
+ * The server commands take an optional working directory, so a mistyped or
+ * unsupported subcommand (`t3 threads`) would otherwise start the server in a
+ * freshly created folder of that name. A bare word that is not an existing
+ * directory is treated as an unknown command instead; explicit paths
+ * (`./name`, `~/name`, `/abs`) keep creating the folder.
+ */
+export const rejectUnknownCommand = Effect.fn("cli.rejectUnknownCommand")(function* (
+  cwd: Option.Option<string>,
+) {
+  if (Option.isNone(cwd)) return;
+  const word = cwd.value.trim();
+  if (word.length === 0 || /[\\/~]/.test(word) || word.startsWith(".")) return;
+  const fs = yield* FileSystem.FileSystem;
+  const exists = yield* fs.exists(word).pipe(Effect.orElseSucceed(() => false));
+  if (!exists) return yield* new UnknownCommandError({ word });
+});
 
 export const runServerCommand = (
   flags: CliServerFlags,
@@ -13,6 +43,7 @@ export const runServerCommand = (
   },
 ) =>
   Effect.gen(function* () {
+    yield* rejectUnknownCommand(flags.cwd ?? Option.none());
     const logLevel = yield* GlobalFlag.LogLevel;
     const config = yield* resolveServerConfig(flags, logLevel, options);
     return yield* runServer.pipe(Effect.provideService(ServerConfig, config));
