@@ -76,6 +76,7 @@ const clientSettings: ClientSettings = {
   sidebarSectionOrder: ["environment:environment-2", "environment:environment-1"],
   legacySidebarEnabled: false,
   sidebarExperience: "grouped",
+  sidebarWorkingShelfEnabled: false,
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   pullRequestMergeMethodOverrides: {},

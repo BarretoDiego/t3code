@@ -30,3 +30,7 @@ built-in wrapper.
 The library syncs across your connected environments with your other shared preferences.
 
 Messages sent with Mini Skills or an Agent Profile include an **Also sent** strip above them: one chip per applied profile or skill, so you can see exactly what rode along without expanding anything. Expand the strip to inspect the exact prompt, including wrappers and instructions, sent to the agent. This snapshot stays with the message when you later edit your settings. Older messages created before context recording was available do not have a snapshot.
+
+## From the command line
+
+Read, create, edit, and delete skills with `t3 skill`, and apply them to a message with `--skill`. See [Controlling T3 Code from the command line](./cli.md#mini-skills).

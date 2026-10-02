@@ -48,3 +48,7 @@ configuration.
 Profiles are global: they are available in every project and sync across your connected
 environments. Editing a profile affects future sends only; turns already sent keep the
 configuration they ran with.
+
+## From the command line
+
+Read, create, edit, and delete profiles with `t3 profile`, and use one for a message with `--profile <slug>`. See [Controlling T3 Code from the command line](./cli.md#agent-profiles).

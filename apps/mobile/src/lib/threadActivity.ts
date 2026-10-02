@@ -1,10 +1,7 @@
 import * as Option from "effect/Option";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import * as Schema from "effect/Schema";
-import {
-  requestKindFromRequestType,
-  type PendingApproval,
-} from "@t3tools/client-runtime/pending-requests";
+import { requestKindFromRequestType, type PendingApproval } from "@t3tools/shared/pendingRequests";
 import { UserInputAttachmentAnswerPayload, isToolLifecycleItemType } from "@t3tools/contracts";
 import type {
   OrchestrationLatestTurn,
@@ -39,7 +36,7 @@ import { commandProgramName } from "@t3tools/client-runtime/work-log/command-lab
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
-export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+export type { PendingApproval, PendingUserInput } from "@t3tools/shared/pendingRequests";
 
 export interface PendingUserInputDraftAnswer {
   readonly selectedOptionValues?: ReadonlyArray<string>;

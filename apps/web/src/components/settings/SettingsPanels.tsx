@@ -570,6 +570,10 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Project Grouping"]
         : []),
       ...(isSidebarExperienceDirty ? ["Sidebar style"] : []),
+      ...(settings.sidebarWorkingShelfEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
+        ? ["Working section"]
+        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
@@ -694,6 +698,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
+      settings.sidebarWorkingShelfEnabled,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
@@ -793,6 +798,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarExperience: DEFAULT_UNIFIED_SETTINGS.sidebarExperience,
       legacySidebarEnabled: DEFAULT_UNIFIED_SETTINGS.legacySidebarEnabled,
+      sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
@@ -2342,6 +2348,33 @@ export function GeneralSettingsPanel() {
           }
         />
 
+        <SettingsRow
+          {...searchableSetting("working-shelf")}
+          description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you."
+          resetAction={
+            settings.sidebarWorkingShelfEnabled !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
+              <SettingResetButton
+                label="working section"
+                onClick={() =>
+                  updateSettings({
+                    sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarWorkingShelfEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
+              }
+              aria-label="Working section (beta)"
+            />
+          }
+        />
+
         {supportsAutoSettlement ? (
           <>
             <SettingsRow
@@ -2879,7 +2912,7 @@ export function GeneralSettingsPanel() {
           {...searchableSetting("continue-threads-after-server-update")}
           serverScoped
           settingKeys={["continueThreadsAfterServerUpdate"]}
-          description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments. Update older servers first."
+          description="Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments."
           status={
             !supportsRestartContinuation
               ? "All selected connected environments must support restart continuation."
