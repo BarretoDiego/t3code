@@ -1,4 +1,4 @@
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { derivePendingRequests } from "@t3tools/shared/pendingRequests";
 import { useServerConfigs } from "./entities";
 import { Alert } from "react-native";
 import {

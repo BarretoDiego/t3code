@@ -32,6 +32,7 @@ line to add. Set `T3CODE_CHANNEL=nightly` to install the nightly train, or
 | Keep it running in the background (macOS, Linux) | `t3 service install` ([details](./background-service.md)) |
 | Move to the newest release                       | `t3 update`                                               |
 | Remove it again                                  | `t3 uninstall`                                            |
+| Drive threads and terminals from scripts/agents  | `t3 thread`, `t3 terminal` ([details](./cli.md))          |
 
 Run `t3 --help` for the full reference.
 
