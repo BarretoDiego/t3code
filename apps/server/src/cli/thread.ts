@@ -35,13 +35,10 @@ import * as Stream from "effect/Stream";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { threadHasQueuedTurnStart } from "../orchestration/ThreadSettlementPolicy.ts";
+import { jsonFlag, printJson, timeoutFlag, withClient } from "./common.ts";
 import { DurationFromString } from "./config.ts";
-import {
-  type EnvironmentRpcClient,
-  type EnvironmentTargetFlags,
-  environmentTargetFlags,
-  withEnvironmentRpc,
-} from "./environmentRpc.ts";
+import { resolveTurnLibrary, type TurnLibraryExtras } from "./library.ts";
+import { type EnvironmentRpcClient, environmentTargetFlags } from "./environmentRpc.ts";
 
 export class ThreadCliError extends Schema.TaggedError<ThreadCliError>()("ThreadCliError", {
   reason: Schema.Literals([
@@ -331,6 +328,10 @@ function conversationMessages(thread: OrchestrationThread) {
       text: message.text,
       streaming: message.streaming,
       createdAt: message.createdAt,
+      appliedSkills: message.promptContext
+        ? [...message.promptContext.threadSkills, ...message.promptContext.requestSkills]
+        : [],
+      appliedProfile: message.promptContext?.profileName ?? null,
     }));
 }
 
@@ -392,8 +393,6 @@ function formatAttention(attention: ReturnType<typeof threadAttention>): Readonl
   }
   return lines;
 }
-
-export const printJson = (value: unknown) => Console.log(JSON.stringify(value, null, 2));
 
 // ---------------------------------------------------------------------------
 // Waiting
@@ -509,10 +508,6 @@ const newId = () => NodeCrypto.randomUUID();
 // ---------------------------------------------------------------------------
 // Flags
 
-export const jsonFlag = Flag.Boolean("json").pipe(
-  Flag.withDescription("Print machine-readable JSON."),
-  Flag.withDefault(false),
-);
 const threadArgument = Argument.String("thread").pipe(
   Argument.withDescription("Thread id or unique id prefix."),
 );
@@ -521,11 +516,6 @@ const waitFlag = Flag.Boolean("wait").pipe(
     "Block until the agent finishes or needs approval/input, then print its reply.",
   ),
   Flag.withDefault(false),
-);
-export const timeoutFlag = Flag.String("timeout").pipe(
-  Flag.withSchema(DurationFromString),
-  Flag.withDescription("Give up waiting after this long (e.g. 30s, 10m, 2h)."),
-  Flag.optional,
 );
 const modelFlag = Flag.String("model").pipe(
   Flag.withDescription(
@@ -541,19 +531,29 @@ const interactionModeFlag = Flag.Literals("mode", ProviderInteractionMode.litera
   Flag.withDescription("`plan` asks the agent for a plan instead of making changes."),
   Flag.optional,
 );
+const skillFlag = Flag.String("skill").pipe(
+  Flag.withDescription("Mini skill (id or name) for this message only; repeatable."),
+  Flag.atLeast(0),
+);
+const profileFlag = Flag.String("profile").pipe(
+  Flag.withDescription("Agent profile (slug, id, or name) for this message."),
+  Flag.optional,
+);
+
+/** Fields `--skill`/`--profile` add to a turn-start command. */
+function libraryTurnFields(library: TurnLibraryExtras) {
+  return {
+    ...(library.miniSkillIds.length > 0 ? { miniSkillIds: [...library.miniSkillIds] } : {}),
+    ...(library.agentProfile !== null ? { agentProfile: library.agentProfile } : {}),
+  };
+}
+
 const messageArgument = Argument.String("message").pipe(
   Argument.withDescription("Message text. Omit or pass - to read it from stdin."),
   Argument.variadic(),
 );
 
 /** Runs a handler against the live server's RPC client. */
-export const withClient =
-  <Flags extends EnvironmentTargetFlags, A, E, R>(
-    run: (client: EnvironmentRpcClient, flags: Flags) => Effect.Effect<A, E, R>,
-  ) =>
-  (flags: Flags) =>
-    withEnvironmentRpc(flags, (client) => run(client, flags));
-
 const dispatch = (client: EnvironmentRpcClient, command: ClientOrchestrationCommand) =>
   client[ORCHESTRATION_WS_METHODS.dispatchCommand](command);
 
@@ -629,9 +629,13 @@ const showCommand = Command.make("show", {
         ];
         if (summary.lastError) lines.push(`Error: ${summary.lastError}`);
         for (const message of messages) {
+          const applied = [
+            ...(message.appliedProfile ? [`profile: ${message.appliedProfile}`] : []),
+            ...message.appliedSkills,
+          ];
           lines.push(
             "",
-            `── ${message.role}${message.streaming ? " (streaming)" : ""}`,
+            `── ${message.role}${message.streaming ? " (streaming)" : ""}${applied.length > 0 ? `  [${applied.join(", ")}]` : ""}`,
             message.text,
           );
         }
@@ -650,10 +654,17 @@ const newCommand = Command.make("new", {
     Flag.withDescription("Project id, path, or title. Default: the project containing the cwd."),
     Flag.optional,
   ),
-  title: Flag.String("title").pipe(Flag.optional),
+  title: Flag.String("title").pipe(
+    Flag.withDescription(
+      "Thread title. Default: derived from the message, then refined by the server.",
+    ),
+    Flag.optional,
+  ),
   model: modelFlag,
   runtimeMode: runtimeModeFlag,
   mode: interactionModeFlag,
+  skill: skillFlag,
+  profile: profileFlag,
   worktree: Flag.String("worktree").pipe(
     Flag.withDescription("Run in a new git worktree branched from this base branch."),
     Flag.optional,
@@ -673,6 +684,11 @@ const newCommand = Command.make("new", {
           Option.isSome(flags.project) ? flags.project.value : yield* HostProcessWorkingDirectory,
         );
         const defaults = yield* resolveNewThreadDefaults(client, shell, project, flags.model);
+        const library = yield* resolveTurnLibrary(client, {
+          modelSelection: defaults.modelSelection,
+          skills: flags.skill,
+          profile: flags.profile,
+        });
         const runtimeMode = Option.getOrElse(flags.runtimeMode, () => defaults.runtimeMode);
         const interactionMode = Option.getOrElse(flags.mode, () => "default" as const);
         const title = Option.getOrElse(flags.title, () => threadTitleFromPrompt(text));
@@ -683,7 +699,8 @@ const newCommand = Command.make("new", {
           commandId: CommandId.make(newId()),
           threadId,
           message: { messageId: MessageId.make(newId()), role: "user", text, attachments: [] },
-          modelSelection: defaults.modelSelection,
+          modelSelection: library.modelSelection,
+          ...libraryTurnFields(library),
           titleSeed: title,
           runtimeMode,
           interactionMode,
@@ -691,7 +708,7 @@ const newCommand = Command.make("new", {
             createThread: {
               projectId: project.id,
               title,
-              modelSelection: defaults.modelSelection,
+              modelSelection: library.modelSelection,
               runtimeMode,
               interactionMode,
               branch: Option.getOrNull(flags.worktree),
@@ -736,6 +753,8 @@ const sendCommand = Command.make("send", {
   model: modelFlag,
   runtimeMode: runtimeModeFlag,
   mode: interactionModeFlag,
+  skill: skillFlag,
+  profile: profileFlag,
   wait: waitFlag,
   timeout: timeoutFlag,
   json: jsonFlag,
@@ -757,13 +776,19 @@ const sendCommand = Command.make("send", {
         const modelSelection = Option.isSome(flags.model)
           ? yield* parseModelSelection(flags.model.value, thread.modelSelection.instanceId)
           : thread.modelSelection;
+        const library = yield* resolveTurnLibrary(client, {
+          modelSelection,
+          skills: flags.skill,
+          profile: flags.profile,
+        });
         const createdAt = yield* nowIso;
         yield* dispatch(client, {
           type: "thread.turn.start",
           commandId: CommandId.make(newId()),
           threadId: thread.id,
           message: { messageId: MessageId.make(newId()), role: "user", text, attachments: [] },
-          modelSelection,
+          modelSelection: library.modelSelection,
+          ...libraryTurnFields(library),
           runtimeMode: Option.getOrElse(flags.runtimeMode, () => thread.runtimeMode),
           interactionMode: Option.getOrElse(flags.mode, () => thread.interactionMode),
           createdAt,

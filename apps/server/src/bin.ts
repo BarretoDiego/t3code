@@ -26,6 +26,8 @@ import { sshHelperCommand } from "./cli/sshHelper.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
 import { envCommand } from "./cli/env.ts";
+import { guideCommand } from "./cli/guide.ts";
+import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
@@ -71,6 +73,9 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       threadCommand,
       terminalCommand,
       rpcCommand,
+      skillCommand,
+      profileCommand,
+      guideCommand,
       envCommand,
       serviceCommand,
       updateCommand,

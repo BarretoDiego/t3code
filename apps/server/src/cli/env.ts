@@ -9,7 +9,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import { baseDirFlag } from "./config.ts";
-import { printJson } from "./thread.ts";
+import { printJson } from "./common.ts";
 import {
   EnvironmentServerConnectError,
   exchangePairingCredential,

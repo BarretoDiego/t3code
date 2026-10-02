@@ -10,7 +10,7 @@ import { RpcSchema } from "effect/unstable/rpc";
 
 import { RPC_REQUIRED_SCOPES } from "../auth/RpcAuthorization.ts";
 import { environmentTargetFlags, withFlatEnvironmentRpc } from "./environmentRpc.ts";
-import { jsonFlag, printJson, timeoutFlag } from "./thread.ts";
+import { jsonFlag, printJson, timeoutFlag } from "./common.ts";
 
 export class RpcCliError extends Schema.TaggedError<RpcCliError>()("RpcCliError", {
   detail: Schema.String,

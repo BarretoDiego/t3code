@@ -19,7 +19,8 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { DurationFromString } from "./config.ts";
 import { type EnvironmentRpcClient, environmentTargetFlags } from "./environmentRpc.ts";
-import { jsonFlag, printJson, resolveThread, timeoutFlag, withClient } from "./thread.ts";
+import { jsonFlag, printJson, timeoutFlag, withClient } from "./common.ts";
+import { resolveThread } from "./thread.ts";
 
 export class TerminalCliError extends Schema.TaggedError<TerminalCliError>()("TerminalCliError", {
   detail: Schema.String,
@@ -244,7 +245,10 @@ const readCommand = Command.make("read", {
 const writeCommand = Command.make("write", {
   ...environmentTargetFlags,
   thread: threadArgument,
-  text: Argument.String("text").pipe(Argument.variadic()),
+  text: Argument.String("text").pipe(
+    Argument.withDescription("Text to type into the terminal."),
+    Argument.variadic(),
+  ),
   terminal: terminalFlag,
   noEnter: Flag.Boolean("no-enter").pipe(
     Flag.withDescription("Do not press Enter after the text."),
@@ -274,7 +278,10 @@ const writeCommand = Command.make("write", {
 const runCommand = Command.make("run", {
   ...environmentTargetFlags,
   thread: threadArgument,
-  command: Argument.String("command").pipe(Argument.variadic()),
+  command: Argument.String("command").pipe(
+    Argument.withDescription("Shell command line to run."),
+    Argument.variadic(),
+  ),
   terminal: terminalFlag,
   idle: Flag.String("idle").pipe(
     Flag.withSchema(DurationFromString),
