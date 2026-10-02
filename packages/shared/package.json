@@ -39,6 +39,10 @@
       "types": "./src/advertisedEndpoint.ts",
       "import": "./src/advertisedEndpoint.ts"
     },
+    "./pendingRequests": {
+      "types": "./src/pendingRequests.ts",
+      "import": "./src/pendingRequests.ts"
+    },
     "./agentAwareness": {
       "types": "./src/agentAwareness.ts",
       "import": "./src/agentAwareness.ts"

@@ -1,7 +1,4 @@
-import {
-  requestKindFromRequestType,
-  type PendingApproval,
-} from "@t3tools/client-runtime/pending-requests";
+import { requestKindFromRequestType, type PendingApproval } from "@t3tools/shared/pendingRequests";
 import { UserInputAttachmentAnswerPayload } from "@t3tools/contracts";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import * as Option from "effect/Option";
@@ -42,7 +39,7 @@ import {
   type TurnDiffSummary,
 } from "./types";
 
-export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+export type { PendingApproval, PendingUserInput } from "@t3tools/shared/pendingRequests";
 
 export { formatDuration } from "@t3tools/shared/orchestrationTiming";
 

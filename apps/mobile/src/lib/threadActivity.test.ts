@@ -1,4 +1,4 @@
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { derivePendingRequests } from "@t3tools/shared/pendingRequests";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {

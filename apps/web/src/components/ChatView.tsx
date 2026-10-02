@@ -9,7 +9,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { derivePendingRequests } from "@t3tools/shared/pendingRequests";
 import {
   questionAttachmentDraftId,
   questionAttachmentDraftPrefix,
