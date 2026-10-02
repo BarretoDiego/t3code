@@ -177,8 +177,8 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as MarketplaceService from "./marketplace/MarketplaceService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import {
-  clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
+  clearOwnPersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
@@ -714,9 +714,13 @@ const makeServerLayer = Layer.unwrap(
               Effect.logWarning("Failed to persist server runtime state", { cause }),
             ),
           );
+          return state.pid;
         }),
-        () =>
-          clearPersistedServerRuntimeState(config.serverRuntimeStatePath).pipe(
+        (pid) =>
+          (pid === undefined
+            ? Effect.void
+            : clearOwnPersistedServerRuntimeState(config.serverRuntimeStatePath, pid)
+          ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to clear server runtime state", { cause }),
             ),

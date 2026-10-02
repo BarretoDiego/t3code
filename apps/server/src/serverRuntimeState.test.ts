@@ -202,4 +202,33 @@ describe("serverRuntimeState", () => {
       }
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("leaves another server's runtime state in place on shutdown", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-runtime-state-test-",
+      });
+      const statePath = path.join(root, "server-runtime.json");
+      const state: ServerRuntimeState.PersistedServerRuntimeState = {
+        version: 1,
+        pid: 111,
+        port: 3_773,
+        origin: "http://127.0.0.1:3773",
+        startedAt: "2026-10-02T00:00:00.000Z",
+      };
+      yield* ServerRuntimeState.persistServerRuntimeState({ path: statePath, state });
+
+      yield* ServerRuntimeState.clearOwnPersistedServerRuntimeState(statePath, 222);
+      assert.isTrue(
+        Option.isSome(yield* ServerRuntimeState.readPersistedServerRuntimeState(statePath)),
+      );
+
+      yield* ServerRuntimeState.clearOwnPersistedServerRuntimeState(statePath, 111);
+      assert.isTrue(
+        Option.isNone(yield* ServerRuntimeState.readPersistedServerRuntimeState(statePath)),
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

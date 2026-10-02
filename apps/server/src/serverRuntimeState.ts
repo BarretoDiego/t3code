@@ -87,6 +87,21 @@ export const persistServerRuntimeState = (input: {
     ),
   );
 
+/**
+ * Clears the runtime state only while it still describes `pid`. Several
+ * servers can share a base dir (a stray `t3` next to the desktop app); one
+ * shutting down must not erase the record of the one still running, which is
+ * how the CLI finds it.
+ */
+export const clearOwnPersistedServerRuntimeState = (path: string, pid: number) =>
+  Effect.gen(function* () {
+    const current = yield* readPersistedServerRuntimeState(path).pipe(
+      Effect.orElseSucceed(() => Option.none<PersistedServerRuntimeState>()),
+    );
+    if (Option.isSome(current) && current.value.pid !== pid) return;
+    yield* clearPersistedServerRuntimeState(path);
+  });
+
 export const clearPersistedServerRuntimeState = (path: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

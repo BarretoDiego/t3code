@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Config from "effect/Config";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -25,6 +26,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { baseDirFlag, resolveCliAuthConfig } from "./config.ts";
 
@@ -194,6 +196,38 @@ const openSocket = <Client>(
     return yield* makeClient.pipe(Effect.provide(protocol));
   });
 
+/**
+ * The origin of the server that owns this base dir. The persisted runtime
+ * state is the primary record, but it can be missing (an older server that
+ * shared the base dir cleared it on exit) or stale, so the desktop app's
+ * default port is tried as well. A candidate only counts when its descriptor
+ * reports this base dir's environment id: the session minted locally is only
+ * valid there.
+ */
+const findLocalServer = Effect.fn("cli.findLocalServer")(function* (
+  config: ServerConfig.ServerConfig["Service"],
+) {
+  const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
+  const environmentId = yield* identity.getEnvironmentId;
+  const runtimeState = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath).pipe(
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  const candidates = [
+    ...Option.toArray(Option.map(runtimeState, (state) => state.origin)),
+    `http://127.0.0.1:${ServerConfig.DEFAULT_PORT}`,
+  ].filter((origin, index, all) => all.indexOf(origin) === index);
+  for (const origin of candidates) {
+    const descriptor = yield* fetchEnvironmentDescriptor(origin).pipe(
+      Effect.timeout(Duration.seconds(2)),
+      Effect.option,
+    );
+    if (Option.isSome(descriptor) && descriptor.value.environmentId === environmentId) {
+      return origin;
+    }
+  }
+  return yield* new EnvironmentServerNotRunningError({ statePath: config.serverRuntimeStatePath });
+});
+
 const connectEnvironment = <Client, A, E, R>(
   flags: EnvironmentTargetFlags,
   makeClient: Effect.Effect<Client, never, RpcClient.Protocol | Scope.Scope>,
@@ -227,14 +261,8 @@ const connectEnvironment = <Client, A, E, R>(
 
     // The local server: mint a short-lived session from the local auth store
     // and revoke it on exit, so no credential outlives the command.
-    const runtimeState = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath);
-    if (Option.isNone(runtimeState)) {
-      return yield* new EnvironmentServerNotRunningError({
-        statePath: config.serverRuntimeStatePath,
-      });
-    }
-    const origin = runtimeState.value.origin;
     return yield* Effect.gen(function* () {
+      const origin = yield* findLocalServer(config);
       const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
       return yield* Effect.acquireUseRelease(
         environmentAuth.issueSession({ scopes: AuthStandardClientScopes, label: "t3 cli" }),
