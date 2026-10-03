@@ -1,6 +1,14 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { buildProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { useProjects } from "../../state/entities";
@@ -45,6 +53,25 @@ export function SettingsEnvironmentFilterProvider(props: { readonly children: Re
       }),
     [projects, groupingMode],
   );
+  const lastProjectSelection = useRef<{ key: string; physicalKeys: readonly string[] } | null>(
+    null,
+  );
+  useEffect(() => {
+    const selected = projectGroups.find((group) => group.key === selectedProjectKey);
+    if (selected) {
+      lastProjectSelection.current = {
+        key: selected.key,
+        physicalKeys: selected.members.map((member) => member.physicalProjectKey),
+      };
+      return;
+    }
+    const previous = lastProjectSelection.current;
+    if (previous?.key !== selectedProjectKey) return;
+    const successor = projectGroups.find((group) =>
+      group.members.some((member) => previous.physicalKeys.includes(member.physicalProjectKey)),
+    );
+    if (successor) setSelectedProjectKey(successor.key);
+  }, [projectGroups, selectedProjectKey]);
   const availableTargets = useMemo(() => connectedSettingsTargets(environments), [environments]);
   const selectedTargets = useMemo(
     () =>
