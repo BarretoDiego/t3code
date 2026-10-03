@@ -11,6 +11,7 @@ import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { ProjectLinksSection } from "./components/ProjectLinksSection";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
@@ -139,6 +140,7 @@ function ProjectOverviewContent(props: {
         </View>
       </SettingsSection>
 
+      <ProjectLinksSection members={props.members} />
       <SettingsSection title="Checkouts">
         {props.members.map((member, index) => {
           const environment = props.environments.find(

@@ -351,6 +351,85 @@ function isPhysicalGroupKey(group: ProjectGroupLinkSide): boolean {
   return group.members.some((member) => derivePhysicalProjectKey(member) === group.key);
 }
 
+/** Lists physical projects independently of sidebar grouping and settings scope. */
+export function selectProjectLinkCandidates<TProject extends EnvironmentProject>(input: {
+  readonly projects: ReadonlyArray<TProject>;
+  readonly members: ReadonlyArray<LinkableProject>;
+}): TProject[] {
+  const selected = new Set(
+    input.members.map((member) =>
+      scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
+    ),
+  );
+  return input.projects
+    .filter(
+      (project) =>
+        !selected.has(scopedProjectKey(scopeProjectRef(project.environmentId, project.id))),
+    )
+    .sort(
+      (a, b) =>
+        a.title.localeCompare(b.title) ||
+        a.environmentId.localeCompare(b.environmentId) ||
+        a.workspaceRoot.localeCompare(b.workspaceRoot) ||
+        a.id.localeCompare(b.id),
+    );
+}
+
+/** Portable project references for sharing a link configuration with an agent. */
+export function projectLinkConfiguration(projects: ReadonlyArray<EnvironmentProject>) {
+  return projects.map((project) => ({
+    environmentId: project.environmentId,
+    projectId: project.id,
+    title: project.title,
+    workspaceRoot: project.workspaceRoot,
+    linkKey: project.linkKey ?? null,
+    repositoryKey: project.repositoryIdentity?.canonicalKey ?? null,
+  }));
+}
+
+/** Reveals link membership even when the sidebar is configured to keep projects separate. */
+export function selectProjectLinkPeers<TProject extends EnvironmentProject>(input: {
+  readonly project: EnvironmentProject;
+  readonly projects: ReadonlyArray<TProject>;
+  readonly settings: ProjectGroupingSettings;
+}): TProject[] {
+  const identity = (project: EnvironmentProject) => {
+    const mode = resolveProjectGroupingMode(project, input.settings);
+    return deriveLogicalProjectKey(project, {
+      groupingMode: mode === "separate" ? "repository" : mode,
+    });
+  };
+  const key = identity(input.project);
+  return input.projects.filter(
+    (project) =>
+      (project.environmentId !== input.project.environmentId || project.id !== input.project.id) &&
+      identity(project) === key,
+  );
+}
+
+/** Gives unidentified members an ID without replacing an existing group identity. */
+export function planProjectGroupLinkId(input: {
+  readonly group: ProjectGroupLinkSide;
+  readonly makeLinkKey: () => string;
+}): ProjectGroupLinkPlan {
+  const linkKey =
+    input.group.members.find((member) => member.linkKey)?.linkKey ??
+    (!isPhysicalGroupKey(input.group) ? input.group.key : `link:${input.makeLinkKey()}`);
+  return {
+    linkKey,
+    updates: input.group.members
+      .filter((member) => !member.linkKey)
+      .map((member) => scopeProjectRef(member.environmentId, member.id)),
+  };
+}
+
+function linkSideIdentity(group: ProjectGroupLinkSide): string {
+  // Separate mode uses physical keys for display even when a link already exists.
+  return isPhysicalGroupKey(group)
+    ? (group.members.find((member) => member.linkKey)?.linkKey ?? group.key)
+    : group.key;
+}
+
 /**
  * Plans the `linkKey` writes that make two project groups one. A group that
  * already has a shared identity (git remote or an earlier link) lends its key,
@@ -363,12 +442,14 @@ export function planProjectGroupLink(input: {
   readonly target: ProjectGroupLinkSide;
   readonly makeLinkKey: () => string;
 }): ProjectGroupLinkPlan {
-  const targetIsPhysical = isPhysicalGroupKey(input.target);
-  const sourceIsPhysical = isPhysicalGroupKey(input.source);
+  const targetKey = linkSideIdentity(input.target);
+  const sourceKey = linkSideIdentity(input.source);
+  const targetIsPhysical = targetKey === input.target.key && isPhysicalGroupKey(input.target);
+  const sourceIsPhysical = sourceKey === input.source.key && isPhysicalGroupKey(input.source);
   const linkKey = !targetIsPhysical
-    ? input.target.key
+    ? targetKey
     : !sourceIsPhysical
-      ? input.source.key
+      ? sourceKey
       : `link:${input.makeLinkKey()}`;
   const candidates = !targetIsPhysical
     ? input.source.members

@@ -7,6 +7,10 @@ import {
   buildProjectGroups,
   derivePhysicalProjectKey,
   planProjectGroupLink,
+  planProjectGroupLinkId,
+  projectLinkConfiguration,
+  selectProjectLinkCandidates,
+  selectProjectLinkPeers,
   type ProjectGroup,
   type ProjectGroupingSettings,
 } from "./projectGrouping.ts";
@@ -311,6 +315,134 @@ describe("linked projects", () => {
   function groupFor(groups: ReadonlyArray<ProjectGroup>, id: string): ProjectGroup {
     return groups.find((group) => group.members.some((member) => member.project.id === id))!;
   }
+
+  it("lists every other project, including grouped checkouts and matching IDs on other environments", () => {
+    const source = makeProject("same-id", "/source", { environmentId: laptop });
+    const projects = [
+      source,
+      makeProject("same-id", "/remote", { environmentId: server }),
+      makeProject("another", "/another", { environmentId: server }),
+      makeProject("no-remote", "/notes", { repositoryIdentity: null }),
+    ];
+    expect(buildProjectGroups({ projects, settings: settings("repository") })).toHaveLength(2);
+    const candidates = selectProjectLinkCandidates({ projects, members: [source] });
+    expect(candidates).toHaveLength(3);
+    expect(candidates.map((project) => project.workspaceRoot)).toEqual([
+      "/another",
+      "/notes",
+      "/remote",
+    ]);
+    expect(projects[0]).toBe(source);
+  });
+
+  it("generates one shared ID for unidentified projects and preserves it on repeated generation", () => {
+    const project = makeProject("notes", "/notes", { repositoryIdentity: null });
+    const group = { key: derivePhysicalProjectKey(project), members: [project] };
+    const plan = planProjectGroupLinkId({ group, makeLinkKey: () => "fresh" });
+    expect(plan.linkKey).toBe("link:fresh");
+    expect(plan.updates).toEqual([{ environmentId, projectId: project.id }]);
+    expect(
+      planProjectGroupLinkId({
+        group: { ...group, members: [{ ...project, linkKey: plan.linkKey }] },
+        makeLinkKey: () => "replacement",
+      }),
+    ).toEqual({ linkKey: "link:fresh", updates: [] });
+  });
+
+  it("generates missing IDs without splitting an automatic repository group", () => {
+    const projects = [
+      makeProject("laptop", "/local", { environmentId: laptop }),
+      makeProject("server", "/remote", { environmentId: server }),
+    ];
+    const group = buildProjectGroups({ projects, settings: settings("repository") })[0]!;
+    const plan = planProjectGroupLinkId({ group: linkSide(group), makeLinkKey: () => "fresh" });
+    const linked = projects.map((project) => ({ ...project, linkKey: plan.linkKey }));
+    expect(plan.linkKey).toBe(repositoryIdentity.canonicalKey);
+    expect(plan.updates).toHaveLength(2);
+    expect(buildProjectGroups({ projects: linked, settings: settings("repository") })[0]?.key).toBe(
+      group.key,
+    );
+  });
+
+  it("reuses explicit IDs when linking in separate mode", () => {
+    const projects = [
+      makeProject("source", "/source", { repositoryIdentity: null }),
+      makeProject("target", "/target", { linkKey: "link:existing", repositoryIdentity: null }),
+      makeProject("peer", "/peer", { linkKey: "link:existing", repositoryIdentity: null }),
+    ];
+    const groups = buildProjectGroups({ projects, settings: settings("separate") });
+    const linked = applyLink(projects, groupFor(groups, "source"), groupFor(groups, "target"));
+    expect(linked.map((project) => project.linkKey)).toEqual([
+      "link:existing",
+      "link:existing",
+      "link:existing",
+    ]);
+    expect(buildProjectGroups({ projects: linked, settings: settings("repository") })).toHaveLength(
+      1,
+    );
+  });
+
+  it("reveals automatic and explicit peers independently of separate sidebar display", () => {
+    const projects = [
+      makeProject("repo", "/repo"),
+      makeProject("linked", "/linked", {
+        repositoryIdentity: null,
+        linkKey: repositoryIdentity.canonicalKey,
+      }),
+      makeProject("unrelated", "/unrelated", { linkKey: "link:other" }),
+    ];
+    expect(buildProjectGroups({ projects, settings: settings("separate") })).toHaveLength(3);
+    expect(
+      selectProjectLinkPeers({
+        project: projects[0]!,
+        projects,
+        settings: settings("separate"),
+      }).map((project) => project.id),
+    ).toEqual(["linked"]);
+    expect(
+      selectProjectLinkPeers({
+        project: projects[1]!,
+        projects,
+        settings: settings("repository"),
+      }).map((project) => project.id),
+    ).toEqual(["repo"]);
+  });
+
+  it("keeps repository paths distinct when showing peers", () => {
+    const identity = { ...repositoryIdentity, rootPath: "/repo" };
+    const projects = [
+      makeProject("web", "/repo/web", { repositoryIdentity: identity }),
+      makeProject("mobile", "/repo/mobile", { repositoryIdentity: identity }),
+    ];
+    expect(
+      selectProjectLinkPeers({
+        project: projects[0]!,
+        projects,
+        settings: settings("repository_path"),
+      }),
+    ).toEqual([]);
+    expect(
+      selectProjectLinkPeers({ project: projects[0]!, projects, settings: settings("repository") }),
+    ).toHaveLength(1);
+  });
+
+  it("exports environment-scoped configuration with stored and automatic identities distinguished", () => {
+    const linked = makeProject("app", "/app", { linkKey: "link:app" });
+    const unlinked = makeProject("app", "/remote/app", { environmentId: server });
+    const configuration = projectLinkConfiguration([linked, unlinked]);
+    expect(
+      configuration.map((entry) => [
+        entry.environmentId,
+        entry.projectId,
+        entry.linkKey,
+        entry.repositoryKey,
+      ]),
+    ).toEqual([
+      [environmentId, "app", "link:app", repositoryIdentity.canonicalKey],
+      [server, "app", null, repositoryIdentity.canonicalKey],
+    ]);
+    expect(configuration[0]?.workspaceRoot).toBe("/app");
+  });
 
   it("pairs remote-less projects across environments with a fresh key", () => {
     const projects = [
