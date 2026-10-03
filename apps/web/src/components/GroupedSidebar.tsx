@@ -2126,8 +2126,9 @@ export default function Sidebar() {
     () =>
       new Map(
         projectGroups.flatMap((group) =>
-          group.memberProjects.map(
-            (project) => [`${project.environmentId}:${project.id}`, group.displayName] as const,
+          group.memberProjectRefs.map(
+            (project) =>
+              [`${project.environmentId}:${project.projectId}`, group.displayName] as const,
           ),
         ),
       ),
@@ -2138,8 +2139,8 @@ export default function Sidebar() {
     () =>
       new Map(
         projectGroups.flatMap((group) =>
-          group.memberProjects.map(
-            (project) => [`${project.environmentId}:${project.id}`, group] as const,
+          group.memberProjectRefs.map(
+            (project) => [`${project.environmentId}:${project.projectId}`, group] as const,
           ),
         ),
       ),
@@ -2147,8 +2148,8 @@ export default function Sidebar() {
   );
   // Every known project seeds a section, so a project with no threads at all
   // still gets a row — and with it the New thread and settings buttons. The
-  // seeds are physical project refs because that is what threads bucket by;
-  // seeding logical groups would create sections no thread could ever land in.
+  // seeds retain physical refs so nested environment sections stay addressable;
+  // the grouping context resolves them to the same logical identity as threads.
   const projectSectionSeeds = useMemo(
     () =>
       projects.map((project) => ({
@@ -2471,6 +2472,8 @@ export default function Sidebar() {
       resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       resolveProjectLabel: (environmentId, projectId) =>
         projectDisplayNameByKey.get(`${environmentId}:${projectId}`) ?? null,
+      resolveProjectKey: (environmentId, projectId) =>
+        projectGroupByProjectKey.get(`${environmentId}:${projectId}`)?.projectKey ?? null,
       providerEntriesByEnvironment,
       // Same status and unread rules as SidebarThreadRow, so a collapsed
       // header can never claim something its rows would not show.
@@ -2490,6 +2493,7 @@ export default function Sidebar() {
     [
       environmentLabelById,
       projectDisplayNameByKey,
+      projectGroupByProjectKey,
       providerEntriesByEnvironment,
       threadLastVisitedAtById,
     ],

@@ -34,6 +34,11 @@ export interface SidebarThreadGroupContext {
     environmentId: EnvironmentId,
     projectId: ProjectId,
   ) => string | null;
+  /** Shared project identity, including explicit links and the selected grouping mode. */
+  readonly resolveProjectKey?: (
+    environmentId: EnvironmentId,
+    projectId: ProjectId,
+  ) => string | null;
   /** Provider instance entries per environment, used to resolve a thread's driver kind. */
   readonly providerEntriesByEnvironment: ReadonlyMap<
     string,
@@ -226,7 +231,7 @@ function projectBucket(
   context: SidebarThreadGroupContext,
 ): BucketIdentity {
   return {
-    key: `project:${environmentId}:${projectId}`,
+    key: `project:${context.resolveProjectKey?.(environmentId, projectId) ?? `${environmentId}:${projectId}`}`,
     label: context.resolveProjectLabel(environmentId, projectId) ?? "Unknown project",
     target: { environmentId, projectId },
   };
@@ -273,15 +278,13 @@ function bucketForSeed(
 function seedsUnder(
   seeds: ReadonlyArray<SidebarThreadGroupSeed>,
   parent: BucketIdentity,
+  axis: Exclude<SidebarThreadGroupingAxis, "none">,
+  context: SidebarThreadGroupContext,
 ): ReadonlyArray<SidebarThreadGroupSeed> {
-  if (parent.target.environmentId === null) {
+  if (axis === "provider") {
     return [];
   }
-  return seeds.filter(
-    (seed) =>
-      seed.environmentId === parent.target.environmentId &&
-      (parent.target.projectId === null || seed.projectId === parent.target.projectId),
-  );
+  return seeds.filter((seed) => bucketForSeed(seed, axis, context)?.key === parent.key);
 }
 
 interface Bucket<TThread extends GroupableThread> {
@@ -403,25 +406,23 @@ export function buildSidebarThreadGroups<TThread extends GroupableThread>(input:
     const children = partitionByAxis({
       threads: bucket.threads,
       settledThreads: bucket.settled,
-      seeds: seedsUnder(seeds, identity),
+      seeds: seedsUnder(seeds, identity, primaryAxis, context),
       axis: nestedAxis,
       context,
-    }).map(
-      (child): SidebarThreadGroup<TThread> => ({
-        // Prefixed with the parent key so the same child bucket under two
-        // parents gets two independent collapse states.
-        key: `${identity.key}/${child.identity.key}`,
-        label: child.identity.label,
-        axis: nestedAxis,
-        target: child.identity.target,
-        threads: child.threads,
-        settledThreads: child.settled,
-        children: [],
-        threadCount: child.threads.length,
-        settledCount: child.settled.length,
-        attention: countAttention(child.threads, context.classifyAttention),
-      }),
-    );
+    }).map((child): SidebarThreadGroup<TThread> => ({
+      // Prefixed with the parent key so the same child bucket under two
+      // parents gets two independent collapse states.
+      key: `${identity.key}/${child.identity.key}`,
+      label: child.identity.label,
+      axis: nestedAxis,
+      target: child.identity.target,
+      threads: child.threads,
+      settledThreads: child.settled,
+      children: [],
+      threadCount: child.threads.length,
+      settledCount: child.settled.length,
+      attention: countAttention(child.threads, context.classifyAttention),
+    }));
 
     return {
       key: identity.key,
