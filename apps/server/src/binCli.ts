@@ -25,6 +25,7 @@ import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
+import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
 import { guideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
@@ -79,6 +80,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       profileCommand,
       guideCommand,
       envCommand,
+      doctorCommand,
       serviceCommand,
       updateCommand,
       uninstallCommand,

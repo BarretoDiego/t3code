@@ -231,6 +231,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
+import * as NetworkDiagnostics from "./diagnostics/NetworkDiagnostics.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as MarketplaceService from "./marketplace/MarketplaceService.ts";
@@ -1340,6 +1341,7 @@ const makeWsRpcLayer = (
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const hostResources = yield* HostResources.HostResources;
+      const networkDiagnostics = yield* NetworkDiagnostics.NetworkDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
@@ -3856,6 +3858,10 @@ const makeWsRpcLayer = (
           ),
       });
       const forkHandlers = WsForkRpcGroup.of({
+        [WS_METHODS.serverGetNetworkDiagnostics]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetNetworkDiagnostics, networkDiagnostics.read, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverRefreshProviderRateLimits]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverRefreshProviderRateLimits,

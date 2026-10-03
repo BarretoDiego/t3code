@@ -33,6 +33,8 @@ manual for agents that always matches the installed version.
 | Rename a project | `t3 project rename <project> <title>`   |
 | Remove a project | `t3 project remove <project> [--force]` |
 
+With `--env`, `<path>` is a folder on that environment's machine.
+
 ## Threads
 
 ### Start and continue conversations
@@ -211,9 +213,9 @@ reaches the server, with the field that is wrong.
 ## Environments
 
 Save any environment you can reach once (on your network, over Tailscale, or
-through a T3 Connect tunnel URL), then pass `--env <name>` to any `thread`,
-`terminal`, `skill`, `profile`, or `rpc` command. Set `T3CODE_ENV` to make one
-the default for a shell or an agent session.
+through a T3 Connect tunnel URL), then pass `--env <name>` to any `project`,
+`thread`, `terminal`, `skill`, `profile`, `auth`, `rpc`, or `doctor` command.
+Set `T3CODE_ENV` to make one the default for a shell or an agent session.
 
 | Task                               | Command                                   |
 | ---------------------------------- | ----------------------------------------- |
@@ -226,3 +228,50 @@ Create the pairing link in the target environment's Connections settings, or
 with `t3 pair` on that machine; `t3 auth session issue` there prints a token.
 A pairing link works once. Removing an environment only forgets it on this
 machine; revoke its access from the target's Connections settings.
+
+`service`, `update`, `uninstall`, `connect`, `pair`, and `theme` manage the
+installation on the machine they run on, so they take no `--env`. From another
+machine, `t3 rpc call server.updateServer --env <name>` updates a server and
+`t3 auth pairing create --env <name>` creates a pairing link for it.
+
+### Manage access remotely
+
+`t3 auth pairing create|list|revoke` and `t3 auth session list|revoke` accept
+`--env` and then act on that environment. They need an administrative
+credential: a pairing link grants a standard one, so save the environment with
+a token instead. On the target machine run `t3 auth session issue`, then here
+`t3 env add <name> <url> --token <token>`.
+
+## Diagnose connections
+
+`t3 doctor` explains why an environment is or is not reachable, and what to do
+about it. It exits with a non-zero status when it finds a problem.
+
+| Task                                               | Command                  |
+| -------------------------------------------------- | ------------------------ |
+| Check this machine and its server                  | `t3 doctor`              |
+| Check one saved environment                        | `t3 doctor --env <name>` |
+| Check every environment and the paths between them | `t3 doctor --all`        |
+| Keep checking and print what changes               | `t3 doctor --watch 30s`  |
+
+For each environment it checks, in order: the Tailscale path from this machine
+(is the node in your tailnet, online, and reached directly or through a relay),
+whether a T3 Code server answers at the saved address and is the one you
+paired with, whether the saved credential is still accepted, and whether the
+WebSocket connection works. It stops at the first layer that fails.
+
+When the environment is reachable, its host also reports its own side:
+whether Tailscale is running and signed in there, whether its key is about to
+expire, and whether Tailscale Serve forwards to the port T3 Code listens on.
+That host report needs a server recent enough to provide it.
+
+`--all` adds a section about each pair of environments. Syncing a project or
+handing off a thread between two environments is driven by the device you run
+it from, so it works when that device reaches both and both servers support
+it; the section says so, or names the server to update. It also shows whether
+each host sees the other online in the tailnet, which only matters for
+features that connect hosts directly, such as an AI runtime shared over the
+tailnet.
+
+A line starting with `✗` is a problem, `!` a warning, and `→` the suggested
+fix. `--json` prints the same checks as `{ok, sections}`.

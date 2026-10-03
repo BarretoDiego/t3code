@@ -113,11 +113,31 @@ Output is plain text; --raw keeps ANSI escapes.
 Covers git and pull requests, settings, providers, files, diffs, search, and
 everything else the apps can do.
 
+## Projects
+  t3 project list --json
+  t3 project add <path> [--title <t>]      with --env: a path on that machine
+  t3 project rename <project> "<title>" | t3 project remove <project> [--force]
+
 ## Environments
   t3 env add <name> "<pairing-link>"          pair like a device
   t3 env add <name> <url> --token <token>     token from \`t3 auth session issue\`
   t3 env list | t3 env remove <name>
 Works for any reachable server: LAN, Tailscale, or a T3 Connect tunnel URL.
+--env works on project, thread, terminal, skill, profile, auth, rpc, doctor.
+service, update, uninstall, connect, pair, theme act on the machine they run on.
+  t3 auth pairing create|list|revoke --env <name>     needs an administrative token
+  t3 auth session list|revoke --env <name>            (saved with env add --token)
+
+## When an environment does not answer
+  t3 doctor --env <name> --json     one environment
+  t3 doctor --all --json            this machine, every environment, and what
+                                    works between each pair of them
+Prints {ok, sections: [{title, checks: [{id, status, summary, hint}]}]} and
+exits non-zero on a problem. status is ok, info, warn, or fail; "hint" is the
+fix. Checks run outside-in and stop at the first broken layer: Tailscale path
+(tailnet), server reachable (http), same server as paired (identity),
+credential, WebSocket (rpc), then the host's own report (host-tailscale*,
+tailscale-serve). Run it before retrying a command that failed to connect.
 `;
 
 export const guideCommand = Command.make("guide").pipe(
