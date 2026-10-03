@@ -5,6 +5,8 @@ import {
   AuthStandardClientScopes,
   AuthTokenExchangeGrantType,
   EnvironmentHttpApi,
+  ORCHESTRATION_PROTOCOL_QUERY_PARAM,
+  ORCHESTRATION_PROTOCOL_VERSION,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
@@ -167,6 +169,8 @@ function webSocketUrl(origin: string, ticket: string): string {
   url.searchParams.set("wsTicket", ticket);
   url.searchParams.set("clientSurface", "cli");
   url.searchParams.set("clientAppVersion", packageJson.version);
+  // The server refuses sockets that do not state a protocol version it speaks.
+  url.searchParams.set(ORCHESTRATION_PROTOCOL_QUERY_PARAM, String(ORCHESTRATION_PROTOCOL_VERSION));
   return url.toString();
 }
 
