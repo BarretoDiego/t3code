@@ -14,12 +14,14 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { FolderSyncIcon, InfoIcon, Trash2Icon } from "lucide-react";
+import { FolderSyncIcon, InfoIcon, Link2Icon, Trash2Icon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { randomUUID } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
+import { planProjectGroupLink } from "../../logicalProject";
 import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
@@ -33,6 +35,7 @@ import { SyncProjectDialog } from "../SyncProjectDialog";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   SettingResetButton,
@@ -57,6 +60,15 @@ const ProjectIconPickerDialog = lazy(() =>
 
 function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
+}
+
+function describeLinkCandidate(group: SidebarProjectSnapshot): string {
+  const environments = [
+    ...new Set(group.memberProjects.flatMap((member) => member.environmentLabel ?? [])),
+  ];
+  return environments.length > 0
+    ? `${group.displayName} · ${environments.join(", ")}`
+    : group.displayName;
 }
 
 /** `project` is the Projects page shortcut: the new-thread defaults people change most. */
@@ -211,16 +223,18 @@ function ProjectDetail({
 
   // Group-shared fields live on each physical project record, so a
   // group-level edit fans out to every member.
-  const updateAllMembers = useCallback(
+  const updateMembers = useCallback(
     async (
+      members: ReadonlyArray<SidebarProjectGroupMember>,
       input: Partial<{
         title: string;
         faviconPath: string | null;
         projectIcon: ProjectIconOverride | null;
+        linkKey: string | null;
       }>,
       failureTitle: string,
     ): Promise<AtomCommandResult<void, unknown>> => {
-      const unavailable = group.memberProjects.find((member) => {
+      const unavailable = members.find((member) => {
         const environment = environmentById.get(member.environmentId);
         return environment?.connection.phase !== "connected" || !environment.serverConfig;
       });
@@ -232,7 +246,7 @@ function ProjectDetail({
         reportFailure(failureTitle, result);
         return result;
       }
-      for (const member of group.memberProjects) {
+      for (const member of members) {
         const result = mapAtomCommandResult(
           await updateProject({
             environmentId: member.environmentId,
@@ -244,7 +258,7 @@ function ProjectDetail({
           // A partial fan-out is possible: earlier members already took the
           // write. Name the environment so the user knows where it stopped.
           reportFailure(
-            group.memberProjects.length > 1
+            members.length > 1
               ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
               : failureTitle,
             result,
@@ -254,8 +268,52 @@ function ProjectDetail({
       }
       return AsyncResult.success(undefined);
     },
-    [environmentById, group.memberProjects, reportFailure, updateProject],
+    [environmentById, reportFailure, updateProject],
   );
+  const updateAllMembers = useCallback(
+    (input: Parameters<typeof updateMembers>[1], failureTitle: string) =>
+      updateMembers(group.memberProjects, input, failureTitle),
+    [group.memberProjects, updateMembers],
+  );
+
+  // ----- linked projects -----
+  const allGroups = useSettingsProjectGroups();
+  const linkCandidates = useMemo(
+    () => allGroups.filter((candidate) => candidate.projectKey !== group.projectKey),
+    [allGroups, group.projectKey],
+  );
+  const [linkTargetKey, setLinkTargetKey] = useState<string | null>(null);
+  const [isLinking, setIsLinking] = useState(false);
+  const linkToGroup = useCallback(async () => {
+    const target = linkCandidates.find((candidate) => candidate.projectKey === linkTargetKey);
+    if (!target) return;
+    const plan = planProjectGroupLink({
+      source: { key: group.projectKey, members: group.memberProjects },
+      target: { key: target.projectKey, members: target.memberProjects },
+      makeLinkKey: randomUUID,
+    });
+    const membersByRef = new Map(
+      [...group.memberProjects, ...target.memberProjects].map((member) => [
+        memberKey(member),
+        member,
+      ]),
+    );
+    const members = plan.updates.flatMap((ref) => {
+      const member = membersByRef.get(`${ref.environmentId}:${ref.projectId}`);
+      return member ? [member] : [];
+    });
+    setIsLinking(true);
+    try {
+      const result = await updateMembers(
+        members,
+        { linkKey: plan.linkKey },
+        "Failed to link projects",
+      );
+      if (result._tag === "Success") setLinkTargetKey(null);
+    } finally {
+      setIsLinking(false);
+    }
+  }, [group.memberProjects, group.projectKey, linkCandidates, linkTargetKey, updateMembers]);
 
   const renameGroup = useCallback(
     async (nextTitle: string, wasEdited: boolean) => {
@@ -411,14 +469,28 @@ function ProjectDetail({
           title={member.environmentLabel ?? "Environment"}
           description={member.workspaceRoot}
           control={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void removeMembers([member])}
-              aria-label={`Remove checkout ${member.workspaceRoot}`}
-            >
-              Remove
-            </Button>
+            <div className="flex items-center gap-2">
+              {member.linkKey ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void updateMembers([member], { linkKey: null }, "Failed to unlink project")
+                  }
+                  aria-label={`Unlink checkout ${member.workspaceRoot}`}
+                >
+                  Unlink
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void removeMembers([member])}
+                aria-label={`Remove checkout ${member.workspaceRoot}`}
+              >
+                Remove
+              </Button>
+            </div>
           }
         />
       ))}
@@ -528,6 +600,39 @@ function ProjectDetail({
                 <FolderSyncIcon className="size-3.5" />
                 Sync…
               </Button>
+            }
+          />
+          <SettingsRow
+            title="Link to another project"
+            description="Treat another project as this one, for example the same repository on another environment that has no git remote. Unlink it from Checkouts."
+            control={
+              <div className="flex items-center gap-2">
+                <Select
+                  value={linkTargetKey ?? ""}
+                  onValueChange={(value) => setLinkTargetKey(value ? String(value) : null)}
+                  disabled={linkCandidates.length === 0 || isLinking}
+                >
+                  <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Project to link">
+                    <SelectValue placeholder="Choose a project" />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {linkCandidates.map((candidate) => (
+                      <SelectItem key={candidate.projectKey} value={candidate.projectKey}>
+                        {describeLinkCandidate(candidate)}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={linkTargetKey === null || isLinking}
+                  onClick={() => void linkToGroup()}
+                >
+                  <Link2Icon className="size-3.5" />
+                  Link
+                </Button>
+              </div>
             }
           />
         </SettingsSection>

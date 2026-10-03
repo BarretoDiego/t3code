@@ -6,6 +6,8 @@ import { chooseLoadBalancedEnvironment } from "../load-balancing.ts";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
+  planProjectGroupLink,
+  type ProjectGroup,
   type ProjectGroupingSettings,
 } from "./projectGrouping.ts";
 
@@ -277,5 +279,107 @@ describe("buildProjectGroups", () => {
     });
     expect(groups).toHaveLength(1);
     expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["winner", "sibling"]);
+  });
+});
+
+describe("linked projects", () => {
+  const laptop = EnvironmentId.make("laptop");
+  const server = EnvironmentId.make("server");
+
+  function linkSide(group: ProjectGroup) {
+    return { key: group.key, members: group.members.map((member) => member.project) };
+  }
+
+  function applyLink(
+    projects: ReadonlyArray<EnvironmentProject>,
+    source: ProjectGroup,
+    target: ProjectGroup,
+  ): EnvironmentProject[] {
+    const plan = planProjectGroupLink({
+      source: linkSide(source),
+      target: linkSide(target),
+      makeLinkKey: () => "fresh",
+    });
+    const updated = new Set(plan.updates.map((ref) => `${ref.environmentId}:${ref.projectId}`));
+    return projects.map((project) =>
+      updated.has(`${project.environmentId}:${project.id}`)
+        ? { ...project, linkKey: plan.linkKey }
+        : project,
+    );
+  }
+
+  function groupFor(groups: ReadonlyArray<ProjectGroup>, id: string): ProjectGroup {
+    return groups.find((group) => group.members.some((member) => member.project.id === id))!;
+  }
+
+  it("pairs remote-less projects across environments with a fresh key", () => {
+    const projects = [
+      makeProject("notes-laptop", "/home/me/notes", {
+        environmentId: laptop,
+        repositoryIdentity: null,
+      }),
+      makeProject("notes-server", "/srv/notes", {
+        environmentId: server,
+        repositoryIdentity: null,
+      }),
+    ];
+    const before = buildProjectGroups({ projects, settings: settings("repository") });
+    expect(before).toHaveLength(2);
+
+    const linked = applyLink(
+      projects,
+      groupFor(before, "notes-laptop"),
+      groupFor(before, "notes-server"),
+    );
+    expect(linked.map((project) => project.linkKey)).toEqual(["link:fresh", "link:fresh"]);
+    const after = buildProjectGroups({ projects: linked, settings: settings("repository") });
+    expect(after).toHaveLength(1);
+    expect(after[0]?.memberProjectRefs).toHaveLength(2);
+  });
+
+  it("joins a remote-less project to a repository group without splitting it", () => {
+    const projects = [
+      makeProject("t3code-laptop", "/home/me/t3code", { environmentId: laptop }),
+      makeProject("t3code-server", "/srv/t3code", { environmentId: server }),
+      makeProject("t3code-copy", "/tmp/t3code", { repositoryIdentity: null }),
+    ];
+    const before = buildProjectGroups({ projects, settings: settings("repository") });
+    expect(before).toHaveLength(2);
+
+    const linked = applyLink(
+      projects,
+      groupFor(before, "t3code-copy"),
+      groupFor(before, "t3code-laptop"),
+    );
+    expect(linked.map((project) => project.linkKey ?? null)).toEqual([
+      null,
+      null,
+      repositoryIdentity.canonicalKey,
+    ]);
+    expect(buildProjectGroups({ projects: linked, settings: settings("repository") })).toHaveLength(
+      1,
+    );
+  });
+
+  it("returns an unlinked project to its own group and ignores links in separate mode", () => {
+    const projects = [
+      makeProject("a", "/a", {
+        environmentId: laptop,
+        repositoryIdentity: null,
+        linkKey: "link:x",
+      }),
+      makeProject("b", "/b", {
+        environmentId: server,
+        repositoryIdentity: null,
+        linkKey: "link:x",
+      }),
+    ];
+    expect(buildProjectGroups({ projects, settings: settings("repository") })).toHaveLength(1);
+    expect(buildProjectGroups({ projects, settings: settings("separate") })).toHaveLength(2);
+
+    const unlinked = [projects[0]!, { ...projects[1]!, linkKey: null }];
+    expect(
+      buildProjectGroups({ projects: unlinked, settings: settings("repository") }),
+    ).toHaveLength(2);
   });
 });

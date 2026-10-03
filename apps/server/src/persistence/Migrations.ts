@@ -71,6 +71,7 @@ import Migration0056 from "./Migrations/056_RepairProjectionThreadMessageContext
 import Migration0058 from "./Migrations/058_ScheduledMessages.ts";
 import Migration0057 from "./Migrations/053_PullRequestFilesViewed.ts";
 import Migration0059 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+import Migration0060 from "./Migrations/060_ProjectionProjectLinkKey.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -149,6 +150,7 @@ const migrationEntries = [
   // The fork already published ID 54 for message context. Preserve that
   // history and append upstream's auto-settle switch migration instead.
   [59, "ProjectionThreadsAutoSettleDisabledAt", Migration0059],
+  [60, "ProjectionProjectLinkKey", Migration0060],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

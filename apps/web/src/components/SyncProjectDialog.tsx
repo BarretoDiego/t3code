@@ -19,6 +19,7 @@ import {
   deriveProjectSyncProgressPercent,
   describeProjectSyncStage,
   isProjectSyncEnvironmentEligible,
+  projectSyncIdentityKey,
   projectSyncPlanNeedsDeleteConfirmation,
   selectDestinationProjectCandidates,
   selectProjectSyncEnvironmentOptions,
@@ -39,7 +40,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useUpdateEnvironmentSettings } from "../hooks/useSettings";
-import { cn, newProjectId } from "../lib/utils";
+import { cn, newProjectId, randomUUID } from "../lib/utils";
 import { useEnvironments } from "../state/environments";
 import { useProjects } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
@@ -106,6 +107,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
   const allProjects = useProjects();
   const deps = useProjectSyncDeps();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
 
   const hasFixedSource = initialSource !== undefined;
   const steps = useMemo(() => buildSyncProjectDialogSteps({ hasFixedSource }), [hasFixedSource]);
@@ -271,7 +273,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       projectId: project.id,
       title: project.title,
       workspaceRoot: project.workspaceRoot,
-      repositoryCanonicalKey: project.repositoryIdentity?.canonicalKey ?? null,
+      identityKey: projectSyncIdentityKey(project),
     }));
     const filtered = selectDestinationProjectCandidates({
       allProjects: candidates,
@@ -280,7 +282,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     });
     return sortDestinationProjectCandidatesBySourceMatch({
       candidates: filtered,
-      sourceRepositoryCanonicalKey: sourceProject?.repositoryIdentity?.canonicalKey ?? null,
+      sourceIdentityKey: sourceProject ? projectSyncIdentityKey(sourceProject) : null,
     });
   }, [allProjects, destEnvironmentId, source, sourceProject]);
 
@@ -368,6 +370,10 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
         updateDestSettings({ addProjectBaseDirectory: getBrowseDirectoryPath(trimmedPath) });
       }
       const createdProjectId = newProjectId();
+      // The copy is the same project on another environment. Share the
+      // source's identity so both group together even without a git remote.
+      const sourceIdentityKey = sourceProject ? projectSyncIdentityKey(sourceProject) : null;
+      const linkKey = sourceIdentityKey ?? `link:${randomUUID()}`;
       const createResult = await createProject({
         environmentId: destEnvironmentId,
         input: {
@@ -375,6 +381,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
           title: sourceProject?.title ?? "Synced project",
           workspaceRoot: trimmedPath,
           createWorkspaceRootIfMissing: true,
+          linkKey,
         },
       });
       if (createResult._tag !== "Success") {
@@ -392,6 +399,14 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       }
       destProjectId = createdProjectId;
       setExistingDestProjectId(createdProjectId);
+      if (sourceIdentityKey === null) {
+        // Best effort: a failed link only leaves the two projects ungrouped,
+        // which the user can fix from project settings. The sync still runs.
+        await updateProject({
+          environmentId: source.environmentId,
+          input: { projectId: source.projectId, linkKey },
+        });
+      }
     } else {
       if (existingDestProjectId === null) {
         abortControllerRef.current = null;
@@ -425,6 +440,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     }
   }, [
     createProject,
+    updateProject,
     deps,
     destEnvironmentId,
     existingDestProjectId,
@@ -558,9 +574,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
                   onExistingDestProjectChange={setExistingDestProjectId}
                   includeGit={includeGit}
                   onIncludeGitChange={setIncludeGit}
-                  sourceRepositoryCanonicalKey={
-                    sourceProject?.repositoryIdentity?.canonicalKey ?? null
-                  }
+                  sourceIdentityKey={sourceProject ? projectSyncIdentityKey(sourceProject) : null}
                 />
               ) : null}
 
@@ -769,7 +783,7 @@ function ModeStep(props: {
   readonly onExistingDestProjectChange: (projectId: ProjectId) => void;
   readonly includeGit: boolean;
   readonly onIncludeGitChange: (value: boolean) => void;
-  readonly sourceRepositoryCanonicalKey: string | null;
+  readonly sourceIdentityKey: string | null;
 }) {
   return (
     <div className="grid gap-4">
@@ -846,8 +860,8 @@ function ModeStep(props: {
               {props.destProjectCandidates.map((candidate) => (
                 <SelectItem key={candidate.projectId} value={candidate.projectId}>
                   {candidate.title}
-                  {props.sourceRepositoryCanonicalKey !== null &&
-                  candidate.repositoryCanonicalKey === props.sourceRepositoryCanonicalKey
+                  {props.sourceIdentityKey !== null &&
+                  candidate.identityKey === props.sourceIdentityKey
                     ? " (suggested)"
                     : ""}
                 </SelectItem>

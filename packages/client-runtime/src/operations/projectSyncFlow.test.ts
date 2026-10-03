@@ -54,7 +54,7 @@ function projectCandidate(overrides: Partial<SyncProjectCandidate> = {}): SyncPr
     projectId: PROJECT_2,
     title: "Project",
     workspaceRoot: "/workspace/project",
-    repositoryCanonicalKey: null,
+    identityKey: null,
     ...overrides,
   };
 }
@@ -138,14 +138,14 @@ describe("selectDestinationProjectCandidates", () => {
 describe("sortDestinationProjectCandidatesBySourceMatch", () => {
   it("moves repository-matching candidates first, preserving relative order otherwise", () => {
     const candidates = [
-      projectCandidate({ projectId: PROJECT_1, repositoryCanonicalKey: "other" }),
-      projectCandidate({ projectId: PROJECT_2, repositoryCanonicalKey: "match" }),
-      projectCandidate({ projectId: PROJECT_3, repositoryCanonicalKey: null }),
+      projectCandidate({ projectId: PROJECT_1, identityKey: "other" }),
+      projectCandidate({ projectId: PROJECT_2, identityKey: "match" }),
+      projectCandidate({ projectId: PROJECT_3, identityKey: null }),
     ];
 
     const result = sortDestinationProjectCandidatesBySourceMatch({
       candidates,
-      sourceRepositoryCanonicalKey: "match",
+      sourceIdentityKey: "match",
     });
 
     expect(result.map((candidate) => candidate.projectId)).toEqual([
@@ -163,7 +163,7 @@ describe("sortDestinationProjectCandidatesBySourceMatch", () => {
     expect(
       sortDestinationProjectCandidatesBySourceMatch({
         candidates,
-        sourceRepositoryCanonicalKey: null,
+        sourceIdentityKey: null,
       }),
     ).toEqual(candidates);
   });

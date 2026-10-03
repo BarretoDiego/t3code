@@ -109,3 +109,13 @@ On mobile, use **Settings → Source control** to change selected environment de
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Linking projects across environments
+
+T3 Code groups a project's checkouts by their Git remote. A folder without a remote shows up as a
+separate project on each environment. To treat two of them as one, open the project's settings,
+go to **Sync → Link to another project** and choose the other project. Linking a project to one
+that has a remote adds it to that repository's group. The link is stored on each environment, so
+every client shows the same grouping. Use **Unlink** next to a checkout to separate it again.
+Sending a project to another environment links the copy automatically. Linking has no effect when
+grouping is set to keep checkouts separate.
