@@ -203,7 +203,7 @@ export const resolveThread = Effect.fn("cli.thread.resolve")(function* (
 });
 
 /** Resolves a project by id, id prefix, workspace path, or exact title. */
-const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
+export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   shell: OrchestrationV2ShellSnapshot,
   identifier: string,
 ) {
@@ -233,7 +233,7 @@ const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
 
 const decodeModelSelection = Schema.decodeEffect(ModelSelection);
 
-const parseModelSelection = Effect.fn("cli.thread.parseModel")(function* (
+export const parseModelSelection = Effect.fn("cli.thread.parseModel")(function* (
   value: string,
   fallbackInstanceId: string | undefined,
 ) {
@@ -258,7 +258,7 @@ const parseModelSelection = Effect.fn("cli.thread.parseModel")(function* (
  * explicit flag, the project's (or environment's) default, then the model of
  * the most recent thread in the project.
  */
-const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(function* (
+export const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(function* (
   client: EnvironmentRpcClient,
   shell: OrchestrationV2ShellSnapshot,
   project: OrchestrationProjectShell,
@@ -288,7 +288,7 @@ const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(function* (
 // ---------------------------------------------------------------------------
 // Presentation
 
-function formatModel(selection: { readonly instanceId: string; readonly model: string }) {
+export function formatModel(selection: { readonly instanceId: string; readonly model: string }) {
   return `${selection.instanceId}/${selection.model}`;
 }
 
@@ -574,7 +574,9 @@ const waitAndReport = Effect.fn("cli.thread.waitAndReport")(function* (
 // ---------------------------------------------------------------------------
 // Input
 
-const readMessage = Effect.fn("cli.thread.readMessage")(function* (parts: ReadonlyArray<string>) {
+export const readMessage = Effect.fn("cli.thread.readMessage")(function* (
+  parts: ReadonlyArray<string>,
+) {
   const joined = parts.join(" ");
   if (joined.trim().length > 0 && joined !== "-") return joined;
   const stdio = yield* Stdio.Stdio;
@@ -606,17 +608,17 @@ const waitFlag = Flag.Boolean("wait").pipe(
   ),
   Flag.withDefault(false),
 );
-const modelFlag = Flag.String("model").pipe(
+export const modelFlag = Flag.String("model").pipe(
   Flag.withDescription(
     "Model as <provider-instance>/<model>, or just <model> on the same provider.",
   ),
   Flag.optional,
 );
-const runtimeModeFlag = Flag.Literals("runtime-mode", RuntimeMode.literals).pipe(
+export const runtimeModeFlag = Flag.Literals("runtime-mode", RuntimeMode.literals).pipe(
   Flag.withDescription("Permission mode for the agent."),
   Flag.optional,
 );
-const interactionModeFlag = Flag.Literals("mode", ProviderInteractionMode.literals).pipe(
+export const interactionModeFlag = Flag.Literals("mode", ProviderInteractionMode.literals).pipe(
   Flag.withDescription("`plan` asks the agent for a plan instead of making changes."),
   Flag.optional,
 );
@@ -647,7 +649,7 @@ const dispatch = (client: EnvironmentRpcClient, command: OrchestrationV2Command)
   client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](command);
 
 /** Provenance of messages the CLI sends: a user, acting through this host. */
-const CLI_PROVENANCE = { createdBy: "user", creationSource: "server" } as const;
+export const CLI_PROVENANCE = { createdBy: "user", creationSource: "server" } as const;
 
 /**
  * Applies the runtime and interaction modes a turn asks for. V2 keeps them on

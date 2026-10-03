@@ -195,6 +195,51 @@ start long-running commands with `write` and check on them with `read`.
 text unless you pass `--raw`. `close --delete-history` also removes the saved
 scrollback.
 
+## Scheduled tasks
+
+A scheduled task runs an agent with the same prompt on a recurring schedule,
+even when no app is open. These are the tasks listed under **Settings →
+Scheduled tasks**.
+
+| Task                      | Command                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| List tasks                | `t3 schedule list [--project <p>]`                        |
+| Read one, with its prompt | `t3 schedule show <task>`                                 |
+| Run on an interval        | `t3 schedule add "<prompt>" --every 2h`                   |
+| Run at a time of day      | `t3 schedule add "<prompt>" --at 09:00 [--days mon-fri]`  |
+| Change a task             | `t3 schedule edit <task> [options]`                       |
+| Pause or resume           | `t3 schedule disable <task>`, `t3 schedule enable <task>` |
+| Run now                   | `t3 schedule run <task>`                                  |
+| Delete                    | `t3 schedule delete <task>`                               |
+
+A task accepts its id, the start of its id, or its exact title.
+
+`--every` takes an interval of at least one minute, such as `30m`, `2h`, or
+`1d`. `--at` takes a 24-hour time in the environment's time zone, which may
+differ from yours when you use `--env`. `--days` accepts names or numbers
+(`0` is Sunday), lists, and ranges: `mon-fri`, `sat,sun`, `weekdays`,
+`weekends`, `1,3,5`. Without it the task runs every day.
+
+A task runs in one of two places:
+
+- **A new thread each run** (the default), in `--project <p>` or the project
+  containing the current folder. Each run gets a fresh worktree branched from
+  `main`, so unattended runs do not edit your checkout. `--worktree <branch>`
+  picks another base branch, and `--root` runs in the project folder instead.
+  The model and permission mode default to the project's, as for
+  `t3 thread new`.
+- **One thread**, with `--thread <thread>`. Every run posts into it and
+  continues its conversation, using that thread's model, modes, and workspace.
+
+`--model`, `--runtime-mode`, `--mode`, and `--title` override the defaults, and
+`--paused` creates the task without starting its schedule. The prompt can come
+from stdin with `-`.
+
+`edit` changes only what you pass. `--thread <thread>` moves a task into a
+thread and `--new-thread` moves it back to a new thread per run. `run` starts
+the task immediately and leaves its schedule unchanged; `show` reports the
+last run's result and error.
+
 ## Everything else
 
 `t3 rpc` calls any server method directly, the same ones the apps use for git
@@ -214,7 +259,8 @@ reaches the server, with the field that is wrong.
 
 Save any environment you can reach once (on your network, over Tailscale, or
 through a T3 Connect tunnel URL), then pass `--env <name>` to any `project`,
-`thread`, `terminal`, `skill`, `profile`, `auth`, `rpc`, or `doctor` command.
+`thread`, `terminal`, `schedule`, `skill`, `profile`, `auth`, `rpc`, or
+`doctor` command.
 Set `T3CODE_ENV` to make one the default for a shell or an agent session.
 
 | Task                               | Command                                   |

@@ -104,6 +104,21 @@ Use one for a message: --profile <slug>. It adapts to the thread's provider
   t3 terminal attach <thread>                        interactive (humans; Ctrl-] detaches)
 Output is plain text; --raw keeps ANSI escapes.
 
+## Scheduled tasks (recurring agent runs; they run with no app open)
+  t3 schedule add "<prompt>" --every 2h | --at 09:00 [--days mon-fri]
+     [--thread <thread> | --project <p> [--worktree <base> | --root]]
+     [--title <t>] [--model <instance>/<model>] [--runtime-mode <m>]
+     [--mode default|plan] [--paused] --json
+  Default: each run starts a new thread in the project, in a fresh worktree
+  from main. --thread posts every run into that thread instead.
+  --every is at least 1m. --at is HH:MM in the environment's time zone.
+  --days: mon-fri, sat,sun, weekdays, weekends, 1,3,5 (0 = Sunday).
+  t3 schedule list [--project <p>] --json     nextRunAt, lastRunStatus, lastRunError
+  t3 schedule show <task> --json
+  t3 schedule edit <task> [same flags] [--prompt <text>] [--new-thread]
+  t3 schedule enable|disable|run|delete <task>
+A task accepts its id, the start of its id, or its exact title.
+
 ## Anything else: call server methods directly
   t3 rpc list [filter]              e.g. t3 rpc list git
   t3 rpc describe <method>          payload/result as JSON Schema
@@ -123,7 +138,8 @@ everything else the apps can do.
   t3 env add <name> <url> --token <token>     token from \`t3 auth session issue\`
   t3 env list | t3 env remove <name>
 Works for any reachable server: LAN, Tailscale, or a T3 Connect tunnel URL.
---env works on project, thread, terminal, skill, profile, auth, rpc, doctor.
+--env works on project, thread, terminal, schedule, skill, profile, auth, rpc,
+doctor.
 service, update, uninstall, connect, pair, theme act on the machine they run on.
   t3 auth pairing create|list|revoke --env <name>     needs an administrative token
   t3 auth session list|revoke --env <name>            (saved with env add --token)
