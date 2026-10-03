@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, SidebarProjectGroupingMode } from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "../providerInstances";
+import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
+import type { Project } from "../types";
 import {
   buildSidebarThreadGroups,
   collectSidebarSectionKeys,
@@ -259,6 +261,139 @@ describe("buildSidebarThreadGroups", () => {
       context: CONTEXT,
     });
     expect(groups[0]!.label).toBe("Unknown project");
+  });
+});
+
+describe("linked project sections", () => {
+  const projects: Project[] = ["local", "remote"].map((environment) => ({
+    environmentId: environmentId(environment),
+    id: projectId(`${environment}-app`),
+    title: "Linked app",
+    workspaceRoot: `/${environment}/app`,
+    repositoryIdentity: null,
+    linkKey: "link:shared-app",
+    defaultModelSelection: null,
+    scripts: [],
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  }));
+  const seeds = projects.map((project) => ({
+    environmentId: project.environmentId,
+    projectId: project.id,
+  }));
+  const active = thread({ id: "active", projectId: "local-app" });
+  const remote = thread({ id: "remote", environmentId: "remote", projectId: "remote-app" });
+
+  function context(
+    mode: SidebarProjectGroupingMode = "repository",
+    members = projects,
+  ): SidebarThreadGroupContext {
+    const groups = buildSidebarProjectSnapshots({
+      projects: members,
+      settings: { sidebarProjectGroupingMode: mode, sidebarProjectGroupingOverrides: {} },
+      primaryEnvironmentId: environmentId("local"),
+      resolveEnvironmentLabel: CONTEXT.resolveEnvironmentLabel,
+    });
+    const byRef = new Map(
+      groups.flatMap((group) =>
+        group.memberProjectRefs.map(
+          (ref) => [`${ref.environmentId}:${ref.projectId}`, group] as const,
+        ),
+      ),
+    );
+    return {
+      ...CONTEXT,
+      resolveProjectKey: (environment, project) =>
+        byRef.get(`${environment}:${project}`)?.projectKey ?? null,
+      resolveProjectLabel: (environment, project) =>
+        byRef.get(`${environment}:${project}`)?.displayName ?? null,
+    };
+  }
+
+  it("combines linked threads, history and empty seeds into one collapsible section", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [remote, active],
+      settledThreads: [thread({ id: "old", projectId: "local-app" })],
+      seeds,
+      primaryAxis: "project",
+      secondaryAxis: "none",
+      context: context(),
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.key).toBe("project:link:shared-app");
+    expect(groups[0]!.label).toBe("Linked app");
+    expect(groups[0]!.threads.map((item) => item.id)).toEqual(["remote", "active"]);
+    expect(groups[0]!.settledThreads.map((item) => item.id)).toEqual(["old"]);
+    expect([groups[0]!.threadCount, groups[0]!.settledCount]).toEqual([2, 1]);
+    expect(flattenSidebarThreadGroups(groups, new Set([groups[0]!.key])).map(formatRow)).toEqual([
+      "H:Linked app",
+    ]);
+  });
+
+  it("keeps both empty environments under a linked project", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [],
+      seeds,
+      primaryAxis: "project",
+      secondaryAxis: "environment",
+      context: context(),
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.children.map((child) => child.label)).toEqual([
+      "This computer",
+      "Remote box",
+    ]);
+    expect(groups[0]!.target).toEqual(seeds[0]);
+  });
+
+  it("keeps linked projects inside their own environment when environment is the primary axis", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [remote, active],
+      seeds,
+      primaryAxis: "environment",
+      secondaryAxis: "project",
+      context: context(),
+    });
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.children.length)).toEqual([1, 1]);
+    expect(groups[0]!.children[0]!.target).toEqual(seeds[1]);
+    expect(groups[1]!.children[0]!.target).toEqual(seeds[0]);
+    expect(groups[0]!.children[0]!.key).not.toBe(groups[1]!.children[0]!.key);
+  });
+
+  it("combines linked projects under a provider section", () => {
+    const groups = buildSidebarThreadGroups({
+      threads: [active, remote],
+      seeds,
+      primaryAxis: "provider",
+      secondaryAxis: "project",
+      context: context(),
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.children).toHaveLength(1);
+    expect(groups[0]!.children[0]!.threads.map((item) => item.id)).toEqual(["active", "remote"]);
+  });
+
+  it("separates projects again when grouping is disabled or the link is removed", () => {
+    for (const groupingContext of [
+      context("separate"),
+      context(
+        "repository",
+        projects.map((project) => ({ ...project, linkKey: null })),
+      ),
+    ]) {
+      const groups = buildSidebarThreadGroups({
+        threads: [active, remote],
+        seeds,
+        primaryAxis: "project",
+        secondaryAxis: "none",
+        context: groupingContext,
+      });
+      expect(groups.map((group) => group.threads.map((item) => item.id))).toEqual([
+        ["active"],
+        ["remote"],
+      ]);
+    }
   });
 });
 
