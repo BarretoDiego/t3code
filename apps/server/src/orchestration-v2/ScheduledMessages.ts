@@ -31,6 +31,7 @@ const failure = (cause: unknown) =>
     message: "Could not update scheduled messages.",
     cause,
   });
+const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 
 /** Whether a held message may be released now, must wait, or can never be delivered. */
 export type ScheduledThreadState = "ready" | "busy" | "deleted";
@@ -40,23 +41,29 @@ export type ScheduledThreadState = "ready" | "busy" | "deleted";
  * submitted them: they persist in SQLite, are released on the server clock
  * with no client connected, and resume (overdue first) after a restart.
  */
-export const makeScheduledMessages = Effect.fnUntraced(function* (input: {
+export const makeScheduledMessages = Effect.fnUntraced(function* <
+  DispatchError,
+  ThreadStateError,
+  ThreadEventsError = never,
+>(input: {
   /** Sends a due command. It never carries `sendAt`. */
   readonly dispatch: (
     command: OrchestrationV2MessageDispatchCommand,
-  ) => Effect.Effect<unknown, unknown>;
+  ) => Effect.Effect<unknown, DispatchError>;
   /**
    * `busy` waits for the thread's active, queued or blocked work, so the
    * message starts its own turn rather than steering someone else's.
    */
-  readonly threadState: (threadId: ThreadId) => Effect.Effect<ScheduledThreadState, unknown>;
+  readonly threadState: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ScheduledThreadState, ThreadStateError>;
   /**
    * Orchestration events that may end a thread's busy state. `start` wakes the
    * worker for those touching a thread that holds a message.
    */
   readonly threadEvents?: Stream.Stream<
     { readonly type: string; readonly threadId: ThreadId },
-    unknown
+    ThreadEventsError
   >;
 }) {
   const sql = yield* SqlClient.SqlClient;
@@ -146,9 +153,7 @@ export const makeScheduledMessages = Effect.fnUntraced(function* (input: {
       )
       .pipe(
         Effect.uninterruptible,
-        Effect.mapError((cause) =>
-          Schema.is(OrchestrationDispatchCommandError)(cause) ? cause : failure(cause),
-        ),
+        Effect.mapError((cause) => (isDispatchError(cause) ? cause : failure(cause))),
       );
   const update = (request: ScheduledMessageUpdate) =>
     mutex
@@ -181,9 +186,7 @@ export const makeScheduledMessages = Effect.fnUntraced(function* (input: {
       )
       .pipe(
         Effect.uninterruptible,
-        Effect.mapError((cause) =>
-          Schema.is(OrchestrationDispatchCommandError)(cause) ? cause : failure(cause),
-        ),
+        Effect.mapError((cause) => (isDispatchError(cause) ? cause : failure(cause))),
       );
 
   const cancelThread = (threadId: ThreadId) =>

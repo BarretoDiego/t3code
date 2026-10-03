@@ -6869,7 +6869,7 @@ export default function ChatView(props: ChatViewProps) {
   // The stack renders items[0] front-most and tucks the rest behind hover, so
   // ordering is priority: system banners, then the branch-mismatch notice,
   // and the informational parked-thread banner last — it must never cover another.
-  // Background work (subagent fleets, workflow runs, watch loops) can outlive
+  // Background work (subagent fleets, workflow runs, watch loops, dev servers) can outlive
   // the turn; once it settles, the composer stop button is gone, so this
   // banner is the only visible stop affordance. The interrupt path also
   // accepts a completed run while its provider still has background work.
@@ -6917,9 +6917,14 @@ export default function ChatView(props: ChatViewProps) {
       id: `background-work:${activeThread.id}`,
       variant: "default",
       priority: "activity",
+      // A dev server can run for hours after the agent is done, so only work
+      // that will wake the agent pulses.
       icon: (
         <span
-          className="size-1.5 animate-status-pulse rounded-full bg-foreground"
+          className={cn(
+            "size-1.5 rounded-full bg-foreground",
+            presentation.waiting && "animate-status-pulse",
+          )}
           aria-hidden="true"
         />
       ),
@@ -10937,7 +10942,7 @@ export default function ChatView(props: ChatViewProps) {
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
-                        className="pb-8 group-has-data-[composer-shoulder-tab]/composer-stack:pb-4"
+                        className="pb-4 group-has-data-[composer-shoulder-tab]/composer-stack:pb-0"
                         style={
                           forceExpandedMobileComposer
                             ? { viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME }

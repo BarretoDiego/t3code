@@ -332,6 +332,9 @@ export interface ClaudeAgentSdkQuerySession {
   readonly messages: Stream.Stream<SDKMessage, ClaudeAgentSdkQueryRunnerError>;
   readonly offer: (message: SDKUserMessage) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly setModel: (model: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly setPermissionMode: (
+    mode: PermissionMode,
+  ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
@@ -469,6 +472,14 @@ export type ClaudeAgentSdkProtocolLogEvent =
       readonly payload: {
         readonly type: "query.set_model";
         readonly model: string;
+      };
+    }
+  | {
+      readonly direction: "outgoing";
+      readonly stage: "decoded";
+      readonly payload: {
+        readonly type: "query.set_permission_mode";
+        readonly mode: PermissionMode;
       };
     }
   | {
@@ -688,6 +699,22 @@ export const claudeAgentSdkQueryRunnerLiveLayer: Layer.Layer<
                   payload: {
                     type: "query.set_model",
                     model,
+                  },
+                }),
+              ),
+            ),
+          setPermissionMode: (mode) =>
+            Effect.tryPromise({
+              try: () => queryRuntime.setPermissionMode(mode),
+              catch: (cause) => queryRunnerError(cause, "setPermissionMode"),
+            }).pipe(
+              Effect.tap(() =>
+                logProtocolEvent({
+                  direction: "outgoing",
+                  stage: "decoded",
+                  payload: {
+                    type: "query.set_permission_mode",
+                    mode,
                   },
                 }),
               ),
@@ -2722,6 +2749,11 @@ interface ClaudeLiveQueryContext {
   // uuid before any echo, so it echoes, but a resume's own turns can still
   // run ahead of that prompt.
   promptEchoMode: "unknown" | "acknowledged" | "early" | "result_only";
+  // The mode this process was opened in, and the mode the CLI last reported
+  // (init and status frames). Claude changes the latter itself through
+  // EnterPlanMode.
+  readonly openedPermissionMode: PermissionMode;
+  permissionMode: PermissionMode;
   // Stop, rollback or fork is closing this process; its work is ending.
   stopping: boolean;
   // Registry entries still running when this process opened. Their process
@@ -3709,7 +3741,7 @@ export function makeClaudeAdapterV2(
           readonly output: ClaudeNativeToolOutput;
           readonly status: Extract<
             OrchestrationV2TurnItem["status"],
-            "running" | "completed" | "failed"
+            "running" | "completed" | "failed" | "interrupted" | "cancelled"
           >;
           readonly startedAt: DateTime.Utc;
           readonly updatedAt: DateTime.Utc;
@@ -4776,7 +4808,9 @@ export function makeClaudeAdapterV2(
               parentNodeId: toolCall.parentNodeId,
               ordinal: toolCall.ordinal,
               output: NO_CLAUDE_NATIVE_TOOL_OUTPUT,
-              status: "failed",
+              // A stopped turn cuts its open tools short; only a turn that
+              // ended on its own leaves them failed.
+              status: input.status === "completed" ? "failed" : input.status,
               startedAt: toolCall.startedAt,
               updatedAt: input.completedAt,
               presentation: toolCall.presentation,
@@ -6877,10 +6911,23 @@ export function makeClaudeAdapterV2(
           if (
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
-            (isClaudeProviderContinuationTurn(turnInput) ||
-              (existing.queryPolicyKey === queryPolicyKey &&
-                existing.selectionKey === compiledSelection.queryIdentity))
+            isClaudeProviderContinuationTurn(turnInput)
           ) {
+            return existing;
+          }
+          if (
+            existing !== null &&
+            existing.nativeThreadId === nativeThreadId &&
+            existing.queryPolicyKey === queryPolicyKey &&
+            existing.selectionKey === compiledSelection.queryIdentity
+          ) {
+            // Claude can switch its own mode mid-session (EnterPlanMode), and
+            // a denied ExitPlanMode leaves it there. Put the live process back
+            // in the thread's mode before the next prompt.
+            if (existing.permissionMode !== existing.openedPermissionMode) {
+              yield* existing.query.setPermissionMode(existing.openedPermissionMode);
+              existing.permissionMode = existing.openedPermissionMode;
+            }
             return existing;
           }
 
@@ -6938,34 +6985,35 @@ export function makeClaudeAdapterV2(
                   catch: (cause) => queryRunnerError(cause, "openTransferredSession"),
                 })
               : undefined;
+          const queryOptions = makeClaudeQueryOptions({
+            modelSelection: turnInput.modelSelection,
+            nativeThreadId,
+            resume: shouldResume,
+            ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
+            cwd: turnInput.runtimePolicy.cwd,
+            attachmentsDir,
+            settings: adapterOptions.settings,
+            environment: adapterOptions.environment,
+            tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
+            ...mcpOverrides,
+            permissionMode: queryPolicy.permissionMode,
+            ...(queryPolicy.allowDangerouslySkipPermissions === undefined
+              ? {}
+              : {
+                  allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions,
+                }),
+            canUseTool,
+            onUserDialog,
+            supportedDialogKinds: ["resume_return"],
+            ...(transferredSessionStore === undefined
+              ? {}
+              : { sessionStore: transferredSessionStore }),
+          });
           const querySession = yield* queryRunner
             .open({
               threadId: turnInput.threadId,
               providerSessionId: input.providerSessionId,
-              options: makeClaudeQueryOptions({
-                modelSelection: turnInput.modelSelection,
-                nativeThreadId,
-                resume: shouldResume,
-                ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
-                cwd: turnInput.runtimePolicy.cwd,
-                attachmentsDir,
-                settings: adapterOptions.settings,
-                environment: adapterOptions.environment,
-                tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
-                ...mcpOverrides,
-                permissionMode: queryPolicy.permissionMode,
-                ...(queryPolicy.allowDangerouslySkipPermissions === undefined
-                  ? {}
-                  : {
-                      allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions,
-                    }),
-                canUseTool,
-                onUserDialog,
-                supportedDialogKinds: ["resume_return"],
-                ...(transferredSessionStore === undefined
-                  ? {}
-                  : { sessionStore: transferredSessionStore }),
-              }),
+              options: queryOptions,
             })
             .pipe(
               Effect.tapError(() =>
@@ -7012,6 +7060,8 @@ export function makeClaudeAdapterV2(
             selectionKey: compiledSelection.queryIdentity,
             closed,
             promptEchoMode: "unknown",
+            openedPermissionMode: queryOptions.permissionMode,
+            permissionMode: queryOptions.permissionMode,
             stopping: false,
             subagentsFromEarlierProcesses: new Set(
               [...(yield* Ref.get(sessionSubagentsByTaskId)).values()].filter(
@@ -7056,11 +7106,18 @@ export function makeClaudeAdapterV2(
             );
           };
           yield* querySession.messages.pipe(
-            Stream.runForEach((message) =>
-              guardTransferredSession(message).pipe(
+            Stream.runForEach((message) => {
+              if (
+                message.type === "system" &&
+                (message.subtype === "init" || message.subtype === "status") &&
+                message.permissionMode !== undefined
+              ) {
+                context.permissionMode = message.permissionMode;
+              }
+              return guardTransferredSession(message).pipe(
                 Effect.andThen(handleSdkMessage({ query: querySession, message })),
-              ),
-            ),
+              );
+            }),
             Effect.exit,
             Effect.flatMap(
               Effect.fnUntraced(function* (exit: ClaudeQueryStreamExit) {
