@@ -23,6 +23,7 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
@@ -47,6 +48,8 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   ProjectId,
+  type EnvironmentId,
+  type EnvironmentMachineKind,
   type ScopedThreadRef,
   type ResolvedKeybindingsConfig,
   type SidebarProjectGroupingMode,
@@ -1133,6 +1136,8 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
 
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
+  primaryEnvironmentId: EnvironmentId | null;
+  environmentMachineById: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
   isThreadListExpanded: boolean;
   activeRouteThreadKey: string | null;
   openPullRequestsInRightPanel: boolean;
@@ -1171,11 +1176,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     isManualProjectSorting,
     dragHandleProps,
   } = props;
-  const environmentMachine = project.allRemoteMembersAreWsl
-    ? "linux"
-    : project.allRemoteMembersAreDesktopLocal
-      ? "laptop"
-      : "cloud";
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
   );
@@ -2367,6 +2367,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     <>
       <div className="group/project-header relative">
         <SidebarMenuButton
+          size="content"
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           className={isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : undefined}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
@@ -2407,46 +2408,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           <span className="flex shrink-0">
             <ProjectFavicon project={project} />
           </span>
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-sm font-medium text-sidebar-foreground/90">
-              {project.displayName}
-            </span>
-            {project.groupedProjectCount > 1 ? (
-              <span className="shrink-0 text-secondary-label text-3xs">
-                {project.groupedProjectCount} projects
+          <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium text-sidebar-foreground/90">
+                {project.displayName}
               </span>
-            ) : null}
+              {project.groupedProjectCount > 1 ? (
+                <span className="shrink-0 text-secondary-label text-3xs">
+                  {project.groupedProjectCount} projects
+                </span>
+              ) : null}
+            </span>
+            <ProjectEnvironmentBadge
+              group={project}
+              primaryEnvironmentId={props.primaryEnvironmentId}
+              machineByEnvironmentId={props.environmentMachineById}
+              showAllNames
+            />
           </span>
-          {/* Keeps the name clear of the environment badge and new-thread button overlaid on
-              the row's end (two slots on touch, where both stay visible). */}
-          <span aria-hidden className="w-4 shrink-0 max-sm:w-10" />
+          {/* Keeps the name clear of the new-thread button overlaid on the row's end. */}
+          <span aria-hidden className="w-4 shrink-0" />
         </SidebarMenuButton>
-        {/* Environment badge – visible by default, crossfades with the
-            "new thread" button on hover using the same pointer-events +
-            opacity pattern as the thread row archive/timestamp swap. */}
-        {project.environmentPresence === "remote-only" && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  aria-label={
-                    project.allRemoteMembersAreDesktopLocal
-                      ? "Local sandbox project"
-                      : "Remote project"
-                  }
-                  className="pointer-events-none absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-icon-muted transition-opacity duration-150 max-sm:right-7 group-hover/project-header:opacity-0 group-focus-within/project-header:opacity-0 max-sm:group-hover/project-header:opacity-100 max-sm:group-focus-within/project-header:opacity-100"
-                />
-              }
-            >
-              <EnvironmentMachineIcon kind={environmentMachine} className="size-3" />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {project.allRemoteMembersAreDesktopLocal
-                ? `Local sandbox: ${project.remoteEnvironmentLabels.join(", ")}`
-                : `Remote environment: ${project.remoteEnvironmentLabels.join(", ")}`}
-            </TooltipPopup>
-          </Tooltip>
-        )}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -2947,6 +2929,22 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     projectsLength,
   } = props;
 
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
+  const environmentMachineById = useMemo(
+    () =>
+      new Map(
+        environments.map(
+          (environment) =>
+            [
+              environment.environmentId,
+              resolveEnvironmentMachineKind(environment.serverConfig),
+            ] as const,
+        ),
+      ),
+    [environments],
+  );
+
   const handleProjectSortOrderChange = useCallback(
     (sortOrder: SidebarProjectSortOrder) => {
       updateSettings({ sidebarProjectSortOrder: sortOrder });
@@ -3060,6 +3058,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                     {(dragHandleProps) => (
                       <SidebarProjectItem
                         project={project}
+                        primaryEnvironmentId={primaryEnvironmentId}
+                        environmentMachineById={environmentMachineById}
                         isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                         activeRouteThreadKey={
                           activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3093,6 +3093,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               <SidebarProjectListRow
                 key={project.projectKey}
                 project={project}
+                primaryEnvironmentId={primaryEnvironmentId}
+                environmentMachineById={environmentMachineById}
                 isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                 activeRouteThreadKey={
                   activeRouteProjectKey === project.projectKey ? routeThreadKey : null

@@ -1,3 +1,4 @@
+import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
@@ -191,6 +192,7 @@ import {
   type SidebarAttentionClass,
   type SidebarThreadGroupContext,
 } from "./sidebarThreadGrouping";
+import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelLabel } from "./chat/providerIconUtils";
@@ -2053,6 +2055,19 @@ export default function Sidebar() {
     () =>
       new Map(
         environments.map((environment) => [environment.environmentId, environment.label] as const),
+      ),
+    [environments],
+  );
+  const environmentMachineById = useMemo(
+    () =>
+      new Map(
+        environments.map(
+          (environment) =>
+            [
+              environment.environmentId,
+              resolveEnvironmentMachineKind(environment.serverConfig),
+            ] as const,
+        ),
       ),
     [environments],
   );
@@ -4260,6 +4275,13 @@ export default function Sidebar() {
                             )}
                             <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
                             {project ? (
+                              <ProjectEnvironmentBadge
+                                group={project}
+                                primaryEnvironmentId={primaryEnvironmentId}
+                                machineByEnvironmentId={environmentMachineById}
+                              />
+                            ) : null}
+                            {project ? (
                               <Button
                                 size="icon-xs"
                                 variant="sidebar-icon"
@@ -4867,6 +4889,14 @@ export default function Sidebar() {
                           const isCollapsed = collapsedGroupKeys.has(group.key);
                           const isEnvironment = group.axis === "environment";
                           const isProject = group.axis === "project";
+                          const projectGroup =
+                            isProject &&
+                            group.target.environmentId !== null &&
+                            group.target.projectId !== null
+                              ? projectGroupByProjectKey.get(
+                                  `${group.target.environmentId}:${group.target.projectId}`,
+                                )
+                              : null;
                           const GroupStateIcon = isProject
                             ? isCollapsed
                               ? FolderIcon
@@ -4941,15 +4971,30 @@ export default function Sidebar() {
                                       ) : null}
                                       <span
                                         className={cn(
-                                          "min-w-0 truncate",
-                                          isEnvironment
-                                            ? "text-xs font-semibold text-sidebar-foreground/90"
-                                            : isProject
-                                              ? "text-xs font-medium text-sidebar-foreground/85"
-                                              : "text-2xs font-medium text-sidebar-muted-foreground/75",
+                                          "flex min-w-0 flex-1 flex-col",
+                                          projectGroup && "gap-1 py-1.5",
                                         )}
                                       >
-                                        {group.label}
+                                        <span
+                                          className={cn(
+                                            "min-w-0 truncate",
+                                            isEnvironment
+                                              ? "text-xs font-semibold text-sidebar-foreground/90"
+                                              : isProject
+                                                ? "text-xs font-medium text-sidebar-foreground/85"
+                                                : "text-2xs font-medium text-sidebar-muted-foreground/75",
+                                          )}
+                                        >
+                                          {group.label}
+                                        </span>
+                                        {projectGroup ? (
+                                          <ProjectEnvironmentBadge
+                                            group={projectGroup}
+                                            primaryEnvironmentId={primaryEnvironmentId}
+                                            machineByEnvironmentId={environmentMachineById}
+                                            showAllNames
+                                          />
+                                        ) : null}
                                       </span>
                                       {isCollapsed ? (
                                         <SidebarGroupAttentionChips attention={group.attention} />
