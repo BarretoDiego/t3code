@@ -1,4 +1,4 @@
-import { type ApprovalRequestId, type DesktopPetAction } from "@t3tools/contracts";
+import { type DesktopPetAction, type RuntimeRequestId } from "@t3tools/contracts";
 import { BellRingIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,7 +14,7 @@ const PET_SIZE = 88;
 /** A movable, pixel-art companion with a viewport-relative resting place. */
 export const PetCompanion = memo(function PetCompanion(props: {
   readonly pendingUserInputs: PendingUserInput[];
-  readonly respondingRequestIds: ApprovalRequestId[];
+  readonly respondingRequestIds: RuntimeRequestId[];
   readonly answers: Record<string, PendingUserInputDraftAnswer>;
   readonly questionIndex: number;
   readonly onToggleOption: (questionId: string, optionLabel: string) => void;

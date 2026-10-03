@@ -2,7 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import {
-  OrchestrationEvent,
+  OrchestrationV2StoredEvent,
   ThreadHandoffError,
   ThreadHandoffManifest,
   type ProjectId,
@@ -19,7 +19,15 @@ import {
 } from "../workspace/ProjectSyncGitSnapshot.ts";
 import type { ProviderSessionHandoffDriver } from "./ProviderSessionHandoff.ts";
 
-const decodeEvents = Schema.decodeUnknownSync(Schema.Array(OrchestrationEvent));
+/** `thread.json`: the thread's orchestration events, tagged so an archive
+ * written by an older event model fails verification instead of decoding. */
+const ThreadHistory = Schema.Struct({
+  format: Schema.Literal("t3-orchestration-v2-events"),
+  events: Schema.Array(OrchestrationV2StoredEvent),
+});
+const decodeHistory = Schema.decodeUnknownSync(Schema.fromJsonString(ThreadHistory));
+const encodeHistory = Schema.encodeSync(Schema.fromJsonString(ThreadHistory));
+const isHistory = Schema.is(Schema.Array(OrchestrationV2StoredEvent));
 const decodeManifest = Schema.decodeUnknownSync(ThreadHandoffManifest);
 const failure = (message: string) =>
   new ThreadHandoffError({ code: "verificationFailed", message });
@@ -40,7 +48,7 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
   readonly record: ThreadHandoffRecord;
   readonly outputDirectory: string;
   readonly projects: readonly HandoffProjectSource[];
-  readonly events: readonly OrchestrationEvent[];
+  readonly events: readonly OrchestrationV2StoredEvent[];
   readonly driver?: Pick<ProviderSessionHandoffDriver<NativeSnapshot>, "driver" | "checkpoint">;
   readonly transferMode?: "native" | "context";
   readonly sourceDriver?: ProviderDriverKind;
@@ -54,13 +62,11 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
     new Set(input.projects.map((project) => project.projectId)).size !== input.projects.length
   )
     throw failure("A handoff must map each project exactly once.");
-  const events = decodeEvents(input.events);
+  const events = input.events;
   if (
+    !isHistory(events) ||
     events.length === 0 ||
-    events.some(
-      (event) =>
-        event.aggregateKind !== "thread" || event.aggregateId !== input.record.owner.threadId,
-    )
+    events.some((stored) => stored.event.threadId !== input.record.owner.threadId)
   )
     throw failure("Thread history does not belong to the execution owner.");
   await NodeFSP.mkdir(input.outputDirectory, { recursive: false, mode: 0o700 });
@@ -100,7 +106,7 @@ export async function captureThreadHandoffSnapshot<NativeSnapshot>(input: {
     }
     await NodeFSP.writeFile(
       NodePath.join(input.outputDirectory, "thread.json"),
-      JSON.stringify(events),
+      encodeHistory({ format: "t3-orchestration-v2-events", events }),
       { mode: 0o600 },
     );
     const files = await Effect.runPromise(
@@ -171,14 +177,12 @@ export async function verifyThreadHandoffSnapshot(input: {
     )
       throw failure(`Transferred file checksum mismatch: ${file.path}`);
   }
-  const events = decodeEvents(
-    JSON.parse(await NodeFSP.readFile(NodePath.join(input.directory, manifest.threadFile), "utf8")),
+  const { events } = decodeHistory(
+    await NodeFSP.readFile(NodePath.join(input.directory, manifest.threadFile), "utf8"),
   );
   if (
     events.length === 0 ||
-    events.some(
-      (event) => event.aggregateKind !== "thread" || event.aggregateId !== manifest.owner.threadId,
-    )
+    events.some((stored) => stored.event.threadId !== manifest.owner.threadId)
   )
     throw failure("Transferred history belongs to another thread.");
   return events;

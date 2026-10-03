@@ -19,8 +19,9 @@ import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 import { parseWorktreeInventory } from "../git/worktreeInventory.ts";
@@ -64,7 +65,7 @@ export class SourceControlHubService extends Context.Service<
 export const make = Effect.gen(function* () {
   const registry = yield* SourceControlProviderRegistry;
   const accounts = yield* SourceControlAccounts;
-  const projections = yield* ProjectionSnapshotQuery;
+  const projects = yield* ProjectStore.ProjectStoreV2;
   const git = yield* GitVcsDriver;
   const vcs = yield* VcsDriverRegistry;
   const browser = Effect.fn(function* (provider: SourceControlProviderKind) {
@@ -105,9 +106,8 @@ export const make = Effect.gen(function* () {
   );
   const clones = Effect.gen(function* () {
     const mappings = yield* accounts.mappings;
-    const snapshot = yield* projections.getShellSnapshot();
     return (yield* Effect.forEach(
-      snapshot.projects,
+      yield* projects.listShells(),
       (project) =>
         Effect.gen(function* () {
           const handle = yield* vcs.resolve({ cwd: project.workspaceRoot });
@@ -135,9 +135,7 @@ export const make = Effect.gen(function* () {
     )).flat();
   }).pipe(Effect.mapError(failure));
   const cloneState = Effect.fn(function* (projectId: ProjectId) {
-    const project = (yield* projections.getShellSnapshot()).projects.find(
-      (project) => project.id === projectId,
-    );
+    const project = Option.getOrUndefined(yield* projects.getShell(projectId));
     if (!project)
       return yield* new SourceControlHubError({ message: "Local project no longer exists." });
     const cwd = project.workspaceRoot;
@@ -173,9 +171,7 @@ export const make = Effect.gen(function* () {
     clones,
     cloneState,
     mapRepository: Effect.fn(function* (input) {
-      const project = (yield* projections.getShellSnapshot()).projects.find(
-        (project) => project.id === input.projectId,
-      );
+      const project = Option.getOrUndefined(yield* projects.getShell(input.projectId));
       if (!project)
         return yield* new SourceControlHubError({ message: "Local project no longer exists." });
       const handle = yield* vcs.resolve({ cwd: project.workspaceRoot });
@@ -201,4 +197,6 @@ export const make = Effect.gen(function* () {
     }),
   });
 });
-export const layer = Layer.effect(SourceControlHubService, make);
+export const layer = Layer.effect(SourceControlHubService, make).pipe(
+  Layer.provide(ProjectStore.layer),
+);

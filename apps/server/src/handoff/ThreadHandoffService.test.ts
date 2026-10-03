@@ -8,19 +8,24 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
-  OrchestrationThreadShell,
-  type OrchestrationEvent,
+  type OrchestrationV2AppThread,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2StoredEvent,
+  type OrchestrationV2ThreadShell,
   type ServerProvider,
   type ServerSettings,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderSessionId,
+  ProviderThreadId,
   ThreadHandoffId,
   ThreadHandoffManifest,
   ThreadId,
   type ThreadHandoffRecord,
   type ThreadHandoffDestination,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
@@ -30,16 +35,14 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import type { ProviderRuntimeBinding } from "../provider/Services/ProviderSessionDirectory.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import type { ProviderAdapterShape } from "../provider/Services/ProviderAdapter.ts";
-import type { ProviderAdapterError } from "../provider/Errors.ts";
 import { runSnapshotGit } from "../workspace/ProjectSyncGitSnapshot.ts";
 import { getNativeHandoffDriver } from "./NativeHandoffDrivers.ts";
 import { openTransferredClaudeSession } from "./TransferredClaudeSession.ts";
 import { makeHandoffJournal } from "./HandoffJournal.ts";
 import {
   createThreadHandoffService,
+  type HandoffThread,
   type ThreadHandoffServicePorts,
 } from "./ThreadHandoffService.ts";
 
@@ -114,10 +117,8 @@ const fixture = Effect.gen(function* () {
     changes,
     settings: unused(),
     query: unused(),
-    engine: unused(),
+    history: unused(),
     instances: unused(),
-    adapters: unused(),
-    directory: unused(),
     safePoint: unused(),
     secretStore: unused(),
   };
@@ -274,15 +275,97 @@ function stub<T>(values: Partial<T>): T {
     },
   }) as T;
 }
-const decodeContextPending = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(
-    Schema.Struct({
-      context: Schema.Struct({ threadId: ThreadId }),
-      destinationResumeCursor: Schema.Unknown,
+const at = DateTime.makeUnsafe(now);
+const providerThreadId = ProviderThreadId.make("provider-thread-1");
+const appThread = (
+  overrides: Partial<OrchestrationV2AppThread> = {},
+): OrchestrationV2AppThread => ({
+  createdBy: "user",
+  creationSource: "web",
+  id: record.owner.threadId,
+  projectId: target.source.projectId,
+  title: "Scheduling",
+  providerInstanceId: target.source.providerInstanceId,
+  modelSelection: { instanceId: target.source.providerInstanceId, model: "sonnet" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  branch: "feature/private",
+  worktreePath: null,
+  activeProviderThreadId: providerThreadId,
+  lineage: {
+    parentThreadId: null,
+    relationshipToParent: null,
+    rootThreadId: record.owner.threadId,
+  },
+  forkedFrom: null,
+  createdAt: at,
+  updatedAt: at,
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  lastVisitedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+const stored = (
+  sequence: number,
+  event: Omit<OrchestrationV2DomainEvent, "id" | "threadId" | "occurredAt">,
+): OrchestrationV2StoredEvent => ({
+  sequence,
+  commandId: null,
+  event: {
+    ...event,
+    id: EventId.make(`event-${sequence}`),
+    threadId: record.owner.threadId,
+    occurredAt: at,
+  } as OrchestrationV2DomainEvent,
+});
+const sourceHistory = (driver: ProviderDriverKind): OrchestrationV2StoredEvent[] => [
+  stored(1, { type: "thread.created", payload: appThread() }),
+  stored(2, {
+    type: "thread.model-selection-updated",
+    payload: appThread({
+      modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
     }),
-  ),
-);
-const decodeThread = Schema.decodeUnknownSync(OrchestrationThreadShell);
+  }),
+  stored(3, {
+    type: "thread.runtime-mode-updated",
+    payload: appThread({
+      modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
+      runtimeMode: "approval-required",
+    }),
+  }),
+  stored(4, {
+    type: "provider-session.detached",
+    providerInstanceId: target.source.providerInstanceId,
+    payload: {
+      providerSessionId: ProviderSessionId.make("source-session"),
+      detachedAt: at,
+    },
+  }),
+  stored(5, {
+    type: "provider-thread.updated",
+    driver,
+    providerInstanceId: target.source.providerInstanceId,
+    payload: {
+      id: providerThreadId,
+      driver,
+      providerInstanceId: target.source.providerInstanceId,
+      providerSessionId: ProviderSessionId.make("source-session"),
+      appThreadId: record.owner.threadId,
+      ownerNodeId: null,
+      nativeThreadRef: { driver, nativeId: manifest.provider.sessionId!, strength: "strong" },
+      nativeConversationHeadRef: null,
+      status: "idle",
+      firstRunOrdinal: 1,
+      lastRunOrdinal: 1,
+      handoffIds: [],
+      forkedFrom: null,
+      createdAt: at,
+      updatedAt: at,
+    },
+  }),
+];
 const makeTwoServices = (contextDriver?: string) =>
   Effect.gen(function* () {
     const f = yield* fixture;
@@ -306,69 +389,18 @@ const makeTwoServices = (contextDriver?: string) =>
     const destinationDb = yield* Layer.build(Layer.fresh(SqlitePersistenceMemory));
     const destinationJournal = yield* makeHandoffJournal.pipe(Effect.provide(destinationDb));
     const destinationChanges = yield* PubSub.unbounded<ThreadHandoffRecord>();
-    const thread = decodeThread({
+    const events = sourceHistory(sourceDriver);
+    const thread: HandoffThread = {
       id: record.owner.threadId,
       projectId: target.source.projectId,
-      title: "Scheduling",
-      modelSelection: { instanceId: target.source.providerInstanceId, model: "sonnet" },
-      runtimeMode: "full-access",
-      branch: "feature/private",
       worktreePath: null,
-      latestTurn: null,
-      createdAt: now,
-      updatedAt: now,
-      session: null,
-      latestUserMessageAt: now,
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      hasActionableProposedPlan: false,
-    });
-    const events: OrchestrationEvent[] = [
-      {
-        sequence: 1,
-        eventId: EventId.make("created"),
-        aggregateKind: "thread",
-        aggregateId: thread.id,
-        occurredAt: now,
-        commandId: null,
-        causationEventId: null,
-        correlationId: null,
-        metadata: {},
-        type: "thread.created",
-        payload: {
-          threadId: thread.id,
-          projectId: thread.projectId,
-          title: thread.title,
-          modelSelection: thread.modelSelection,
-          runtimeMode: thread.runtimeMode,
-          interactionMode: thread.interactionMode,
-          branch: thread.branch,
-          worktreePath: null,
-          createdAt: now,
-          updatedAt: now,
-        },
+      providerInstanceId: target.source.providerInstanceId,
+      providerThread: {
+        providerInstanceId: target.source.providerInstanceId,
+        driver: sourceDriver,
+        nativeThreadId: contextDriver ? null : manifest.provider.sessionId!,
       },
-    ];
-    events.push(
-      {
-        ...events[0]!,
-        sequence: 2,
-        eventId: EventId.make("model-changed"),
-        type: "thread.meta-updated",
-        payload: {
-          threadId: thread.id,
-          modelSelection: { instanceId: target.source.providerInstanceId, model: "opus" },
-          updatedAt: now,
-        },
-      },
-      {
-        ...events[0]!,
-        sequence: 3,
-        eventId: EventId.make("runtime-changed"),
-        type: "thread.runtime-mode-set",
-        payload: { threadId: thread.id, runtimeMode: "approval-required", updatedAt: now },
-      },
-    );
+    };
     const status: ServerProvider = {
       instanceId: target.source.providerInstanceId,
       driver: target.source.driver,
@@ -408,8 +440,9 @@ const makeTwoServices = (contextDriver?: string) =>
       createdAt: now,
       updatedAt: now,
     });
-    const nativeDriver: typeof getNativeHandoffDriver = (input) =>
-      getNativeHandoffDriver(input, {
+    const counters = { freeze: 0, wrongResume: false, imports: 0 };
+    const nativeDriver: typeof getNativeHandoffDriver = (input) => {
+      const driver = getNativeHandoffDriver(input, {
         claudeExportSession: async (id, store) => {
           await store.append({ projectKey: "mac-source", sessionId: id }, [
             { type: "user", uuid: "native-user", message: { content: "Keep the same session" } },
@@ -421,50 +454,15 @@ const makeTwoServices = (contextDriver?: string) =>
           ]);
         },
       });
-    const counters = { freeze: 0, starts: 0, active: false, wrongResume: false, imports: 0 };
-    const destinationState = NodePath.join(f.ports.config.stateDir, "destination-state");
-    const adapter = stub<ProviderAdapterShape<ProviderAdapterError>>({
-      hasSession: () => Effect.sync(() => counters.active),
-      stopSession: () =>
-        Effect.sync(() => {
-          counters.active = false;
-        }),
-      startSession: (input) =>
-        Effect.gen(function* () {
-          if (!contextDriver) {
-            const native = yield* Effect.promise(() =>
-              openTransferredClaudeSession({
-                stateDir: destinationState,
-                threadId: thread.id,
-                sessionId: manifest.provider.sessionId!,
-              }),
-            );
-            expect(native).toBeDefined();
-          } else {
-            expect(input.provider).toBe(contextDriver);
-            expect(input.resumeCursor).not.toEqual({ resume: manifest.provider.sessionId });
+      return driver
+        ? {
+            ...driver,
+            resumable: async (request) =>
+              !counters.wrongResume && (await driver.resumable(request)),
           }
-          expect(input.modelSelection?.model).toBe("opus");
-          expect(input.runtimeMode).toBe("approval-required");
-          counters.starts++;
-          counters.active = true;
-          return {
-            provider: target.source.driver,
-            status: "ready",
-            threadId: thread.id,
-            runtimeMode: input.runtimeMode,
-            createdAt: now,
-            updatedAt: now,
-            resumeCursor: {
-              resume: contextDriver
-                ? "new-destination-session"
-                : counters.wrongResume
-                  ? "22222222-2222-4222-8222-222222222222"
-                  : manifest.provider.sessionId,
-            },
-          };
-        }),
-    });
+        : undefined;
+    };
+    const destinationState = NodePath.join(f.ports.config.stateDir, "destination-state");
     const common = {
       nativeDriver,
       settings: { getSettings: Effect.succeed(stub<ServerSettings>({ providerInstances: {} })) },
@@ -474,35 +472,35 @@ const makeTwoServices = (contextDriver?: string) =>
       ...f.ports,
       ...common,
       query: {
-        getThreadShellById: () => Effect.succeed(Option.some(thread)),
-        getProjectShellById: () => Effect.succeed(Option.some(project(sourceRoot))),
+        getThread: () => Effect.succeed(Option.some(thread)),
+        getProject: () => Effect.succeed(Option.some(project(sourceRoot))),
       },
-      directory: {
-        getBinding: () =>
+      history: {
+        read: ({ throughSequence }) =>
           Effect.succeed(
-            Option.some({
-              threadId: thread.id,
-              provider: sourceDriver,
-              providerInstanceId: target.source.providerInstanceId,
-              resumeCursor: { resume: manifest.provider.sessionId },
-            }),
+            events.filter(
+              (event) => throughSequence === undefined || event.sequence <= throughSequence,
+            ),
           ),
-      },
-      engine: {
-        latestSequence: Effect.succeed(3),
-        readThreadEvents: () => Stream.fromIterable(events),
+        importThread: () => Effect.die(new Error("The source never imports history.")),
       },
       safePoint: {
-        waitForCurrentTurn: () => Effect.succeed(thread),
+        waitForCurrentTurn: () => Effect.die(new Error("Unexpected wait")),
         freeze: () =>
           Effect.sync(() => {
             counters.freeze++;
-            return { thread, sequence: 3 };
+            return {
+              thread: stub<OrchestrationV2ThreadShell>({
+                projectId: thread.projectId,
+                worktreePath: null,
+              }),
+              sequence: events.length,
+            };
           }),
       },
     };
-    let activatedThread: OrchestrationThreadShell | undefined;
-    let activatedBinding: ProviderRuntimeBinding | undefined;
+    let activatedThread: HandoffThread | undefined;
+    let imported: ReadonlyArray<OrchestrationV2DomainEvent> = [];
     const destinationPorts: ThreadHandoffServicePorts = {
       ...f.ports,
       ...common,
@@ -526,49 +524,29 @@ const makeTwoServices = (contextDriver?: string) =>
       journal: destinationJournal,
       changes: destinationChanges,
       query: {
-        getThreadShellById: () => Effect.sync(() => Option.fromUndefinedOr(activatedThread)),
-        getProjectShellById: () => Effect.succeed(Option.some(project(destinationRoot))),
+        getThread: () => Effect.sync(() => Option.fromUndefinedOr(activatedThread)),
+        getProject: () => Effect.succeed(Option.some(project(destinationRoot))),
       },
-      directory: { getBinding: () => Effect.sync(() => Option.fromUndefinedOr(activatedBinding)) },
-      adapters: { getByInstance: () => Effect.succeed(adapter) },
-      engine: {
-        latestSequence: Effect.succeed(0),
-        readThreadEvents: () => Stream.empty,
-        importHandoffEvents: (input) =>
+      history: {
+        read: () => Effect.succeed([]),
+        importThread: (input) =>
           Effect.gen(function* () {
             expect(input.events[0]?.type).toBe("thread.created");
             expect(input.threadId).toBe(thread.id);
-            if (!input.handoff) throw new Error("Missing atomic handoff");
-            yield* destinationJournal.acceptIncoming(input.handoff.record).pipe(Effect.orDie);
-            const runtime = input.handoff.runtime;
-            if (contextDriver) {
-              expect(runtime.providerName).toBe(contextDriver);
-              expect(runtime.resumeCursor).toEqual({ resume: "new-destination-session" });
-              expect(runtime.runtimePayload).toMatchObject({
-                handoffContext: {
-                  threadId: thread.id,
-                  providerInstanceId: target.providerInstanceId,
-                },
-                modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
-              });
-            }
-            const created = input.events[0];
-            if (created?.type !== "thread.created") throw new Error("Missing creation");
+            yield* destinationJournal.acceptIncoming(input.record).pipe(Effect.orDie);
+            const latest = input.events.findLast((event) => event.type.startsWith("thread."));
+            if (!latest || !("modelSelection" in latest.payload))
+              throw new Error("Missing thread configuration");
+            const payload = latest.payload as OrchestrationV2AppThread;
             activatedThread = {
-              ...thread,
-              projectId: created.payload.projectId,
-              worktreePath: created.payload.worktreePath,
-              runtimeMode: runtime.runtimeMode,
-              modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+              id: thread.id,
+              projectId: payload.projectId,
+              worktreePath: payload.worktreePath,
+              providerInstanceId: payload.providerInstanceId,
+              providerThread: null,
             };
-            activatedBinding = {
-              threadId: thread.id,
-              provider: ProviderDriverKind.make(runtime.providerName),
-              providerInstanceId: target.providerInstanceId,
-              resumeCursor: runtime.resumeCursor,
-            };
+            imported = input.events;
             counters.imports++;
-            return { sequence: 1 };
           }),
       },
     };
@@ -627,6 +605,8 @@ const makeTwoServices = (contextDriver?: string) =>
       sourceRoot,
       destinationState,
       destinationMapping,
+      events,
+      imported: () => imported,
     };
   });
 const twoServices = makeTwoServices();
@@ -643,17 +623,45 @@ it.effect(
           handoffId: record.handoffId,
         });
         if (!verified.ready) throw new Error("Missing destination receipt");
-        expect(f.counters.starts).toBe(1);
+        expect(
+          yield* Effect.promise(() =>
+            openTransferredClaudeSession({
+              stateDir: f.destinationState,
+              threadId: record.owner.threadId,
+              sessionId: manifest.provider.sessionId!,
+            }),
+          ),
+        ).toBeDefined();
         const committed = yield* f.sourceService.handle({
           operation: "commit",
           receipt: verified.ready,
         });
         if (!committed.record) throw new Error("Missing commit");
-        f.counters.active = false; // process memory was lost, persisted snapshot remains.
+        // Process memory was lost; the persisted snapshot remains.
         const recovered = createThreadHandoffService(f.destinationPorts);
         yield* recovered.handle({ operation: "activate", record: committed.record });
-        expect(f.counters.starts).toBe(2);
         expect(f.counters.imports).toBe(1);
+        const imported = f.imported();
+        // Environment-local provider sessions never transfer.
+        expect(imported.some((event) => event.type.startsWith("provider-session."))).toBe(false);
+        const providerThread = imported.find((event) => event.type === "provider-thread.updated");
+        // The native session resumes on the destination instance with a fresh process.
+        expect(providerThread?.payload).toMatchObject({
+          providerInstanceId: target.providerInstanceId,
+          providerSessionId: null,
+          nativeThreadRef: { nativeId: manifest.provider.sessionId },
+        });
+        expect(imported.at(-2)?.payload).toMatchObject({
+          providerInstanceId: target.providerInstanceId,
+          modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+          runtimeMode: "approval-required",
+          worktreePath: NodePath.join(
+            f.destinationState,
+            "handoff-workspaces",
+            record.handoffId,
+            "0",
+          ),
+        });
         const archive = NodePath.join(f.destinationState, "handoffs", record.handoffId, "payload");
         expect(
           yield* Effect.promise(() =>
@@ -663,12 +671,10 @@ it.effect(
             ),
           ),
         ).toBe(false);
-        f.counters.active = false;
         yield* createThreadHandoffService(f.destinationPorts).handle({
           operation: "activate",
           record: committed.record,
         });
-        expect(f.counters.starts).toBe(3);
         expect(f.counters.imports).toBe(1);
         expect((yield* f.destinationJournal.head(record.owner.threadId))?.phase).toBe("completed");
         yield* f.destinationJournal.begin({
@@ -681,7 +687,6 @@ it.effect(
         expect(
           yield* Effect.flip(recovered.handle({ operation: "activate", record: committed.record })),
         ).toMatchObject({ code: "notOwner" });
-        expect(f.counters.starts).toBe(3);
         const restored = NodePath.join(
           f.destinationState,
           "handoff-workspaces",
@@ -713,7 +718,6 @@ it.effect("a wrong native resume is rejected, then rollback leaves source Git un
         ),
       ).toMatchObject({ code: "verificationFailed" });
       yield* f.destinationService.handle({ operation: "reject", handoffId: record.handoffId });
-      expect(f.counters.active).toBe(false);
       expect(
         yield* Effect.promise(() =>
           openTransferredClaudeSession({
@@ -751,7 +755,6 @@ it.effect("retrying native verification replaces only its own preparation", () =
         handoffId: record.handoffId,
       });
       expect(retried.ready?.sessionId).toBe(manifest.provider.sessionId);
-      expect(f.counters.starts).toBe(2);
       expect(
         yield* Effect.promise(() =>
           NodeFSP.readFile(NodePath.join(f.sourceRoot, "file.txt"), "utf8"),
@@ -913,26 +916,20 @@ it.effect("attachment history is blocked before freeze rather than silently disc
   test(
     Effect.gen(function* () {
       const f = yield* twoServices;
-      const attachmentEvent: OrchestrationEvent = {
-        sequence: 2,
-        eventId: EventId.make("attachment-event"),
-        aggregateKind: "thread",
-        aggregateId: record.owner.threadId,
-        occurredAt: now,
-        commandId: null,
-        causationEventId: null,
-        correlationId: null,
-        metadata: {},
-        type: "thread.message-sent",
+      const attachmentEvent = stored(f.events.length + 1, {
+        type: "message.updated",
         payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: MessageId.make("with-image"),
           threadId: record.owner.threadId,
-          messageId: MessageId.make("with-image"),
+          runId: null,
+          nodeId: null,
           role: "user",
           text: "See design",
-          turnId: null,
           streaming: false,
-          createdAt: now,
-          updatedAt: now,
+          createdAt: at,
+          updatedAt: at,
           attachments: [
             {
               type: "image",
@@ -943,17 +940,12 @@ it.effect("attachment history is blocked before freeze rather than silently disc
             },
           ],
         },
-      };
+      });
       const service = createThreadHandoffService({
         ...f.sourcePorts,
-        engine: {
-          ...f.sourcePorts.engine,
-          latestSequence: Effect.succeed(2),
-          readThreadEvents: (range) =>
-            Stream.concat(
-              f.sourcePorts.engine.readThreadEvents(range),
-              Stream.succeed(attachmentEvent),
-            ),
+        history: {
+          ...f.sourcePorts.history,
+          read: () => Effect.succeed([...f.events, attachmentEvent]),
         },
       });
       expect(
@@ -972,49 +964,49 @@ it.effect("attachment history is blocked before freeze rather than silently disc
   ),
 );
 
-for (const provider of ["claudeAgent", "codex", "cursor", "grok", "opencode", "antigravity"]) {
-  it.effect(
-    `context handoff from Codex starts a new ${provider} session and survives destination restart`,
-    () =>
-      test(
-        Effect.gen(function* () {
-          const f = yield* makeTwoServices(provider);
-          yield* f.prepare;
-          const verified = yield* f.destinationService.handle({
-            operation: "verify",
-            handoffId: record.handoffId,
-          });
-          if (!verified.ready) throw new Error("Missing context readiness");
-          expect(verified.ready.sessionId).toBeUndefined();
-          const committed = yield* f.sourceService.handle({
-            operation: "commit",
-            receipt: verified.ready,
-          });
-          if (!committed.record) throw new Error("Missing commit");
-          f.counters.active = false;
-          const result = yield* createThreadHandoffService(f.destinationPorts).handle({
-            operation: "activate",
-            record: committed.record,
-          });
-          expect(result.record?.phase).toBe("completed");
-          expect(f.counters.starts).toBe(2);
-          const pending = yield* decodeContextPending(
-            yield* Effect.promise(() =>
-              NodeFSP.readFile(
-                NodePath.join(f.destinationState, "handoffs", record.handoffId, "request.json"),
-                "utf8",
-              ),
-            ),
-          );
-          expect(pending.context.threadId).toBe(record.owner.threadId);
-          expect(pending.destinationResumeCursor).toEqual({ resume: "new-destination-session" });
-          expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
-            phase: "committed",
-          });
-        }),
-      ),
-  );
-}
+it.effect.each(["claudeAgent", "codex", "cursor", "grok", "opencode", "antigravity"])(
+  "context handoff from Codex starts a new %s session and survives destination restart",
+  (provider) =>
+    test(
+      Effect.gen(function* () {
+        const f = yield* makeTwoServices(provider);
+        yield* f.prepare;
+        const verified = yield* f.destinationService.handle({
+          operation: "verify",
+          handoffId: record.handoffId,
+        });
+        if (!verified.ready) throw new Error("Missing context readiness");
+        expect(verified.ready.sessionId).toBeUndefined();
+        const committed = yield* f.sourceService.handle({
+          operation: "commit",
+          receipt: verified.ready,
+        });
+        if (!committed.record) throw new Error("Missing commit");
+        const result = yield* createThreadHandoffService(f.destinationPorts).handle({
+          operation: "activate",
+          record: committed.record,
+        });
+        expect(result.record?.phase).toBe("completed");
+        expect(f.counters.imports).toBe(1);
+        const imported = f.imported();
+        // The thread moves to the chosen model; its history stays attributed to
+        // the source provider, so the next turn hands the conversation over.
+        expect(imported.at(-2)?.payload).toMatchObject({
+          providerInstanceId: target.providerInstanceId,
+          modelSelection: { instanceId: target.providerInstanceId, model: "opus" },
+        });
+        expect(
+          imported.find((event) => event.type === "provider-thread.updated")?.payload,
+        ).toMatchObject({
+          providerInstanceId: target.source.providerInstanceId,
+          providerSessionId: null,
+        });
+        expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
+          phase: "committed",
+        });
+      }),
+    ),
+);
 
 it.effect("context preflight rejects a model from another instance before pausing source", () =>
   test(
@@ -1045,7 +1037,6 @@ it.effect(
         yield* f.destinationService.handle({ operation: "verify", handoffId: record.handoffId });
         yield* f.destinationService.handle({ operation: "reject", handoffId: record.handoffId });
         yield* f.sourceService.handle({ operation: "rollback", handoffId: record.handoffId });
-        expect(f.counters.active).toBe(false);
         expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({
           phase: "failed",
           owner: record.owner,
@@ -1067,7 +1058,13 @@ it.effect(
         const f = yield* makeTwoServices("opencode");
         const service = createThreadHandoffService({
           ...f.sourcePorts,
-          directory: { getBinding: () => Effect.succeed(Option.none()) },
+          query: {
+            ...f.sourcePorts.query,
+            getThread: (threadId) =>
+              f.sourcePorts.query
+                .getThread(threadId)
+                .pipe(Effect.map(Option.map((thread) => ({ ...thread, providerThread: null })))),
+          },
         });
         const result = yield* service.handle({
           operation: "inspect",
@@ -1122,31 +1119,14 @@ it.effect(
     ),
 );
 
-it.effect("restart rollback recovers an installed context whose reference was not persisted", () =>
+it.effect("restart rollback removes a verified context preparation", () =>
   test(
     Effect.gen(function* () {
       const f = yield* makeTwoServices("opencode");
       yield* f.prepare;
-      const metadataPath = NodePath.join(
-        f.destinationState,
-        "handoffs",
-        record.handoffId,
-        "request.json",
-      );
-      const beforeInstallation = yield* Effect.promise(() =>
-        NodeFSP.readFile(metadataPath, "utf8"),
-      );
       yield* f.destinationService.handle({ operation: "verify", handoffId: record.handoffId });
-      const archivePath = NodePath.join(
-        f.destinationState,
-        "handoff-context",
-        record.handoffId,
-        "conversation.json",
-      );
-      expect(yield* Effect.promise(() => NodeFSP.stat(archivePath))).toBeDefined();
-      // Reproduce the durable state after archive publication but before metadata save.
-      yield* Effect.promise(() => NodeFSP.writeFile(metadataPath, beforeInstallation));
-      f.counters.active = false;
+      const prepared = NodePath.join(f.destinationState, "handoff-workspaces", record.handoffId);
+      expect(yield* Effect.promise(() => NodeFSP.stat(prepared))).toBeDefined();
       const restarted = createThreadHandoffService(f.destinationPorts);
       const rejected = yield* restarted.handle({
         operation: "reject",
@@ -1154,10 +1134,7 @@ it.effect("restart rollback recovers an installed context whose reference was no
       });
       expect(rejected.record?.phase).toBe("cancelled");
       yield* Effect.promise(async () => {
-        await expect(NodeFSP.stat(archivePath)).rejects.toMatchObject({ code: "ENOENT" });
-        await expect(NodeFSP.stat(NodePath.dirname(archivePath))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
+        await expect(NodeFSP.stat(prepared)).rejects.toMatchObject({ code: "ENOENT" });
       });
       yield* f.sourceService.handle({ operation: "rollback", handoffId: record.handoffId });
       expect(yield* f.journal.head(record.owner.threadId)).toMatchObject({

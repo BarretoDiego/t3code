@@ -27,7 +27,10 @@ import {
   planPinnedReorder,
   resolveSettledThreadTimestamp,
 } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import {
+  threadRuntimeCanArchive,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/models";
 import {
   scopeProjectRef,
   scopeThreadRef,
@@ -366,7 +369,7 @@ function SidebarThreadTooltip({
               <ProviderInstanceIcon
                 driverKind={driverKind}
                 displayName={
-                  providerEntry?.displayName ?? thread.session?.providerName ?? modelInstanceId
+                  providerEntry?.displayName ?? thread.runtime?.providerName ?? modelInstanceId
                 }
                 accentColor={providerEntry?.accentColor}
                 // Initials would swallow a size-3 glyph: accent dot, name in label.
@@ -393,7 +396,7 @@ function SidebarThreadTooltip({
               </div>
             </div>
           ) : null}
-          {thread.session?.lastError ? (
+          {thread.runtime?.lastError ? (
             <div className="flex min-w-0 items-center gap-2 text-error ">
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
               <div className="min-w-0 truncate">Error occurred</div>
@@ -858,8 +861,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // findable. In-flight rows recede the same as read-ready ones (inbox-zero:
   // working threads aren't your problem yet) — only the colored status label
   // stands out.
-  const isInFlight =
-    status === "working" || status === "monitoring" || status === "approval" || status === "input";
+  const isInFlight = status === "working" || status === "approval" || status === "input";
   const shouldRecede =
     (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
   // Status hues follow the system-wide convention set by sidebar v1 and the
@@ -877,45 +879,37 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           // the label at full strength.
           className: cn("text-info ", !props.isActive && "opacity-75"),
         }
-      : status === "monitoring"
+      : status === "approval"
         ? {
-            // Monitoring is calm background presence, not active progress
-            // (monitoring-pill D6), so it keeps the label at full strength.
-            label: "Monitoring",
+            label: "Approval",
             icon: null,
-            className: "text-info ",
+            className: "text-warning ",
           }
-        : status === "approval"
+        : status === "input"
           ? {
-              label: "Approval",
+              label: "Input",
               icon: null,
-              className: "text-warning ",
+              className: "text-indigo-600 dark:text-indigo-300",
             }
-          : status === "input"
+          : status === "failed"
             ? {
-                label: "Input",
+                label: "Failed",
                 icon: null,
-                className: "text-indigo-600 dark:text-indigo-300",
+                className: "text-red-700 dark:text-red-300",
               }
-            : status === "failed"
+            : isWoke
               ? {
-                  label: "Failed",
-                  icon: null,
-                  className: "text-red-700 dark:text-red-300",
+                  label: "Woke",
+                  icon: "woke" as const,
+                  className: "text-warning ",
                 }
-              : isWoke
+              : isUnread
                 ? {
-                    label: "Woke",
-                    icon: "woke" as const,
-                    className: "text-warning ",
+                    label: "Done",
+                    icon: "done" as const,
+                    className: "text-emerald-700 dark:text-emerald-300",
                   }
-                : isUnread
-                  ? {
-                      label: "Done",
-                      icon: "done" as const,
-                      className: "text-emerald-700 dark:text-emerald-300",
-                    }
-                  : null;
+                : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -927,7 +921,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const prStatus = prStatusIndicator(pr, linkedPullRequestStatus?.sourceControlProvider);
   const settledPrHoverClass = pr ? settledPrHoverColorClass(pr.state) : undefined;
 
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
@@ -1588,7 +1582,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       driverKind={driverKind}
                       displayName={
                         providerEntry?.displayName ??
-                        thread.session?.providerName ??
+                        thread.runtime?.providerName ??
                         modelInstanceId
                       }
                       accentColor={providerEntry?.accentColor}
@@ -1659,7 +1653,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: visibleGitStatus?.refName ?? null,
   });
-  const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
@@ -3030,7 +3024,7 @@ export default function Sidebar() {
       if (clicked.value === "mark-unread") {
         for (const threadKey of threadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
-          markThreadUnread(threadKey, thread?.latestTurn?.completedAt);
+          markThreadUnread(threadKey, thread?.latestRun?.completedAt);
         }
         clearSelection();
         return;
@@ -3155,8 +3149,7 @@ export default function Sidebar() {
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
-              isRunning:
-                thread.session?.status === "running" && thread.session.activeTurnId != null,
+              isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -3280,7 +3273,7 @@ export default function Sidebar() {
             return;
           }
           case "mark-unread":
-            markThreadUnread(threadKey, thread.latestTurn?.completedAt);
+            markThreadUnread(threadKey, thread.latestRun?.completedAt);
             return;
           case "copy-path":
             if (!threadWorkspacePath) {

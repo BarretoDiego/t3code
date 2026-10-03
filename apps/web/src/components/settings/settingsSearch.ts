@@ -20,6 +20,7 @@ export type SettingsPath =
   | "/settings/snap-shot"
   | "/settings/providers"
   | "/settings/integrations"
+  | "/settings/scheduled-tasks"
   | "/settings/source-control"
   | "/settings/mini-skills"
   | "/settings/agent-profiles"
@@ -94,6 +95,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": "Providers",
   "/settings/ai-runtimes": "AI Runtimes",
   "/settings/integrations": "Integrations",
+  "/settings/scheduled-tasks": "Scheduled Tasks",
   "/settings/source-control": "Source Control",
   "/settings/mini-skills": "Mini Skills",
   "/settings/agent-profiles": "Agent Profiles",
@@ -280,6 +282,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["long lines code blocks tables diffs file previews"],
   },
   {
+    id: "composer-context",
+    title: "Composer context",
+    to: "/settings/appearance",
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",
@@ -290,6 +297,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Sidebar style",
     to: "/settings/general",
     searchTerms: ["grouped original legacy threads projects flat tree"],
+  },
+  {
+    id: "snooze-limited-threads",
+    title: "Snooze limited threads",
+    to: "/settings/general",
+    searchTerms: ["usage quota rate limit reset wake recover continue"],
+  },
+  {
+    id: "auto-resume-limited-threads",
+    title: "Auto-resume limited threads",
+    to: "/settings/general",
+    searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
     id: "working-shelf",
@@ -720,6 +739,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "worktree-branch-naming",
+    title: "Worktree branch naming",
+    to: "/settings/source-control",
+    searchTerms: ["static semantic prefix custom prompt instructions feat fix refactor chore"],
+    environmentOnly: true,
+    scope: "project-defaults",
+  },
+  {
     id: "bitbucket-credentials",
     title: "Bitbucket credentials",
     to: "/settings/source-control",
@@ -904,6 +931,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/source-control": "environment-defaults",
   "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
+  "/settings/scheduled-tasks": null,
   "/settings/archived": "project-defaults",
   "/settings/agent-profiles": null,
   "/settings/ai-runtimes": null,

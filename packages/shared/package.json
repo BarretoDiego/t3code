@@ -7,6 +7,10 @@
       "types": "./src/BarrierStream.ts",
       "import": "./src/BarrierStream.ts"
     },
+    "./orchestrationV2ThreadError": {
+      "types": "./src/orchestrationV2ThreadError.ts",
+      "import": "./src/orchestrationV2ThreadError.ts"
+    },
     "./legacyCliLauncher": {
       "types": "./src/legacyCliLauncher.ts",
       "import": "./src/legacyCliLauncher.ts"
@@ -110,6 +114,10 @@
     "./toolActivity": {
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
+    },
+    "./toolOutput": {
+      "types": "./src/toolOutput.ts",
+      "import": "./src/toolOutput.ts"
     },
     "./favicon": {
       "types": "./src/favicon.ts",
@@ -354,6 +362,22 @@
     "./projectSyncFraming": {
       "types": "./src/projectSyncFraming.ts",
       "import": "./src/projectSyncFraming.ts"
+    },
+    "./orchestrationV2Timeline": {
+      "types": "./src/orchestrationV2Timeline.ts",
+      "import": "./src/orchestrationV2Timeline.ts"
+    },
+    "./t3McpToolPresentation": {
+      "types": "./src/t3McpToolPresentation.ts",
+      "import": "./src/t3McpToolPresentation.ts"
+    },
+    "./Array": {
+      "types": "./src/Array.ts",
+      "import": "./src/Array.ts"
+    },
+    "./orchestrationV2PendingBackgroundWork": {
+      "types": "./src/orchestrationV2PendingBackgroundWork.ts",
+      "import": "./src/orchestrationV2PendingBackgroundWork.ts"
     },
     "./hostClassification": {
       "types": "./src/hostClassification.ts",

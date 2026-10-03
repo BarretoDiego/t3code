@@ -1,9 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
+import {
+  threadRuntimeIsActive,
+  type EnvironmentProject,
+  type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -50,7 +52,6 @@ import {
 import { removeThreadOutboxMessage } from "./thread-outbox-removal";
 import {
   isQueuedThreadCreationSendable,
-  modelSelectionsEqual,
   resolveThreadOutboxDeliveryAction,
   resolveThreadOutboxDispatchStep,
   resolveThreadOutboxFailureAction,
@@ -635,9 +636,6 @@ async function preserveUploadedAttachmentsForEditor(
 
 export function useThreadOutboxDrain(): void {
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
-  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
-    reportFailure: false,
-  });
   const setThreadRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
   });
@@ -812,21 +810,6 @@ export function useThreadOutboxDrain(): void {
       }
       const { reportFailure } = makeDeliveryHelpers(queuedMessage);
 
-      if (!modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
-        const updateResult = await updateThreadMetadata({
-          environmentId: queuedMessage.environmentId,
-          input: {
-            commandId: settingsCommandId(queuedMessage, "model-selection"),
-            threadId: queuedMessage.threadId,
-            modelSelection: settings.modelSelection,
-          },
-        });
-        if (AsyncResult.isFailure(updateResult)) {
-          reportFailure(updateResult, "settings-sync");
-          return false;
-        }
-      }
-
       if (settings.runtimeMode !== thread.runtimeMode) {
         const runtimeResult = await setThreadRuntimeMode({
           environmentId: queuedMessage.environmentId,
@@ -912,6 +895,7 @@ export function useThreadOutboxDrain(): void {
         environmentId: queuedMessage.environmentId,
         input: {
           commandId: queuedMessage.commandId,
+          creationSource: "mobile",
           threadId: queuedMessage.threadId,
           message: {
             messageId: queuedMessage.messageId,
@@ -928,9 +912,17 @@ export function useThreadOutboxDrain(): void {
             attachments: prepared.attachments,
           },
           modelSelection: sendSettings.modelSelection,
+          titleSeed: deriveThreadTitleSeed({
+            text: queuedMessage.text,
+            attachments: queuedMessage.attachments,
+          }),
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
           createdAt: queuedMessage.createdAt,
+          // Rows written before follow-up behavior existed keep the previous
+          // delivery, which the server turns into a queued run when a turn is
+          // already active.
+          dispatchMode: queuedMessage.dispatchMode ?? "start",
         },
       });
       const failure = reportFailure(deliveryResult, "start-turn");
@@ -953,7 +945,6 @@ export function useThreadOutboxDrain(): void {
       setThreadInteractionMode,
       setThreadRuntimeMode,
       startTurn,
-      updateThreadMetadata,
       restoreQueuedMessage,
     ],
   );
@@ -1106,10 +1097,10 @@ export function useThreadOutboxDrain(): void {
         threads.some(
           (thread) =>
             scopedThreadKey(thread.environmentId, thread.id) === threadKey &&
-            (thread.latestTurn !== null ||
-              thread.session?.status === "error" ||
-              thread.session?.status === "stopped" ||
-              thread.session?.status === "interrupted"),
+            (thread.latestRun !== null ||
+              thread.runtime?.status === "failed" ||
+              thread.runtime?.status === "cancelled" ||
+              thread.runtime?.status === "interrupted"),
         )
       ) {
         clearPendingThreadCreationOutcome(threadKey);
@@ -1218,7 +1209,7 @@ export function useThreadOutboxDrain(): void {
         threadExists: thread !== undefined,
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
-        threadBusy: thread?.session?.status === "running" || thread?.session?.status === "starting",
+        threadBusy: threadRuntimeIsActive(thread?.runtime),
         rateLimitedUntil,
         nowMs: Date.now(),
       });
@@ -1326,8 +1317,7 @@ export function useThreadOutboxDrain(): void {
             appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
             nextQueuedMessage,
           );
-          const liveThreadBusy =
-            liveThread?.session?.status === "running" || liveThread?.session?.status === "starting";
+          const liveThreadBusy = threadRuntimeIsActive(liveThread?.runtime);
           const liveDeliveryAction = resolveThreadOutboxDeliveryAction({
             isCreation: creation !== undefined,
             threadExists: liveThread !== undefined,

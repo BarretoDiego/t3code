@@ -276,8 +276,9 @@ describe("projectSyncFraming", () => {
       ["invalid JSON", "{not json", /not valid JSON/],
     ];
 
-    for (const [name, headerJson, expected] of cases) {
-      it(`rejects a header with a ${name} before yielding anything`, async () => {
+    it.each(cases.map(([name, headerJson, expected]) => ({ name, headerJson, expected })))(
+      "rejects a header with a $name before yielding anything",
+      async ({ headerJson, expected }) => {
         let yielded = -1;
         await expect(
           (async () => {
@@ -285,8 +286,8 @@ describe("projectSyncFraming", () => {
           })(),
         ).rejects.toThrow(expected);
         expect(yielded).toBe(-1);
-      });
-    }
+      },
+    );
 
     it("rejects the hostile header even when a valid record precedes it", async () => {
       const valid = await encodeToBytes([

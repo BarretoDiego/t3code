@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Command, GlobalFlag } from "effect/unstable/cli";
 
-import { ServerConfig, type StartupPresentation } from "../config.ts";
+import * as ServerConfig from "../config.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
@@ -38,7 +38,7 @@ export const rejectUnknownCommand = Effect.fn("cli.rejectUnknownCommand")(functi
 export const runServerCommand = (
   flags: CliServerFlags,
   options?: {
-    readonly startupPresentation?: StartupPresentation;
+    readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
   },
 ) =>
@@ -46,7 +46,7 @@ export const runServerCommand = (
     yield* rejectUnknownCommand(flags.cwd ?? Option.none());
     const logLevel = yield* GlobalFlag.LogLevel;
     const config = yield* resolveServerConfig(flags, logLevel, options);
-    return yield* runServer.pipe(Effect.provideService(ServerConfig, config));
+    return yield* runServer.pipe(Effect.provideService(ServerConfig.ServerConfig, config));
   });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(

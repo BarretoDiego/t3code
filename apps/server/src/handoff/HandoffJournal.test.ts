@@ -139,8 +139,9 @@ it.effect("retains the source fence across service recreation and rejects abort 
   }).pipe(Effect.provide(SqlitePersistenceMemory)),
 );
 
-for (const failedPhase of ["preflighting", ...phases.slice(0, 6)] as const) {
-  it(`preserves source ownership when ${failedPhase} fails`, () => {
+it.each(["preflighting", ...phases.slice(0, 6)] as const)(
+  "preserves source ownership when %s fails",
+  (failedPhase) => {
     let current = record;
     for (const phase of phases) {
       if (current.phase === failedPhase) break;
@@ -160,8 +161,8 @@ for (const failedPhase of ["preflighting", ...phases.slice(0, 6)] as const) {
     expect(() =>
       assertExecutionOwner({ record: failed, environmentId: source, generation: 0 }),
     ).not.toThrow();
-  });
-}
+  },
+);
 
 const incoming: ThreadHandoffRecord = {
   ...record,

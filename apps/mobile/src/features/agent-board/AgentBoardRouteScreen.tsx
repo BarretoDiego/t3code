@@ -159,9 +159,7 @@ export function AgentBoardRouteScreen() {
               environmentId: scoped.environmentId,
               input: {
                 ...scoped.input,
-                ...(shell.session?.activeTurnId != null
-                  ? { turnId: shell.session.activeTurnId }
-                  : {}),
+                ...(shell.runtime?.activeRunId != null ? { runId: shell.runtime.activeRunId } : {}),
               },
             })
           : action === "archive"

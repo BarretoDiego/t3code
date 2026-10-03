@@ -1,51 +1,41 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-  TurnId,
-  type OrchestrationSession,
-  type OrchestrationThreadShell,
-} from "@t3tools/contracts";
+import { ProviderInstanceId, RunId } from "@t3tools/contracts";
 
 import { deriveAgentOperationalState } from "./agentBoardStateAdapter.ts";
+import type { ThreadRuntimeSummary } from "./state/models.ts";
 
-function shell(overrides: Partial<OrchestrationThreadShell> = {}): OrchestrationThreadShell {
+type ClassifierShell = Parameters<typeof deriveAgentOperationalState>[0];
+
+function shell(overrides: Partial<ClassifierShell> = {}): ClassifierShell {
   return {
-    id: ThreadId.make("thread-1"),
-    projectId: ProjectId.make("project-1"),
-    title: "Test thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    latestTurn: null,
+    runtime: null,
+    latestRun: null,
+    pendingBackgroundTasks: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    archivedAt: null,
     settledOverride: null,
     settledAt: null,
-    session: null,
-    latestUserMessageAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
     ...overrides,
-  } as OrchestrationThreadShell;
+  };
 }
 
-function session(status: OrchestrationSession["status"]): OrchestrationSession {
+function runtime(status: ThreadRuntimeSummary["status"]): ThreadRuntimeSummary {
   return {
-    threadId: ThreadId.make("thread-1"),
     status,
+    activeRunId: status === "idle" ? null : RunId.make("run-1"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
     providerName: null,
-    runtimeMode: "full-access",
-    activeTurnId: null,
-    lastError: "private provider output",
+    lastError: status === "failed" ? "private provider output" : null,
     updatedAt: "2026-01-03T00:00:00.000Z",
   };
 }
+
+const backgroundTask = {
+  kind: "command",
+} as unknown as ClassifierShell["pendingBackgroundTasks"][number];
 
 describe("deriveAgentOperationalState", () => {
   it("keeps approval and structured input as separate needs-you reasons", () => {
@@ -60,12 +50,11 @@ describe("deriveAgentOperationalState", () => {
   });
 
   it("makes failure outrank liveness and liveness outrank settlement", () => {
-    const runningSession = session("error");
     expect(
       deriveAgentOperationalState(
         shell({
-          session: runningSession,
-          backgroundLiveness: "working",
+          runtime: runtime("failed"),
+          pendingBackgroundTasks: [backgroundTask],
           settledOverride: "settled",
           settledAt: "2026-01-02T00:00:00.000Z",
         }),
@@ -75,12 +64,16 @@ describe("deriveAgentOperationalState", () => {
     expect(
       deriveAgentOperationalState(
         shell({
-          session: session("running"),
+          runtime: runtime("running"),
           settledOverride: "settled",
           settledAt: "2026-01-02T00:00:00.000Z",
         }),
       ),
-    ).toMatchObject({ kind: "working" });
+    ).toMatchObject({ kind: "working", reason: "turn" });
+
+    expect(
+      deriveAgentOperationalState(shell({ pendingBackgroundTasks: [backgroundTask] })),
+    ).toMatchObject({ kind: "working", reason: "background" });
   });
 
   it("routes actionable plans to review and completed work to settled", () => {
@@ -91,9 +84,9 @@ describe("deriveAgentOperationalState", () => {
     expect(
       deriveAgentOperationalState(
         shell({
-          latestTurn: {
-            turnId: TurnId.make("turn-1"),
-            state: "completed",
+          latestRun: {
+            runId: RunId.make("run-1"),
+            status: "completed",
             requestedAt: "2026-01-01T00:00:00.000Z",
             startedAt: "2026-01-01T00:01:00.000Z",
             completedAt: "2026-01-01T00:02:00.000Z",

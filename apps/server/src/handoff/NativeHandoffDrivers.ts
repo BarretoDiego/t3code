@@ -25,6 +25,8 @@ import type {
 export interface NativeHandoffDriver {
   readonly preflightSource: (input: { readonly sessionId: string }) => Promise<void>;
   readonly remove: (input: { readonly sessionId: string }) => Promise<void>;
+  /** Whether a provider session opened for this thread resumes exactly this native session. */
+  readonly resumable: (input: { readonly sessionId: string }) => Promise<boolean>;
   readonly driver: ProviderDriverKind;
   readonly sessionIdFromCursor: (cursor: unknown) => string;
   readonly preflight: (
@@ -126,6 +128,15 @@ function createClaudeDriver(
       )
         return;
       validateHome();
+    },
+    async resumable({ sessionId }) {
+      return (
+        (await openTransferredClaudeSession({
+          stateDir: input.stateDir,
+          threadId: input.threadId,
+          sessionId,
+        })) !== undefined
+      );
     },
     remove: ({ sessionId }) =>
       removeTransferredClaudeSession({

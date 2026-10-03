@@ -1,122 +1,106 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  ProjectId,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
-  TurnId,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 
-import { isThreadSettledForWait, resolveThreadStatus } from "./thread.ts";
+import { isThreadSettledForWait, resolveThreadStatus, type ThreadStatusInput } from "./thread.ts";
 
-const NOW = "2026-10-02T12:00:00.000Z";
-const SENT_AT = "2026-10-02T11:59:58.000Z";
+const at = (iso: string) => DateTime.makeUnsafe(iso);
+const PREVIOUS_MESSAGE_AT = at("2026-10-02T11:30:00.000Z");
+const SENT_MESSAGE_AT = at("2026-10-02T11:59:58.000Z");
 
-const makeThread = (
-  overrides: Partial<OrchestrationThreadShell> = {},
-): OrchestrationThreadShell => ({
+const makeThread = (overrides: Partial<ThreadStatusInput> = {}): ThreadStatusInput => ({
   id: ThreadId.make("thread-1"),
-  projectId: ProjectId.make("project-1"),
   title: "Thread",
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  pullRequests: [],
-  branch: null,
-  worktreePath: null,
-  latestTurn: null,
-  createdAt: "2026-10-02T11:00:00.000Z",
-  updatedAt: "2026-10-02T11:00:00.000Z",
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  session: null,
+  lineage: {
+    parentThreadId: null,
+    relationshipToParent: null,
+    rootThreadId: ThreadId.make("thread-1"),
+  },
+  activityRunStatus: null,
+  status: "idle",
+  pendingRuntimeRequest: null,
+  pendingBackgroundTasks: [],
   latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
+  updatedAt: at("2026-10-02T11:00:00.000Z"),
   ...overrides,
 });
 
-const session = (status: NonNullable<OrchestrationThreadShell["session"]>["status"]) => ({
-  threadId: ThreadId.make("thread-1"),
-  status,
-  providerName: "codex",
-  runtimeMode: "full-access" as const,
-  activeTurnId: null,
-  lastError: null,
-  updatedAt: NOW,
-});
-
-const completedTurn = (at: string) => ({
-  turnId: TurnId.make("turn-1"),
-  state: "completed" as const,
-  requestedAt: at,
-  startedAt: at,
-  completedAt: at,
-  assistantMessageId: null,
+const pendingRequest = (
+  kind: NonNullable<OrchestrationV2ThreadShell["pendingRuntimeRequest"]>["kind"],
+) => ({
+  id: RuntimeRequestId.make("request-1"),
+  kind,
+  createdAt: SENT_MESSAGE_AT,
 });
 
 describe("resolveThreadStatus", () => {
-  it("reads a sent message the agent has not picked up as queued, not completed", () => {
-    const thread = makeThread({
-      session: session("ready"),
-      latestTurn: completedTurn("2026-10-02T11:30:00.000Z"),
-      latestUserMessageAt: SENT_AT,
-    });
-    expect(resolveThreadStatus(thread, NOW)).toBe("queued");
+  it("reads a message waiting behind the queue as queued, not completed", () => {
+    const thread = makeThread({ status: "queued", latestUserMessageAt: SENT_MESSAGE_AT });
+    expect(resolveThreadStatus(thread)).toBe("queued");
+  });
+
+  it("reports the active run while a later message is queued", () => {
+    const thread = makeThread({ status: "queued", activityRunStatus: "running" });
+    expect(resolveThreadStatus(thread)).toBe("running");
   });
 
   it("puts attention states ahead of activity", () => {
-    const thread = makeThread({ session: session("running"), hasPendingApprovals: true });
-    expect(resolveThreadStatus(thread, NOW)).toBe("waiting_for_approval");
+    const thread = makeThread({
+      activityRunStatus: "running",
+      status: "running",
+      pendingRuntimeRequest: pendingRequest("command"),
+    });
+    expect(resolveThreadStatus(thread)).toBe("waiting_for_approval");
   });
 
-  it("reports an interrupted turn that never completed", () => {
-    const thread = makeThread({
-      session: session("interrupted"),
-      latestTurn: { ...completedTurn(SENT_AT), state: "interrupted", completedAt: null },
-    });
-    expect(resolveThreadStatus(thread, NOW)).toBe("interrupted");
+  it("reports an interrupted turn", () => {
+    expect(resolveThreadStatus(makeThread({ status: "interrupted" }))).toBe("interrupted");
   });
 });
 
 describe("isThreadSettledForWait", () => {
   it("does not return on the previous turn before the sent message lands", () => {
-    const thread = makeThread({
-      session: session("ready"),
-      latestTurn: completedTurn("2026-10-02T11:30:00.000Z"),
-      latestUserMessageAt: "2026-10-02T11:30:00.000Z",
-    });
-    expect(isThreadSettledForWait(thread, NOW, SENT_AT)).toBe(false);
-    expect(isThreadSettledForWait(thread, NOW)).toBe(true);
+    const thread = makeThread({ status: "completed", latestUserMessageAt: PREVIOUS_MESSAGE_AT });
+    expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(false);
+    expect(isThreadSettledForWait(thread)).toBe(true);
+  });
+
+  it("waits for the first message of a new thread", () => {
+    expect(isThreadSettledForWait(makeThread(), null)).toBe(false);
   });
 
   it("keeps waiting while the agent works on the sent message", () => {
-    const thread = makeThread({ session: session("running"), latestUserMessageAt: SENT_AT });
-    expect(isThreadSettledForWait(thread, NOW, SENT_AT)).toBe(false);
+    const thread = makeThread({
+      activityRunStatus: "running",
+      status: "running",
+      latestUserMessageAt: SENT_MESSAGE_AT,
+    });
+    expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(false);
   });
 
-  it("returns once the turn for the sent message completes", () => {
-    const thread = makeThread({
-      session: session("ready"),
-      latestTurn: completedTurn("2026-10-02T11:59:59.000Z"),
-      latestUserMessageAt: SENT_AT,
-    });
-    expect(isThreadSettledForWait(thread, NOW, SENT_AT)).toBe(true);
+  it("returns once the run for the sent message completes", () => {
+    const thread = makeThread({ status: "completed", latestUserMessageAt: SENT_MESSAGE_AT });
+    expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(true);
   });
 
   it("returns when the agent needs input even mid-turn", () => {
     const thread = makeThread({
-      session: session("running"),
-      latestUserMessageAt: SENT_AT,
-      hasPendingUserInput: true,
+      activityRunStatus: "running",
+      status: "running",
+      latestUserMessageAt: SENT_MESSAGE_AT,
+      pendingRuntimeRequest: pendingRequest("user_input"),
     });
-    expect(isThreadSettledForWait(thread, NOW, SENT_AT)).toBe(true);
+    expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(true);
   });
 
-  it("returns when the session fails", () => {
-    const thread = makeThread({ session: session("error"), latestUserMessageAt: SENT_AT });
-    expect(isThreadSettledForWait(thread, NOW, SENT_AT)).toBe(true);
+  it("returns when the run fails", () => {
+    const thread = makeThread({ status: "failed", latestUserMessageAt: SENT_MESSAGE_AT });
+    expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(true);
   });
 });

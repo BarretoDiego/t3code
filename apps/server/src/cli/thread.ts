@@ -2,25 +2,25 @@ import * as NodeCrypto from "node:crypto";
 
 import {
   CommandId,
-  type ClientOrchestrationCommand,
   MessageId,
   ModelSelection,
-  ORCHESTRATION_WS_METHODS,
-  type OrchestrationMessage,
+  ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationProjectShell,
-  type OrchestrationShellSnapshot,
-  type OrchestrationThread,
-  type OrchestrationThreadShell,
+  type OrchestrationV2Command,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
   ProviderApprovalDecision,
   ProviderInteractionMode,
+  type RunId,
   RuntimeMode,
   ThreadId,
   WS_METHODS,
 } from "@t3tools/contracts";
-import { resolveThreadAwarenessPhase } from "@t3tools/shared/agentAwareness";
+import { resolveThreadAwarenessPhaseV2 } from "@t3tools/shared/agentAwareness";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
-import { derivePendingRequests } from "@t3tools/shared/pendingRequests";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -34,7 +34,6 @@ import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
-import { threadHasQueuedTurnStart } from "../orchestration/ThreadSettlementPolicy.ts";
 import { jsonFlag, printJson, timeoutFlag, withClient } from "./common.ts";
 import { DurationFromString } from "./config.ts";
 import { resolveTurnLibrary, type TurnLibraryExtras } from "./library.ts";
@@ -66,8 +65,8 @@ const fail = (reason: ThreadCliError["reason"], detail: string) =>
 
 /**
  * The single status word a script branches on. Mirrors the sidebar: attention
- * states win over activity, and a sent-but-not-yet-started turn reads as
- * queued rather than as the previous turn's "completed".
+ * states win over activity, and a message queued behind (or ahead of) a run
+ * reads as queued rather than as the previous turn's "completed".
  */
 export type ThreadStatus =
   | "queued"
@@ -80,18 +79,31 @@ export type ThreadStatus =
   | "interrupted"
   | "idle";
 
-export function resolveThreadStatus(thread: OrchestrationThreadShell, now: string): ThreadStatus {
-  const phase = resolveThreadAwarenessPhase(thread);
+/** The shell fields the status and wait rules read. */
+export type ThreadStatusInput = Pick<
+  OrchestrationV2ThreadShell,
+  | "activityRunStatus"
+  | "id"
+  | "lineage"
+  | "modelSelection"
+  | "pendingBackgroundTasks"
+  | "pendingRuntimeRequest"
+  | "status"
+  | "title"
+  | "updatedAt"
+  | "latestUserMessageAt"
+>;
+
+export function resolveThreadStatus(thread: ThreadStatusInput): ThreadStatus {
+  const phase = resolveThreadAwarenessPhaseV2(thread);
   if (phase === "waiting_for_approval" || phase === "waiting_for_input" || phase === "failed") {
     return phase;
   }
-  if (phase !== "starting" && phase !== "running" && threadHasQueuedTurnStart(thread, now)) {
-    return "queued";
-  }
-  if (phase === "starting" || phase === "running" || phase === "completed") return phase;
-  if (thread.session?.status === "interrupted" || thread.latestTurn?.state === "interrupted") {
-    return "interrupted";
-  }
+  if (phase === "starting" || phase === "running") return phase;
+  // The latest run waits behind a held queue or a run that is still settling.
+  if (thread.status === "queued") return "queued";
+  if (phase === "completed") return phase;
+  if (thread.status === "interrupted" || thread.status === "cancelled") return "interrupted";
   return "idle";
 }
 
@@ -99,29 +111,37 @@ const BUSY_STATUSES: ReadonlySet<ThreadStatus> = new Set(["queued", "starting", 
 
 /**
  * Whether a waiter can return: the agent stopped or needs a human. When
- * `sentAt` is given, the thread must first show a user message at or after it,
- * so a wait issued right after a send never returns on the previous turn.
+ * `sentAfter` is given, the thread must first show a user message newer than
+ * it (the server's `latestUserMessageAt` read before sending; null when the
+ * thread had none), so a wait issued right after a send never returns on the
+ * previous turn. Both sides are server timestamps, so client clock skew does
+ * not matter.
  */
 export function isThreadSettledForWait(
-  thread: OrchestrationThreadShell,
-  now: string,
-  sentAt?: string,
+  thread: ThreadStatusInput,
+  sentAfter?: DateTime.Utc | null,
 ): boolean {
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return true;
-  if (sentAt !== undefined) {
+  const status = resolveThreadStatus(thread);
+  if (status === "waiting_for_approval" || status === "waiting_for_input") return true;
+  if (sentAfter !== undefined) {
     const latest = thread.latestUserMessageAt;
-    if (latest === null || Date.parse(latest) < Date.parse(sentAt)) return false;
+    if (latest === null) return false;
+    if (sentAfter !== null && DateTime.toEpochMillis(latest) <= DateTime.toEpochMillis(sentAfter)) {
+      return false;
+    }
   }
-  return !BUSY_STATUSES.has(resolveThreadStatus(thread, now));
+  return !BUSY_STATUSES.has(status);
 }
 
 // ---------------------------------------------------------------------------
 // Server reads
 
 const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+const formatTime = (value: DateTime.Utc | null | undefined) =>
+  value === null || value === undefined ? null : DateTime.formatIso(value);
 
 export const loadShell = (client: EnvironmentRpcClient) =>
-  client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+  client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({}).pipe(
     Stream.filterMap((item) =>
       item.kind === "snapshot" ? Result.succeed(item.snapshot) : Result.fail(item),
     ),
@@ -135,24 +155,10 @@ export const loadShell = (client: EnvironmentRpcClient) =>
   );
 
 const loadArchivedShell = (client: EnvironmentRpcClient) =>
-  client[ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]({});
+  client[ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]({});
 
-const loadThreadDetail = (client: EnvironmentRpcClient, threadId: ThreadId, turnLimit?: number) =>
-  client[ORCHESTRATION_WS_METHODS.subscribeThread]({
-    threadId,
-    ...(turnLimit === undefined ? {} : { turnLimit }),
-  }).pipe(
-    Stream.filterMap((item) =>
-      item.kind === "snapshot" ? Result.succeed(item.snapshot.thread) : Result.fail(item),
-    ),
-    Stream.runHead,
-    Effect.flatMap(
-      Option.match({
-        onNone: () => fail("thread-not-found", `Thread ${threadId} not found.`),
-        onSome: Effect.succeed,
-      }),
-    ),
-  );
+const loadThreadDetail = (client: EnvironmentRpcClient, threadId: ThreadId) =>
+  client[ORCHESTRATION_V2_WS_METHODS.getThreadProjection]({ threadId });
 
 // ---------------------------------------------------------------------------
 // Resolution
@@ -198,7 +204,7 @@ export const resolveThread = Effect.fn("cli.thread.resolve")(function* (
 
 /** Resolves a project by id, id prefix, workspace path, or exact title. */
 const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
-  shell: OrchestrationShellSnapshot,
+  shell: OrchestrationV2ShellSnapshot,
   identifier: string,
 ) {
   const path = yield* Path.Path;
@@ -254,7 +260,7 @@ const parseModelSelection = Effect.fn("cli.thread.parseModel")(function* (
  */
 const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(function* (
   client: EnvironmentRpcClient,
-  shell: OrchestrationShellSnapshot,
+  shell: OrchestrationV2ShellSnapshot,
   project: OrchestrationProjectShell,
   modelFlag: Option.Option<string>,
 ) {
@@ -262,7 +268,10 @@ const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(function* (
   const resolved = resolveProjectSettings(settings, project.id, project).settings;
   const recent = shell.threads
     .filter((thread) => thread.projectId === project.id)
-    .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    .toSorted(
+      (left, right) =>
+        DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
+    )[0];
   const fallback = resolved.defaultModelSelection ?? recent?.modelSelection ?? null;
   const modelSelection = Option.isSome(modelFlag)
     ? yield* parseModelSelection(modelFlag.value, fallback?.instanceId)
@@ -284,14 +293,13 @@ function formatModel(selection: { readonly instanceId: string; readonly model: s
 }
 
 function summarizeThread(
-  thread: OrchestrationThreadShell,
+  thread: OrchestrationV2ThreadShell,
   project: OrchestrationProjectShell | undefined,
-  now: string,
 ) {
   return {
     id: thread.id,
     title: thread.title,
-    status: resolveThreadStatus(thread, now),
+    status: resolveThreadStatus(thread),
     projectId: thread.projectId,
     projectTitle: project?.title ?? null,
     model: formatModel(thread.modelSelection),
@@ -302,41 +310,59 @@ function summarizeThread(
     archived: thread.archivedAt !== null,
     settled: thread.settledAt !== null,
     pinned: (thread.pinnedAt ?? null) !== null,
-    snoozedUntil: thread.snoozedUntil ?? null,
-    hasPendingApprovals: thread.hasPendingApprovals,
-    hasPendingUserInput: thread.hasPendingUserInput,
+    snoozedUntil: formatTime(thread.snoozedUntil),
+    hasPendingApprovals:
+      thread.pendingRuntimeRequest !== null &&
+      thread.pendingRuntimeRequest.kind !== "user_input" &&
+      thread.pendingRuntimeRequest.kind !== "auth_refresh",
+    hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
-    planProgress: thread.planProgress ?? null,
-    backgroundLiveness: thread.backgroundLiveness ?? null,
-    lastError: thread.session?.lastError ?? null,
-    pullRequests: thread.pullRequests
+    pendingBackgroundTasks: (thread.pendingBackgroundTasks ?? []).map(
+      (task) => task.description ?? task.kind,
+    ),
+    lastError: thread.lastError ?? null,
+    pullRequests: (thread.pullRequests ?? [])
       .filter((link) => link.source !== "stack-dismissed")
       .map((link) => link.url),
-    latestUserMessageAt: thread.latestUserMessageAt,
-    updatedAt: thread.updatedAt,
+    latestUserMessageAt: formatTime(thread.latestUserMessageAt),
+    updatedAt: DateTime.formatIso(thread.updatedAt),
   };
 }
 
 type ThreadSummary = ReturnType<typeof summarizeThread>;
 
-function conversationMessages(thread: OrchestrationThread) {
-  return thread.messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({
+/** User and assistant messages from the `turns` most recent user messages on. */
+function conversationMessages(projection: OrchestrationV2ThreadProjection, turns: number) {
+  const visible = projection.messages.filter(
+    (message) => message.role === "user" || message.role === "assistant",
+  );
+  const userIndexes = visible.flatMap((message, index) => (message.role === "user" ? [index] : []));
+  const start = userIndexes.length > turns ? (userIndexes[userIndexes.length - turns] ?? 0) : 0;
+  const promptContexts = new Map(
+    projection.turnItems.flatMap((item) =>
+      item.type === "user_message" && item.promptContext !== undefined
+        ? [[item.messageId, item.promptContext] as const]
+        : [],
+    ),
+  );
+  return visible.slice(start).map((message) => {
+    const promptContext = promptContexts.get(message.id);
+    return {
       id: message.id,
       role: message.role,
       text: message.text,
       streaming: message.streaming,
-      createdAt: message.createdAt,
-      appliedSkills: message.promptContext
-        ? [...message.promptContext.threadSkills, ...message.promptContext.requestSkills]
+      createdAt: DateTime.formatIso(message.createdAt),
+      appliedSkills: promptContext
+        ? [...promptContext.threadSkills, ...promptContext.requestSkills]
         : [],
-      appliedProfile: message.promptContext?.profileName ?? null,
-    }));
+      appliedProfile: promptContext?.profileName ?? null,
+    };
+  });
 }
 
 /** Assistant text produced after the latest user message: the agent's reply. */
-function latestReply(messages: ReadonlyArray<OrchestrationMessage>): string {
+function latestReply(messages: ReadonlyArray<OrchestrationV2ConversationMessage>): string {
   const lastUserIndex = messages.findLastIndex((message) => message.role === "user");
   return messages
     .slice(lastUserIndex + 1)
@@ -345,15 +371,74 @@ function latestReply(messages: ReadonlyArray<OrchestrationMessage>): string {
     .join("\n\n");
 }
 
-function threadAttention(thread: OrchestrationThread) {
-  const pending = derivePendingRequests(thread.activities);
-  const plan = thread.proposedPlans
-    .filter((entry) => entry.implementedAt === null)
-    .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+/**
+ * Pending runtime requests, oldest first, with the detail their turn items
+ * carry: approvals (anything but a question or an auth refresh) and questions.
+ */
+function pendingRequests(projection: OrchestrationV2ThreadProjection) {
+  const pending = projection.runtimeRequests
+    .filter((request) => request.status === "pending" && request.kind !== "auth_refresh")
+    .toSorted(
+      (left, right) =>
+        DateTime.toEpochMillis(left.createdAt) - DateTime.toEpochMillis(right.createdAt),
+    );
+  const approvals = pending
+    .filter((request) => request.kind !== "user_input")
+    .map((request) => {
+      const item = projection.turnItems.find(
+        (candidate) => candidate.type === "approval_request" && candidate.requestId === request.id,
+      );
+      const prompt = item?.type === "approval_request" ? item.prompt : undefined;
+      return {
+        requestId: request.id,
+        requestKind: request.kind,
+        detail: prompt === undefined || prompt.trim().length === 0 ? null : prompt.trim(),
+      };
+    });
+  const userInputs = pending
+    .filter((request) => request.kind === "user_input")
+    .map((request) => {
+      const item = projection.turnItems.find(
+        (candidate) =>
+          candidate.type === "user_input_request" && candidate.requestId === request.id,
+      );
+      return {
+        requestId: request.id,
+        // Only questions the server can close with a message reply may be dismissed.
+        dismissible: request.responseCapability.type === "message",
+        questions: (item?.type === "user_input_request" ? item.questions : []).map((question) => ({
+          id: question.id,
+          question: question.question,
+          options: question.options.map((option) => ({ label: option.label })),
+          multiSelect: question.multiSelect ?? false,
+        })),
+      };
+    });
+  return { approvals, userInputs };
+}
+
+function threadAttention(projection: OrchestrationV2ThreadProjection) {
+  const pending = pendingRequests(projection);
+  const plan = projection.plans.findLast(
+    (entry) =>
+      entry.kind === "proposed_plan" && (entry.status === "draft" || entry.status === "active"),
+  );
+  const planItem =
+    plan === undefined
+      ? undefined
+      : projection.turnItems.findLast(
+          (item) => item.type === "proposed_plan" && item.planId === plan.id,
+        );
+  const markdown =
+    planItem?.type === "proposed_plan"
+      ? planItem.markdown
+      : plan?.kind === "proposed_plan"
+        ? plan.markdown
+        : "";
   return {
     pendingApprovals: pending.approvals,
     pendingUserInputs: pending.userInputs,
-    proposedPlan: plan ? { id: plan.id, markdown: plan.planMarkdown } : null,
+    proposedPlan: plan ? { id: plan.id, markdown } : null,
   };
 }
 
@@ -399,16 +484,19 @@ function formatAttention(attention: ReturnType<typeof threadAttention>): Readonl
 
 /**
  * Follows the shell stream until the thread settles (see
- * `isThreadSettledForWait`). Event-driven: every shell upsert re-evaluates the
+ * `isThreadSettledForWait`). Event-driven: every shell update re-evaluates the
  * thread, so there is no polling interval to tune.
  */
 const waitForThread = Effect.fn("cli.thread.wait")(function* (
   client: EnvironmentRpcClient,
   threadId: ThreadId,
-  options: { readonly sentAt?: string; readonly timeout: Option.Option<Duration.Duration> },
+  options: {
+    readonly sentAfter?: DateTime.Utc | null;
+    readonly timeout: Option.Option<Duration.Duration>;
+  },
 ) {
-  let current: OrchestrationThreadShell | undefined;
-  const settled = client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+  let current: OrchestrationV2ThreadShell | undefined;
+  const settled = client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({}).pipe(
     Stream.mapEffect((item) =>
       Effect.gen(function* () {
         if (item.kind === "snapshot") {
@@ -416,15 +504,18 @@ const waitForThread = Effect.fn("cli.thread.wait")(function* (
           if (current === undefined) {
             return yield* fail("thread-not-found", `Thread ${threadId} is not active.`);
           }
-        } else if (item.kind === "thread-upserted" && item.thread.id === threadId) {
+        } else if (item.kind === "thread.updated" && item.thread.id === threadId) {
           current = item.thread;
-        } else if (item.kind === "thread-removed" && item.threadId === threadId) {
+        } else if (
+          item.kind === "thread.removed" &&
+          item.threadId === threadId &&
+          item.location === "active"
+        ) {
           return yield* fail("thread-not-found", `Thread ${threadId} was removed.`);
         } else {
           return null;
         }
-        return current !== undefined &&
-          isThreadSettledForWait(current, yield* nowIso, options.sentAt)
+        return current !== undefined && isThreadSettledForWait(current, options.sentAfter)
           ? current
           : null;
       }),
@@ -445,7 +536,7 @@ const waitForThread = Effect.fn("cli.thread.wait")(function* (
       orElse: () =>
         fail(
           "timeout",
-          `Timed out waiting for thread ${threadId}; it is still ${current ? resolveThreadStatus(current, DateTime.formatIso(DateTime.nowUnsafe())) : "running"}.`,
+          `Timed out waiting for thread ${threadId}; it is still ${current ? resolveThreadStatus(current) : "running"}.`,
         ),
     }),
   );
@@ -456,19 +547,17 @@ const waitAndReport = Effect.fn("cli.thread.waitAndReport")(function* (
   client: EnvironmentRpcClient,
   threadId: ThreadId,
   options: {
-    readonly sentAt?: string;
+    readonly sentAfter?: DateTime.Utc | null;
     readonly timeout: Option.Option<Duration.Duration>;
     readonly json: boolean;
   },
 ) {
   const settled = yield* waitForThread(client, threadId, options);
-  const detail = yield* loadThreadDetail(client, threadId, 1);
-  const now = yield* nowIso;
+  const detail = yield* loadThreadDetail(client, threadId);
   const shell = yield* loadShell(client);
   const summary = summarizeThread(
     settled,
     shell.projects.find((project) => project.id === settled.projectId),
-    now,
   );
   const reply = latestReply(detail.messages);
   const attention = threadAttention(detail);
@@ -553,9 +642,45 @@ const messageArgument = Argument.String("message").pipe(
   Argument.variadic(),
 );
 
-/** Runs a handler against the live server's RPC client. */
-const dispatch = (client: EnvironmentRpcClient, command: ClientOrchestrationCommand) =>
-  client[ORCHESTRATION_WS_METHODS.dispatchCommand](command);
+/** Dispatches one orchestration command on the live server. */
+const dispatch = (client: EnvironmentRpcClient, command: OrchestrationV2Command) =>
+  client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](command);
+
+/** Provenance of messages the CLI sends: a user, acting through this host. */
+const CLI_PROVENANCE = { createdBy: "user", creationSource: "server" } as const;
+
+/**
+ * Applies the runtime and interaction modes a turn asks for. V2 keeps them on
+ * the thread rather than on each message, so a changed mode is set first.
+ */
+const applyThreadModes = Effect.fn("cli.thread.applyModes")(function* (
+  client: EnvironmentRpcClient,
+  thread: Pick<OrchestrationV2ThreadShell, "id" | "runtimeMode" | "interactionMode">,
+  modes: {
+    readonly runtimeMode: Option.Option<RuntimeMode>;
+    readonly interactionMode: Option.Option<ProviderInteractionMode>;
+  },
+) {
+  if (Option.isSome(modes.runtimeMode) && modes.runtimeMode.value !== thread.runtimeMode) {
+    yield* dispatch(client, {
+      type: "thread.runtime-mode.set",
+      commandId: CommandId.make(newId()),
+      threadId: thread.id,
+      runtimeMode: modes.runtimeMode.value,
+    });
+  }
+  if (
+    Option.isSome(modes.interactionMode) &&
+    modes.interactionMode.value !== thread.interactionMode
+  ) {
+    yield* dispatch(client, {
+      type: "thread.interaction-mode.set",
+      commandId: CommandId.make(newId()),
+      threadId: thread.id,
+      interactionMode: modes.interactionMode.value,
+    });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -586,12 +711,14 @@ const listCommand = Command.make("list", {
         const project = Option.isSome(flags.project)
           ? yield* resolveProject(shell, flags.project.value)
           : undefined;
-        const now = yield* nowIso;
         const projects = new Map(shell.projects.map((entry) => [entry.id, entry]));
         const summaries = source.threads
           .filter((thread) => project === undefined || thread.projectId === project.id)
-          .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .map((thread) => summarizeThread(thread, projects.get(thread.projectId), now))
+          .toSorted(
+            (left, right) =>
+              DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
+          )
+          .map((thread) => summarizeThread(thread, projects.get(thread.projectId)))
           .filter((summary) => Option.isNone(flags.status) || summary.status === flags.status.value)
           .slice(0, Math.max(0, flags.limit));
         if (flags.json) return yield* printJson(summaries);
@@ -618,9 +745,9 @@ const showCommand = Command.make("show", {
     withClient(
       Effect.fn("cli.thread.show")(function* (client, flags) {
         const { thread, project } = yield* resolveThread(client, flags.thread);
-        const detail = yield* loadThreadDetail(client, thread.id, Math.max(1, flags.turns));
-        const summary = summarizeThread(thread, project, yield* nowIso);
-        const messages = conversationMessages(detail);
+        const detail = yield* loadThreadDetail(client, thread.id);
+        const summary = summarizeThread(thread, project);
+        const messages = conversationMessages(detail, Math.max(1, flags.turns));
         const attention = threadAttention(detail);
         if (flags.json) return yield* printJson({ thread: summary, messages, ...attention });
         const lines = [
@@ -692,47 +819,37 @@ const newCommand = Command.make("new", {
         const runtimeMode = Option.getOrElse(flags.runtimeMode, () => defaults.runtimeMode);
         const interactionMode = Option.getOrElse(flags.mode, () => "default" as const);
         const title = Option.getOrElse(flags.title, () => threadTitleFromPrompt(text));
-        const threadId = ThreadId.make(newId());
-        const createdAt = yield* nowIso;
-        yield* dispatch(client, {
-          type: "thread.turn.start",
+        const launched = yield* client[ORCHESTRATION_V2_WS_METHODS.launchThread]({
           commandId: CommandId.make(newId()),
-          threadId,
-          message: { messageId: MessageId.make(newId()), role: "user", text, attachments: [] },
+          creationSource: CLI_PROVENANCE.creationSource,
+          threadId: ThreadId.make(newId()),
+          projectId: project.id,
+          title,
+          // Without an explicit title the server refines the prompt-derived one.
+          generateTitle: Option.isNone(flags.title),
           modelSelection: library.modelSelection,
-          ...libraryTurnFields(library),
-          titleSeed: title,
           runtimeMode,
           interactionMode,
-          bootstrap: {
-            createThread: {
-              projectId: project.id,
-              title,
-              modelSelection: library.modelSelection,
-              runtimeMode,
-              interactionMode,
-              branch: Option.getOrNull(flags.worktree),
-              worktreePath: null,
-              createdAt,
-            },
-            ...(Option.isSome(flags.worktree)
-              ? {
-                  prepareWorktree: {
-                    projectCwd: project.workspaceRoot,
-                    baseBranch: flags.worktree.value,
-                    branch: buildTemporaryWorktreeBranchName((bytes) =>
-                      NodeCrypto.randomBytes(bytes).toString("hex"),
-                    ),
-                  },
-                  runSetupScript: true,
-                }
-              : {}),
+          workspaceStrategy: Option.isSome(flags.worktree)
+            ? {
+                type: "worktree",
+                baseRef: flags.worktree.value,
+                branch: buildTemporaryWorktreeBranchName((bytes) =>
+                  NodeCrypto.randomBytes(bytes).toString("hex"),
+                ),
+              }
+            : { type: "root" },
+          initialMessage: {
+            messageId: MessageId.make(newId()),
+            text,
+            attachments: [],
+            ...libraryTurnFields(library),
           },
-          createdAt,
         });
+        const threadId = launched.threadId;
         if (flags.wait) {
           return yield* waitAndReport(client, threadId, {
-            sentAt: createdAt,
+            sentAfter: null,
             timeout: flags.timeout,
             json: flags.json,
           });
@@ -781,21 +898,28 @@ const sendCommand = Command.make("send", {
           skills: flags.skill,
           profile: flags.profile,
         });
-        const createdAt = yield* nowIso;
+        yield* applyThreadModes(client, thread, {
+          runtimeMode: flags.runtimeMode,
+          interactionMode: flags.mode,
+        });
+        // Server time of the newest user message before this one, for --wait.
+        const sentAfter = thread.latestUserMessageAt;
+        // Starts a run when the agent is idle; otherwise queues it as the next turn.
         yield* dispatch(client, {
-          type: "thread.turn.start",
+          type: "message.dispatch",
+          ...CLI_PROVENANCE,
           commandId: CommandId.make(newId()),
           threadId: thread.id,
-          message: { messageId: MessageId.make(newId()), role: "user", text, attachments: [] },
+          messageId: MessageId.make(newId()),
+          text,
+          attachments: [],
           modelSelection: library.modelSelection,
           ...libraryTurnFields(library),
-          runtimeMode: Option.getOrElse(flags.runtimeMode, () => thread.runtimeMode),
-          interactionMode: Option.getOrElse(flags.mode, () => thread.interactionMode),
-          createdAt,
+          dispatchMode: { type: "start_immediately" },
         });
         if (flags.wait) {
           return yield* waitAndReport(client, thread.id, {
-            sentAt: createdAt,
+            sentAfter,
             timeout: flags.timeout,
             json: flags.json,
           });
@@ -843,8 +967,8 @@ const approveCommand = Command.make("approve", {
     withClient(
       Effect.fn("cli.thread.approve")(function* (client, flags) {
         const { thread } = yield* resolveThread(client, flags.thread);
-        const detail = yield* loadThreadDetail(client, thread.id, 1);
-        const { approvals } = derivePendingRequests(detail.activities);
+        const detail = yield* loadThreadDetail(client, thread.id);
+        const { approvals } = pendingRequests(detail);
         const requestId = Option.getOrUndefined(flags.request);
         const approval =
           requestId === undefined
@@ -857,12 +981,11 @@ const approveCommand = Command.make("approve", {
           );
         }
         yield* dispatch(client, {
-          type: "thread.approval.respond",
+          type: "runtime-request.respond",
           commandId: CommandId.make(newId()),
           threadId: thread.id,
           requestId: approval.requestId,
           decision: flags.decision,
-          createdAt: yield* nowIso,
         });
         yield* Console.log(`Responded ${flags.decision} to ${approval.requestId}.`);
       }),
@@ -893,8 +1016,8 @@ const answerCommand = Command.make("answer", {
     withClient(
       Effect.fn("cli.thread.answer")(function* (client, flags) {
         const { thread } = yield* resolveThread(client, flags.thread);
-        const detail = yield* loadThreadDetail(client, thread.id, 1);
-        const { userInputs } = derivePendingRequests(detail.activities);
+        const detail = yield* loadThreadDetail(client, thread.id);
+        const { userInputs } = pendingRequests(detail);
         const requestId = Option.getOrUndefined(flags.request);
         const request =
           requestId === undefined
@@ -906,7 +1029,6 @@ const answerCommand = Command.make("answer", {
             `Thread ${thread.id} has no matching pending question.`,
           );
         }
-        const createdAt = yield* nowIso;
         if (flags.dismiss) {
           if (!request.dismissible) {
             return yield* fail(
@@ -919,7 +1041,6 @@ const answerCommand = Command.make("answer", {
             commandId: CommandId.make(newId()),
             threadId: thread.id,
             requestId: request.requestId,
-            createdAt,
           });
           return yield* Console.log(`Dismissed ${request.requestId}.`);
         }
@@ -951,12 +1072,11 @@ const answerCommand = Command.make("answer", {
           answers[question.id] = question.multiSelect ? values : values.join(" ");
         }
         yield* dispatch(client, {
-          type: "thread.user-input.respond",
+          type: "runtime-request.respond",
           commandId: CommandId.make(newId()),
           threadId: thread.id,
           requestId: request.requestId,
           answers,
-          createdAt,
         });
         yield* Console.log(`Answered ${request.requestId}.`);
       }),
@@ -964,15 +1084,18 @@ const answerCommand = Command.make("answer", {
   ),
 );
 
-/** A command that dispatches one thread-scoped orchestration command. */
-const simpleThreadCommand = <const Name extends string>(
+/** A command that dispatches thread-scoped orchestration commands. */
+const simpleThreadCommand = <const Name extends string, E = never>(
   name: Name,
   description: string,
   build: (input: {
-    readonly thread: OrchestrationThreadShell;
+    readonly client: EnvironmentRpcClient;
+    readonly thread: OrchestrationV2ThreadShell;
     readonly commandId: CommandId;
-    readonly createdAt: string;
-  }) => ClientOrchestrationCommand,
+  }) =>
+    | OrchestrationV2Command
+    | ReadonlyArray<OrchestrationV2Command>
+    | Effect.Effect<ReadonlyArray<OrchestrationV2Command>, E>,
   done: string,
 ) =>
   Command.make(name, { ...environmentTargetFlags, thread: threadArgument }).pipe(
@@ -981,10 +1104,13 @@ const simpleThreadCommand = <const Name extends string>(
       withClient(
         Effect.fn(`cli.thread.${name}`)(function* (client, flags) {
           const { thread } = yield* resolveThread(client, flags.thread);
-          yield* dispatch(
-            client,
-            build({ thread, commandId: CommandId.make(newId()), createdAt: yield* nowIso }),
-          );
+          const built = build({ client, thread, commandId: CommandId.make(newId()) });
+          const commands = Effect.isEffect(built)
+            ? yield* built
+            : Array.isArray(built)
+              ? built
+              : [built as OrchestrationV2Command];
+          for (const command of commands) yield* dispatch(client, command);
           yield* Console.log(`${done} ${thread.id}.`);
         }),
       ),
@@ -994,25 +1120,42 @@ const simpleThreadCommand = <const Name extends string>(
 const interruptCommand = simpleThreadCommand(
   "interrupt",
   "Stop the agent's current turn.",
-  ({ thread, commandId, createdAt }) => ({
-    type: "thread.turn.interrupt",
-    commandId,
-    threadId: thread.id,
-    ...(thread.session?.activeTurnId ? { turnId: thread.session.activeTurnId } : {}),
-    createdAt,
-  }),
+  ({ thread, commandId }) => {
+    // Background work still running after the latest run settled is stopped
+    // through that run, as the composer's Stop button does.
+    const runId: RunId | null =
+      thread.activeRunId ??
+      ((thread.pendingBackgroundTasks ?? []).length > 0 ? thread.latestRunId : null);
+    if (runId === null) {
+      return Effect.fail(
+        new ThreadCliError({
+          reason: "invalid-input",
+          detail: `Thread ${thread.id} has no running turn to interrupt.`,
+        }),
+      );
+    }
+    return Effect.succeed([
+      { type: "run.interrupt", commandId, threadId: thread.id, runId, holdQueue: true } as const,
+    ]);
+  },
   "Interrupted",
 );
 
 const stopCommand = simpleThreadCommand(
   "stop",
   "Stop the thread's provider session.",
-  ({ thread, commandId, createdAt }) => ({
-    type: "thread.session.stop",
-    commandId,
-    threadId: thread.id,
-    createdAt,
-  }),
+  ({ client, thread, commandId }) =>
+    loadThreadDetail(client, thread.id).pipe(
+      Effect.map((projection) =>
+        projection.providerSessions.map((session): OrchestrationV2Command => ({
+          type: "provider-session.detach",
+          commandId: CommandId.make(`${commandId}:detach:${session.id}`),
+          threadId: thread.id,
+          providerSessionId: session.id,
+          reason: "client-requested",
+        })),
+      ),
+    ),
   "Stopped",
 );
 
@@ -1116,7 +1259,7 @@ const renameCommand = Command.make("rename", {
         const title = flags.title.trim();
         if (title.length === 0) return yield* fail("invalid-input", "Title cannot be empty.");
         yield* dispatch(client, {
-          type: "thread.meta.update",
+          type: "thread.metadata.update",
           commandId: CommandId.make(newId()),
           threadId: thread.id,
           title,

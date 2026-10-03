@@ -1,12 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { EnvironmentThreadShell } from "./state/models.ts";
-import {
-  EnvironmentId,
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-  type OrchestrationSession,
-} from "@t3tools/contracts";
+import type { EnvironmentThreadShell, ThreadRuntimeSummary } from "./state/models.ts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 
 import {
   boardProjectKey,
@@ -34,13 +28,14 @@ function thread(
     interactionMode: "default",
     branch: "feat/board",
     worktreePath: null,
-    latestTurn: null,
+    latestRun: null,
+    runtime: null,
+    pendingBackgroundTasks: [],
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     archivedAt: null,
     settledOverride: null,
     settledAt: null,
-    session: null,
     latestUserMessageAt: null,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
@@ -49,17 +44,20 @@ function thread(
   } as EnvironmentThreadShell;
 }
 
-function session(status: OrchestrationSession["status"]): OrchestrationSession {
+function runtime(status: ThreadRuntimeSummary["status"]): ThreadRuntimeSummary {
   return {
-    threadId: ThreadId.make("same-id"),
     status,
+    activeRunId: status === "idle" ? null : RunId.make("run-1"),
+    providerInstanceId: ProviderInstanceId.make("codex_work"),
     providerName: null,
-    runtimeMode: "full-access",
-    activeTurnId: null,
-    lastError: status === "error" ? "private provider output" : null,
+    lastError: status === "failed" ? "private provider output" : null,
     updatedAt: "2026-01-06T00:00:00.000Z",
   };
 }
+
+const backgroundTask = {
+  kind: "command",
+} as unknown as EnvironmentThreadShell["pendingBackgroundTasks"][number];
 
 const filters = (overrides: Partial<AgentBoardFilters> = {}): AgentBoardFilters => ({
   ...EMPTY_AGENT_BOARD_FILTERS,
@@ -131,18 +129,18 @@ function input(
 
 describe("buildAgentBoard", () => {
   it("places every display state in its column and preserves scoped IDs", () => {
-    const running = session("running");
+    const running = runtime("running");
     const model = buildAgentBoard(
       input(
         [
           thread("same-id", "env-a", { hasPendingApprovals: true }),
-          thread("same-id", "env-b", { session: running }),
+          thread("same-id", "env-b", { runtime: running }),
           thread("review", "env-a", { hasActionableProposedPlan: true }),
           thread("done", "env-a", {
             settledOverride: "settled",
             settledAt: "2026-01-04T00:00:00.000Z",
           }),
-          thread("broken", "env-a", { session: session("error") }),
+          thread("broken", "env-a", { runtime: runtime("failed") }),
           thread("idle", "env-a"),
         ],
         { onlyActive: false },
@@ -254,7 +252,7 @@ describe("buildAgentBoard", () => {
     const threads = Array.from({ length: 100 }, (_, index) =>
       thread(`thread-${index}`, `env-${index % 10}`, {
         hasPendingApprovals: index % 5 === 0,
-        backgroundLiveness: index % 5 === 1 ? "working" : null,
+        pendingBackgroundTasks: index % 5 === 1 ? [backgroundTask] : [],
       }),
     );
     const model = buildAgentBoard({ ...input([]), threads });
@@ -273,8 +271,8 @@ describe("buildAgentBoard", () => {
   it("reacts to shell upserts without changing filters or requiring detail data", () => {
     const selectedFilters = { environmentIds: ["env-a"] };
     const working = thread("live", "env-a", {
-      session: session("running"),
-      backgroundLiveness: "working",
+      runtime: runtime("running"),
+      pendingBackgroundTasks: [backgroundTask],
     });
     const first = buildAgentBoard(input([working], selectedFilters));
     expect(first.columns.working).toHaveLength(1);
@@ -290,11 +288,11 @@ describe("buildAgentBoard", () => {
         [
           {
             ...working,
-            session: session("ready"),
-            backgroundLiveness: null,
-            latestTurn: {
-              turnId: "turn-1",
-              state: "completed",
+            runtime: runtime("idle"),
+            pendingBackgroundTasks: [],
+            latestRun: {
+              runId: RunId.make("run-1"),
+              status: "completed",
               requestedAt: "2026-01-06T00:00:00.000Z",
               startedAt: "2026-01-06T00:01:00.000Z",
               completedAt: "2026-01-06T00:02:00.000Z",
@@ -308,7 +306,7 @@ describe("buildAgentBoard", () => {
     expect(resolved.columns.settled).toHaveLength(1);
 
     const failed = buildAgentBoard(
-      input([{ ...working, session: session("error") }], selectedFilters),
+      input([{ ...working, runtime: runtime("failed") }], selectedFilters),
     );
     expect(failed.columns.issue).toHaveLength(1);
 

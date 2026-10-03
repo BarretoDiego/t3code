@@ -1,3 +1,4 @@
 export * from "./commands.ts";
 export * from "./projects.ts";
 export * from "./projectSync.ts";
+export * from "./threadTitle.ts";

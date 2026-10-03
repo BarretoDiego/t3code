@@ -11,7 +11,7 @@ import {
   ProviderInstanceId,
   ThreadHandoffId,
   ThreadId,
-  type OrchestrationEvent,
+  type OrchestrationV2StoredEvent,
   type ThreadHandoffRecord,
   type ThreadHandoffManifest,
 } from "@t3tools/contracts";
@@ -19,6 +19,7 @@ import {
   createProjectSyncFrameDecoder,
   encodeProjectSyncRecords,
 } from "@t3tools/shared/projectSyncFraming";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { applyProjectSyncRecords } from "../workspace/ProjectSyncApply.ts";
@@ -71,29 +72,39 @@ const record: ThreadHandoffRecord = {
   updatedAt: createdAt,
   failure: null,
 };
-const events: OrchestrationEvent[] = [
+const occurredAt = DateTime.makeUnsafe(createdAt);
+const events: OrchestrationV2StoredEvent[] = [
   {
     sequence: 1,
-    eventId: EventId.make("snapshot-created"),
-    aggregateKind: "thread",
-    aggregateId: threadId,
-    occurredAt: createdAt,
     commandId: null,
-    causationEventId: null,
-    correlationId: null,
-    metadata: {},
-    type: "thread.created",
-    payload: {
+    event: {
+      id: EventId.make("snapshot-created"),
       threadId,
-      projectId: ProjectId.make("backend"),
-      title: "Scheduling",
-      modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: "feature/private",
-      worktreePath: null,
-      createdAt,
-      updatedAt: createdAt,
+      occurredAt,
+      type: "thread.created",
+      payload: {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: ProjectId.make("backend"),
+        title: "Scheduling",
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "feature/private",
+        worktreePath: null,
+        activeProviderThreadId: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      },
     },
   },
 ];

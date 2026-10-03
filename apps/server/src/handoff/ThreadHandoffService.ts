@@ -6,9 +6,11 @@ import {
   ThreadHandoffDestination,
   ThreadHandoffManifest,
   ThreadHandoffError,
-  type OrchestrationEvent,
-  type OrchestrationThreadShell,
+  type OrchestrationProjectShell,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2StoredEvent,
   type ProjectId,
+  type ProviderDriverKind,
   type ThreadHandoffRequest,
   type ThreadHandoffResponse,
   type ThreadHandoffRecord,
@@ -28,15 +30,16 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { OrchestrationV2EventSinkLayerLive } from "../orchestration-v2/runtimeLayer.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
-import { ProviderAdapterRegistry } from "../provider/Services/ProviderAdapterRegistry.ts";
-import { ProviderSessionDirectory } from "../provider/Services/ProviderSessionDirectory.ts";
 import {
   issueProjectSyncExportUrl,
   issueProjectSyncImportUrl,
@@ -51,17 +54,12 @@ import {
   restoreThreadHandoffProjects,
   verifyThreadHandoffSnapshot,
 } from "./ThreadHandoffSnapshot.ts";
-import {
-  ConversationHandoffContextRef,
-  installConversationHandoffContext,
-  removeConversationHandoffContext,
-} from "./ConversationHandoffContext.ts";
 import { getNativeHandoffDriver } from "./NativeHandoffDrivers.ts";
 import { makeHandoffSafePoint } from "./HandoffSafePoint.ts";
 import { makeHandoffJournal } from "./HandoffJournal.ts";
 import { committedOwner } from "./lifecycle.ts";
 import { inspectHandoffRepository, verifyHandoffRepository } from "./HandoffRepositoryIdentity.ts";
-import { remapThreadHandoffEvents } from "./ThreadHandoffArchive.ts";
+import { latestThreadConfiguration, remapThreadHandoffEvents } from "./ThreadHandoffArchive.ts";
 
 const fail = (code: ThreadHandoffError["code"], message: string) =>
   new ThreadHandoffError({ code, message });
@@ -71,13 +69,17 @@ const normalize = (cause: unknown) =>
     ? cause
     : fail("transferFailed", cause instanceof Error ? cause.message : "Thread transfer failed.");
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: normalize });
-const carriesAttachments = (event: OrchestrationEvent) => {
-  const data = event.payload;
+/** Attachments live in environment-local storage, so they cannot travel yet. */
+const carriesAttachments = ({ event }: OrchestrationV2StoredEvent) => {
+  const data: object = event.payload;
   return (
     ("attachments" in data && Array.isArray(data.attachments) && data.attachments.length > 0) ||
     ("attachmentsByQuestionId" in data &&
       data.attachmentsByQuestionId != null &&
-      Object.values(data.attachmentsByQuestionId).some((items) => items.length > 0))
+      typeof data.attachmentsByQuestionId === "object" &&
+      Object.values(data.attachmentsByQuestionId).some(
+        (items) => Array.isArray(items) && items.length > 0,
+      ))
   );
 };
 function measure<A, E, R>(
@@ -102,30 +104,14 @@ function measure<A, E, R>(
     );
   });
 }
-function latestConfiguration(events: readonly OrchestrationEvent[]) {
-  let configuration: Pick<OrchestrationThreadShell, "modelSelection" | "runtimeMode"> | undefined;
-  for (const event of events) {
-    if (event.type === "thread.created")
-      configuration = {
-        modelSelection: event.payload.modelSelection,
-        runtimeMode: event.payload.runtimeMode,
-      };
-    else if (configuration && event.type === "thread.meta-updated" && event.payload.modelSelection)
-      configuration = { ...configuration, modelSelection: event.payload.modelSelection };
-    else if (configuration && event.type === "thread.runtime-mode-set")
-      configuration = { ...configuration, runtimeMode: event.payload.runtimeMode };
-  }
-  if (!configuration)
-    throw fail("verificationFailed", "Transferred history has no thread configuration.");
-  return configuration;
+function latestConfiguration(events: readonly OrchestrationV2StoredEvent[]) {
+  return latestThreadConfiguration(events.map((stored) => stored.event));
 }
 const Pending = Schema.Struct({
   destination: ThreadHandoffDestination,
   manifest: Schema.optional(ThreadHandoffManifest),
   ready: Schema.Boolean,
   nativeInstalled: Schema.Boolean,
-  context: Schema.optional(ConversationHandoffContextRef),
-  destinationResumeCursor: Schema.optional(Schema.Unknown),
 });
 type Pending = typeof Pending.Type;
 const decodePending = Schema.decodeUnknownSync(Schema.fromJsonString(Pending));
@@ -150,30 +136,106 @@ export class ThreadHandoffService extends Context.Service<
   }
 >()("t3/handoff/ThreadHandoffService") {}
 
+/** The thread facts a handoff needs, read from the V2 projection. */
+export interface HandoffThread {
+  readonly id: ThreadId;
+  readonly projectId: ProjectId;
+  readonly worktreePath: string | null;
+  readonly providerInstanceId: ProviderInstanceId;
+  /** The root provider thread carrying the conversation, if one exists. */
+  readonly providerThread: {
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly driver: ProviderDriverKind;
+    readonly nativeThreadId: string | null;
+  } | null;
+}
+
+const toHandoffError = (cause: unknown) => normalize(cause);
+
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const secretStore = yield* ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const settings = yield* ServerSettingsService;
-  const query = yield* ProjectionSnapshotQuery;
-  const engine = yield* OrchestrationEngineService;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const sql = yield* SqlClient.SqlClient;
   const instances = yield* ProviderInstanceRegistry;
-  const adapters = yield* ProviderAdapterRegistry;
-  const directory = yield* ProviderSessionDirectory;
   const journal = yield* makeHandoffJournal;
   const safePoint = yield* makeHandoffSafePoint;
   const changes = yield* PubSub.unbounded<ThreadHandoffRecord>();
+  const getThread = Effect.fn("ThreadHandoff.getThread")(function* (threadId: ThreadId) {
+    const shell = yield* projections.getThreadShell(threadId);
+    if (shell === null) return Option.none<HandoffThread>();
+    const records = yield* projections.getThreadRecords(threadId, ["providerThreads"]);
+    const providerThread = records.providerThreads.find(
+      (candidate) => candidate.id === shell.activeProviderThreadId,
+    );
+    return Option.some<HandoffThread>({
+      id: shell.id,
+      projectId: shell.projectId,
+      worktreePath: shell.worktreePath,
+      providerInstanceId: shell.providerInstanceId,
+      providerThread: providerThread
+        ? {
+            providerInstanceId: providerThread.providerInstanceId,
+            driver: providerThread.driver,
+            nativeThreadId: providerThread.nativeThreadRef?.nativeId ?? null,
+          }
+        : null,
+    });
+  });
   return createThreadHandoffService({
     changes,
     config,
     environmentId,
     settings,
-    query,
-    engine,
+    query: {
+      getThread: (threadId) => getThread(threadId).pipe(Effect.mapError(toHandoffError)),
+      getProject: (projectId) => projects.getShell(projectId).pipe(Effect.mapError(toHandoffError)),
+    },
+    history: {
+      read: ({ threadId, throughSequence }) =>
+        eventSink.latestSequence({ threadId }).pipe(
+          Effect.flatMap((latest) => {
+            const through = throughSequence ?? latest;
+            return through <= 0
+              ? Effect.succeed([])
+              : eventSink.stream({ threadId, afterSequence: 0 }).pipe(
+                  Stream.takeUntil((stored) => stored.sequence >= through),
+                  Stream.filter((stored) => stored.sequence <= through),
+                  Stream.runCollect,
+                );
+          }),
+          Effect.map((events): ReadonlyArray<OrchestrationV2StoredEvent> => Array.from(events)),
+          Effect.mapError(toHandoffError),
+        ),
+      importThread: ({ threadId, events, record }) =>
+        sql
+          .withTransaction(
+            Effect.gen(function* () {
+              if ((yield* projections.getThreadShell(threadId)) !== null)
+                return yield* fail(
+                  "conflict",
+                  "Destination thread already exists; reverse handoff replacement is not supported yet.",
+                );
+              // Ownership and history commit together: a crash leaves either
+              // the reservation or the activated thread, never one without the other.
+              yield* journal.acceptIncoming(record);
+              yield* eventSink.write({ events });
+              const restored = yield* projections.getThreadShell(threadId);
+              if (!restored || restored.deletedAt !== null)
+                return yield* fail(
+                  "verificationFailed",
+                  "Handoff history must restore a live thread.",
+                );
+            }),
+          )
+          .pipe(Effect.mapError(toHandoffError)),
+    },
     instances,
-    adapters,
-    directory,
     journal,
     safePoint,
     secretStore,
@@ -186,19 +248,33 @@ export interface ThreadHandoffServicePorts {
   readonly config: Pick<ServerConfig["Service"], "stateDir">;
   readonly environmentId: ThreadHandoffRecord["owner"]["environmentId"];
   readonly settings: Pick<ServerSettingsService["Service"], "getSettings">;
-  readonly query: Pick<
-    ProjectionSnapshotQuery["Service"],
-    "getThreadShellById" | "getProjectShellById"
-  >;
-  readonly engine: Pick<
-    OrchestrationEngineService["Service"],
-    "readThreadEvents" | "importHandoffEvents" | "latestSequence"
-  >;
+  readonly query: {
+    readonly getThread: (
+      threadId: ThreadId,
+    ) => Effect.Effect<Option.Option<HandoffThread>, ThreadHandoffError>;
+    readonly getProject: (
+      projectId: ProjectId,
+    ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ThreadHandoffError>;
+  };
+  readonly history: {
+    /** The thread's stored events, through `throughSequence` when given. */
+    readonly read: (input: {
+      readonly threadId: ThreadId;
+      readonly throughSequence?: number;
+    }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, ThreadHandoffError>;
+    /** Accepts destination ownership and writes the remapped history atomically. */
+    readonly importThread: (input: {
+      readonly threadId: ThreadId;
+      readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+      readonly record: ThreadHandoffRecord;
+    }) => Effect.Effect<void, ThreadHandoffError>;
+  };
   readonly instances: Pick<ProviderInstanceRegistry["Service"], "getInstance">;
-  readonly adapters: Pick<ProviderAdapterRegistry["Service"], "getByInstance">;
-  readonly directory: Pick<ProviderSessionDirectory["Service"], "getBinding">;
   readonly journal: Effect.Success<typeof makeHandoffJournal>;
-  readonly safePoint: Effect.Success<typeof makeHandoffSafePoint>;
+  readonly safePoint: Pick<
+    Effect.Success<typeof makeHandoffSafePoint>,
+    "waitForCurrentTurn" | "freeze"
+  >;
   readonly secretStore: ServerSecretStore["Service"];
 }
 
@@ -212,10 +288,8 @@ export function createThreadHandoffService(
     environmentId,
     settings,
     query,
-    engine,
+    history,
     instances,
-    adapters,
-    directory,
     journal,
     safePoint,
     secretStore,
@@ -325,17 +399,18 @@ export function createThreadHandoffService(
     threadId: ThreadId,
     projectIds: readonly ProjectId[] = [],
   ) {
-    const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
-    const binding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+    const thread = Option.getOrUndefined(yield* query.getThread(threadId));
     if (!thread) return yield* fail("unsupported", "This thread no longer exists.");
     const head = yield* journal.head(threadId);
     const owner = head ? committedOwner(head) : { threadId, environmentId, generation: 0 };
     if (owner.environmentId !== environmentId)
       return yield* fail("notOwner", `Thread belongs to ${owner.environmentId}.`);
-    const providerInstanceId = binding?.providerInstanceId ?? thread.modelSelection.instanceId;
+    // The provider thread carrying the conversation owns its native session.
+    const providerInstanceId =
+      thread.providerThread?.providerInstanceId ?? thread.providerInstanceId;
     const instance = yield* instances.getInstance(providerInstanceId);
     const saved = (yield* settings.getSettings).providerInstances[providerInstanceId];
-    const provider = binding?.provider ?? instance?.driverKind ?? saved?.driver;
+    const provider = thread.providerThread?.driver ?? instance?.driverKind ?? saved?.driver;
     if (!provider) return yield* fail("unsupported", "Source provider identity is unavailable.");
     const status = instance
       ? yield* instance.snapshot.refresh.pipe(Effect.orElseSucceed(() => undefined))
@@ -345,16 +420,17 @@ export function createThreadHandoffService(
       stateDir: config.stateDir,
       threadId,
     });
+    const nativeThreadId = thread.providerThread?.nativeThreadId;
     const sessionId =
-      driver && binding?.resumeCursor
+      driver && nativeThreadId
         ? yield* Effect.try({
-            try: () => driver.sessionIdFromCursor(binding.resumeCursor),
+            try: () => driver.sessionIdFromCursor({ resume: nativeThreadId }),
             catch: normalize,
           }).pipe(Effect.catch(() => Effect.succeed(undefined)))
         : undefined;
     const repositories: NonNullable<ThreadHandoffSource["repositories"]>[number][] = [];
     for (const projectId of new Set([thread.projectId, ...projectIds])) {
-      const project = Option.getOrUndefined(yield* query.getProjectShellById(projectId));
+      const project = Option.getOrUndefined(yield* query.getProject(projectId));
       if (!project) return yield* fail("incompatible", "Source project no longer exists.");
       const cwd =
         projectId === thread.projectId
@@ -390,12 +466,9 @@ export function createThreadHandoffService(
     )
       return yield* fail("incompatible", "Map each source repository to a destination project.");
     const existing = Option.getOrUndefined(
-      yield* query.getThreadShellById(destination.source.owner.threadId),
+      yield* query.getThread(destination.source.owner.threadId),
     );
-    const binding = Option.getOrUndefined(
-      yield* directory.getBinding(destination.source.owner.threadId),
-    );
-    if (existing || binding)
+    if (existing)
       return yield* fail(
         "conflict",
         "Destination already contains this thread. Replacing a previous execution copy is not supported yet.",
@@ -446,9 +519,7 @@ export function createThreadHandoffService(
     }
     const projects: ThreadHandoffDestination["projects"][number][] = [];
     for (const mapping of destination.projects) {
-      const project = Option.getOrUndefined(
-        yield* query.getProjectShellById(mapping.destinationProjectId),
-      );
+      const project = Option.getOrUndefined(yield* query.getProject(mapping.destinationProjectId));
       if (!project) return yield* fail("incompatible", "A destination project is missing.");
       const facts = destination.source.repositories?.find(
         (repository) => repository.projectId === mapping.sourceProjectId,
@@ -478,9 +549,7 @@ export function createThreadHandoffService(
         (item) => item.sourceProjectId === project.projectId,
       );
       if (!mapping) return yield* fail("incompatible", "Missing destination repository mapping.");
-      const target = Option.getOrUndefined(
-        yield* query.getProjectShellById(mapping.destinationProjectId),
-      );
+      const target = Option.getOrUndefined(yield* query.getProject(mapping.destinationProjectId));
       if (!target) return yield* fail("incompatible", "Destination project no longer exists.");
       destinations.push({
         projectId: project.projectId,
@@ -506,9 +575,7 @@ export function createThreadHandoffService(
       }
     });
     if (!owned) return;
-    const adapter = yield* adapters.getByInstance(pending.destination.providerInstanceId);
-    if (yield* adapter.hasSession(pending.destination.source.owner.threadId))
-      yield* adapter.stopSession(pending.destination.source.owner.threadId);
+    // No provider runs a prepared thread: its first session opens after activation.
     if (pending.manifest) {
       const paths = yield* destinationPaths(id, pending);
       for (const [index, destination] of paths.entries()) {
@@ -521,36 +588,9 @@ export function createThreadHandoffService(
       }
     }
     // Native installation cleanup is provider-owned; prepared stores are never
-    // removed after commit or while their native process is running.
-    if (pending.destination.transferMode === "context") {
-      let context = pending.context;
-      if (!context) {
-        if (!pending.manifest)
-          return yield* fail("verificationFailed", "Prepared conversation snapshot is missing.");
-        // Installation can reach disk before its reference reaches request.json.
-        // Rebuild only the exact verified archive to recover its owned reference.
-        const events = yield* io(() =>
-          verifyThreadHandoffSnapshot({ manifest: pending.manifest!, directory: payload(id) }),
-        );
-        context = yield* io(() =>
-          installConversationHandoffContext({
-            stateDir: config.stateDir,
-            handoffId: id,
-            threadId: pending.destination.source.owner.threadId,
-            providerInstanceId: pending.destination.providerInstanceId,
-            events,
-          }),
-        );
-      }
-      yield* io(() =>
-        removeConversationHandoffContext({
-          stateDir: config.stateDir,
-          threadId: pending.destination.source.owner.threadId,
-          providerInstanceId: pending.destination.providerInstanceId,
-          context,
-        }),
-      );
-    } else {
+    // removed after commit or while their native process is running. A
+    // conversation transfer installs nothing outside the prepared checkout.
+    if (pending.destination.transferMode !== "context") {
       const driver = yield* driverFor(pending.destination.source);
       const sessionId = pending.destination.source.sessionId;
       if (!sessionId) return yield* fail("verificationFailed", "Native session ID is missing.");
@@ -636,9 +676,7 @@ export function createThreadHandoffService(
             "Choose a different environment and map each source repository exactly once.",
           );
         for (const mapping of request.destination.projects) {
-          const project = Option.getOrUndefined(
-            yield* query.getProjectShellById(mapping.sourceProjectId),
-          );
+          const project = Option.getOrUndefined(yield* query.getProject(mapping.sourceProjectId));
           if (!project) return yield* fail("incompatible", "Source project no longer exists.");
           const facts = request.destination.source.repositories?.find(
             (repository) => repository.projectId === mapping.sourceProjectId,
@@ -650,7 +688,7 @@ export function createThreadHandoffService(
             );
           const thread =
             mapping.sourceProjectId === source.projectId
-              ? Option.getOrUndefined(yield* query.getThreadShellById(source.owner.threadId))
+              ? Option.getOrUndefined(yield* query.getThread(source.owner.threadId))
               : undefined;
           yield* io(() =>
             verifyHandoffRepository(thread?.worktreePath ?? project.workspaceRoot, facts),
@@ -664,15 +702,8 @@ export function createThreadHandoffService(
           yield* freshProvider(source.providerInstanceId);
           yield* io(() => sourceDriver.preflightSource({ sessionId }));
         }
-        const history = yield* Stream.runCollect(
-          engine.readThreadEvents({
-            threadId: source.owner.threadId,
-            fromSequenceExclusive: 0,
-            toSequenceInclusive: yield* engine.latestSequence,
-            limit: 1_000_000,
-          }),
-        );
-        if (history.some(carriesAttachments))
+        const recorded = yield* history.read({ threadId: source.owner.threadId });
+        if (recorded.some(carriesAttachments))
           return yield* fail(
             "unsupported",
             "Threads with attachments cannot be transferred yet. Source remains available.",
@@ -730,14 +761,10 @@ export function createThreadHandoffService(
           }),
         );
         record = yield* advance(record, "checkpointing");
-        const events = yield* Stream.runCollect(
-          engine.readThreadEvents({
-            threadId: source.owner.threadId,
-            fromSequenceExclusive: 0,
-            toSequenceInclusive: settled.sequence,
-            limit: 1_000_000,
-          }),
-        );
+        const events = yield* history.read({
+          threadId: source.owner.threadId,
+          throughSequence: settled.sequence,
+        });
         if (events.some(carriesAttachments))
           return yield* fail(
             "unsupported",
@@ -745,9 +772,7 @@ export function createThreadHandoffService(
           );
         const projects: Array<import("./ThreadHandoffSnapshot.ts").HandoffProjectSource> = [];
         for (const mapping of request.destination.projects) {
-          const project = Option.getOrUndefined(
-            yield* query.getProjectShellById(mapping.sourceProjectId),
-          );
+          const project = Option.getOrUndefined(yield* query.getProject(mapping.sourceProjectId));
           if (!project) return yield* fail("conflict", "Source project no longer exists.");
           const cwd =
             mapping.sourceProjectId === settled.thread.projectId
@@ -795,13 +820,13 @@ export function createThreadHandoffService(
             }),
           ),
         );
-        const binding = Option.getOrUndefined(yield* directory.getBinding(source.owner.threadId));
         const manifest = {
           ...captured,
           provider: {
             ...captured.provider,
-            ...(request.destination.transferMode !== "context"
-              ? { resumeCursor: binding?.resumeCursor }
+            // The destination resumes this native session by its identity.
+            ...(request.destination.transferMode !== "context" && source.sessionId
+              ? { resumeCursor: { resume: source.sessionId } }
               : {}),
             version: source.version,
           },
@@ -888,53 +913,21 @@ export function createThreadHandoffService(
             "notOwner",
             "Activation does not match the reserved ownership generation.",
           );
-        let pending = yield* read(record.handoffId);
+        const pending = yield* read(record.handoffId);
         const contextMode = pending.destination.transferMode === "context";
-        if (contextMode && !pending.context)
-          return yield* fail("verificationFailed", "Transferred conversation context is missing.");
-        if (!pending.ready || !pending.manifest || !engine.importHandoffEvents)
+        if (!pending.ready || !pending.manifest)
           return yield* fail("conflict", "Destination has not verified this handoff.");
         if (record.phase === "committed" || record.phase === "completed") {
-          const thread = Option.getOrUndefined(
-            yield* query.getThreadShellById(record.owner.threadId),
-          );
-          const binding = Option.getOrUndefined(yield* directory.getBinding(record.owner.threadId));
+          const thread = Option.getOrUndefined(yield* query.getThread(record.owner.threadId));
           if (
             !thread ||
-            !binding ||
-            binding.providerInstanceId !== pending.destination.providerInstanceId ||
+            thread.providerInstanceId !== pending.destination.providerInstanceId ||
             !thread.worktreePath
           )
             return yield* fail(
               "recoveryRequired",
-              "Activated ownership is missing its thread or native runtime binding.",
+              "Activated ownership is missing its thread or provider instance.",
             );
-          const adapter = yield* adapters.getByInstance(pending.destination.providerInstanceId);
-          if (!(yield* adapter.hasSession(record.owner.threadId))) {
-            const session = yield* adapter
-              .startSession({
-                threadId: record.owner.threadId,
-                provider: binding.provider,
-                providerInstanceId: pending.destination.providerInstanceId,
-                cwd: thread.worktreePath,
-                runtimeMode: thread.runtimeMode,
-                modelSelection: thread.modelSelection,
-                resumeCursor: binding.resumeCursor,
-              })
-              .pipe((effect) => measure("resumeActivatedNativeSession", record.handoffId, effect));
-            const driver = contextMode ? undefined : yield* driverFor(pending.destination.source);
-            if (
-              driver &&
-              driver.sessionIdFromCursor(session.resumeCursor) !==
-                pending.manifest!.provider.sessionId
-            ) {
-              yield* adapter.stopSession(record.owner.threadId);
-              return yield* fail(
-                "verificationFailed",
-                "Provider resumed a different native session.",
-              );
-            }
-          }
           const completed =
             record.phase === "committed" ? yield* advance(record, "completed") : record;
           yield* io(() => NodeFSP.rm(payload(record.handoffId), { recursive: true, force: true }));
@@ -948,85 +941,34 @@ export function createThreadHandoffService(
             directory: payload(record.handoffId),
           }),
         );
-        const mapped = remapThreadHandoffEvents({
-          handoffId: record.handoffId,
-          threadId: record.owner.threadId,
-          projectId: main.destinationProjectId,
-          worktreePath: main.destinationDirectory,
-          providerInstanceId: pending.destination.providerInstanceId,
-          events,
-          ...(pending.destination.modelSelection
-            ? { modelSelection: pending.destination.modelSelection }
-            : {}),
-        });
-        const configuration = yield* Effect.try({
-          try: () => latestConfiguration(mapped),
+        if (contextMode) yield* freshProvider(pending.destination.providerInstanceId, false);
+        const mapped = yield* Effect.try({
+          try: () =>
+            remapThreadHandoffEvents({
+              handoffId: record.handoffId,
+              threadId: record.owner.threadId,
+              projectId: main.destinationProjectId,
+              worktreePath: main.destinationDirectory,
+              mode: contextMode ? "context" : "native",
+              sourceProviderInstanceId: pending.destination.source.providerInstanceId,
+              providerInstanceId: pending.destination.providerInstanceId,
+              events,
+              ...(pending.destination.modelSelection
+                ? { modelSelection: pending.destination.modelSelection }
+                : {}),
+            }),
           catch: normalize,
         });
-        const adapter = yield* adapters.getByInstance(pending.destination.providerInstanceId);
-        const targetProvider = contextMode
-          ? (yield* freshProvider(pending.destination.providerInstanceId, false)).status.driver
-          : pending.manifest.provider.driver;
-        if (!(yield* adapter.hasSession(record.owner.threadId))) {
-          const session = yield* adapter
-            .startSession({
-              threadId: record.owner.threadId,
-              provider: targetProvider,
-              providerInstanceId: pending.destination.providerInstanceId,
-              cwd: main.destinationDirectory,
-              runtimeMode: configuration.runtimeMode,
-              modelSelection: {
-                ...configuration.modelSelection,
-                instanceId: pending.destination.providerInstanceId,
-              },
-              resumeCursor: contextMode
-                ? pending.destinationResumeCursor
-                : pending.manifest!.provider.resumeCursor,
-            })
-            .pipe((effect) => measure("resumeNativeSessionAfterRestart", record.handoffId, effect));
-          if (contextMode) {
-            pending = { ...pending, destinationResumeCursor: session.resumeCursor };
-            yield* save(record.handoffId, pending);
-          }
-          const driver = contextMode ? undefined : yield* driverFor(pending.destination.source);
-          if (
-            driver &&
-            driver.sessionIdFromCursor(session.resumeCursor) !==
-              pending.manifest!.provider.sessionId
-          ) {
-            yield* adapter.stopSession(record.owner.threadId);
-            return yield* fail(
-              "verificationFailed",
-              "Provider resumed a different native session.",
-            );
-          }
-        }
-        const incoming = { ...request.record, localEnvironmentId: environmentId };
-        yield* engine.importHandoffEvents({
-          threadId: record.owner.threadId,
-          events: mapped,
-          handoff: {
-            record: incoming,
-            runtime: {
-              threadId: record.owner.threadId,
-              providerName: targetProvider,
-              providerInstanceId: pending.destination.providerInstanceId,
-              adapterKey: pending.destination.providerInstanceId,
-              runtimeMode: configuration.runtimeMode,
-              status: "stopped",
-              lastSeenAt: request.record.updatedAt,
-              resumeCursor:
-                (contextMode
-                  ? pending.destinationResumeCursor
-                  : pending.manifest!.provider.resumeCursor) ?? null,
-              runtimePayload: {
-                cwd: main.destinationDirectory,
-                modelSelection: configuration.modelSelection,
-                ...(contextMode ? { handoffContext: pending.context } : {}),
-              },
-            },
-          },
-        });
+        // A native transfer resumes the transferred session on the next turn; a
+        // conversation transfer becomes a provider switch, so the orchestrator
+        // hands the conversation to a new session of the destination provider.
+        yield* history
+          .importThread({
+            threadId: record.owner.threadId,
+            events: mapped,
+            record: { ...request.record, localEnvironmentId: environmentId },
+          })
+          .pipe((effect) => measure("importThreadHistory", record.handoffId, effect));
         const activated = yield* requireRecord(record.handoffId);
         const completed =
           activated.phase === "committed" ? yield* advance(activated, "completed") : activated;
@@ -1147,7 +1089,6 @@ export function createThreadHandoffService(
             }),
           ),
         );
-        const main = paths.find((path) => path.projectId === pending.destination.source.projectId)!;
         const contextMode = pending.destination.transferMode === "context";
         const driver = contextMode ? undefined : yield* driverFor(pending.destination.source);
         let prepared = pending;
@@ -1173,19 +1114,14 @@ export function createThreadHandoffService(
             ),
           );
           prepared = { ...pending, nativeInstalled: true };
-        } else {
-          const context = yield* io(() =>
-            installConversationHandoffContext({
-              stateDir: config.stateDir,
-              handoffId: id,
-              threadId: record.owner.threadId,
-              providerInstanceId: pending.destination.providerInstanceId,
-              events,
-            }),
-          );
-          prepared = { ...pending, context };
+          yield* save(id, prepared);
+          // The adapter resumes exactly the store registered for this thread and session.
+          if (!(yield* io(() => driver.resumable({ sessionId }))))
+            return yield* fail(
+              "verificationFailed",
+              "Provider cannot resume the transferred native session.",
+            );
         }
-        yield* save(id, prepared);
         const configuration = yield* Effect.try({
           try: () => latestConfiguration(events),
           catch: normalize,
@@ -1202,32 +1138,7 @@ export function createThreadHandoffService(
             !verified.status.models.some((model) => model.slug === modelSelection.model))
         )
           return yield* fail("incompatible", "Selected destination model is no longer available.");
-        const adapter = yield* adapters.getByInstance(pending.destination.providerInstanceId);
-        const session = yield* adapter
-          .startSession({
-            threadId: record.owner.threadId,
-            provider: verified.status.driver,
-            providerInstanceId: pending.destination.providerInstanceId,
-            cwd: main.destinationDirectory,
-            runtimeMode: configuration.runtimeMode,
-            modelSelection,
-            ...(contextMode ? {} : { resumeCursor: pending.manifest!.provider.resumeCursor }),
-          })
-          .pipe((effect) =>
-            measure(contextMode ? "prepareContextSession" : "resumeNativeSession", id, effect),
-          );
-        if (
-          driver &&
-          driver.sessionIdFromCursor(session.resumeCursor) !== pending.manifest!.provider.sessionId
-        ) {
-          yield* adapter.stopSession(record.owner.threadId);
-          return yield* fail("verificationFailed", "Provider resumed a different native session.");
-        }
-        yield* save(id, {
-          ...prepared,
-          ready: true,
-          ...(contextMode ? { destinationResumeCursor: session.resumeCursor } : {}),
-        });
+        yield* save(id, { ...prepared, ready: true });
       }
       return {
         record,
@@ -1311,4 +1222,10 @@ export function createThreadHandoffService(
     );
   return { handle, watch };
 }
-export const layer = Layer.effect(ThreadHandoffService, make);
+/** Requires the running orchestrator and provider sessions; the event sink and
+ * stores are the same memoized instances the orchestration runtime uses. */
+export const layer = Layer.effect(ThreadHandoffService, make).pipe(
+  Layer.provide(
+    Layer.mergeAll(OrchestrationV2EventSinkLayerLive, ProjectionStore.layer, ProjectStore.layer),
+  ),
+);

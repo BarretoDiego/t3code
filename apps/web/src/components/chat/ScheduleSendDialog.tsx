@@ -98,8 +98,8 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
           <DialogHeader>
             <DialogTitle>Schedule send</DialogTitle>
             <DialogDescription>
-              The message waits in the queue and goes out on its own. Send now still forces it,
-              Cancel still drops it.
+              The environment holds the message and sends it on its own, even with this window
+              closed. Send it now, move it, or cancel it from the scheduled list.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel layout="stacked">

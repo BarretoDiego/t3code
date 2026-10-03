@@ -34,6 +34,7 @@ import {
 import GroupedThreadSidebar from "./GroupedSidebar";
 import LegacyThreadSidebar from "./LegacySidebar";
 import OriginalThreadSidebar from "./OriginalSidebar";
+import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
@@ -222,6 +223,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     usePanelAnimationSettings();
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
+  // Seeds server-side visited tracking from this browser's localStorage the
+  useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;

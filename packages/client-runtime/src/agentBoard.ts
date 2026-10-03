@@ -14,18 +14,18 @@ import {
 
 /**
  * Most recent timestamp on the thread's own timeline: user messages and the
- * requested/started/completed stamps of the latest turn. Drives the board's
+ * requested/started/completed stamps of the latest run. Drives the board's
  * last-activity sort; falls back to `updatedAt` at the call site when the
  * timeline carries no parseable stamp.
  */
 function threadLastActivityAt(
-  shell: Pick<EnvironmentThreadShell, "latestUserMessageAt" | "latestTurn">,
+  shell: Pick<EnvironmentThreadShell, "latestUserMessageAt" | "latestRun">,
 ): string | null {
   const candidates = [
     shell.latestUserMessageAt,
-    shell.latestTurn?.requestedAt,
-    shell.latestTurn?.startedAt,
-    shell.latestTurn?.completedAt,
+    shell.latestRun?.requestedAt,
+    shell.latestRun?.startedAt,
+    shell.latestRun?.completedAt,
   ];
   let latest: string | null = null;
   let latestTimestamp = Number.NEGATIVE_INFINITY;
@@ -232,12 +232,11 @@ function attentionFor(state: AgentOperationalState): BoardAttentionSummary | nul
 }
 
 function operationFor(thread: EnvironmentThreadShell, state: AgentOperationalState): string | null {
-  if (thread.planProgress !== null && thread.planProgress !== undefined) {
-    return thread.planProgress.step;
-  }
   if (state.kind !== "working") return null;
   if (state.reason === "monitoring") return "Monitoring";
-  if (thread.session?.status === "starting") return "Starting agent";
+  if (thread.runtime?.status === "preparing" || thread.runtime?.status === "starting") {
+    return "Starting agent";
+  }
   return state.reason === "background" ? "Background work" : "Working";
 }
 
@@ -325,13 +324,9 @@ export function buildAgentBoard(input: AgentBoardInput): AgentBoardModel {
       runtime,
       attention: attentionFor(runtime),
       currentOperation: operationFor(thread, runtime),
-      planProgress:
-        thread.planProgress == null
-          ? null
-          : {
-              completedSteps: thread.planProgress.completedSteps,
-              totalSteps: thread.planProgress.totalSteps,
-            },
+      // The v2 thread shell carries no plan step counts; the board shows
+      // progress only when a richer source provides it.
+      planProgress: null,
       lastActivityAt: threadLastActivityAt(thread) ?? thread.updatedAt,
       archived: false,
     });

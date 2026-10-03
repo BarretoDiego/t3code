@@ -42,10 +42,8 @@ import {
   validCapabilityCatalog,
   validateProviderConfiguration,
 } from "./ComputeValidation.ts";
-import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
-import { ProjectionThreadRepositoryLive } from "../persistence/Layers/ProjectionThreads.ts";
-import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
-import { ProjectionProjectRepositoryLive } from "../persistence/Layers/ProjectionProjects.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 
 const decodeJob = Schema.decodeUnknownEffect(GenerationJob);
 const decodeSnapshot = Schema.decodeUnknownEffect(ComputeProviderSnapshot);
@@ -100,8 +98,8 @@ export const makeComputeService = Effect.gen(function* () {
   const environment = yield* ServerEnvironment;
   const crypto = yield* Crypto.Crypto;
   const repository = yield* ComputeJobRepository;
-  const threads = yield* ProjectionThreadRepository;
-  const projects = yield* ProjectionProjectRepository;
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
+  const projects = yield* ProjectStore.ProjectStoreV2;
   const adapters = yield* ComputeProviderAdapterRegistry;
   const environmentId = yield* environment.getEnvironmentId;
   const directory = path.join(config.baseDir, "compute-providers");
@@ -440,21 +438,20 @@ export const makeComputeService = Effect.gen(function* () {
       request = yield* normalizeGenerationRequest(request, destination);
       if (request.context?.threadId) {
         const thread = yield* threads
-          .getById({ threadId: request.context.threadId })
+          .getThreadShell(request.context.threadId)
           .pipe(
             Effect.mapError(() => error("Could not read thread context.", "persistence-failed")),
           );
-        if (Option.isNone(thread) || thread.value.deletedAt !== null)
-          return yield* error("Compute thread not found.", "thread-not-found");
-        if (request.context.projectId && request.context.projectId !== thread.value.projectId)
+        if (thread === null) return yield* error("Compute thread not found.", "thread-not-found");
+        if (request.context.projectId && request.context.projectId !== thread.projectId)
           return yield* error("Project does not own the compute thread.", "context-mismatch");
         request = {
           ...request,
-          context: { ...request.context, projectId: thread.value.projectId },
+          context: { ...request.context, projectId: thread.projectId },
         };
       } else if (request.context?.projectId) {
         const project = yield* projects
-          .getById({ projectId: request.context.projectId })
+          .get(request.context.projectId)
           .pipe(
             Effect.mapError(() => error("Could not read project context.", "persistence-failed")),
           );
@@ -633,8 +630,8 @@ export class ComputeService extends Context.Service<ComputeService, ComputeServi
 ) {
   static readonly layer = Layer.effect(ComputeService, makeComputeService).pipe(
     Layer.provide(ComputeJobRepositoryLive),
-    Layer.provide(ProjectionThreadRepositoryLive),
-    Layer.provide(ProjectionProjectRepositoryLive),
+    Layer.provide(ProjectionStore.layer),
+    Layer.provide(ProjectStore.layer),
     Layer.provide(ComputeProviderAdapterRegistryLive),
   );
 }

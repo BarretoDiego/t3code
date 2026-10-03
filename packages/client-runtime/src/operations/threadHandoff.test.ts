@@ -496,8 +496,9 @@ test("verified destination Git objects reach both prepare requests without repla
   expect(preparations).toHaveLength(2);
 });
 
-for (const invalid of ["missing", "identity", "generation", "phase", "environment"] as const) {
-  test(`invalid activation ${invalid} acknowledgement retains committed source recovery`, async () => {
+test.each(["missing", "identity", "generation", "phase", "environment"] as const)(
+  "invalid activation %s acknowledgement retains committed source recovery",
+  async (invalid) => {
     const f = fixture();
     const request = f.deps.request;
     const deps: ThreadHandoffDeps = {
@@ -530,8 +531,8 @@ for (const invalid of ["missing", "identity", "generation", "phase", "environmen
     expect(f.calls).not.toContain("destination:reject");
     expect((await recoverThreadHandoff(f.deps, recoveryInput)).phase).toBe("completed");
     expect(f.activations()).toBe(1);
-  });
-}
+  },
+);
 
 test("moves Codex context to an explicitly selected OpenCode model without a native resume identity", async () => {
   const f = fixture();
@@ -585,8 +586,9 @@ test("moves Codex context to an explicitly selected OpenCode model without a nat
   ).toBeUndefined();
 });
 
-for (const change of ["mode", "model"] as const) {
-  test(`rejects preflight changing the requested ${change}`, async () => {
+test.each(["mode", "model"] as const)(
+  "rejects preflight changing the requested %s",
+  async (change) => {
     const f = fixture();
     const original = f.deps.request;
     const deps: ThreadHandoffDeps = {
@@ -623,5 +625,5 @@ for (const change of ["mode", "model"] as const) {
       }),
     ).rejects.toMatchObject({ code: "verificationFailed" });
     expect(f.calls).not.toContain("source:prepareSource");
-  });
-}
+  },
+);

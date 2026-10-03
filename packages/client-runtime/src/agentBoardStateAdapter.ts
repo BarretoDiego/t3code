@@ -1,4 +1,4 @@
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "./state/models.ts";
 
 /**
  * Temporary public shape expected from feat/agent-state-model.
@@ -53,15 +53,33 @@ function firstValidTimestamp(
  * The only pre-feature-1 classifier used by the Board. Its precedence is the
  * compatibility contract: direct user requests, failure, liveness, review,
  * completion/lifecycle, then quiet history.
+ *
+ * Reads the v2 presentation shell: `runtime` carries the activity-owning run
+ * status (or idle), `latestRun` the latest root run, and post-settlement
+ * background work arrives as `pendingBackgroundTasks`.
  */
 export function deriveAgentOperationalState(
-  shell: OrchestrationThreadShell,
+  shell: Pick<
+    EnvironmentThreadShell,
+    | "runtime"
+    | "latestRun"
+    | "pendingBackgroundTasks"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "hasActionableProposedPlan"
+    | "settledOverride"
+    | "settledAt"
+    | "updatedAt"
+    | "createdAt"
+  >,
 ): AgentOperationalState {
+  const runtime = shell.runtime;
+  const latestRun = shell.latestRun;
   const activityAt = firstValidTimestamp(
-    shell.session?.updatedAt,
-    shell.latestTurn?.completedAt,
-    shell.latestTurn?.startedAt,
-    shell.latestTurn?.requestedAt,
+    runtime?.updatedAt,
+    latestRun?.completedAt,
+    latestRun?.startedAt,
+    latestRun?.requestedAt,
     shell.updatedAt,
     shell.createdAt,
   );
@@ -72,41 +90,46 @@ export function deriveAgentOperationalState(
   if (shell.hasPendingUserInput) {
     return { kind: "needs-you", reason: "user-input", since: activityAt };
   }
-  if (shell.session?.status === "error") {
-    return {
-      kind: "issue",
-      reason: "session-failed",
-      since: firstValidTimestamp(shell.session.updatedAt, activityAt),
-    };
-  }
-  if (shell.latestTurn?.state === "error") {
+  if (latestRun?.status === "failed") {
     return {
       kind: "issue",
       reason: "turn-failed",
-      since: firstValidTimestamp(shell.latestTurn.completedAt, activityAt),
+      since: firstValidTimestamp(latestRun.completedAt, activityAt),
     };
   }
-  if (shell.session?.status === "running" || shell.session?.status === "starting") {
+  if (runtime?.status === "failed") {
+    return {
+      kind: "issue",
+      reason: "session-failed",
+      since: firstValidTimestamp(runtime.updatedAt, activityAt),
+    };
+  }
+  if (
+    runtime?.status === "preparing" ||
+    runtime?.status === "queued" ||
+    runtime?.status === "starting" ||
+    runtime?.status === "running" ||
+    runtime?.status === "waiting"
+  ) {
     return {
       kind: "working",
       reason: "turn",
-      since: firstValidTimestamp(shell.latestTurn?.startedAt, shell.session.updatedAt, activityAt),
+      since: firstValidTimestamp(runtime.activityStartedAt, latestRun?.startedAt, activityAt),
     };
   }
-  if (shell.backgroundLiveness === "working") {
-    return { kind: "working", reason: "background", since: activityAt };
-  }
-  if (shell.backgroundLiveness === "monitoring") {
-    return { kind: "working", reason: "monitoring", since: activityAt };
+  if (shell.pendingBackgroundTasks.length > 0) {
+    return shell.pendingBackgroundTasks.every((task) => task.kind === "monitor")
+      ? { kind: "working", reason: "monitoring", since: activityAt }
+      : { kind: "working", reason: "background", since: activityAt };
   }
   if (shell.hasActionableProposedPlan) {
     return { kind: "review", reason: "actionable-plan", since: activityAt };
   }
-  if (shell.latestTurn?.state === "completed") {
+  if (latestRun?.status === "completed") {
     return {
       kind: "settled",
       reason: "completed",
-      since: firstValidTimestamp(shell.latestTurn.completedAt, activityAt),
+      since: firstValidTimestamp(latestRun.completedAt, activityAt),
     };
   }
   if (shell.settledOverride === "settled" || shell.settledAt !== null) {

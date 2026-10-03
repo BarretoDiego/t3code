@@ -14,7 +14,6 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
 import {
   AlertCircleIcon,
   ArchiveIcon,
@@ -180,7 +179,7 @@ function useCoarseNow(enabled: boolean): number {
   return now;
 }
 
-function useSnoozeWakeTick(threads: readonly OrchestrationThreadShell[]): number {
+function useSnoozeWakeTick(threads: Parameters<typeof nextAgentBoardSnoozeWakeAt>[0]): number {
   const [tick, bumpTick] = useState(0);
   const nextWakeAt = useMemo(() => {
     void tick;
@@ -685,9 +684,7 @@ function useBoardActionController(
               environmentId: scoped.environmentId,
               input: {
                 ...scoped.input,
-                ...(shell.session?.activeTurnId != null
-                  ? { turnId: shell.session.activeTurnId }
-                  : {}),
+                ...(shell.runtime?.activeRunId != null ? { runId: shell.runtime.activeRunId } : {}),
               },
             })
           : action === "archive"

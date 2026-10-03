@@ -62,17 +62,16 @@ describe("runtime endpoint discovery", () => {
       ),
     ),
   );
-  for (const status of [401, 403, 404, 503])
-    it.effect(`reports HTTP ${status} without trusting cached models`, () =>
-      Effect.gen(function* () {
-        const driver = yield* makeEndpointDriver;
-        const result = yield* driver.discover(config, "");
-        expect(result.status).toBe(
-          status === 401 || status === 403 ? "authentication-required" : "unavailable",
-        );
-        expect(result.models).toEqual([]);
-      }).pipe(withHttp(() => new Response("", { status }))),
-    );
+  it.effect.each([401, 403, 404, 503])("reports HTTP %s without trusting cached models", (status) =>
+    Effect.gen(function* () {
+      const driver = yield* makeEndpointDriver;
+      const result = yield* driver.discover(config, "");
+      expect(result.status).toBe(
+        status === 401 || status === 403 ? "authentication-required" : "unavailable",
+      );
+      expect(result.models).toEqual([]);
+    }).pipe(withHttp(() => new Response("", { status }))),
+  );
   it.effect("parses OpenAI models and sends credentials only in headers", () =>
     Effect.gen(function* () {
       const driver = yield* makeEndpointDriver;

@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { AgentProfileId } from "./agentProfiles.ts";
 import { MiniSkillId } from "./miniSkills.ts";
 import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { ModelSelection } from "./orchestration.ts";
+import { ModelSelection } from "./modelSelection.ts";
 import { RemotePullRequestRef } from "./sourceControlHub.ts";
 
 export const AiReviewTier = Schema.Literals(["quick", "standard", "deep", "exhaustive"]);

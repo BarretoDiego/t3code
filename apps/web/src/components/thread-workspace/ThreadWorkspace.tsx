@@ -55,14 +55,11 @@ import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import {
   useProject,
-  useThreadDetail,
   useThreadRefs,
   useThreadShell,
-  useThreadStatus,
   useThreadWorkspacePruneScope,
 } from "~/state/entities";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "~/threadRoutes";
-import { resolveThreadSyncPhase } from "~/threadSync";
 import {
   closeThreadTabFromMiddleClick,
   preventThreadTabMiddleClickDefault,
@@ -682,25 +679,12 @@ function ServerThreadPane({
   readonly rightPanelHost: HTMLElement | null;
   readonly target: Extract<ThreadWorkspaceTarget, { routeKind: "server" }>;
 }) {
-  const threadRef = useMemo(
-    () => scopeThreadRef(target.environmentId, target.threadId),
-    [target.environmentId, target.threadId],
-  );
-  const shell = useThreadShell(threadRef);
-  const detail = useThreadDetail(threadRef);
-  const status = useThreadStatus(threadRef);
-  const threadSyncPhase = resolveThreadSyncPhase({
-    detailExists: detail !== null,
-    shellExists: shell !== null,
-    status,
-  });
-
+  // V2 ChatView derives its own sync phase from the thread projection.
   return (
     <ChatView
       environmentId={target.environmentId}
       threadId={target.threadId}
       routeKind="server"
-      threadSyncPhase={threadSyncPhase}
       reserveTitleBarControlInset={reserveNativeControlsInset}
     />
   );

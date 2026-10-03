@@ -7,7 +7,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
-import { ModelSelection } from "./orchestration.ts";
+import { ModelSelection } from "./modelSelection.ts";
 import { ProjectSyncManifestEntry, ProjectSyncExportEntry } from "./projectSync.ts";
 import {
   ThreadExecutionOwner,

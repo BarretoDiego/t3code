@@ -1,13 +1,10 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
-  EventId,
+  RunId,
   ThreadHandoffError,
   ThreadHandoffId,
   ThreadId,
-  TurnId,
-  type OrchestrationEvent,
-  type OrchestrationSession,
   type ThreadHandoffRecord,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -20,18 +17,14 @@ import { createHandoffSafePoint, type HandoffSafePointPorts } from "./HandoffSaf
 
 const threadId = ThreadId.make("safe-point-thread");
 const now = "2026-09-08T12:00:00.000Z";
-const stopped: OrchestrationSession = {
-  threadId,
-  status: "stopped",
-  providerName: "claudeAgent",
-  runtimeMode: "full-access",
-  activeTurnId: null,
-  lastError: null,
-  updatedAt: now,
+type Thread = {
+  readonly id: ThreadId;
+  readonly activeRunId: RunId | null;
+  readonly activityRunStatus: "running" | null;
 };
-type Thread = { readonly id: ThreadId; readonly session: OrchestrationSession };
+const idle: Thread = { id: threadId, activeRunId: null, activityRunStatus: null };
 const fixture = Effect.gen(function* () {
-  const events = yield* PubSub.unbounded<OrchestrationEvent>();
+  const changes = yield* PubSub.unbounded<void>();
   const calls: string[] = [];
   const state: { record: ThreadHandoffRecord; thread: Thread; nativeAlive: boolean } = {
     record: {
@@ -44,39 +37,29 @@ const fixture = Effect.gen(function* () {
       updatedAt: now,
       failure: null,
     },
-    thread: { id: threadId, session: stopped },
+    thread: idle,
     nativeAlive: true,
   };
-  const publishStopped = PubSub.publish(events, {
-    type: "thread.session-set",
-    sequence: 12,
-    eventId: EventId.make("stopped"),
-    aggregateKind: "thread",
-    aggregateId: threadId,
-    occurredAt: now,
-    commandId: null,
-    causationEventId: null,
-    correlationId: null,
-    metadata: {},
-    payload: { threadId, session: stopped },
+  const settle = Effect.gen(function* () {
+    state.thread = idle;
+    yield* PubSub.publish(changes, undefined);
   });
   const ports: HandoffSafePointPorts<Thread> = {
     readHandoff: () => Effect.sync(() => state.record),
     readThread: () => Effect.sync(() => Option.some(state.thread)),
-    subscribe: Effect.gen(function* () {
-      calls.push("subscribe");
-      return Stream.fromSubscription(yield* PubSub.subscribe(events));
-    }),
-    dispatchStop: () =>
+    subscribe: () =>
       Effect.gen(function* () {
-        calls.push("stop-intent");
-        state.thread = { id: threadId, session: stopped };
-        yield* publishStopped;
-        return { sequence: 11 };
+        calls.push("subscribe");
+        return Stream.fromSubscription(yield* PubSub.subscribe(changes));
       }),
     interrupt: () =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         calls.push("interrupt");
+        yield* settle;
+      }),
+    dispatchStop: () =>
+      Effect.sync(() => {
+        calls.push("stop-intent");
       }),
     stop: () =>
       Effect.sync(() => {
@@ -84,30 +67,16 @@ const fixture = Effect.gen(function* () {
         state.nativeAlive = false;
       }),
     hasSession: () => Effect.sync(() => state.nativeAlive),
-    flushDomainEvents: Effect.sync(() => {
-      calls.push("flush-domain");
-    }),
-    flushProviderEvents: Effect.sync(() => {
-      calls.push("flush-provider");
-    }),
-    drainCommands: Effect.sync(() => {
-      calls.push("commands");
-    }),
-    drainIngestion: Effect.sync(() => {
-      calls.push("ingestion");
-    }),
-    drainCheckpoints: Effect.sync(() => {
-      calls.push("checkpoints");
-    }),
-    latestSequence: Effect.succeed(12),
+    latestSequence: () => Effect.succeed(12),
   };
   const setRunning = () => {
     state.thread = {
       id: threadId,
-      session: { ...stopped, status: "running", activeTurnId: TurnId.make("turn") },
+      activeRunId: RunId.make("run-1"),
+      activityRunStatus: "running",
     };
   };
-  return { ports, calls, state, setRunning, publishStopped };
+  return { ports, calls, state, setRunning, settle };
 });
 
 it.effect(
@@ -127,13 +96,12 @@ it.effect(
               expect(f.calls).toEqual(["subscribe"]);
               expect(f.state.record.phase).toBe("preflighting");
               firstRead = false;
-              f.state.thread = { id: threadId, session: stopped };
-              yield* f.publishStopped;
+              yield* f.settle;
             }
             return Option.some(snapshot);
           }),
       });
-      expect((yield* safe.waitForCurrentTurn({ threadId })).session.status).toBe("stopped");
+      expect((yield* safe.waitForCurrentTurn({ threadId })).activeRunId).toBeNull();
       expect(f.calls).toEqual(["subscribe"]);
       expect(f.state.record.phase).toBe("preflighting");
     }),
@@ -162,54 +130,43 @@ it.effect("idle mode rejects active work without interrupting or stopping the pr
   }),
 );
 
-it.effect(
-  "freeze awaits native stop and all downstream workers before returning its snapshot",
-  () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const f = yield* fixture;
-        f.setRunning();
-        const checkpointEntered = yield* Deferred.make<void>();
-        const checkpointDone = yield* Deferred.make<void>();
-        let finished = false;
-        const safe = createHandoffSafePoint({
-          ...f.ports,
-          drainCheckpoints: Effect.gen(function* () {
-            f.calls.push("checkpoints");
-            yield* Deferred.succeed(checkpointEntered, undefined);
-            yield* Deferred.await(checkpointDone);
+it.effect("freeze interrupts, awaits the settled run and native stop before its snapshot", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.setRunning();
+      const stopEntered = yield* Deferred.make<void>();
+      const stopDone = yield* Deferred.make<void>();
+      let finished = false;
+      const safe = createHandoffSafePoint({
+        ...f.ports,
+        stop: () =>
+          Effect.gen(function* () {
+            f.calls.push("native-stop");
+            yield* Deferred.succeed(stopEntered, undefined);
+            yield* Deferred.await(stopDone);
+            f.state.nativeAlive = false;
           }),
-        });
-        const freeze = yield* safe.freeze({ threadId, mode: "interrupt" }).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              finished = true;
-            }),
-          ),
-          Effect.forkScoped,
-        );
-        yield* Deferred.await(checkpointEntered);
-        expect(finished).toBe(false);
-        expect(f.state.nativeAlive).toBe(false);
-        expect(f.calls).toEqual([
-          "interrupt",
-          "stop-intent",
-          "flush-domain",
-          "commands",
-          "native-stop",
-          "flush-provider",
-          "ingestion",
-          "checkpoints",
-        ]);
-        yield* Deferred.succeed(checkpointDone, undefined);
-        expect((yield* Fiber.join(freeze)).sequence).toBe(12);
-        expect(f.calls.slice(-4)).toEqual(["flush-domain", "ingestion", "checkpoints", "commands"]);
-        expect(finished).toBe(true);
-      }),
-    ),
+      });
+      const freeze = yield* safe.freeze({ threadId, mode: "interrupt" }).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            finished = true;
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(stopEntered);
+      expect(finished).toBe(false);
+      expect(f.calls).toEqual(["subscribe", "interrupt", "stop-intent", "native-stop"]);
+      yield* Deferred.succeed(stopDone, undefined);
+      expect((yield* Fiber.join(freeze)).sequence).toBe(12);
+      expect(finished).toBe(true);
+    }),
+  ),
 );
 
-it.effect("fails if native shutdown fails or a session survives all worker drains", () =>
+it.effect("fails if native shutdown fails or a session survives the stop", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     const failedStop = createHandoffSafePoint({
@@ -223,7 +180,6 @@ it.effect("fails if native shutdown fails or a session survives all worker drain
       code: "transferFailed",
       message: "Native shutdown failed",
     });
-    expect(f.calls).not.toContain("checkpoints");
     const alive = createHandoffSafePoint({ ...f.ports, hasSession: () => Effect.succeed(true) });
     expect(yield* Effect.flip(alive.freeze({ threadId, mode: "idle" }))).toMatchObject({
       code: "busy",
@@ -236,7 +192,10 @@ it.effect("a closed completion stream is a failure rather than permission to sna
     const f = yield* fixture;
     f.state.record = { ...f.state.record, phase: "preflighting", revision: 0 };
     f.setRunning();
-    const safe = createHandoffSafePoint({ ...f.ports, subscribe: Effect.succeed(Stream.empty) });
+    const safe = createHandoffSafePoint({
+      ...f.ports,
+      subscribe: () => Effect.succeed(Stream.empty),
+    });
     expect(yield* Effect.flip(safe.waitForCurrentTurn({ threadId }))).toMatchObject({
       code: "transferFailed",
     });
@@ -244,38 +203,11 @@ it.effect("a closed completion stream is a failure rather than permission to sna
   }),
 );
 
-it.effect("does not drain unseen provider work until the delivery barrier acknowledges", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      const delivered = yield* Deferred.make<void>();
-      const entered = yield* Deferred.make<void>();
-      const safe = createHandoffSafePoint({
-        ...f.ports,
-        flushProviderEvents: Effect.gen(function* () {
-          f.calls.push("flush-provider");
-          yield* Deferred.succeed(entered, undefined);
-          yield* Deferred.await(delivered);
-        }),
-      });
-      const pending = yield* safe.freeze({ threadId, mode: "idle" }).pipe(Effect.forkScoped);
-      yield* Deferred.await(entered);
-      expect(f.calls).not.toContain("ingestion");
-      expect(f.calls).not.toContain("checkpoints");
-      yield* Deferred.succeed(delivered, undefined);
-      expect((yield* Fiber.join(pending)).sequence).toBe(12);
-    }),
-  ),
-);
-
-it.effect("idle freeze retries a deduplicated stop receipt without requiring a new event", () =>
+it.effect("idle freeze retries a deduplicated stop without requiring a new event", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
-    const safe = createHandoffSafePoint({
-      ...f.ports,
-      dispatchStop: () => Effect.succeed({ sequence: 11 }),
-    });
-    expect((yield* safe.freeze({ threadId, mode: "idle" })).thread.session.status).toBe("stopped");
+    const safe = createHandoffSafePoint(f.ports);
+    expect((yield* safe.freeze({ threadId, mode: "idle" })).thread.activeRunId).toBeNull();
     expect((yield* safe.freeze({ threadId, mode: "idle" })).sequence).toBe(12);
     expect(f.calls.filter((call) => call === "native-stop")).toHaveLength(2);
     expect(f.calls).not.toContain("interrupt");
