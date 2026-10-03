@@ -225,7 +225,7 @@ export function areProjectPathSearchTargetsEqual(
 export function useProjectPathSearch(
   target: ProjectPathSearchTarget,
   limit: number,
-  options?: { readonly allowEmptyQuery?: boolean },
+  options?: { readonly allowEmptyQuery?: boolean; readonly includeRepositories?: boolean },
 ) {
   const allowEmptyQuery = options?.allowEmptyQuery === true;
   const normalizedTarget = useMemo(
@@ -250,6 +250,7 @@ export function useProjectPathSearch(
             cwd: debouncedTarget.cwd,
             query: debouncedTarget.query,
             limit,
+            ...(options?.includeRepositories ? { includeRepositories: true } : {}),
             ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
             ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
           },
@@ -269,7 +270,10 @@ export function useProjectPathSearch(
 }
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
-  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT, {
+    allowEmptyQuery: true,
+    includeRepositories: true,
+  });
 }
 
 interface ProjectContentSearchTarget {

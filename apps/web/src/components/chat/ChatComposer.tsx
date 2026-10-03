@@ -2450,7 +2450,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         path: entry.path,
         pathKind: entry.kind,
         label: basenameOfPath(entry.path),
-        description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+        description: entry.repository
+          ? `Repository · ${entry.path}`
+          : entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
       }));
     }
     if (composerTrigger.kind === "slash-command") {

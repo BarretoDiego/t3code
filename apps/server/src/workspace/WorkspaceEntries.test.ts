@@ -95,6 +95,86 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
     vi.restoreAllMocks();
   });
 
+  describe("repositories", () => {
+    it.effect(
+      "discovers nested repositories in a container and skips dependencies and symlinks",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir();
+          const outside = yield* makeTempDir({ git: true });
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          for (const relative of ["api", "group/web", "node_modules/dependency"]) {
+            yield* fileSystem.makeDirectory(path.join(cwd, relative), { recursive: true });
+            yield* git(path.join(cwd, relative), ["init"]);
+          }
+          yield* fileSystem.makeDirectory(path.join(cwd, "empty"));
+          if ((yield* HostProcessPlatform) !== "win32")
+            yield* fileSystem.symlink(outside, path.join(cwd, "external"));
+          const service = yield* WorkspaceEntries.WorkspaceEntries;
+          expect(yield* service.list({ cwd, repositoriesOnly: true })).toEqual({
+            entries: [
+              { path: "api", kind: "directory", repository: true },
+              { path: "group/web", kind: "directory", repository: true },
+            ],
+            truncated: false,
+          });
+          expect(
+            yield* service.search({ cwd, query: "", limit: 1, includeRepositories: true }),
+          ).toEqual({
+            entries: [{ path: "api", kind: "directory", repository: true }],
+            truncated: true,
+          });
+        }),
+    );
+    it.effect(
+      "includes the root, ignored repositories and worktrees without duplicates in mentions",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir({ git: true });
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* writeTextFile(cwd, ".gitignore", "repos/\n");
+          yield* git(cwd, ["add", ".gitignore"]);
+          yield* git(cwd, [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-m",
+            "initial",
+          ]);
+          yield* fileSystem.makeDirectory(path.join(cwd, "repos/backend"), { recursive: true });
+          yield* git(path.join(cwd, "repos/backend"), ["init"]);
+          yield* git(cwd, ["worktree", "add", "--detach", "repos/worktree"]);
+          const service = yield* WorkspaceEntries.WorkspaceEntries;
+          const result = yield* service.list({ cwd, repositoriesOnly: true });
+          expect(result.entries.map((entry) => entry.path)).toEqual([
+            ".",
+            "repos/backend",
+            "repos/worktree",
+          ]);
+          const mentions = yield* service.search({
+            cwd,
+            query: "backend",
+            limit: 20,
+            includeRepositories: true,
+          });
+          expect(mentions.entries.filter((entry) => entry.path === "repos/backend")).toEqual([
+            { path: "repos/backend", kind: "directory", repository: true },
+          ]);
+          yield* fileSystem.makeDirectory(path.join(cwd, "new-repo"));
+          yield* git(path.join(cwd, "new-repo"), ["init"]);
+          expect(
+            (yield* service.list({ cwd, repositoriesOnly: true })).entries.some(
+              (entry) => entry.path === "new-repo",
+            ),
+          ).toBe(true);
+        }),
+    );
+  });
+
   describe("list", () => {
     it.effect("lists immediate children including ignored and empty directories", () =>
       Effect.gen(function* () {

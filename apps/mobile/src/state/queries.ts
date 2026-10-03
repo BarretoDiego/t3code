@@ -330,15 +330,14 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, COMPOSER_PATH_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
-    debouncedTarget.environmentId !== null &&
-      debouncedTarget.cwd !== null &&
-      debouncedTarget.query.length > 0
+    debouncedTarget.environmentId !== null && debouncedTarget.cwd !== null && target.query !== null
       ? projectEnvironment.searchEntries({
           environmentId: debouncedTarget.environmentId,
           input: {
             cwd: debouncedTarget.cwd,
             query: debouncedTarget.query,
             limit: COMPOSER_PATH_SEARCH_LIMIT,
+            includeRepositories: true,
           },
         })
       : null,

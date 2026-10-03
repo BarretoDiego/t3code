@@ -11,6 +11,7 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget): Compose
     entries: state.entries.map((entry) => ({
       path: entry.path,
       kind: entry.kind,
+      ...(entry.repository ? { repository: true } : {}),
     })),
     error: state.error,
     isPending: state.isPending,

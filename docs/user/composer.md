@@ -231,6 +231,11 @@ Markdown with a link in place of each chip. Older messages that were sent before
 show their context. Stashing a prompt keeps its chips and what they point to; restoring brings
 them back.
 
+A project can be a folder containing several Git repositories. Expand **Repositories** in
+its file browser to see their paths and add a repository mention to the chat. You can
+also type `@` followed by a repository name or path. The mention points the agent to
+that directory in the current environment; it keeps the conversation in the same project.
+
 On mobile, tap a chip to inspect its content. File references open the current file; attached
 files show the copy that was attached to the message.
 
