@@ -299,6 +299,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["grouped original legacy threads projects flat tree"],
   },
   {
+    id: "project-order",
+    title: "Project order",
+    to: "/settings/general",
+    searchTerms: ["sort projects sidebar manual created recent"],
+  },
+  {
     id: "snooze-limited-threads",
     title: "Snooze limited threads",
     to: "/settings/general",

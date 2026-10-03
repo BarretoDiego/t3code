@@ -539,6 +539,12 @@ export const OrchestrationV2Run = Schema.Struct({
   /** Links server-generated restart continuations to the interrupted run. */
   restartContinuationOfRunId: Schema.optional(RunId),
   /**
+   * Set on wake runs (background notifications, delegated task results,
+   * restart continuations): when the work they continue started. Read it
+   * through orchestrationV2RunWorkStartedAt.
+   */
+  workStartedAt: Schema.optional(Schema.DateTimeUtc),
+  /**
    * Set by restart recovery on the thread's latest started run. Delivered to
    * the provider with the first later run that reaches a provider turn.
    */
@@ -554,6 +560,16 @@ export const OrchestrationV2Run = Schema.Struct({
   delegatedCompletion: Schema.optional(OrchestrationV2DelegatedCompletionCohort),
 });
 export type OrchestrationV2Run = typeof OrchestrationV2Run.Type;
+
+/**
+ * When the work a run belongs to started. A wake does not start new work, so
+ * working timers count from the prompt that did, not from the latest wake.
+ */
+export function orchestrationV2RunWorkStartedAt(
+  run: Pick<OrchestrationV2Run, "workStartedAt" | "startedAt" | "requestedAt">,
+): OrchestrationV2Run["requestedAt"] {
+  return run.workStartedAt ?? run.startedAt ?? run.requestedAt;
+}
 
 export const OrchestrationV2RunAttempt = Schema.Struct({
   id: RunAttemptId,
@@ -790,6 +806,8 @@ export type OrchestrationV2PendingBackgroundTask = typeof OrchestrationV2Pending
 
 /** Provider and adapter metadata that should not overwrite the app thread's title. */
 export const OrchestrationV2ProviderThreadNativeMetadata = Schema.Struct({
+  /** Provider-reported selection for display, separate from the app's saved preferences. */
+  modelSelection: Schema.optional(ModelSelection),
   title: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   updatedAt: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   /** Version 2 scopes provider-derived item ids by provider instance. */
@@ -1704,7 +1722,10 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestRunCompletedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   activeRunId: Schema.NullOr(RunId),
-  /** Start of the activity-owning run; request time while it is preparing. */
+  /**
+   * orchestrationV2RunWorkStartedAt of the activity-owning run: a wake keeps
+   * the start of the work it continues; request time while preparing.
+   */
   activityRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   activityRunStatus: Schema.optional(
     Schema.NullOr(Schema.Literals(["preparing", "starting", "running", "waiting"])),
@@ -1857,6 +1878,7 @@ export const OrchestrationV2RunJson = OrchestrationV2Run.mapFields((fields) => (
   requestedAt: Schema.DateTimeUtcFromString,
   startedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   completedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  workStartedAt: Schema.optional(Schema.DateTimeUtcFromString),
 }));
 export type OrchestrationV2RunJson = typeof OrchestrationV2RunJson.Type;
 
