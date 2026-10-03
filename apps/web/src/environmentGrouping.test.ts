@@ -13,6 +13,7 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
   projectGroupsSpanEnvironments,
+  resolveProjectEnvironmentSummary,
 } from "./sidebarProjectGrouping";
 import { orderItemsByPreferredIds } from "./components/Sidebar.logic";
 import { legacyProjectCwdPreferenceKey } from "./uiStateStore";
@@ -456,5 +457,114 @@ describe("environment grouping", () => {
     });
 
     expect(groups.map((group) => group.displayName)).toEqual(["separate", "shared-repo"]);
+  });
+});
+
+describe("project environment availability", () => {
+  const homeLab = EnvironmentId.make("env-home-lab");
+  const group = (
+    ...members: Array<{ environmentId: typeof primaryEnvironmentId; label: string | null }>
+  ) => ({
+    memberProjects: members.map((member, index) => ({
+      ...makeProject({
+        environmentId: member.environmentId,
+        id: ProjectId.make(`project-${index}`),
+      }),
+      physicalProjectKey: `project-${index}`,
+      environmentLabel: member.label,
+    })),
+  });
+
+  it("identifies a local-only project with its named environment", () => {
+    const summary = resolveProjectEnvironmentSummary(
+      group({ environmentId: primaryEnvironmentId, label: "MacBook" }),
+      primaryEnvironmentId,
+    );
+    expect(summary).toMatchObject({
+      label: "Local",
+      multiple: false,
+      description: "Local only: MacBook (local)",
+    });
+  });
+
+  it("names a single remote environment", () => {
+    expect(
+      resolveProjectEnvironmentSummary(
+        group({ environmentId: homeLab, label: "Home Lab" }),
+        primaryEnvironmentId,
+      ),
+    ).toMatchObject({
+      label: "Home Lab",
+      multiple: false,
+      description: "Only in this environment: Home Lab",
+    });
+  });
+
+  it("lists local and remote environments once, regardless of project copy count", () => {
+    const summary = resolveProjectEnvironmentSummary(
+      group(
+        { environmentId: homeLab, label: "Home Lab" },
+        { environmentId: primaryEnvironmentId, label: "MacBook" },
+        { environmentId: homeLab, label: "Home Lab" },
+        { environmentId: remoteEnvironmentId, label: "Mac mini" },
+      ),
+      primaryEnvironmentId,
+    );
+    expect(summary?.label).toBe("3 envs");
+    expect(summary?.environments.map((environment) => environment.label)).toEqual([
+      "MacBook",
+      "Home Lab",
+      "Mac mini",
+    ]);
+    expect(summary?.description).toBe(
+      "Available in 3 environments: MacBook (local), Home Lab, Mac mini",
+    );
+  });
+
+  it("recognizes multiple remote environments without a local copy", () => {
+    const summary = resolveProjectEnvironmentSummary(
+      group(
+        { environmentId: homeLab, label: "Home Lab" },
+        { environmentId: remoteEnvironmentId, label: "Mac mini" },
+      ),
+      primaryEnvironmentId,
+    );
+    expect(summary?.multiple).toBe(true);
+    expect(summary?.environments.every((environment) => !environment.isLocal)).toBe(true);
+  });
+
+  it("keeps distinct environments with identical labels", () => {
+    const summary = resolveProjectEnvironmentSummary(
+      group(
+        { environmentId: homeLab, label: "Server" },
+        { environmentId: remoteEnvironmentId, label: "Server" },
+      ),
+      primaryEnvironmentId,
+    );
+    expect(summary?.environments).toHaveLength(2);
+  });
+
+  it("does not call a hosted client's sole remote environment local", () => {
+    expect(
+      resolveProjectEnvironmentSummary(group({ environmentId: homeLab, label: "Home Lab" }), null),
+    ).toMatchObject({ label: "Home Lab", environments: [{ isLocal: false }] });
+  });
+
+  it("provides fallbacks when environment labels are missing", () => {
+    const summary = resolveProjectEnvironmentSummary(
+      group(
+        { environmentId: primaryEnvironmentId, label: null },
+        { environmentId: homeLab, label: " " },
+      ),
+      primaryEnvironmentId,
+    );
+    expect(summary?.environments.map((environment) => environment.label)).toEqual([
+      "Local",
+      "Remote",
+    ]);
+  });
+
+  it("omits empty groups", () => {
+    expect(resolveProjectEnvironmentSummary(group(), primaryEnvironmentId)).toBeNull();
   });
 });

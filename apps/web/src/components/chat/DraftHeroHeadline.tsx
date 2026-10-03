@@ -21,7 +21,6 @@ import {
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
-  projectGroupsSpanEnvironments,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -99,13 +98,6 @@ export function DraftHeroHeadline({
       projects,
       threads,
     ],
-  );
-  // Same-named projects on two machines are only told apart by where they
-  // live, so rows on another machine carry its icon once the catalog spans
-  // more than one environment; a single-machine catalog stays as it was.
-  const showProjectEnvironments = useMemo(
-    () => projectGroupsSpanEnvironments(projectGroups),
-    [projectGroups],
   );
   const environmentMachineById = useMemo(
     () =>
@@ -289,13 +281,11 @@ export function DraftHeroHeadline({
                     </TooltipTrigger>
                     <TooltipPopup side="top">{group.displayName}</TooltipPopup>
                   </Tooltip>
-                  {showProjectEnvironments ? (
-                    <ProjectEnvironmentBadge
-                      group={group}
-                      primaryEnvironmentId={primaryEnvironmentId}
-                      machineByEnvironmentId={environmentMachineById}
-                    />
-                  ) : null}
+                  <ProjectEnvironmentBadge
+                    group={group}
+                    primaryEnvironmentId={primaryEnvironmentId}
+                    machineByEnvironmentId={environmentMachineById}
+                  />
                 </span>
               </MenuRadioItem>
             );

@@ -45,6 +45,46 @@ export interface SidebarProjectPickerEntry {
   isPreferred: boolean;
 }
 
+/** Counts environments, not project copies, and keeps the local member first. */
+export function resolveProjectEnvironmentSummary(
+  group: Pick<SidebarProjectSnapshot, "memberProjects">,
+  primaryEnvironmentId: EnvironmentId | null,
+) {
+  const environments = [
+    ...new Map(
+      group.memberProjects.map((member) => [
+        member.environmentId,
+        {
+          environmentId: member.environmentId,
+          label:
+            member.environmentLabel?.trim() ||
+            (member.environmentId === primaryEnvironmentId ? "Local" : "Remote"),
+          isLocal: member.environmentId === primaryEnvironmentId,
+        },
+      ]),
+    ).values(),
+  ].sort(
+    (a, b) =>
+      Number(b.isLocal) - Number(a.isLocal) ||
+      a.label.localeCompare(b.label) ||
+      a.environmentId.localeCompare(b.environmentId),
+  );
+  const first = environments[0];
+  if (!first) return null;
+  const multiple = environments.length > 1;
+  return {
+    environments,
+    multiple,
+    label: multiple ? `${environments.length} envs` : first.isLocal ? "Local" : first.label,
+    description: `${multiple ? `Available in ${environments.length} environments` : first.isLocal ? "Local only" : "Only in this environment"}: ${environments
+      .map(
+        (environment) =>
+          `${environment.label}${environment.isLocal && environment.label !== "Local" ? " (local)" : ""}`,
+      )
+      .join(", ")}`,
+  };
+}
+
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
