@@ -10,7 +10,7 @@ import { RpcSchema } from "effect/unstable/rpc";
 
 import { RPC_REQUIRED_SCOPES } from "../auth/RpcAuthorization.ts";
 import { environmentTargetFlags, withFlatEnvironmentRpc } from "./environmentRpc.ts";
-import { jsonFlag, printJson, timeoutFlag } from "./common.ts";
+import { jsonFlag, printJson, printJsonLine, timeoutFlag } from "./common.ts";
 
 export class RpcCliError extends Schema.TaggedError<RpcCliError>()("RpcCliError", {
   detail: Schema.String,
@@ -172,7 +172,7 @@ const callCommand = Command.make("call", {
           Stream.mapError(rpcFailure),
           Option.isSome(flags.limit) ? Stream.take(flags.limit.value) : (stream) => stream,
           Stream.mapEffect(encode),
-          Stream.runForEach((event) => Console.log(JSON.stringify(event))),
+          Stream.runForEach(printJsonLine),
         );
       });
       if (Option.isNone(flags.timeout)) return yield* call;

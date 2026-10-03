@@ -33,6 +33,8 @@ manual for agents that always matches the installed version.
 | Rename a project | `t3 project rename <project> <title>`   |
 | Remove a project | `t3 project remove <project> [--force]` |
 
+With `--env`, `<path>` is a folder on that environment's machine.
+
 ## Threads
 
 ### Start and continue conversations
@@ -193,6 +195,51 @@ start long-running commands with `write` and check on them with `read`.
 text unless you pass `--raw`. `close --delete-history` also removes the saved
 scrollback.
 
+## Scheduled tasks
+
+A scheduled task runs an agent with the same prompt on a recurring schedule,
+even when no app is open. These are the tasks listed under **Settings →
+Scheduled tasks**.
+
+| Task                      | Command                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| List tasks                | `t3 schedule list [--project <p>]`                        |
+| Read one, with its prompt | `t3 schedule show <task>`                                 |
+| Run on an interval        | `t3 schedule add "<prompt>" --every 2h`                   |
+| Run at a time of day      | `t3 schedule add "<prompt>" --at 09:00 [--days mon-fri]`  |
+| Change a task             | `t3 schedule edit <task> [options]`                       |
+| Pause or resume           | `t3 schedule disable <task>`, `t3 schedule enable <task>` |
+| Run now                   | `t3 schedule run <task>`                                  |
+| Delete                    | `t3 schedule delete <task>`                               |
+
+A task accepts its id, the start of its id, or its exact title.
+
+`--every` takes an interval of at least one minute, such as `30m`, `2h`, or
+`1d`. `--at` takes a 24-hour time in the environment's time zone, which may
+differ from yours when you use `--env`. `--days` accepts names or numbers
+(`0` is Sunday), lists, and ranges: `mon-fri`, `sat,sun`, `weekdays`,
+`weekends`, `1,3,5`. Without it the task runs every day.
+
+A task runs in one of two places:
+
+- **A new thread each run** (the default), in `--project <p>` or the project
+  containing the current folder. Each run gets a fresh worktree branched from
+  `main`, so unattended runs do not edit your checkout. `--worktree <branch>`
+  picks another base branch, and `--root` runs in the project folder instead.
+  The model and permission mode default to the project's, as for
+  `t3 thread new`.
+- **One thread**, with `--thread <thread>`. Every run posts into it and
+  continues its conversation, using that thread's model, modes, and workspace.
+
+`--model`, `--runtime-mode`, `--mode`, and `--title` override the defaults, and
+`--paused` creates the task without starting its schedule. The prompt can come
+from stdin with `-`.
+
+`edit` changes only what you pass. `--thread <thread>` moves a task into a
+thread and `--new-thread` moves it back to a new thread per run. `run` starts
+the task immediately and leaves its schedule unchanged; `show` reports the
+last run's result and error.
+
 ## Everything else
 
 `t3 rpc` calls any server method directly, the same ones the apps use for git
@@ -211,9 +258,10 @@ reaches the server, with the field that is wrong.
 ## Environments
 
 Save any environment you can reach once (on your network, over Tailscale, or
-through a T3 Connect tunnel URL), then pass `--env <name>` to any `thread`,
-`terminal`, `skill`, `profile`, or `rpc` command. Set `T3CODE_ENV` to make one
-the default for a shell or an agent session.
+through a T3 Connect tunnel URL), then pass `--env <name>` to any `project`,
+`thread`, `terminal`, `schedule`, `skill`, `profile`, `auth`, `rpc`, or
+`doctor` command.
+Set `T3CODE_ENV` to make one the default for a shell or an agent session.
 
 | Task                               | Command                                   |
 | ---------------------------------- | ----------------------------------------- |
@@ -226,3 +274,50 @@ Create the pairing link in the target environment's Connections settings, or
 with `t3 pair` on that machine; `t3 auth session issue` there prints a token.
 A pairing link works once. Removing an environment only forgets it on this
 machine; revoke its access from the target's Connections settings.
+
+`service`, `update`, `uninstall`, `connect`, `pair`, and `theme` manage the
+installation on the machine they run on, so they take no `--env`. From another
+machine, `t3 rpc call server.updateServer --env <name>` updates a server and
+`t3 auth pairing create --env <name>` creates a pairing link for it.
+
+### Manage access remotely
+
+`t3 auth pairing create|list|revoke` and `t3 auth session list|revoke` accept
+`--env` and then act on that environment. They need an administrative
+credential: a pairing link grants a standard one, so save the environment with
+a token instead. On the target machine run `t3 auth session issue`, then here
+`t3 env add <name> <url> --token <token>`.
+
+## Diagnose connections
+
+`t3 doctor` explains why an environment is or is not reachable, and what to do
+about it. It exits with a non-zero status when it finds a problem.
+
+| Task                                               | Command                  |
+| -------------------------------------------------- | ------------------------ |
+| Check this machine and its server                  | `t3 doctor`              |
+| Check one saved environment                        | `t3 doctor --env <name>` |
+| Check every environment and the paths between them | `t3 doctor --all`        |
+| Keep checking and print what changes               | `t3 doctor --watch 30s`  |
+
+For each environment it checks, in order: the Tailscale path from this machine
+(is the node in your tailnet, online, and reached directly or through a relay),
+whether a T3 Code server answers at the saved address and is the one you
+paired with, whether the saved credential is still accepted, and whether the
+WebSocket connection works. It stops at the first layer that fails.
+
+When the environment is reachable, its host also reports its own side:
+whether Tailscale is running and signed in there, whether its key is about to
+expire, and whether Tailscale Serve forwards to the port T3 Code listens on.
+That host report needs a server recent enough to provide it.
+
+`--all` adds a section about each pair of environments. Syncing a project or
+handing off a thread between two environments is driven by the device you run
+it from, so it works when that device reaches both and both servers support
+it; the section says so, or names the server to update. It also shows whether
+each host sees the other online in the tailnet, which only matters for
+features that connect hosts directly, such as an AI runtime shared over the
+tailnet.
+
+A line starting with `✗` is a problem, `!` a warning, and `→` the suggested
+fix. `--json` prints the same checks as `{ok, sections}`.

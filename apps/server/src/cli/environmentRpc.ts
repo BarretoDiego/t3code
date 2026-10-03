@@ -5,6 +5,8 @@ import {
   AuthStandardClientScopes,
   AuthTokenExchangeGrantType,
   EnvironmentHttpApi,
+  ORCHESTRATION_PROTOCOL_QUERY_PARAM,
+  ORCHESTRATION_PROTOCOL_VERSION,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
@@ -167,6 +169,8 @@ function webSocketUrl(origin: string, ticket: string): string {
   url.searchParams.set("wsTicket", ticket);
   url.searchParams.set("clientSurface", "cli");
   url.searchParams.set("clientAppVersion", packageJson.version);
+  // The server refuses sockets that do not state a protocol version it speaks.
+  url.searchParams.set(ORCHESTRATION_PROTOCOL_QUERY_PARAM, String(ORCHESTRATION_PROTOCOL_VERSION));
   return url.toString();
 }
 
@@ -228,51 +232,93 @@ const findLocalServer = Effect.fn("cli.findLocalServer")(function* (
   return yield* new EnvironmentServerNotRunningError({ statePath: config.serverRuntimeStatePath });
 });
 
+/** Where a command's target lives and a bearer token that is valid there. */
+interface EnvironmentTarget {
+  readonly origin: string;
+  readonly token: string;
+  readonly saved: Option.Option<SavedEnvironment>;
+}
+
+/** Runs `use` with the services that reach environments: local auth, saved environments, HTTP. */
+export const withEnvironmentRuntime = <A, E, R>(
+  flags: { readonly baseDir: Option.Option<string> },
+  use: (config: ServerConfig.ServerConfig["Service"]) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const logLevel = yield* GlobalFlag.LogLevel;
+    const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
+    return yield* use(config).pipe(
+      Effect.provide(
+        Layer.mergeAll(EnvironmentAuth.runtimeLayer, ServerSecretStore.layer).pipe(
+          Layer.provideMerge(FetchHttpClient.layer),
+          Layer.provide(ServerConfig.layer(config)),
+          Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
+        ),
+      ),
+    );
+  });
+
+export const findSavedEnvironment = Effect.fn("cli.findSavedEnvironment")(function* (name: string) {
+  const saved = yield* readSavedEnvironments;
+  const environment = saved.find((entry) => entry.name === name);
+  if (environment === undefined) {
+    return yield* new EnvironmentNotFoundError({
+      environment: name,
+      known: saved.map((entry) => entry.name),
+    });
+  }
+  return environment;
+});
+
+/**
+ * Runs `use` against the server on this machine. The session is minted from
+ * the local auth store and revoked on exit, so no credential outlives the
+ * command.
+ */
+export const withLocalEnvironmentTarget = <A, E, R>(
+  config: ServerConfig.ServerConfig["Service"],
+  use: (target: EnvironmentTarget) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const origin = yield* findLocalServer(config);
+    const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    return yield* Effect.acquireUseRelease(
+      environmentAuth.issueSession({ scopes: AuthStandardClientScopes, label: "t3 cli" }),
+      (issued) => use({ origin, token: issued.token, saved: Option.none() }),
+      (issued) =>
+        environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
+    );
+  });
+
+/** Runs `use` with the origin and credential of the environment the flags select. */
+export const withEnvironmentTarget = <A, E, R>(
+  flags: EnvironmentTargetFlags,
+  use: (target: EnvironmentTarget) => Effect.Effect<A, E, R>,
+) =>
+  withEnvironmentRuntime(flags, (config) =>
+    Effect.gen(function* () {
+      if (Option.isNone(flags.env)) return yield* withLocalEnvironmentTarget(config, use);
+      const environment = yield* findSavedEnvironment(flags.env.value);
+      return yield* use({
+        origin: environment.httpBaseUrl,
+        token: environment.token,
+        saved: Option.some(environment),
+      });
+    }),
+  );
+
+/** Opens the typed RPC socket of the server at `origin`; it closes with the scope. */
+export const openEnvironmentRpc = (origin: string, token: string) =>
+  openSocket(origin, token, makeWsRpcClient);
+
 const connectEnvironment = <Client, A, E, R>(
   flags: EnvironmentTargetFlags,
   makeClient: Effect.Effect<Client, never, RpcClient.Protocol | Scope.Scope>,
   use: (client: Client) => Effect.Effect<A, E, R>,
 ) =>
-  Effect.gen(function* () {
-    const logLevel = yield* GlobalFlag.LogLevel;
-    const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
-    const runtime = Layer.mergeAll(EnvironmentAuth.runtimeLayer, ServerSecretStore.layer).pipe(
-      Layer.provideMerge(FetchHttpClient.layer),
-      Layer.provide(ServerConfig.layer(config)),
-      Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
-    );
-
-    if (Option.isSome(flags.env)) {
-      const name = flags.env.value;
-      return yield* Effect.gen(function* () {
-        const saved = yield* readSavedEnvironments;
-        const environment = saved.find((entry) => entry.name === name);
-        if (environment === undefined) {
-          return yield* new EnvironmentNotFoundError({
-            environment: name,
-            known: saved.map((entry) => entry.name),
-          });
-        }
-        return yield* Effect.scoped(
-          Effect.flatMap(openSocket(environment.httpBaseUrl, environment.token, makeClient), use),
-        );
-      }).pipe(Effect.provide(runtime));
-    }
-
-    // The local server: mint a short-lived session from the local auth store
-    // and revoke it on exit, so no credential outlives the command.
-    return yield* Effect.gen(function* () {
-      const origin = yield* findLocalServer(config);
-      const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
-      return yield* Effect.acquireUseRelease(
-        environmentAuth.issueSession({ scopes: AuthStandardClientScopes, label: "t3 cli" }),
-        (issued) =>
-          Effect.scoped(Effect.flatMap(openSocket(origin, issued.token, makeClient), use)),
-        (issued) =>
-          environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
-      );
-    }).pipe(Effect.provide(runtime));
-  });
+  withEnvironmentTarget(flags, (target) =>
+    Effect.scoped(Effect.flatMap(openSocket(target.origin, target.token, makeClient), use)),
+  );
 
 /**
  * Runs `use` with a WebSocket RPC client for the target environment — the
