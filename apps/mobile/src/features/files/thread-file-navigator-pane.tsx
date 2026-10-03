@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { SymbolView } from "../../components/AppSymbol";
 import { MaterialScreenContent } from "../../components/MaterialScreenContent";
 import { useCallback, useMemo, useState, type ComponentProps } from "react";
@@ -16,6 +16,7 @@ import { MaterialFilesHeader } from "./MaterialFilesHeader";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { ProjectRepositories } from "./ProjectRepositories";
 import { FileTreeBrowser } from "./FileTreeBrowser";
 import { useFileTreeEntries } from "./useFileTreeEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
@@ -24,6 +25,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 export function ThreadFileNavigatorPane(props: {
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId | null;
   readonly headerInset: number;
   readonly projectName: string;
   readonly selectedPath: string | null;
@@ -70,20 +72,29 @@ export function ThreadFileNavigatorPane(props: {
   );
 
   const fileTree = (
-    <FileTreeBrowser
-      key={JSON.stringify([props.environmentId, props.cwd])}
-      entries={entriesQuery.entries}
-      loadedDirectories={entriesQuery.loadedDirectories}
-      onLoadDirectory={entriesQuery.loadDirectory}
-      error={entriesQuery.error}
-      isPending={entriesQuery.isPending}
-      searchQuery={searchQuery}
-      searchTruncated={entriesQuery.searchTruncated}
-      selectedPath={props.selectedPath}
-      onPreviewFile={handlePreviewFile}
-      onRefresh={entriesQuery.refresh}
-      onSelectFile={props.onSelectFile}
-    />
+    <>
+      <ProjectRepositories
+        key={`${props.environmentId}:${props.cwd}`}
+        cwd={props.cwd}
+        environmentId={props.environmentId}
+        threadId={props.threadId}
+        projectName={props.projectName}
+      />
+      <FileTreeBrowser
+        key={JSON.stringify([props.environmentId, props.cwd])}
+        entries={entriesQuery.entries}
+        loadedDirectories={entriesQuery.loadedDirectories}
+        onLoadDirectory={entriesQuery.loadDirectory}
+        error={entriesQuery.error}
+        isPending={entriesQuery.isPending}
+        searchQuery={searchQuery}
+        searchTruncated={entriesQuery.searchTruncated}
+        selectedPath={props.selectedPath}
+        onPreviewFile={handlePreviewFile}
+        onRefresh={entriesQuery.refresh}
+        onSelectFile={props.onSelectFile}
+      />
+    </>
   );
 
   if (Platform.OS === "ios") {

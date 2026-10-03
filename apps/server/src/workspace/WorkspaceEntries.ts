@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 
+import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -21,7 +22,7 @@ import type {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
-import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
+import { normalizeSearchQuery, scoreSubsequenceMatch } from "@t3tools/shared/searchRanking";
 
 import { expandHomePathWith } from "../pathExpansion.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -138,6 +139,56 @@ export const make = Effect.gen(function* () {
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
   const vcsProcess = yield* VcsProcess.VcsProcess;
 
+  // Skip dependency/build metadata, but not ignored project folders: a container
+  // often ignores its independent repositories. Do not follow directory symlinks.
+  const repositoryCache = yield* Cache.make({
+    capacity: 32,
+    timeToLive: "30 seconds",
+    lookup: (cwd: string) =>
+      Effect.tryPromise({
+        try: async (): Promise<ProjectListEntriesResult> => {
+          const entries: ProjectEntry[] = [];
+          const pending = [""];
+          let scanned = 0;
+          let truncated = false;
+          const excluded = new Set([".git", "node_modules", ".t3", ".cache", ".next", ".turbo"]);
+          while (scanned < pending.length && entries.length < 1_000) {
+            const relative = pending[scanned++]!;
+            let children;
+            try {
+              children = await NodeFSP.readdir(path.join(cwd, relative), { withFileTypes: true });
+            } catch (cause) {
+              if (relative === "") throw cause;
+              truncated = true;
+              continue;
+            }
+            if (
+              children.some(
+                (child) => child.name === ".git" && (child.isDirectory() || child.isFile()),
+              )
+            ) {
+              entries.push({ path: relative || ".", kind: "directory", repository: true });
+            }
+            for (const child of children.toSorted((a, b) => a.name.localeCompare(b.name))) {
+              if (child.isDirectory() && !excluded.has(child.name)) {
+                if (pending.length < 20_000) {
+                  pending.push(relative ? `${relative}/${child.name}` : child.name);
+                } else {
+                  truncated = true;
+                }
+              }
+            }
+          }
+          return {
+            entries: entries.toSorted((a, b) => a.path.localeCompare(b.path)),
+            truncated: truncated || scanned < pending.length,
+          };
+        },
+        catch: (cause) =>
+          new WorkspaceEntriesReadDirectoryError({ cwd, partialPath: ".", parentPath: cwd, cause }),
+      }),
+  });
+
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
@@ -149,6 +200,7 @@ export const make = Effect.gen(function* () {
       const normalizedCwd = yield* normalizeWorkspaceRoot(cwd).pipe(
         Effect.orElseSucceed(() => cwd),
       );
+      yield* Cache.invalidate(repositoryCache, normalizedCwd);
       for (const variant of WorkspaceSearchIndex.WORKSPACE_SEARCH_INDEX_VARIANTS) {
         const indexKey = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, variant);
         if (!(yield* RcMap.has(workspaceSearchIndexes.rcMap, indexKey))) {
@@ -238,7 +290,27 @@ export const make = Effect.gen(function* () {
       const normalizedQuery = normalizeSearchQuery(input.query, {
         trimLeadingPattern: /^[@./]+/,
       });
-      return yield* Effect.gen(function* () {
+      const repositories =
+        input.includeRepositories && input.kind !== "file" && !input.imageOnly
+          ? yield* Cache.get(repositoryCache, normalizedCwd)
+          : { entries: [], truncated: false };
+      const matches = repositories.entries
+        .map((entry) => ({
+          entry,
+          score: normalizedQuery
+            ? scoreSubsequenceMatch(entry.path.toLowerCase(), normalizedQuery)
+            : 0,
+        }))
+        .filter((match) => match.score !== null)
+        .toSorted((a, b) => a.score! - b.score! || a.entry.path.localeCompare(b.entry.path))
+        .map((match) => match.entry);
+      if (input.includeRepositories && normalizedQuery === "") {
+        return {
+          entries: matches.slice(0, input.limit),
+          truncated: repositories.truncated || matches.length > input.limit,
+        };
+      }
+      const indexed = yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* searchIndex.search(normalizedQuery, input.limit, input.kind, input.imageOnly);
       }).pipe(
@@ -248,6 +320,15 @@ export const make = Effect.gen(function* () {
           ),
         ),
       );
+      const repositoryPaths = new Set(matches.map((entry) => entry.path));
+      const combined = [
+        ...matches,
+        ...indexed.entries.filter((entry) => !repositoryPaths.has(entry.path)),
+      ];
+      return {
+        entries: combined.slice(0, input.limit),
+        truncated: repositories.truncated || indexed.truncated || combined.length > input.limit,
+      };
     },
   );
 
@@ -270,6 +351,10 @@ export const make = Effect.gen(function* () {
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+      if (input.repositoriesOnly) {
+        yield* Cache.invalidate(repositoryCache, normalizedCwd);
+        return yield* Cache.get(repositoryCache, normalizedCwd);
+      }
       if (input.directoryPath !== undefined) {
         const directoryPath = input.directoryPath;
         const toError = (cause: unknown) =>

@@ -455,7 +455,11 @@ export function useComposerCommandMenu({
           path: entry.path,
           kind: entry.kind,
           label: parts[parts.length - 1] ?? entry.path,
-          description: parts.length > 1 ? parts.slice(0, -1).join("/") : "",
+          description: entry.repository
+            ? `Repository · ${entry.path}`
+            : parts.length > 1
+              ? parts.slice(0, -1).join("/")
+              : "",
         };
       });
     }
