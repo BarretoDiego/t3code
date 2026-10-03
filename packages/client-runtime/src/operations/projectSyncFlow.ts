@@ -3,6 +3,7 @@ import {
   ProjectSyncPathViolationError,
   ProjectSyncProjectNotFoundError,
   type EnvironmentId,
+  type OrchestrationProjectShell,
   type ProjectId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -74,7 +75,16 @@ export interface SyncProjectCandidate {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
-  readonly repositoryCanonicalKey: string | null;
+  /** See `projectSyncIdentityKey`. */
+  readonly identityKey: string | null;
+}
+
+/** What makes two projects "the same" for sync suggestions: an explicit
+    cross-environment link, else the git remote. */
+export function projectSyncIdentityKey(
+  project: Pick<OrchestrationProjectShell, "linkKey" | "repositoryIdentity">,
+): string | null {
+  return project.linkKey ?? project.repositoryIdentity?.canonicalKey ?? null;
 }
 
 /**
@@ -106,15 +116,15 @@ export function selectDestinationProjectCandidates(input: {
  */
 export function sortDestinationProjectCandidatesBySourceMatch(input: {
   readonly candidates: ReadonlyArray<SyncProjectCandidate>;
-  readonly sourceRepositoryCanonicalKey: string | null;
+  readonly sourceIdentityKey: string | null;
 }): SyncProjectCandidate[] {
-  const key = input.sourceRepositoryCanonicalKey;
+  const key = input.sourceIdentityKey;
   if (key === null) {
     return [...input.candidates];
   }
   return [...input.candidates].sort((a, b) => {
-    const aRank = a.repositoryCanonicalKey === key ? 0 : 1;
-    const bRank = b.repositoryCanonicalKey === key ? 0 : 1;
+    const aRank = a.identityKey === key ? 0 : 1;
+    const bRank = b.identityKey === key ? 0 : 1;
     return aRank - bRank;
   });
 }

@@ -4582,6 +4582,51 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 
+  it.effect("persists, replaces and clears a project's cross-environment link", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-linked");
+      const readLinkKey = sql<{ readonly linkKey: string | null }>`
+        SELECT link_key AS "linkKey" FROM projection_projects WHERE project_id = ${projectId}
+      `;
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-link-create"),
+        projectId,
+        title: "Linked",
+        workspaceRoot: "/tmp/project-linked",
+        linkKey: "link:first",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      assert.deepEqual(yield* readLinkKey, [{ linkKey: "link:first" }]);
+
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-link-replace"),
+        projectId,
+        linkKey: "github.com/t3tools/t3code",
+      });
+      assert.deepEqual(yield* readLinkKey, [{ linkKey: "github.com/t3tools/t3code" }]);
+
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-link-rename"),
+        projectId,
+        title: "Renamed",
+      });
+      assert.deepEqual(yield* readLinkKey, [{ linkKey: "github.com/t3tools/t3code" }]);
+
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-link-clear"),
+        projectId,
+        linkKey: null,
+      });
+      assert.deepEqual(yield* readLinkKey, [{ linkKey: null }]);
+    }),
+  );
+
   it.effect("re-creating a deleted thread id starts from an empty projection", () =>
     Effect.gen(function* () {
       const engine = yield* OrchestrationEngineService;

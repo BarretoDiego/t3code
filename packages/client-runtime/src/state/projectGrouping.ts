@@ -119,10 +119,16 @@ function deriveRepositoryScopedKey(
     : `${canonicalKey}::${relativeProjectPath}`;
 }
 
+/**
+ * A project's logical identity. An explicit `linkKey` wins over the git
+ * remote, so projects without a remote (or with different remotes) can be
+ * paired across environments. A link to a project that has a remote stores
+ * that repository's key, so the linked project joins its whole group.
+ */
 export function deriveLogicalProjectKey(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "linkKey"
   >,
   options?: {
     readonly groupingMode?: SidebarProjectGroupingMode;
@@ -131,6 +137,11 @@ export function deriveLogicalProjectKey(
   const groupingMode = options?.groupingMode ?? "repository";
   if (groupingMode === "separate") {
     return derivePhysicalProjectKey(project);
+  }
+
+  const linkKey = project.linkKey?.trim();
+  if (linkKey) {
+    return linkKey;
   }
 
   return (
@@ -143,7 +154,7 @@ export function deriveLogicalProjectKey(
 export function deriveLogicalProjectKeyFromSettings(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "linkKey"
   >,
   settings: ProjectGroupingSettings,
 ): string {
@@ -217,7 +228,7 @@ function selectProjectIdentitySource<TProject extends EnvironmentProject>(
   projects: ReadonlyArray<TProject>,
   winner: TProject,
 ): TProject {
-  if (winner.repositoryIdentity !== null) {
+  if (winner.linkKey || winner.repositoryIdentity !== null) {
     return winner;
   }
 
@@ -319,4 +330,55 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
       memberProjectRefs: projectRefsByLogicalKey.get(key) ?? [],
     };
   });
+}
+
+type LinkableProject = Pick<
+  EnvironmentProject,
+  "environmentId" | "id" | "workspaceRoot" | "linkKey"
+>;
+
+export interface ProjectGroupLinkSide {
+  readonly key: string;
+  readonly members: ReadonlyArray<LinkableProject>;
+}
+
+export interface ProjectGroupLinkPlan {
+  readonly linkKey: string;
+  readonly updates: ReadonlyArray<ScopedProjectRef>;
+}
+
+function isPhysicalGroupKey(group: ProjectGroupLinkSide): boolean {
+  return group.members.some((member) => derivePhysicalProjectKey(member) === group.key);
+}
+
+/**
+ * Plans the `linkKey` writes that make two project groups one. A group that
+ * already has a shared identity (git remote or an earlier link) lends its key,
+ * so every other project with that identity stays in the merged group. Two
+ * unidentified groups get a fresh key. Only projects whose key changes are
+ * returned.
+ */
+export function planProjectGroupLink(input: {
+  readonly source: ProjectGroupLinkSide;
+  readonly target: ProjectGroupLinkSide;
+  readonly makeLinkKey: () => string;
+}): ProjectGroupLinkPlan {
+  const targetIsPhysical = isPhysicalGroupKey(input.target);
+  const sourceIsPhysical = isPhysicalGroupKey(input.source);
+  const linkKey = !targetIsPhysical
+    ? input.target.key
+    : !sourceIsPhysical
+      ? input.source.key
+      : `link:${input.makeLinkKey()}`;
+  const candidates = !targetIsPhysical
+    ? input.source.members
+    : !sourceIsPhysical
+      ? input.target.members
+      : [...input.source.members, ...input.target.members];
+  return {
+    linkKey,
+    updates: candidates
+      .filter((member) => member.linkKey !== linkKey)
+      .map((member) => scopeProjectRef(member.environmentId, member.id)),
+  };
 }
