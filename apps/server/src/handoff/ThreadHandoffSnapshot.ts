@@ -25,8 +25,10 @@ const ThreadHistory = Schema.Struct({
   format: Schema.Literal("t3-orchestration-v2-events"),
   events: Schema.Array(OrchestrationV2StoredEvent),
 });
-const decodeHistory = Schema.decodeUnknownSync(Schema.fromJsonString(ThreadHistory));
-const encodeHistory = Schema.encodeSync(Schema.fromJsonString(ThreadHistory));
+// JSON must round-trip runtime values such as event and payload DateTime.Utc.
+const historyJson = Schema.fromJsonString(Schema.toCodecJson(ThreadHistory));
+const decodeHistory = Schema.decodeUnknownSync(historyJson);
+const encodeHistory = Schema.encodeSync(historyJson);
 const isHistory = Schema.is(Schema.Array(OrchestrationV2StoredEvent));
 const decodeManifest = Schema.decodeUnknownSync(ThreadHandoffManifest);
 const failure = (message: string) =>

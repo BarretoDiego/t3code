@@ -3,12 +3,15 @@ import {
   CommandId,
   MessageId,
   MiniSkillId,
+  OrchestrationDispatchCommandError,
   type OrchestrationV2MessageDispatchCommand,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -32,6 +35,7 @@ const command = (id = "schedule-1"): OrchestrationV2MessageDispatchCommand => ({
 });
 const database = NodeSqliteClient.layer({ filename: ":memory:" });
 const ready = () => Effect.succeed("ready" as const);
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.effect("dispatches on the server clock with no view, socket, or subscriber", () =>
   Effect.gen(function* () {
@@ -174,7 +178,9 @@ it.effect("retains dispatch failures for inspection instead of repeatedly resend
       dispatch: () =>
         Effect.suspend(() => {
           attempts++;
-          return Effect.fail(new Error("Provider unavailable"));
+          return Effect.fail(
+            new OrchestrationDispatchCommandError({ message: "Provider unavailable" }),
+          );
         }),
     });
     yield* scheduler.schedule(command());
@@ -205,7 +211,7 @@ it.effect("upgrades held V1 turn starts into message dispatches", () =>
       sendAt: "1970-01-01T00:01:00.000Z",
     };
     yield* sql`INSERT INTO scheduled_messages (command_id, thread_id, command_json, send_at, error)
-      VALUES ('legacy-1', 'thread-1', ${JSON.stringify(legacy)}, '1970-01-01T00:01:00.000Z', NULL)`;
+      VALUES ('legacy-1', 'thread-1', ${yield* encodeJson(legacy)}, '1970-01-01T00:01:00.000Z', NULL)`;
     yield* sql`INSERT INTO scheduled_messages (command_id, thread_id, command_json, send_at, error)
       VALUES ('broken', 'thread-1', '{"type":"thread.turn.start"}', '1970-01-01T00:01:00.000Z', NULL)`;
     yield* upgradeMigration;
@@ -238,6 +244,6 @@ it("treats active, queued or blocked threads as busy and archived ones as gone",
   assert.equal(threadStateFromShell({ ...shell, status: "queued" }), "busy");
   assert.equal(threadStateFromShell({ ...shell, activeRunId: "run-1" }), "busy");
   assert.equal(threadStateFromShell({ ...shell, pendingRuntimeRequest: {} }), "busy");
-  assert.equal(threadStateFromShell({ ...shell, archivedAt: new Date(0) }), "deleted");
+  assert.equal(threadStateFromShell({ ...shell, archivedAt: DateTime.makeUnsafe(0) }), "deleted");
   assert.equal(threadStateFromShell(null), "deleted");
 });

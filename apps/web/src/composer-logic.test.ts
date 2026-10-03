@@ -140,7 +140,7 @@ describe("composerSubmissionIntentForKey", () => {
           isDraftThread: true,
           event: modEnter,
         }),
-      ).toBe("foreground");
+      ).toBe("background");
       expect(
         composerSubmissionIntentForKey({ ...running, event: { ...enter, shiftKey: true } }),
       ).toBeNull();
@@ -279,10 +279,20 @@ describe("detectComposerTrigger", () => {
     });
   });
 
-  it("never treats issue references or mid-text hashtags as profile shortcuts", () => {
+  it("keeps numeric references as pull requests rather than profile shortcuts", () => {
     const issue = "Fix #123";
-    expect(detectComposerTrigger(issue, issue.length)).toBeNull();
-    expect(detectComposerTrigger("#123", 4)).toBeNull();
+    expect(detectComposerTrigger(issue, issue.length)).toEqual({
+      kind: "pull-request",
+      query: "123",
+      rangeStart: 4,
+      rangeEnd: issue.length,
+    });
+    expect(detectComposerTrigger("#123", 4)).toEqual({
+      kind: "pull-request",
+      query: "123",
+      rangeStart: 0,
+      rangeEnd: 4,
+    });
     const midText = "The issue #reviewer is unrelated";
     expect(detectComposerTrigger(midText, midText.length)).toBeNull();
   });

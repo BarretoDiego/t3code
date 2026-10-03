@@ -1,7 +1,11 @@
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 type JsonRecord = Record<string, unknown>;
+const json = Schema.fromJsonString(Schema.Unknown);
+const decodeJson = Schema.decodeUnknownEffect(json);
+const encodeJson = Schema.encodeEffect(json);
 
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -44,12 +48,7 @@ export default Effect.gen(function* () {
     SELECT command_id, command_json FROM scheduled_messages
   `;
   for (const row of rows) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(row.command_json);
-    } catch {
-      parsed = undefined;
-    }
+    const parsed = yield* decodeJson(row.command_json).pipe(Effect.orElseSucceed(() => undefined));
     if (isRecord(parsed) && parsed.type === "message.dispatch") continue;
     const converted = scheduledTurnStartToMessageDispatch(parsed);
     if (converted === null) {
@@ -57,7 +56,7 @@ export default Effect.gen(function* () {
       continue;
     }
     yield* sql`
-      UPDATE scheduled_messages SET command_json = ${JSON.stringify(converted)}
+      UPDATE scheduled_messages SET command_json = ${yield* encodeJson(converted)}
       WHERE command_id = ${row.command_id}
     `;
   }

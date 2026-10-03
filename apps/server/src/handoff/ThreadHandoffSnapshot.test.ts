@@ -191,9 +191,13 @@ it.effect(
       );
       yield* transfer(f.archive, f.received, f.manifest.files);
       yield* Effect.promise(async () => {
-        expect(
-          await verifyThreadHandoffSnapshot({ manifest: f.manifest, directory: f.received }),
-        ).toEqual(events);
+        const restoredEvents = await verifyThreadHandoffSnapshot({
+          manifest: f.manifest,
+          directory: f.received,
+        });
+        expect(restoredEvents).toEqual(events);
+        expect(DateTime.isUtc(restoredEvents[0]!.event.occurredAt)).toBe(true);
+        expect(DateTime.formatIso(restoredEvents[0]!.event.occurredAt)).toBe(createdAt);
         const providerDirectory = NodePath.join(f.received, "provider");
         const nativeSnapshot: ClaudeSessionSnapshot = decodeNativeSnapshot(
           await NodeFSP.readFile(NodePath.join(providerDirectory, "snapshot.json"), "utf8"),
