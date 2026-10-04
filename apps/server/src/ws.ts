@@ -89,6 +89,7 @@ import {
   type ServerConfig as ClientServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleStreamEvent,
+  ServerPendingWorkError,
   type FilesystemBrowseFailure,
   FilesystemBrowseError,
   AssetWorkspaceContextNotFoundError,
@@ -228,6 +229,7 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForRpcMethod, requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
@@ -1340,6 +1342,7 @@ const makeWsRpcLayer = (
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
+      const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
       const hostResources = yield* HostResources.HostResources;
       const networkDiagnostics = yield* NetworkDiagnostics.NetworkDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
@@ -2679,6 +2682,14 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.serverGetPendingWork]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetPendingWork,
+            effectOutbox.pendingWork.pipe(
+              Effect.mapError((cause) => new ServerPendingWorkError({ detail: cause.message })),
+            ),
+            { "rpc.aggregate": "orchestration" },
           ),
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProcessDiagnostics, processDiagnostics.read, {

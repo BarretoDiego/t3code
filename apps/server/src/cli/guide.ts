@@ -22,6 +22,16 @@ mini skills, agent profiles, and every server method.
   T3CODE_ENV) for a saved remote environment. List them with \`t3 env list\`.
 - Never wait with sleep loops. \`--wait\` and \`t3 thread wait\` are event-driven.
 
+## Before closing or restarting T3 Code
+  t3 status --json                     # work on this server, including archived threads
+  t3 status --all --json               # local and all saved environments
+  t3 status --check                    # non-zero if busy or readiness is unknown
+  t3 status --watch 5s                 # detailed snapshots until you stop watching
+Read safeToClose and each environment's blockers/unknowns. Waiting for input
+is distinct from executing work; a paused thread may still have background
+tasks. Low CPU or a sleeping process does not prove it is safe to close.
+Check again immediately before closing: the report is a snapshot, not a lock.
+
 ## Core loop
   t3 project list --json
   t3 thread new "<task>" --project <p> --json            # returns {threadId}

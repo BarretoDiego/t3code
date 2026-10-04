@@ -449,6 +449,28 @@ export const ServerProcessDiagnosticsResult = Schema.Struct({
 });
 export type ServerProcessDiagnosticsResult = typeof ServerProcessDiagnosticsResult.Type;
 
+export const ServerPendingWorkResult = Schema.Struct({
+  effects: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      threadId: Schema.String,
+      type: Schema.String,
+      status: Schema.Literals(["pending", "running"]),
+      attemptCount: NonNegativeInt,
+      createdAt: Schema.String,
+      updatedAt: Schema.String,
+      availableAt: Schema.String,
+      lastError: Schema.NullOr(Schema.String),
+    }),
+  ),
+});
+export type ServerPendingWorkResult = typeof ServerPendingWorkResult.Type;
+
+export class ServerPendingWorkError extends Schema.TaggedError<ServerPendingWorkError>()(
+  "ServerPendingWorkError",
+  { detail: Schema.String },
+) {}
+
 export const ServerProcessResourceHistoryInput = Schema.Struct({
   windowMs: NonNegativeInt,
   bucketMs: NonNegativeInt,

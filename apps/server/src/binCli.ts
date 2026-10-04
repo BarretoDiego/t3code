@@ -1,7 +1,10 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Runtime from "effect/Runtime";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import { Argument, Command } from "effect/unstable/cli";
 import * as CliError from "effect/unstable/cli/CliError";
 
@@ -32,6 +35,7 @@ import { guideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
 import { scheduleCommand } from "./cli/schedule.ts";
+import { statusCommand } from "./cli/status.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
@@ -78,6 +82,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       threadCommand,
       terminalCommand,
       scheduleCommand,
+      statusCommand,
       rpcCommand,
       skillCommand,
       profileCommand,
@@ -106,6 +111,12 @@ export function runCli() {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provide(CliRuntimeLayer),
-    NodeRuntime.runMain,
+    Effect.tapCause((cause) =>
+      Cause.hasInterruptsOnly(cause) || !Runtime.getErrorReported(Cause.squash(cause))
+        ? Effect.void
+        : Effect.logError(cause),
+    ),
+    Effect.provideService(Logger.LogToStderr, true),
+    NodeRuntime.runMain({ disableErrorReporting: true }),
   );
 }

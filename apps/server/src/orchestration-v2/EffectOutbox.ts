@@ -1,4 +1,5 @@
 import {
+  type ServerPendingWorkResult,
   CheckpointId,
   CheckpointScopeId,
   CommandId,
@@ -172,6 +173,7 @@ export class EffectOutboxError extends Schema.TaggedError<EffectOutboxError>()(
 const isEffectOutboxError = Schema.is(EffectOutboxError);
 
 export interface EffectOutboxV2Shape {
+  readonly pendingWork: Effect.Effect<ServerPendingWorkResult, EffectOutboxError>;
   readonly awaitAvailable: Effect.Effect<void>;
   readonly notifyAvailable: (count?: number) => Effect.Effect<void>;
   /** Persist rows only. Notify workers after the surrounding transaction commits. */
@@ -393,6 +395,17 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           }),
           Effect.mapError((cause) => new EffectOutboxError({ operation: "get", effectId, cause })),
         ),
+      pendingWork: sql<ServerPendingWorkResult["effects"][number]>`
+        SELECT effect_id AS id, thread_id AS threadId, effect_type AS type,
+          status, attempt_count AS attemptCount, created_at AS createdAt,
+          updated_at AS updatedAt, available_at AS availableAt, last_error AS lastError
+        FROM orchestration_v2_effect_outbox
+        WHERE status IN ('pending', 'running')
+        ORDER BY created_at ASC, effect_id ASC
+      `.pipe(
+        Effect.map((effects) => ({ effects })),
+        Effect.mapError((cause) => new EffectOutboxError({ operation: "pendingWork", cause })),
+      ),
       awaitAvailable: Queue.take(available),
       notifyAvailable,
       listByCommandId: (commandId) =>
