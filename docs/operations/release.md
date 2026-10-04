@@ -313,6 +313,9 @@ upstream release credentials. It never runs in `pingdotgg/t3code`.
   hand, so keep a copy of the `.p12` and its password outside GitHub.
 - Gatekeeper does not trust the certificate. Install the first build by hand and clear its
   quarantine flag (`xattr -dr com.apple.quarantine <app>`); later updates arrive in-app.
+- To confirm an install is on the fork's train, check for updates after a push to `main` has
+  finished releasing. The app offers the new nightly within its normal check interval, or at once
+  from the update button; a build that still reports no update feed was not built by this workflow.
 - The upstream `Release` workflow cannot run in a fork (its runners and secrets are missing).
   Disable it there with `gh workflow disable release.yml` so its schedule stops queueing runs.
 - Fork versions are not published to npm, so the **Update server** action for remote servers has no
