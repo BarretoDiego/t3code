@@ -237,6 +237,7 @@ export function buildProjectActionItems(input: {
   runProject: (project: CommandPaletteProject) => Promise<void>;
   searchTerms?: (project: CommandPaletteProject) => ReadonlyArray<string>;
   renderDescription?: (project: CommandPaletteProject) => ReactNode;
+  renderTrailingContent?: (project: CommandPaletteProject) => ReactNode;
   shortcutCommand?: KeybindingCommand;
 }): CommandPaletteActionItem[] {
   return input.projects.map((project) => ({
@@ -250,6 +251,7 @@ export function buildProjectActionItems(input: {
     ],
     title: project.displayName,
     description: input.renderDescription?.(project) ?? project.workspaceRoot,
+    titleTrailingContent: input.renderTrailingContent?.(project),
     icon: input.icon(project),
     ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
     run: async () => {
