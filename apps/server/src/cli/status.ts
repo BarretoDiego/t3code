@@ -98,6 +98,44 @@ const loadJobs = Effect.fn("cli.status.loadJobs")(function* (client: StatusRpcCl
   }
 });
 
+const FRESH_SAMPLE_WAIT = Duration.seconds(20);
+
+const sampledAt = (snapshot: ResourceTelemetrySnapshot) =>
+  Option.match(snapshot.health.native.lastSampleAt, {
+    onNone: () => null,
+    onSome: DateTime.toEpochMillis,
+  });
+
+/**
+ * The server samples processes only while someone is subscribed, so the first
+ * snapshot of a new subscription is whatever was cached before it, possibly
+ * from hours ago. Waits for one sampled since, and settles for the newest
+ * snapshot seen when no new sample arrives, which the report then flags.
+ */
+const readProcessSnapshot = Effect.fn("cli.status.readProcessSnapshot")(function* (
+  client: StatusRpcClient,
+) {
+  let newest: ResourceTelemetrySnapshot | null = null;
+  let cachedSampleAt: number | null = null;
+  yield* client[WS_METHODS.subscribeResourceTelemetry]({}).pipe(
+    Stream.takeUntil((snapshot) => {
+      const first = newest === null;
+      newest = snapshot;
+      if (first) {
+        cachedSampleAt = sampledAt(snapshot);
+        return false;
+      }
+      const at = sampledAt(snapshot);
+      return at !== null && at !== cachedSampleAt;
+    }),
+    Stream.runDrain,
+    Effect.timeoutOption(FRESH_SAMPLE_WAIT),
+  );
+  return newest === null
+    ? yield* new StatusReadError({ detail: "Process stream ended without a snapshot." })
+    : (newest as ResourceTelemetrySnapshot);
+});
+
 /** Reads each source independently, retaining failures alongside the sources that did answer. */
 export const readStatus = Effect.fn("cli.status.read")(function* (
   client: StatusRpcClient,
@@ -105,9 +143,14 @@ export const readStatus = Effect.fn("cli.status.read")(function* (
   includeStopped: boolean,
 ) {
   const errors: Array<{ source: string; detail: string }> = [];
-  const read = <A, E, R>(source: string, effect: Effect.Effect<A, E, R>, fallback: A) =>
+  const read = <A, E, R>(
+    source: string,
+    effect: Effect.Effect<A, E, R>,
+    fallback: A,
+    timeout: Duration.Duration = Duration.seconds(10),
+  ) =>
     effect.pipe(
-      Effect.timeout(Duration.seconds(10)),
+      Effect.timeout(timeout),
       Effect.catchCause((cause) => {
         errors.push({ source, detail: Cause.pretty(cause) });
         return Effect.succeed(fallback);
@@ -150,17 +193,10 @@ export const readStatus = Effect.fn("cli.status.read")(function* (
       read("server work", client[WS_METHODS.serverGetPendingWork]({}), { effects: [] }),
       read<ResourceTelemetrySnapshot | null, Error, never>(
         "processes",
-        client[WS_METHODS.subscribeResourceTelemetry]({}).pipe(
-          Stream.runHead,
-          Effect.flatMap((snapshot) =>
-            Option.isSome(snapshot)
-              ? Effect.succeed(snapshot.value)
-              : Effect.fail(
-                  new StatusReadError({ detail: "Process stream ended without a snapshot." }),
-                ),
-          ),
-        ),
+        readProcessSnapshot(client),
         null,
+        // The sampler slows to one sample every 15 seconds on a constrained host.
+        Duration.sum(FRESH_SAMPLE_WAIT, Duration.seconds(5)),
       ),
     ],
     { concurrency: 6 },
