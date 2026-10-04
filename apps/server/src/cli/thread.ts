@@ -9,10 +9,12 @@ import {
   type OrchestrationV2Command,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
   ProviderApprovalDecision,
   ProviderInteractionMode,
+  type ProjectId,
   type RunId,
   RuntimeMode,
   ThreadId,
@@ -775,6 +777,73 @@ const showCommand = Command.make("show", {
     ),
   ),
 );
+
+/**
+ * Starts a thread with one message and waits for the agent to stop, for
+ * commands that hand a step to an agent and need its answer. A wait that
+ * times out interrupts the run, so the agent does not keep working on a
+ * result nobody is waiting for.
+ */
+export const launchThreadAndWait = Effect.fn("cli.thread.launchAndWait")(function* (
+  client: EnvironmentRpcClient,
+  input: {
+    readonly projectId: ProjectId;
+    readonly title: string;
+    readonly text: string;
+    readonly modelSelection: ModelSelection;
+    readonly runtimeMode: RuntimeMode;
+    readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
+    readonly timeout: Duration.Duration;
+    /** Archive the thread once it settles, for one-off questions not worth keeping in the sidebar. */
+    readonly archiveWhenDone: boolean;
+  },
+) {
+  const { threadId } = yield* client[ORCHESTRATION_V2_WS_METHODS.launchThread]({
+    commandId: CommandId.make(newId()),
+    creationSource: CLI_PROVENANCE.creationSource,
+    threadId: ThreadId.make(newId()),
+    projectId: input.projectId,
+    title: input.title,
+    generateTitle: false,
+    modelSelection: input.modelSelection,
+    runtimeMode: input.runtimeMode,
+    interactionMode: "default",
+    workspaceStrategy: input.workspaceStrategy,
+    initialMessage: { messageId: MessageId.make(newId()), text: input.text, attachments: [] },
+  });
+  const settled = yield* waitForThread(client, threadId, {
+    sentAfter: null,
+    timeout: Option.some(input.timeout),
+  }).pipe(Effect.result);
+  if (settled._tag === "Failure") {
+    const shell = yield* loadShell(client);
+    const runId = shell.threads.find((thread) => thread.id === threadId)?.activeRunId ?? null;
+    if (runId !== null) {
+      yield* dispatch(client, {
+        type: "run.interrupt",
+        commandId: CommandId.make(newId()),
+        threadId,
+        runId,
+        holdQueue: true,
+      });
+    }
+    return { threadId, status: "timeout" as const, reply: "", lastError: settled.failure.message };
+  }
+  const detail = yield* loadThreadDetail(client, threadId);
+  if (input.archiveWhenDone) {
+    yield* dispatch(client, {
+      type: "thread.archive",
+      commandId: CommandId.make(newId()),
+      threadId,
+    });
+  }
+  return {
+    threadId,
+    status: resolveThreadStatus(settled.success),
+    reply: latestReply(detail.messages),
+    lastError: settled.success.lastError ?? null,
+  };
+});
 
 const newCommand = Command.make("new", {
   ...environmentTargetFlags,
