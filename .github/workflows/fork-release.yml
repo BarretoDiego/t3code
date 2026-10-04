@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - main
+      - feat/fork-release-pipeline
   workflow_dispatch:
 
 # One release at a time. A push that arrives while another is waiting replaces
