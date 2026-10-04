@@ -5664,16 +5664,16 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@stitches/react@1.2.8':
-    resolution: {integrity: sha512-9g9dWI4gsSVe8bNLlb+lMkBYsnIKCZTmvqvDG+Avnn69XfmHZKiaMrx7cgTaddq7aTPPmXiTsbFcUy0xgI4+wA==}
-    peerDependencies:
-      react: '>= 16.3.0'
-
   '@statsig/client-core@3.31.0':
     resolution: {integrity: sha512-SuxQD6TmVszPG7FoMKwTk/uyBuVFk7XnxI3T/E0uyb7PL7GNjONtfsoh+NqBBVUJVse0CUeSFfgJPoZy1ZOslQ==}
 
   '@statsig/js-client@3.31.0':
     resolution: {integrity: sha512-LFa5E0LjT6sTfZv3sNGoyRLSZ1078+agdgOA+Vm1ecjG+KbSOfBLTW7hMwimrJ29slRwbYDzbtKaPJo/R37N2g==}
+
+  '@stitches/react@1.2.8':
+    resolution: {integrity: sha512-9g9dWI4gsSVe8bNLlb+lMkBYsnIKCZTmvqvDG+Avnn69XfmHZKiaMrx7cgTaddq7aTPPmXiTsbFcUy0xgI4+wA==}
+    peerDependencies:
+      react: '>= 16.3.0'
 
   '@stripe/stripe-js@5.6.0':
     resolution: {integrity: sha512-w8CEY73X/7tw2KKlL3iOk679V9bWseE4GzNz3zlaYxcTjmcmWOathRb0emgo/QQ3eoNzmq68+2Y2gxluAv3xGw==}
@@ -17313,15 +17313,15 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@stitches/react@1.2.8(react@19.2.6)':
-    dependencies:
-      react: 19.2.6
-
   '@statsig/client-core@3.31.0': {}
 
   '@statsig/js-client@3.31.0':
     dependencies:
       '@statsig/client-core': 3.31.0
+
+  '@stitches/react@1.2.8(react@19.2.6)':
+    dependencies:
+      react: 19.2.6
 
   '@stripe/stripe-js@5.6.0': {}
 
