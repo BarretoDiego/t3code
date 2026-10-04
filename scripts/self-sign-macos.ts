@@ -43,6 +43,7 @@ export default async function selfSignMacApp(context: AfterPackContext): Promise
   const keychainPassword = NodeCrypto.randomBytes(16).toString("hex");
   const certPath = NodePath.join(workDir, "signing.p12");
   let keychainCreated = false;
+  let previousSearchList: ReadonlyArray<string> | undefined;
 
   try {
     NodeFS.writeFileSync(certPath, Buffer.from(p12, "base64"), { mode: 0o600 });
@@ -70,6 +71,13 @@ export default async function selfSignMacApp(context: AfterPackContext): Promise
       keychain,
     );
 
+    // codesign only resolves an identity from keychains on the user search
+    // list, even when one is named with --keychain.
+    previousSearchList = [...security("list-keychains", "-d", "user").matchAll(/"([^"]+)"/g)].map(
+      (match) => match[1]!,
+    );
+    security("list-keychains", "-d", "user", "-s", keychain, ...previousSearchList);
+
     // A self-signed certificate is untrusted, so it is absent from the "valid"
     // list and has to be addressed by hash with identity validation off.
     const identity = /\b([0-9A-F]{40})\b/.exec(
@@ -93,6 +101,9 @@ export default async function selfSignMacApp(context: AfterPackContext): Promise
     });
     console.log(`[self-sign-macos] Signed ${appPath} with self-signed identity ${identity}.`);
   } finally {
+    if (previousSearchList) {
+      security("list-keychains", "-d", "user", "-s", ...previousSearchList);
+    }
     if (keychainCreated) {
       try {
         security("delete-keychain", keychain);
