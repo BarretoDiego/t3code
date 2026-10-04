@@ -240,6 +240,28 @@ thread and `--new-thread` moves it back to a new thread per run. `run` starts
 the task immediately and leaves its schedule unchanged; `show` reports the
 last run's result and error.
 
+## Fork maintenance
+
+`t3 fork sync` merges upstream into your fork's target branch and pushes the
+result. It works in an isolated worktree; merge conflicts and verification
+failures can be handled by an agent through the T3 Code server on this machine.
+Add your fork checkout as a project before using agent-assisted resolution.
+
+Create `~/.local/share/t3code-sync/config.env` with at least:
+
+```sh
+REPO="/path/to/your/t3code-checkout"
+```
+
+The defaults use `upstream/main`, `origin`, and the fork's `main` branch.
+Set `BUILD_APP=1` to build the desktop app after syncing, and `RESTART_APP=1`
+to install the result. Installation closes the running app; save ongoing work
+first. `t3 fork build` builds the target branch without syncing.
+
+Use `t3 fork status` to inspect the last run, logs, and pending alerts. Pass
+`--no-push` or `--no-build` to `sync` to skip those steps, or `--config-dir`
+to use a different configuration directory.
+
 ## Everything else
 
 `t3 rpc` calls any server method directly, the same ones the apps use for git
