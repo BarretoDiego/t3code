@@ -2731,6 +2731,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    // Builds without a Developer ID can still carry a stable self-signed
+    // identity, which is what lets Squirrel.Mac install their updates.
+    const selfSignP12 = yield* Config.String("T3CODE_DESKTOP_MAC_SELF_SIGN_P12").pipe(
+      Config.option,
+    );
+    if (!signed && Option.getOrUndefined(selfSignP12)?.trim()) {
+      buildConfig.afterPack = path.join(repoRoot, "scripts/self-sign-macos.ts");
+    }
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",

@@ -379,6 +379,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("self-signs unsigned macOS builds only when a certificate is configured", () =>
+    Effect.gen(function* () {
+      const build = (signed: boolean, env: Record<string, string>) =>
+        createBuildConfig("mac", "dmg", "1.2.3", signed, false, undefined, undefined).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+        );
+      const configured = { T3CODE_DESKTOP_MAC_SELF_SIGN_P12: "cDEy" };
+
+      const selfSigned = yield* build(false, configured);
+      assert.match(String(selfSigned.afterPack), /scripts\/self-sign-macos\.ts$/);
+      assert.notProperty(yield* build(true, configured), "afterPack");
+      assert.notProperty(yield* build(false, {}), "afterPack");
+      assert.notProperty(
+        yield* build(false, { T3CODE_DESKTOP_MAC_SELF_SIGN_P12: "" }),
+        "afterPack",
+      );
+    }),
+  );
+
   it("stages only the desktop main-process externals", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
