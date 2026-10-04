@@ -25,10 +25,12 @@ import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
+import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
 import { guideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
+import { scheduleCommand } from "./cli/schedule.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
@@ -74,11 +76,13 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       projectCommand,
       threadCommand,
       terminalCommand,
+      scheduleCommand,
       rpcCommand,
       skillCommand,
       profileCommand,
       guideCommand,
       envCommand,
+      doctorCommand,
       serviceCommand,
       updateCommand,
       uninstallCommand,

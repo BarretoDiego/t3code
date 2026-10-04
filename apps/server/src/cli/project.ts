@@ -38,6 +38,7 @@ import {
 } from "../serverRuntimeState.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { type CliAuthLocationFlags, projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
+import { environmentFlag, withEnvironmentTarget } from "./environmentRpc.ts";
 import { projectListCommand } from "./thread.ts";
 
 type ProjectMutationTarget = {
@@ -46,7 +47,8 @@ type ProjectMutationTarget = {
   readonly workspaceRoot: string;
 };
 
-type ProjectCommandExecutionMode = "live" | "offline";
+/** `remote` is a saved environment (--env): paths there are the server's to resolve, not ours. */
+type ProjectCommandExecutionMode = "live" | "offline" | "remote";
 type ProjectCliDispatchCommand = ProjectMutation;
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
@@ -211,6 +213,7 @@ const ProjectCliRuntimeLive = ProjectServiceLayerLive.pipe(
 );
 
 const PROJECT_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(1);
+const PROJECT_CLI_REMOTE_SERVER_TIMEOUT = Duration.seconds(20);
 const withProjectCliSessionToken = <A, E, R>(
   environmentAuth: EnvironmentAuth.EnvironmentAuth["Service"],
   run: (token: string) => Effect.Effect<A, E, R>,
@@ -224,9 +227,6 @@ const withProjectCliSessionToken = <A, E, R>(
     (issued) => environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
   );
 
-const withProjectCliLiveServerTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.timeout(PROJECT_CLI_LIVE_SERVER_TIMEOUT));
-
 const makeLiveServerClient = (origin: string) =>
   HttpApiClient.make(EnvironmentHttpApi, {
     baseUrl: origin,
@@ -234,7 +234,8 @@ const makeLiveServerClient = (origin: string) =>
 
 const normalizeWorkspaceRootForProjectCommand = Effect.fn(
   "normalizeWorkspaceRootForProjectCommand",
-)(function* (workspaceRoot: string) {
+)(function* (workspaceRoot: string, mode: ProjectCommandExecutionMode) {
+  if (mode === "remote") return workspaceRoot.trim();
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   return yield* workspacePaths.normalizeWorkspaceRoot(workspaceRoot);
 });
@@ -262,6 +263,7 @@ const resolveProjectTitle = Effect.fn("resolveProjectTitle")(function* (
 const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (input: {
   readonly snapshot: ProjectSnapshot;
   readonly identifier: string;
+  readonly mode: ProjectCommandExecutionMode;
 }) {
   const trimmedIdentifier = input.identifier.trim();
   if (trimmedIdentifier.length === 0) {
@@ -282,7 +284,7 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
   }
 
   const normalizedWorkspaceRootResult = yield* Effect.result(
-    normalizeWorkspaceRootForProjectCommand(trimmedIdentifier),
+    normalizeWorkspaceRootForProjectCommand(trimmedIdentifier, input.mode),
   );
   const normalizedWorkspaceRoot =
     normalizedWorkspaceRootResult._tag === "Success" ? normalizedWorkspaceRootResult.success : null;
@@ -292,7 +294,11 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
     (project) => project.workspaceRoot === (normalizedWorkspaceRoot ?? trimmedIdentifier),
   );
 
-  const resolved = exactWorkspaceMatch;
+  // A title is the only stable handle a remote path offers: it cannot be normalized from here.
+  const titleMatches = activeProjects.filter(
+    (project) => project.title.toLowerCase() === trimmedIdentifier.toLowerCase(),
+  );
+  const resolved = exactWorkspaceMatch ?? (titleMatches.length === 1 ? titleMatches[0] : undefined);
   if (!resolved) {
     return yield* new ProjectNotFoundError({
       operation: "resolveProjectTarget",
@@ -312,21 +318,23 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
   } satisfies ProjectMutationTarget;
 });
 
-const fetchLiveOrchestrationSnapshot = (origin: string, bearerToken: string) =>
+const fetchLiveOrchestrationSnapshot = (
+  origin: string,
+  bearerToken: string,
+  timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+) =>
   Effect.gen(function* () {
     const client = yield* makeLiveServerClient(origin);
     return yield* client.projects.snapshot({
       headers: { authorization: `Bearer ${bearerToken}` },
     });
-  }).pipe(
-    withProjectCliLiveServerTimeout,
-    Effect.mapError(projectCommandErrorFromLiveServerRequest),
-  );
+  }).pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest));
 
 const dispatchLiveOrchestrationCommand = (
   origin: string,
   bearerToken: string,
   command: ProjectCliDispatchCommand,
+  timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
 ) =>
   Effect.gen(function* () {
     const client = yield* makeLiveServerClient(origin);
@@ -334,10 +342,7 @@ const dispatchLiveOrchestrationCommand = (
       headers: { authorization: `Bearer ${bearerToken}` },
       payload: command,
     } as Parameters<typeof client.projects.mutate>[0]);
-  }).pipe(
-    withProjectCliLiveServerTimeout,
-    Effect.mapError(projectCommandErrorFromLiveServerRequest),
-  );
+  }).pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest));
 
 const getOfflineSnapshot = Effect.fn("getOfflineSnapshot")(function* () {
   const projects = yield* ProjectService.ProjectService;
@@ -377,7 +382,7 @@ const tryResolveLiveProjectExecutionMode = Effect.fn("tryResolveLiveProjectExecu
 );
 
 const runProjectMutation = Effect.fn("runProjectMutation")(function* (
-  flags: CliAuthLocationFlags,
+  flags: CliAuthLocationFlags & { readonly env: Option.Option<string> },
   run: (input: {
     readonly snapshot: ProjectSnapshot;
     readonly dispatch: (
@@ -394,6 +399,29 @@ const runProjectMutation = Effect.fn("runProjectMutation")(function* (
     | WorkspacePaths.WorkspacePaths
   >,
 ) {
+  if (Option.isSome(flags.env)) {
+    return yield* withEnvironmentTarget({ baseDir: flags.baseDir, env: flags.env }, (target) =>
+      Effect.gen(function* () {
+        const output = yield* run({
+          snapshot: yield* fetchLiveOrchestrationSnapshot(
+            target.origin,
+            target.token,
+            PROJECT_CLI_REMOTE_SERVER_TIMEOUT,
+          ),
+          dispatch: (command) =>
+            dispatchLiveOrchestrationCommand(
+              target.origin,
+              target.token,
+              command,
+              PROJECT_CLI_REMOTE_SERVER_TIMEOUT,
+            ),
+          mode: "remote",
+        });
+        yield* Console.log(output);
+      }).pipe(Effect.provide(WorkspacePaths.layer)),
+    );
+  }
+
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel);
   const minimumLogLevel = config.logLevel;
@@ -445,8 +473,11 @@ const runProjectMutation = Effect.fn("runProjectMutation")(function* (
 
 const projectAddCommand = Command.make("add", {
   ...projectLocationFlags,
+  env: environmentFlag,
   workspaceRoot: Argument.String("path").pipe(
-    Argument.withDescription("Workspace root to add as a project."),
+    Argument.withDescription(
+      "Workspace root to add as a project. With --env, a path on that environment's machine.",
+    ),
   ),
   title: Flag.String("title").pipe(Flag.withDescription("Optional project title."), Flag.optional),
 }).pipe(
@@ -457,13 +488,18 @@ const projectAddCommand = Command.make("add", {
       Effect.fn("projectAddMutation")(function* ({
         snapshot,
         dispatch,
+        mode,
       }: {
+        readonly mode: ProjectCommandExecutionMode;
         readonly snapshot: ProjectSnapshot;
         readonly dispatch: (
           command: ProjectCliDispatchCommand,
         ) => Effect.Effect<void, Error, FileSystem.FileSystem | HttpClient.HttpClient | Path.Path>;
       }) {
-        const workspaceRoot = yield* normalizeWorkspaceRootForProjectCommand(flags.workspaceRoot);
+        const workspaceRoot = yield* normalizeWorkspaceRootForProjectCommand(
+          flags.workspaceRoot,
+          mode,
+        );
         const existingProject = snapshot.projects.find(
           (project) => project.deletedAt === null && project.workspaceRoot === workspaceRoot,
         );
@@ -492,8 +528,9 @@ const projectAddCommand = Command.make("add", {
 
 const projectRemoveCommand = Command.make("remove", {
   ...projectLocationFlags,
+  env: environmentFlag,
   project: Argument.String("project").pipe(
-    Argument.withDescription("Project id or workspace root to remove."),
+    Argument.withDescription("Project id, workspace root, or unique title to remove."),
   ),
   force: Flag.Boolean("force").pipe(
     Flag.withDescription("Delete the project and all of its threads."),
@@ -507,7 +544,9 @@ const projectRemoveCommand = Command.make("remove", {
       Effect.fn("projectRemoveMutation")(function* ({
         snapshot,
         dispatch,
+        mode,
       }: {
+        readonly mode: ProjectCommandExecutionMode;
         readonly snapshot: ProjectSnapshot;
         readonly dispatch: (
           command: ProjectCliDispatchCommand,
@@ -516,6 +555,7 @@ const projectRemoveCommand = Command.make("remove", {
         const project = yield* findActiveProjectTarget({
           snapshot,
           identifier: flags.project,
+          mode,
         });
         yield* dispatch({
           type: "project.delete",
@@ -531,8 +571,9 @@ const projectRemoveCommand = Command.make("remove", {
 
 const projectRenameCommand = Command.make("rename", {
   ...projectLocationFlags,
+  env: environmentFlag,
   project: Argument.String("project").pipe(
-    Argument.withDescription("Project id or workspace root to rename."),
+    Argument.withDescription("Project id, workspace root, or unique title to rename."),
   ),
   title: Argument.String("title").pipe(Argument.withDescription("New project title.")),
 }).pipe(
@@ -543,7 +584,9 @@ const projectRenameCommand = Command.make("rename", {
       Effect.fn("projectRenameMutation")(function* ({
         snapshot,
         dispatch,
+        mode,
       }: {
+        readonly mode: ProjectCommandExecutionMode;
         readonly snapshot: ProjectSnapshot;
         readonly dispatch: (
           command: ProjectCliDispatchCommand,
@@ -552,6 +595,7 @@ const projectRenameCommand = Command.make("rename", {
         const project = yield* findActiveProjectTarget({
           snapshot,
           identifier: flags.project,
+          mode,
         });
         const nextTitle = yield* resolveProjectTitle(project.workspaceRoot, flags.title);
         if (nextTitle === project.title) {

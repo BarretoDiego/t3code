@@ -368,6 +368,7 @@ import {
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
+import { ServerNetworkDiagnostics } from "./networkDiagnostics.ts";
 import {
   HostResourcesSnapshot,
   ResourceTelemetryHistory,
@@ -597,6 +598,7 @@ export const WS_METHODS = {
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetHostResources: "server.getHostResources",
+  serverGetNetworkDiagnostics: "server.getNetworkDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
@@ -1251,6 +1253,12 @@ const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDia
 const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, {
   payload: Schema.Struct({}),
   success: HostResourcesSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetNetworkDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetNetworkDiagnostics, {
+  payload: Schema.Struct({}),
+  success: ServerNetworkDiagnostics,
   error: EnvironmentAuthorizationError,
 });
 
@@ -2414,6 +2422,7 @@ export const WsForkRpcGroup = RpcGroup.make(
   WsMarketplaceUninstallRpc,
   WsMarketplaceSetAutoUpdateRpc,
   WsMarketplaceExportProviderTemplateRpc,
+  WsServerGetNetworkDiagnosticsRpc,
   WsProjectSyncManifestRpc,
   WsThreadHandoffRpc,
   WsThreadHandoffWatchRpc,

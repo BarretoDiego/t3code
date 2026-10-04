@@ -22,6 +22,9 @@ export const timeoutFlag = Flag.String("timeout").pipe(
 
 export const printJson = (value: unknown) => Console.log(JSON.stringify(value, null, 2));
 
+/** Prints one event of a stream as a single JSON line. */
+export const printJsonLine = (value: unknown) => Console.log(JSON.stringify(value));
+
 /** Runs a command handler against the target environment's RPC client. */
 export const withClient =
   <Flags extends EnvironmentTargetFlags, A, E, R>(
