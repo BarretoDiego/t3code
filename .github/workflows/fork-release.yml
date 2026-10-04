@@ -1,0 +1,187 @@
+name: Fork Release
+
+# Release train for a fork of T3 Code. Every push to main becomes a nightly
+# version, a tag, and a GitHub Release in the fork itself. The desktop build
+# reads its update feed from GITHUB_REPOSITORY, so installs of these builds
+# update from the fork's releases and never from upstream.
+#
+# It reuses release-desktop.yml on GitHub-hosted runners and needs none of the
+# upstream release secrets (relay, npm, Vercel, Apple, Azure). macOS builds are
+# signed with the self-signed certificate in MAC_SELF_SIGN_P12 and
+# MAC_SELF_SIGN_PASSWORD; without them the app is unsigned and macOS refuses to
+# install its updates. See docs/operations/release.md.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# One release at a time. A push that arrives while another is waiting replaces
+# it, so a burst of merges ships as the newest commit.
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bundle:
+    name: Build JS bundle
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release_meta.outputs.version }}
+      tag: ${{ steps.release_meta.outputs.tag }}
+      release_name: ${{ steps.release_meta.outputs.name }}
+    steps:
+      # Same credential-free checkout as release-desktop.yml.
+      - name: Checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Install bundle dependencies
+        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      # The run number only grows, so versions cut on the same day stay ordered
+      # and every release is an update over the one before it.
+      - id: release_meta
+        name: Resolve release version
+        run: |
+          node scripts/resolve-nightly-release.ts \
+            --date "$(date -u +%Y%m%d)" \
+            --run-number "$GITHUB_RUN_NUMBER" \
+            --sha "$GITHUB_SHA" \
+            --github-output
+
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ steps.release_meta.outputs.version }}"
+
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Build JS bundle
+        run: vp run build:desktop
+
+      # Same layout as release.yml's js-bundle so release-desktop.yml can
+      # package it unchanged.
+      - name: Upload JS bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 1
+
+  desktop_mac_arm64:
+    name: Desktop macOS arm64
+    needs: [bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.bundle.outputs.version }}
+      ref: ${{ github.sha }}
+      release_channel: nightly
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+      label: macOS arm64
+      runner: macos-latest
+      platform: mac
+      target: dmg
+      arch: arm64
+      rust_target: aarch64-apple-darwin
+      resource_key: darwin-arm64
+
+  desktop_linux_x64:
+    name: Desktop Linux x64
+    needs: [bundle]
+    uses: ./.github/workflows/release-desktop.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.bundle.outputs.version }}
+      ref: ${{ github.sha }}
+      release_channel: nightly
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+      label: Linux x64
+      runner: ubuntu-24.04
+      platform: linux
+      target: AppImage
+      arch: x64
+      rust_target: x86_64-unknown-linux-gnu
+      resource_key: linux-x64
+
+  # macOS is the build this train exists for, so it gates the release. Linux
+  # ships when its job passed and is left out of the release otherwise.
+  release:
+    name: Publish GitHub Release
+    needs: [bundle, desktop_mac_arm64, desktop_linux_x64]
+    if: ${{ !cancelled() && needs.desktop_mac_arm64.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      # Creating the release also creates the tag. Nightly versions are
+      # prereleases, which is where the nightly update channel looks.
+      - name: Publish release
+        shell: bash
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.bundle.outputs.tag }}
+          RELEASE_NAME: ${{ needs.bundle.outputs.release_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # electron-builder's config dump, not an update feed.
+          rm -f builder-debug.yml
+          files=(*.dmg *.zip *.AppImage *.deb *.blockmap *.yml)
+
+          previous_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [[ -n "$previous_tag" ]]; then
+            notes=(--generate-notes --notes-start-tag "$previous_tag")
+          else
+            notes=(--notes "First release built from this fork, at $GITHUB_SHA.")
+          fi
+
+          gh release create "$RELEASE_TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_NAME" \
+            --prerelease \
+            --latest=false \
+            "${notes[@]}"

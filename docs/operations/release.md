@@ -295,6 +295,29 @@ One-time Vercel dashboard setup:
 - Publishes the CLI npm packages (`t3` and `@t3code/t3-<platform>-<arch>`) to the `nightly` npm dist-tag using the same nightly version.
 - Does not commit version bumps back to `main`.
 
+## Fork releases
+
+`.github/workflows/fork-release.yml` lets a fork ship its own desktop builds without any of the
+upstream release credentials. It never runs in `pingdotgg/t3code`.
+
+- Every push to the fork's `main` publishes a nightly version (`vX.Y.Z-nightly.YYYYMMDD.<run_number>`)
+  as a tag and a prerelease in the fork. The desktop build takes its update feed from
+  `GITHUB_REPOSITORY`, so an install of a fork build updates from the fork's releases.
+- It builds macOS arm64 and Linux x64 on GitHub-hosted runners. macOS gates the release; Linux
+  assets are attached only when that job passes.
+- macOS builds are signed with a self-signed certificate from the `MAC_SELF_SIGN_P12` (base64
+  PKCS#12) and `MAC_SELF_SIGN_PASSWORD` secrets. Squirrel.Mac installs an update only when it
+  satisfies the running app's designated requirement, and an unsigned or ad hoc signed build can
+  never satisfy the next one. **The certificate must stay the same for the life of the fork.**
+  Replacing it strands every existing install on its current version until it is reinstalled by
+  hand, so keep a copy of the `.p12` and its password outside GitHub.
+- Gatekeeper does not trust the certificate. Install the first build by hand and clear its
+  quarantine flag (`xattr -dr com.apple.quarantine <app>`); later updates arrive in-app.
+- The upstream `Release` workflow cannot run in a fork (its runners and secrets are missing).
+  Disable it there with `gh workflow disable release.yml` so its schedule stops queueing runs.
+- Fork versions are not published to npm, so the **Update server** action for remote servers has no
+  matching `t3@<version>` to install. See the invariant below.
+
 ## Server self-update release invariant
 
 Connected servers update to the client's exact version, not to an npm dist-tag. Every released
