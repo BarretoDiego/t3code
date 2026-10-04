@@ -9,6 +9,7 @@ import {
   type OrchestrationV2Command,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
@@ -142,7 +143,12 @@ const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const formatTime = (value: DateTime.Utc | null | undefined) =>
   value === null || value === undefined ? null : DateTime.formatIso(value);
 
-export const loadShell = (client: EnvironmentRpcClient) =>
+export const loadShell = <E>(client: {
+  readonly [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input: {}) => Stream.Stream<
+    OrchestrationV2ShellStreamItem,
+    E
+  >;
+}) =>
   client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({}).pipe(
     Stream.filterMap((item) =>
       item.kind === "snapshot" ? Result.succeed(item.snapshot) : Result.fail(item),

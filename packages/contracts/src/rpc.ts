@@ -361,6 +361,8 @@ import {
   ServerSelfUpdateResult,
   ServerTraceDiagnosticsResult,
   ServerProcessDiagnosticsResult,
+  ServerPendingWorkResult,
+  ServerPendingWorkError,
   ServerProcessResourceHistoryInput,
   ServerProcessResourceHistoryResult,
   ServerSignalProcessInput,
@@ -597,6 +599,7 @@ export const WS_METHODS = {
   serverLogoutAcpRegistry: "server.logoutAcpRegistry",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
+  serverGetPendingWork: "server.getPendingWork",
   serverGetHostResources: "server.getHostResources",
   serverGetNetworkDiagnostics: "server.getNetworkDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
@@ -1248,6 +1251,12 @@ const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDia
   payload: Schema.Struct({}),
   success: ServerProcessDiagnosticsResult,
   error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetPendingWorkRpc = Rpc.make(WS_METHODS.serverGetPendingWork, {
+  payload: Schema.Struct({}),
+  success: ServerPendingWorkResult,
+  error: Schema.Union([ServerPendingWorkError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, {
@@ -2236,6 +2245,7 @@ export const WsCoreRpcGroup = RpcGroup.make(
   WsServerLogoutAcpRegistryRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
+  WsServerGetPendingWorkRpc,
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,

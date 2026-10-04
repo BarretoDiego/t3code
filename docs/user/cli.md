@@ -24,6 +24,25 @@ manual for agents that always matches the installed version.
   or an `rpc` payload to read it from stdin.
 - **Help.** `t3 <command> --help` lists every flag.
 
+## Check work before closing
+
+Run `t3 status` before closing or restarting T3 Code. It lists active and
+waiting threads, their projects and worktrees, provider/model and run ids,
+background tasks, busy terminals, running scheduled tasks, compute jobs,
+server operations such as checkpoints, and associated processes.
+
+Use `--env <name>` for a remote environment or `--all` for the local server
+and every saved environment. `--include-stopped` also lists completed and
+stopped threads and idle terminals. `--watch 5s` keeps updating the report;
+`--json` exposes the same details for scripts.
+
+`t3 status --check` exits non-zero when work is active or any status source
+is unavailable, stale, or incomplete. A waiting agent can still have background
+work; a sleeping process is not necessarily finished. Inspect the reported ids
+with `t3 thread show` or `t3 terminal read`, stop work explicitly if needed,
+and check again immediately before closing. Readiness is a snapshot and does
+not prevent new work from starting afterward.
+
 ## Projects
 
 | Task             | Command                                 |
