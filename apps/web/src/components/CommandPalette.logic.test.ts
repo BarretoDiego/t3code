@@ -3,6 +3,11 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools
 import type { Project, Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
+  buildSidebarProjectPickerEntries,
+  buildSidebarProjectSnapshots,
+  resolveProjectEnvironmentSummary,
+} from "../sidebarProjectGrouping";
+import {
   buildBrowseGroups,
   buildCommandPaletteProjectMetadata,
   buildProjectActionItems,
@@ -361,6 +366,69 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("buildProjectActionItems", () => {
+  it.each(["project", "new-thread-in"])(
+    "keeps linked projects together and searchable from every environment in %s",
+    async (valuePrefix) => {
+      const remoteEnvironmentId = EnvironmentId.make("home-lab");
+      const local = makeProject({ title: "Junti", linkKey: "link:junti" });
+      const remote = makeProject({
+        id: ProjectId.make("junti-remote"),
+        environmentId: remoteEnvironmentId,
+        title: "Junti server",
+        workspaceRoot: "/srv/junti",
+        linkKey: "link:junti",
+      });
+      const locations = new Map([
+        [LOCAL_ENVIRONMENT_ID, { label: "Local" }],
+        [remoteEnvironmentId, { label: "Home Lab" }],
+      ]);
+      const groups = buildSidebarProjectSnapshots({
+        projects: [local, remote],
+        settings: { sidebarProjectGroupingMode: "repository", sidebarProjectGroupingOverrides: {} },
+        primaryEnvironmentId: LOCAL_ENVIRONMENT_ID,
+        resolveEnvironmentLabel: (id) => locations.get(id)?.label ?? null,
+      });
+      const entries = buildSidebarProjectPickerEntries({
+        groups,
+        preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: remote.id },
+      });
+      const runProject = vi.fn(async () => undefined);
+      const items = entries.flatMap(({ group, targetProject }) =>
+        buildProjectActionItems({
+          projects: [{ ...targetProject, displayName: group.displayName }],
+          valuePrefix,
+          searchTerms: () =>
+            buildCommandPaletteProjectMetadata({
+              projects: group.memberProjects,
+              locationByEnvironmentId: locations,
+            }).searchTerms,
+          icon: () => null,
+          runProject,
+        }),
+      );
+
+      expect(items).toHaveLength(1);
+      expect(resolveProjectEnvironmentSummary(groups[0]!, LOCAL_ENVIRONMENT_ID)).toMatchObject({
+        label: "2 envs",
+        description: "Available in 2 environments: Local, Home Lab",
+      });
+      for (const query of ["local", "home lab", "/srv/junti", "/workspace/project"]) {
+        const filtered = filterCommandPaletteGroups({
+          activeGroups: [{ value: "projects", label: "Projects", items }],
+          isInSubmenu: true,
+          query,
+          projectSearchItems: [],
+          threadSearchItems: [],
+        });
+        expect(filtered.flatMap((group) => group.items)).toEqual(items);
+      }
+      await items[0]!.run();
+      expect(runProject).toHaveBeenCalledWith(
+        expect.objectContaining({ id: remote.id, environmentId: remoteEnvironmentId }),
+      );
+    },
+  );
+
   it("shows the grouped display name but keeps the real title for icons", () => {
     const project = makeProject({ title: "fleet", workspaceRoot: "/Users/theo/Code/p/fleet" });
     const iconTitles: string[] = [];
