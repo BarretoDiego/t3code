@@ -1,6 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, type GenerationJob } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
+  type GenerationJob,
+  type ResourceTelemetrySnapshot,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { readStatus } from "./status.ts";
 
@@ -90,6 +97,52 @@ describe("status collection", () => {
       );
       assert.ok(report.unknowns.some((error) => error.includes("pagination did not advance")));
       assert.strictEqual(report.safeToClose, false);
+    }),
+  );
+
+  /** A process snapshot whose only meaningful part is when it was sampled. */
+  const sampled = (lastSampleAt: Option.Option<DateTime.Utc>) =>
+    ({
+      processes: [],
+      sampleIntervalMs: 1000,
+      health: {
+        native: { status: "healthy", lastSampleAt, lastError: Option.none() },
+        inaccessibleProcessCount: 0,
+      },
+    }) as unknown as ResourceTelemetrySnapshot;
+
+  it.effect("waits for a process sample taken after subscribing, not the cached one", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const report = yield* readStatus(
+        client({
+          // The sampler was idle, so the subscription opens with an hour-old snapshot.
+          [WS_METHODS.subscribeResourceTelemetry]: () =>
+            Stream.make(
+              sampled(Option.some(DateTime.subtract(now, { hours: 1 }))),
+              sampled(Option.some(now)),
+            ),
+        }),
+        "Local",
+        false,
+      );
+      assert.deepStrictEqual(report.unknowns, []);
+      assert.strictEqual(report.readiness, "ready");
+    }),
+  );
+
+  it.effect("reports a sampler that never produces a new sample as unconfirmed", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const report = yield* readStatus(
+        client({
+          [WS_METHODS.subscribeResourceTelemetry]: () =>
+            Stream.make(sampled(Option.some(DateTime.subtract(now, { hours: 1 })))),
+        }),
+        "Local",
+        false,
+      );
+      assert.deepStrictEqual(report.unknowns, ["Process inventory has no recent sample."]);
     }),
   );
 });

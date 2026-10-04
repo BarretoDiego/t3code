@@ -193,6 +193,38 @@ export interface RunMigrationsOptions {
 }
 
 /**
+ * Names an earlier fork build recorded under an id this build gives to another
+ * migration, where a later migration here applies the skipped change again
+ * idempotently: 49 re-adds what 48 adds, and 56 re-adds what 54 adds. Such a
+ * database is complete, so its history is not worth a warning on every start.
+ */
+const RECONCILED_FORK_MIGRATIONS: ReadonlyMap<number, string> = new Map([
+  [48, "ProjectionThreadsMiniSkills"],
+  [54, "ReconcileProjectionThreadFeatures"],
+]);
+
+/**
+ * The recorded migrations that do not match this build's manifest and that no
+ * later migration makes up for. The migrator keys on the id, so each of these
+ * means a schema change of this build was skipped.
+ */
+export function divergentMigrations(
+  recorded: ReadonlyArray<{ readonly migration_id: number; readonly name: string }>,
+  manifest: ReadonlyArray<readonly [id: number, name: string]>,
+): Array<string> {
+  const manifestNames = new Map(manifest);
+  return recorded.flatMap((row) => {
+    const expected = manifestNames.get(row.migration_id);
+    if (expected === undefined) {
+      return [`${row.migration_id}:${row.name} (unknown to this build)`];
+    }
+    return expected === row.name || RECONCILED_FORK_MIGRATIONS.get(row.migration_id) === row.name
+      ? []
+      : [`${row.migration_id}:${row.name} (this build: ${expected})`];
+  });
+}
+
+/**
  * Run all pending migrations.
  *
  * Creates the migrations tracking table (effect_sql_migrations) if it doesn't exist,
@@ -227,16 +259,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     readonly migration_id: number;
     readonly name: string;
   }>`SELECT migration_id, name FROM effect_sql_migrations`;
-  const manifestNames = new Map<number, string>(migrationEntries.map(([id, name]) => [id, name]));
-  const divergent = recorded.flatMap((row) => {
-    const expected = manifestNames.get(row.migration_id);
-    if (expected === undefined) {
-      return [`${row.migration_id}:${row.name} (unknown to this build)`];
-    }
-    return expected === row.name
-      ? []
-      : [`${row.migration_id}:${row.name} (this build: ${expected})`];
-  });
+  const divergent = divergentMigrations(
+    recorded,
+    migrationEntries.map(([id, name]) => [id, name] as const),
+  );
   if (divergent.length > 0) {
     yield* Effect.logWarning(
       "Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name.",
