@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import { EnvironmentId, type DiscoveredProjectScript } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { act, StrictMode, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -33,6 +34,27 @@ vi.mock("./ui/popover", () => ({
 }));
 vi.mock("./ui/switch", () => ({ Switch: "input" }));
 vi.mock("./ui/textarea", () => ({ Textarea: "textarea" }));
+vi.mock("./ProjectScriptSuggestions", () => ({
+  ProjectScriptSuggestions: ({
+    onSelect,
+  }: {
+    onSelect: (script: DiscoveredProjectScript) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onSelect({
+          name: "test",
+          command: "pnpm run test",
+          cwd: "apps/web",
+          sourcePath: "apps/web/package.json",
+        })
+      }
+    >
+      Choose web test
+    </button>
+  ),
+}));
 
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -60,6 +82,7 @@ function editor(nextRequest: ProjectScriptEditorRequest) {
       <ProjectScriptEditorDialog
         request={nextRequest}
         scripts={[]}
+        workspace={{ environmentId: EnvironmentId.make("local"), cwd: "/repo" }}
         onSubmit={onSubmit}
         onClose={onClose}
         onDelete={onDelete}
@@ -107,6 +130,64 @@ afterEach(async () => {
 });
 
 describe("project action editor save lifecycle", () => {
+  it("saves a discovered subfolder action and allows changing its working directory", async () => {
+    onSubmit.mockResolvedValue(AsyncResult.success(undefined));
+    open({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
+    act(() => {
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.children.includes("Choose web test"))!
+        .props.onClick();
+    });
+    await act(async () => {
+      await submit();
+    });
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      null,
+      expect.objectContaining({
+        name: "apps/web: test",
+        command: "pnpm run test",
+        cwd: "apps/web",
+      }),
+    );
+
+    open({
+      scriptId: "web-test",
+      initial: {
+        ...EMPTY_PROJECT_SCRIPT_INPUT,
+        name: "Web test",
+        command: "pnpm run test",
+        cwd: "apps/web",
+      },
+    });
+    act(() => {
+      renderer!.root.findByProps({ id: "script-cwd" }).props.onChange({ target: { value: "" } });
+    });
+    await act(async () => {
+      await submit();
+    });
+    expect(onSubmit.mock.lastCall?.[1]).not.toHaveProperty("cwd");
+  });
+
+  it("rejects a working directory that leaves the checkout", async () => {
+    open({
+      scriptId: "test",
+      initial: {
+        ...EMPTY_PROJECT_SCRIPT_INPUT,
+        name: "Test",
+        command: "pnpm test",
+        cwd: "../outside",
+      },
+    });
+    await act(async () => {
+      await submit();
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(renderer!.root.findAllByType("p").flatMap((paragraph) => paragraph.children)).toContain(
+      "Working directory must be a path inside the checkout, such as apps/web.",
+    );
+  });
+
   it("blocks repeated submits and edits until the current save completes", async () => {
     const save = deferredSave();
     onSubmit.mockReturnValue(save.promise);

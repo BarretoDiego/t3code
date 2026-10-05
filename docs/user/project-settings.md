@@ -74,6 +74,10 @@ The Project category, shown while a project is selected, holds the project's nam
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
 `t3.json` actions can be imported there.
+When adding an action, search scripts declared in `package.json`, `task.yaml`, or
+Taskfiles, including those in subfolders. Selecting one fills in its command and
+working directory. The directory is relative to the checkout, so the same action
+runs in the corresponding folder when using a worktree.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the

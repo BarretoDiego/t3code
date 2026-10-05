@@ -18,6 +18,7 @@ import {
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectWriteFileError,
+  ProjectScriptDirectory,
 } from "./project.ts";
 
 const decodeProjectCreatePayload = Schema.decodeUnknownSync(ProjectCreatePayload);
@@ -25,6 +26,27 @@ const decodeProjectUpdatePayload = Schema.decodeUnknownSync(ProjectUpdatePayload
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
 const decodeSearchEntriesInput = Schema.decodeUnknownSync(ProjectSearchEntriesInput);
 const decodeSearchContentsInput = Schema.decodeUnknownSync(ProjectSearchContentsInput);
+const isScriptDirectory = Schema.is(ProjectScriptDirectory);
+
+describe("project action working directory", () => {
+  it.each([".", "apps/web", "apps\\web", "packages/my app"])(
+    "accepts checkout-relative directory %s",
+    (cwd) => {
+      expect(isScriptDirectory(cwd)).toBe(true);
+    },
+  );
+  it.each([
+    "/tmp/project",
+    "C:\\project",
+    "\\\\server\\share",
+    "../outside",
+    "apps/../../outside",
+    "apps\\..\\outside",
+    "apps\nweb",
+  ])("rejects directory outside the checkout %s", (cwd) => {
+    expect(isScriptDirectory(cwd)).toBe(false);
+  });
+});
 
 describe("project search inputs", () => {
   it("allows an empty entries query for bounded frecency browsing", () => {

@@ -216,6 +216,14 @@ export function ProjectActionsSettings() {
       <ProjectScriptEditorDialog
         request={request}
         scripts={scripts}
+        {...(representativeMember
+          ? {
+              workspace: {
+                environmentId: representativeMember.environmentId,
+                cwd: representativeMember.workspaceRoot,
+              },
+            }
+          : {})}
         onSubmit={submit}
         onDelete={(id) =>
           void persist((current) => current.filter((script) => script.id !== id), id, null)

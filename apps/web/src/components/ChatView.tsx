@@ -4673,7 +4673,10 @@ export default function ChatView(props: ChatViewProps) {
           return { ...current, [activeProject.id]: script.id };
         });
       }
-      const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
+      const targetCwd = projectScriptCwd({
+        project: { cwd: options?.cwd ?? gitCwd ?? activeProject.workspaceRoot },
+        script,
+      });
       const baseTerminalId =
         terminalUiState.activeTerminalId || activeKnownTerminalIds[0] || DEFAULT_THREAD_TERMINAL_ID;
       const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);

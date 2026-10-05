@@ -1,6 +1,7 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import type {
   ProjectScript,
+  EnvironmentId,
   ResolvedKeybindingsConfig,
   T3ProjectFileScript,
 } from "@t3tools/contracts";
@@ -52,6 +53,7 @@ export type { NewProjectScriptInput, ProjectScriptActionResult };
 const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 
 interface ProjectScriptsControlProps {
+  workspace?: { environmentId: EnvironmentId; cwd: string };
   displayMode?: "toolbar" | "panel";
   presentation?: "toolbar" | "menu";
   onRequestMenuClose?: () => void;
@@ -73,6 +75,7 @@ export default function ProjectScriptsControl({
   displayMode = "toolbar",
   presentation = "toolbar",
   onRequestMenuClose,
+  workspace,
   scripts,
   fileScripts = NO_FILE_SCRIPTS,
   keybindings,
@@ -461,6 +464,7 @@ export default function ProjectScriptsControl({
       <ProjectScriptEditorDialog
         request={editorRequest}
         scripts={scripts}
+        {...(workspace ? { workspace } : {})}
         onSubmit={submitScript}
         onDelete={(scriptId) => void onDeleteScript(scriptId)}
         onClose={() => setEditorRequest(null)}

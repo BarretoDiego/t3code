@@ -183,6 +183,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                   displayMode="panel"
                   scripts={props.activeProjectScripts}
                   fileScripts={fileScripts}
+                  {...(props.gitCwd
+                    ? { workspace: { environmentId: props.environmentId, cwd: props.gitCwd } }
+                    : {})}
                   keybindings={props.keybindings}
                   preferredScriptId={props.preferredScriptId}
                   onRunScript={props.onRunProjectScript}

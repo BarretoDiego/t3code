@@ -51,8 +51,16 @@ export function projectScriptCwd(input: {
     cwd: string;
   };
   worktreePath?: string | null;
+  script?: Pick<ProjectScript, "cwd">;
 }): string {
-  return input.worktreePath ?? input.project.cwd;
+  const root = input.worktreePath ?? input.project.cwd;
+  const directory = input.script?.cwd;
+  if (!directory || directory === ".") return root;
+  const separator = /^(?:[a-zA-Z]:|\\\\)/.test(root) ? "\\" : "/";
+  return `${root.replace(/[/\\]+$/, "")}${separator}${directory
+    .split(/[/\\]/)
+    .filter((segment) => segment && segment !== ".")
+    .join(separator)}`;
 }
 
 export function projectScriptRuntimeEnv(

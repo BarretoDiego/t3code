@@ -170,4 +170,40 @@ describe("projectScripts helpers", () => {
       }),
     ).toBe("/repo");
   });
+
+  it("runs nested actions in the corresponding directory of each checkout", () => {
+    expect(projectScriptCwd({ project: { cwd: "/repo" }, script: { cwd: "apps/web" } })).toBe(
+      "/repo/apps/web",
+    );
+    expect(
+      projectScriptCwd({
+        project: { cwd: "/repo" },
+        worktreePath: "/repo-worktree",
+        script: { cwd: "apps/web" },
+      }),
+    ).toBe("/repo-worktree/apps/web");
+    expect(
+      projectScriptCwd({
+        project: { cwd: "C:\\repo" },
+        worktreePath: "D:\\worktree\\",
+        script: { cwd: "apps/web" },
+      }),
+    ).toBe("D:\\worktree\\apps\\web");
+    expect(projectScriptCwd({ project: { cwd: "/repo" }, script: { cwd: "." } })).toBe("/repo");
+  });
+
+  it("preserves a selected working directory when saving an action", () => {
+    expect(
+      buildProjectScript("test", {
+        name: "Web test",
+        command: "pnpm run test",
+        cwd: "apps/web",
+        icon: "test",
+        runOnWorktreeCreate: false,
+        waitForSetup: false,
+        previewUrl: null,
+        autoOpenPreview: false,
+      }),
+    ).toMatchObject({ cwd: "apps/web", command: "pnpm run test" });
+  });
 });
