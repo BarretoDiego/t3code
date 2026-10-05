@@ -800,6 +800,7 @@ function ThreadRouteContent(
       const cwd = projectScriptCwd({
         project: { cwd: selectedThreadProject.workspaceRoot },
         worktreePath: preferredWorktreePath,
+        script,
       });
       const env = projectScriptRuntimeEnv({
         project: { cwd: selectedThreadProject.workspaceRoot },

@@ -9,7 +9,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectService from "./ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
-it.effect("resolves setup scripts through the standalone project service", () => {
+function testSetupScript(directory?: string) {
   const open = vi.fn((input: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[0]) =>
     Effect.succeed({
       threadId: input.threadId,
@@ -48,6 +48,7 @@ it.effect("resolves setup scripts through the standalone project service", () =>
         id: "setup",
         name: "Setup",
         command: "vp install",
+        ...(directory ? { cwd: directory } : {}),
         icon: "configure" as const,
         runOnWorktreeCreate: true,
       },
@@ -82,9 +83,12 @@ it.effect("resolves setup scripts through the standalone project service", () =>
       scriptName: "Setup",
       scriptCommand: "vp install",
       terminalId: "setup-setup",
-      cwd: "/repo-worktree",
+      cwd: directory ? `/repo-worktree/${directory}` : "/repo-worktree",
     });
-    assert.equal(open.mock.calls[0]?.[0].cwd, "/repo-worktree");
+    assert.equal(
+      open.mock.calls[0]?.[0].cwd,
+      directory ? `/repo-worktree/${directory}` : "/repo-worktree",
+    );
     assert.deepEqual(open.mock.calls[0]?.[0].env, {
       T3CODE_PROJECT_ROOT: "/repo",
       T3CODE_WORKTREE_PATH: "/repo-worktree",
@@ -116,4 +120,9 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     assert.deepEqual(lines, ["Downloading 10%", "Downloading 20%", "Done"]);
     yield* listener({ type: "closed", threadId: "thread-1", terminalId: "setup-setup" });
   }).pipe(Effect.provide(layer));
-});
+}
+
+it.effect("resolves setup scripts through the standalone project service", () => testSetupScript());
+it.effect("runs nested setup scripts in the corresponding worktree directory", () =>
+  testSetupScript("apps/web"),
+);

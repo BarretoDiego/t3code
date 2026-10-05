@@ -2,6 +2,7 @@ import { ProjectId, type ProjectScript } from "@t3tools/contracts";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   projectScriptRuntimeEnv,
+  projectScriptCwd,
   resolveProjectScripts,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
@@ -355,7 +356,11 @@ export const make = Effect.gen(function* () {
     }
 
     const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
-    const cwd = input.worktreePath;
+    const cwd = projectScriptCwd({
+      project: { cwd: project.workspaceRoot },
+      worktreePath: input.worktreePath,
+      script,
+    });
     const env = {
       ...projectScriptRuntimeEnv({
         project: { cwd: project.workspaceRoot },

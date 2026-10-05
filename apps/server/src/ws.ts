@@ -74,6 +74,7 @@ import {
   type ProjectMutation,
   ProjectListEntriesError,
   ProjectReadFileError,
+  ProjectDiscoverScriptsError,
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectSyncIoError,
@@ -3167,6 +3168,18 @@ const makeWsRpcLayer = (
                   }),
               ),
             ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsDiscoverScripts]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsDiscoverScripts,
+            workspaceFileSystem
+              .discoverScripts(input)
+              .pipe(
+                Effect.mapError(
+                  (cause) => new ProjectDiscoverScriptsError({ cwd: input.cwd, cause }),
+                ),
+              ),
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.projectsReadFile]: (input) =>

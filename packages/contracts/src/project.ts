@@ -27,10 +27,21 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
+/** A checkout-relative working directory, preserved when switching to a worktree. */
+export const ProjectScriptDirectory = TrimmedNonEmptyString.check(
+  Schema.makeFilter(
+    (value) =>
+      !/^(?:[/\\]|[a-zA-Z]:)/.test(value) &&
+      !value.split(/[/\\]/).includes("..") &&
+      !/[\r\n\0]/.test(value),
+  ),
+);
+
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
+  cwd: Schema.optional(ProjectScriptDirectory),
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
   /** Start the agent while setup runs unless explicitly disabled. */
@@ -39,6 +50,31 @@ export const ProjectScript = Schema.Struct({
   autoOpenPreview: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
+
+export const ProjectDiscoverScriptsInput = Schema.Struct({ cwd: TrimmedNonEmptyString });
+export type ProjectDiscoverScriptsInput = typeof ProjectDiscoverScriptsInput.Type;
+export const DiscoveredProjectScript = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  command: TrimmedNonEmptyString,
+  cwd: ProjectScriptDirectory,
+  sourcePath: TrimmedNonEmptyString,
+  description: Schema.optional(Schema.String),
+});
+export type DiscoveredProjectScript = typeof DiscoveredProjectScript.Type;
+export const ProjectDiscoverScriptsResult = Schema.Struct({
+  scripts: Schema.Array(DiscoveredProjectScript),
+  truncated: Schema.Boolean,
+  unreadablePaths: Schema.Array(Schema.String),
+});
+export type ProjectDiscoverScriptsResult = typeof ProjectDiscoverScriptsResult.Type;
+export class ProjectDiscoverScriptsError extends Schema.TaggedError<ProjectDiscoverScriptsError>()(
+  "ProjectDiscoverScriptsError",
+  { cwd: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Failed to discover scripts in '${this.cwd}'.`;
+  }
+}
 
 export const ProjectIconColor = Schema.Literals([
   "gray",

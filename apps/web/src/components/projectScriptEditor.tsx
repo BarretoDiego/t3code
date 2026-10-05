@@ -1,8 +1,11 @@
 import type {
+  EnvironmentId,
   ProjectScript,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { ProjectScriptDirectory } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -55,6 +58,7 @@ import { Label } from "./ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
+import { ProjectScriptSuggestions } from "./ProjectScriptSuggestions";
 
 const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "play", label: "Play" },
@@ -64,6 +68,7 @@ const SCRIPT_ICONS: Array<{ id: ProjectScriptIcon; label: string }> = [
   { id: "build", label: "Build" },
   { id: "debug", label: "Debug" },
 ];
+const isProjectScriptDirectory = Schema.is(ProjectScriptDirectory);
 
 export function ScriptIcon({
   icon,
@@ -83,6 +88,7 @@ export function ScriptIcon({
 export interface NewProjectScriptInput {
   name: string;
   command: string;
+  cwd?: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
   /** Setup scripts only: hold the agent until the script exits. */
@@ -124,6 +130,7 @@ export function editorRequestForScript(
     initial: {
       name: script.name,
       command: script.command,
+      ...(script.cwd ? { cwd: script.cwd } : {}),
       icon: script.icon,
       runOnWorktreeCreate: script.runOnWorktreeCreate,
       waitForSetup: script.runOnWorktreeCreate && script.async === false,
@@ -145,6 +152,7 @@ export function ProjectScriptEditorDialog({
   onSubmit,
   onDelete,
   onClose,
+  workspace,
 }: {
   request: ProjectScriptEditorRequest | null;
   /** Existing scripts, used to derive a unique id for new scripts. */
@@ -155,10 +163,12 @@ export function ProjectScriptEditorDialog({
   ) => Promise<ProjectScriptActionResult>;
   onDelete: (scriptId: string) => void;
   onClose: () => void;
+  workspace?: { environmentId: EnvironmentId; cwd: string };
 }) {
   const formId = React.useId();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
+  const [cwd, setCwd] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
@@ -190,6 +200,7 @@ export function ProjectScriptEditorDialog({
     if (!request) return;
     setName(request.initial.name);
     setCommand(request.initial.command);
+    setCwd(request.initial.cwd ?? "");
     setIcon(request.initial.icon);
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
@@ -233,6 +244,11 @@ export function ProjectScriptEditorDialog({
       setValidationError("Command is required.");
       return;
     }
+    const trimmedCwd = cwd.trim();
+    if (trimmedCwd && !isProjectScriptDirectory(trimmedCwd)) {
+      setValidationError("Working directory must be a path inside the checkout, such as apps/web.");
+      return;
+    }
 
     setValidationError(null);
     let payload: NewProjectScriptInput;
@@ -251,6 +267,7 @@ export function ProjectScriptEditorDialog({
       payload = {
         name: trimmedName,
         command: trimmedCommand,
+        ...(trimmedCwd ? { cwd: trimmedCwd } : {}),
         icon,
         runOnWorktreeCreate,
         waitForSetup: runOnWorktreeCreate && waitForSetup,
@@ -310,6 +327,18 @@ export function ProjectScriptEditorDialog({
           <DialogPanel>
             <form id={formId} onSubmit={submit}>
               <fieldset className="space-y-4" disabled={isSaving}>
+                {!isEditing && request && workspace && (
+                  <ProjectScriptSuggestions
+                    environmentId={workspace.environmentId}
+                    cwd={workspace.cwd}
+                    onSelect={(script) => {
+                      setName(script.cwd === "." ? script.name : `${script.cwd}: ${script.name}`);
+                      setCommand(script.command);
+                      setCwd(script.cwd === "." ? "" : script.cwd);
+                      setValidationError(null);
+                    }}
+                  />
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="script-name">Name</Label>
                   <div className="flex items-center gap-2">
@@ -383,6 +412,18 @@ export function ProjectScriptEditorDialog({
                     value={command}
                     onChange={(event) => setCommand(event.target.value)}
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="script-cwd">Working directory (optional)</Label>
+                  <Input
+                    id="script-cwd"
+                    placeholder="Project root"
+                    value={cwd}
+                    onChange={(event) => setCwd(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Relative to the current checkout or worktree, for example apps/web.
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="script-preview-url">Preview URL (optional)</Label>
