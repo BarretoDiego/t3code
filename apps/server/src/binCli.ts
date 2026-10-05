@@ -31,7 +31,7 @@ import { threadCommand } from "./cli/thread.ts";
 import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
 import { forkCommand } from "./cli/fork.ts";
-import { guideCommand } from "./cli/guide.ts";
+import { makeGuideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
 import { scheduleCommand } from "./cli/schedule.ts";
@@ -66,8 +66,8 @@ const connectUnavailableCommand = Command.make("connect", {
   ),
 );
 
-export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
-  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
+export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
+  const command = Command.make("t3", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription("Run the T3 Code server."),
     Command.withHandler((flags) => runServerCommand(flags)),
     Command.withSubcommands([
@@ -86,7 +86,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       rpcCommand,
       skillCommand,
       profileCommand,
-      guideCommand,
+      makeGuideCommand((): Command.Command.Any => command),
       envCommand,
       doctorCommand,
       forkCommand,
@@ -104,6 +104,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
   );
+  return command;
+};
 
 export const cli = makeCli();
 

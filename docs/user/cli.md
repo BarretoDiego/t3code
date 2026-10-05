@@ -8,6 +8,9 @@ and for other coding agents.
 
 **Using it from a coding agent?** Run `t3 guide`. It prints a compact operating
 manual for agents that always matches the installed version.
+Use `t3 guide --json` for the manual and a complete command catalog with
+arguments, flags, aliases, and accepted choices, including global and hidden
+options. This works without a running server.
 
 ## Basics
 
