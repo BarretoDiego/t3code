@@ -58,6 +58,10 @@ const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_METADATA_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
+// Counting lines of an untracked file makes git read all of it. Past this size a file is data,
+// not code, and a few of them (CSV dumps, logs) are enough to push every status refresh past
+// its timeout, so the Changes totals leave them out.
+const BRANCH_CHANGE_TOTALS_UNTRACKED_MAX_FILE_BYTES = 256 * 1024;
 // Patches the clients render are parsed against git's default a/ and b/ path
 // prefixes. A repository or global diff.noprefix or diff.mnemonicPrefix would
 // otherwise leak into the patch and leave every parsed file unnamed.
@@ -2458,11 +2462,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   // Lists untracked files and adds them to a temporary index, so a diff against any commit
-  // shows them as new. Returns null when the list is too big to read. Needs a Scope.
+  // shows them as new. Returns null when the list is too big to read. Files over `maxFileBytes`
+  // are left out. Needs a Scope.
   const prepareUntrackedReviewIndex = Effect.fn("prepareUntrackedReviewIndex")(function* (
     cwd: string,
     pathArgs: ReadonlyArray<string>,
     onlyPath?: string,
+    maxFileBytes?: number,
   ) {
     const untracked = yield* executeGit(
       "GitVcsDriver.review.listUntracked",
@@ -2476,9 +2482,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ),
     );
     if (untracked === null) return null;
-    const paths = splitNullSeparatedGitStdoutPaths(untracked).filter(
+    const listedPaths = splitNullSeparatedGitStdoutPaths(untracked).filter(
       (candidate) => onlyPath === undefined || candidate === onlyPath,
     );
+    const paths =
+      maxFileBytes === undefined
+        ? listedPaths
+        : (yield* Effect.forEach(
+            listedPaths,
+            (candidate) =>
+              fileSystem.stat(path.resolve(cwd, candidate)).pipe(
+                // A path that cannot be inspected (broken symlink, removed since the listing)
+                // stays in, and git decides what to do with it.
+                Effect.map((info) => info.size <= BigInt(maxFileBytes)),
+                Effect.orElseSucceed(() => true),
+              ),
+            { concurrency: 16 },
+          )).flatMap((keep, index) => (keep ? [listedPaths[index]!] : []));
     if (paths.length === 0) return { env: undefined };
     const env = yield* prepareReviewIndex(cwd, paths).pipe(
       Effect.catchTags({
@@ -2543,7 +2563,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     branch: string | null,
   ) {
     const { baseRef, mergeBase } = yield* resolveReviewMergeBase(cwd, branch);
-    const untracked = yield* prepareUntrackedReviewIndex(cwd, []);
+    const untracked = yield* prepareUntrackedReviewIndex(
+      cwd,
+      [],
+      undefined,
+      BRANCH_CHANGE_TOTALS_UNTRACKED_MAX_FILE_BYTES,
+    );
     if (untracked === null) {
       return yield* new GitCommandError({
         operation: "GitVcsDriver.readBranchChangeTotals",
