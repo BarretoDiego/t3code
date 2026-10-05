@@ -1,6 +1,10 @@
 import * as Console from "effect/Console";
 import { Command } from "effect/unstable/cli";
 
+import packageJson from "../../package.json" with { type: "json" };
+import { buildCommandCatalog } from "./commandCatalog.ts";
+import { jsonFlag, printJson } from "./common.ts";
+
 /**
  * The operating manual a coding agent reads before driving T3 Code. Printed
  * by `t3 guide` so it ships with the CLI and matches the installed version;
@@ -11,6 +15,9 @@ export const AGENT_GUIDE = `# Driving T3 Code with the t3 CLI (guide for coding 
 T3 Code runs coding agents (Codex, Claude, Cursor, OpenCode, ...) in threads on a
 server ("environment"). The \`t3\` CLI controls that server: threads, terminals,
 mini skills, agent profiles, and every server method.
+
+Run \`t3 guide --json\` for this manual plus the complete command catalog,
+including arguments, flags, aliases, and accepted choices. It needs no server.
 
 ## Rules
 - Add --json to anything you parse. Errors go to stderr and exit non-zero.
@@ -166,7 +173,17 @@ credential, WebSocket (rpc), then the host's own report (host-tailscale*,
 tailscale-serve). Run it before retrying a command that failed to connect.
 `;
 
-export const guideCommand = Command.make("guide").pipe(
-  Command.withDescription("Print the guide for driving T3 Code from scripts and coding agents."),
-  Command.withHandler(() => Console.log(AGENT_GUIDE)),
-);
+export const makeGuideCommand = (getRoot: () => Command.Command.Any) =>
+  Command.make("guide", { json: jsonFlag }).pipe(
+    Command.withDescription("Print the guide for driving T3 Code from scripts and coding agents."),
+    Command.withHandler(({ json }) =>
+      json
+        ? printJson({
+            schemaVersion: 1,
+            version: packageJson.version,
+            guide: AGENT_GUIDE,
+            commands: buildCommandCatalog(getRoot()),
+          })
+        : Console.log(AGENT_GUIDE),
+    ),
+  );
