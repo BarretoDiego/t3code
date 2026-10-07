@@ -18,7 +18,8 @@ import { TestClock } from "effect/testing";
 
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { internalCaller } from "../Caller.ts";
+import { internalCaller, unsupported } from "../Caller.ts";
+import * as EventJournal from "../EventJournal.ts";
 import * as OrchestratorInbox from "../OrchestratorInbox.ts";
 import * as OrchestratorService from "../OrchestratorService.ts";
 import {
@@ -681,6 +682,79 @@ describe("orchestrator turn loop", () => {
           const turns = yield* Ref.get(provider.turns);
           assert.notInclude(turns[0]!.text, "elsewhere");
         }).pipe(Effect.provide(makeAutomationLayer())),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "pausing leaves the running turn alone unless the interrupt is asked for",
+    () =>
+      withEngine("orchestrator-interrupt", ({ provider, journal }) =>
+        Effect.gen(function* () {
+          const { service, runtime, send, create, get, statuses } = yield* life;
+          const created = yield* create();
+          yield* holdNextTurn(provider);
+          yield* send(created.id, "Long job.");
+          yield* awaitThreadEvent(created.threadId!, providerTurnRunning);
+
+          const paused = yield* service.setState(user, {
+            orchestratorId: created.id,
+            desiredState: "paused",
+          });
+          yield* TestClock.adjust("1 minute");
+          yield* runtime.drain;
+          assert.strictEqual(paused.desiredState, "paused");
+          // The truth is shown: it wants to be paused and is still running.
+          assert.strictEqual((yield* get(created.id)).effectiveState, "running");
+          assert.deepStrictEqual(yield* statuses(created.id), ["reserved"]);
+
+          yield* service.setState(user, {
+            orchestratorId: created.id,
+            desiredState: "paused",
+            interruptActiveTurn: true,
+          });
+          const events = yield* journal.untilTurnsFinished(1);
+          assert.strictEqual(events.at(-1)!.payload.outcome, "interrupted");
+          assert.strictEqual(yield* turnCount(provider), 1);
+          assert.deepStrictEqual(yield* statuses(created.id), ["unknown"]);
+          assert.strictEqual((yield* get(created.id)).effectiveState, "paused");
+        }).pipe(Effect.provide(makeAutomationLayer())),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "an entry is not stored when its journal event cannot be recorded with it",
+    () =>
+      withEngine("orchestrator-atomic", ({ provider }) =>
+        Effect.gen(function* () {
+          const orchestratorId = yield* Effect.gen(function* () {
+            const { create } = yield* life;
+            return (yield* create()).id;
+          }).pipe(Effect.provide(makeAutomationLayer()));
+
+          yield* Effect.gen(function* () {
+            const { send, runtime } = yield* life;
+            const refused = yield* send(orchestratorId, "Lost with its event.").pipe(Effect.flip);
+            assert.strictEqual(refused.code, "CAPABILITY_UNSUPPORTED");
+            yield* runtime.drain;
+          }).pipe(
+            Effect.provide(
+              makeAutomationLayerWith(
+                Layer.mock(EventJournal.EventJournal)({
+                  append: () => Effect.fail(unsupported("journal")),
+                }),
+              ),
+            ),
+          );
+
+          yield* Effect.gen(function* () {
+            const { runtime, statuses } = yield* life;
+            yield* runtime.drain;
+            assert.deepStrictEqual(yield* statuses(orchestratorId), []);
+            assert.strictEqual(yield* turnCount(provider), 0);
+          }).pipe(Effect.provide(makeAutomationLayer()));
+        }),
       ),
     TIMEOUT,
   );
