@@ -10,6 +10,9 @@ import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
 import IconApps from "@tabler/icons-react-native/IconApps";
 import IconArchive from "@tabler/icons-react-native/IconArchive";
 import IconArrowBackUp from "@tabler/icons-react-native/IconArrowBackUp";
+import IconBan from "@tabler/icons-react-native/IconBan";
+import IconHelpCircle from "@tabler/icons-react-native/IconHelpCircle";
+import IconPlayerPause from "@tabler/icons-react-native/IconPlayerPause";
 import IconArrowDown from "@tabler/icons-react-native/IconArrowDown";
 import IconArrowForwardUp from "@tabler/icons-react-native/IconArrowForwardUp";
 import IconArrowLeft from "@tabler/icons-react-native/IconArrowLeft";
@@ -198,6 +201,9 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   pin: IconPin,
   "pin.slash": IconPinnedOff,
   play: IconPlayerPlay,
+  pause: IconPlayerPause,
+  nosign: IconBan,
+  "questionmark.circle": IconHelpCircle,
   plus: IconPlus,
   minus: IconMinus,
   "qrcode.viewfinder": IconQrcode,

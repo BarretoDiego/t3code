@@ -19,6 +19,7 @@ export function useThreadHeaderOptions(props: {
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
   readonly handoff?: { readonly onPress: () => void };
+  readonly orchestrator?: { readonly label: string; readonly onPress: () => void } | undefined;
 }) {
   const navigation = useNavigation();
   const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
@@ -106,6 +107,20 @@ export function useThreadHeaderOptions(props: {
     // reserved for future breadcrumbs/status).
     unstable_headerRightItems: () => [
       ...(layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems),
+      ...(props.orchestrator
+        ? [
+            withNativeGlassHeaderItem({
+              accessibilityLabel: props.orchestrator.label,
+              icon: {
+                name: "point.3.connected.trianglepath.dotted",
+                type: "sfSymbol" as const,
+              },
+              identifier: "thread-orchestrator",
+              onPress: props.orchestrator.onPress,
+              type: "button" as const,
+            }),
+          ]
+        : []),
       ...(props.handoff
         ? [
             withNativeGlassHeaderItem({
