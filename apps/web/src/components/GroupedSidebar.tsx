@@ -180,6 +180,7 @@ import {
   useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
+import { ThreadAutomationMarkers } from "./automation/ThreadAutomationMarkers";
 import {
   ThreadWorktreeIndicator,
   prStatusIndicator,
@@ -1063,7 +1064,14 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
             className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-xs text-card-foreground outline-none focus:border-foreground"
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <>
+            <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+            <ThreadAutomationMarkers
+              environmentId={thread.environmentId}
+              threadId={thread.id}
+              variant="row"
+            />
+          </>
         )}
         {row.summary !== null ? (
           <SidebarNestedToggle
@@ -1550,34 +1558,41 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
     />
   ) : (
-    <span
-      className={cn(
-        "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
-        variant === "card"
-          ? cn(
-              "truncate",
-              isUnread || isWoke
-                ? "text-foreground"
-                : shouldRecede
-                  ? "text-secondary-label"
-                  : status === "failed"
-                    ? "text-foreground/95"
-                    : "text-foreground/90",
-            )
-          : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
-              props.isActive || isWoke
-                ? "text-foreground"
-                : isUnread
-                  ? "text-muted-foreground"
-                  : "text-secondary-label/70",
-            ),
-        isRegeneratingTitle && "opacity-50",
-      )}
-    >
-      {thread.title}
-    </span>
+    <>
+      <span
+        className={cn(
+          "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+          shouldRecede ? "font-normal" : "font-medium",
+          variant === "card"
+            ? cn(
+                "truncate",
+                isUnread || isWoke
+                  ? "text-foreground"
+                  : shouldRecede
+                    ? "text-secondary-label"
+                    : status === "failed"
+                      ? "text-foreground/95"
+                      : "text-foreground/90",
+              )
+            : cn(
+                "truncate group-hover/sidebar-row:text-foreground",
+                props.isActive || isWoke
+                  ? "text-foreground"
+                  : isUnread
+                    ? "text-muted-foreground"
+                    : "text-secondary-label/70",
+              ),
+          isRegeneratingTitle && "opacity-50",
+        )}
+      >
+        {thread.title}
+      </span>
+      <ThreadAutomationMarkers
+        environmentId={thread.environmentId}
+        threadId={thread.id}
+        variant="row"
+      />
+    </>
   );
 
   // A real link so cmd/ctrl+click and middle-click open the host in the

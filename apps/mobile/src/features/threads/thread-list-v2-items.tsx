@@ -32,6 +32,8 @@ import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSym
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
+import { useOrchestratorThreadMarker } from "../../state/automation";
+import { OrchestratorRowMarker } from "../automation/automation-status";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -1100,6 +1102,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
+  // Null for every ordinary thread; reads a derived atom, not a subscription.
+  const orchestratorMarker = useOrchestratorThreadMarker(thread.environmentId, thread.id);
   const nestedToggle =
     props.nested != null && props.onToggleNested !== undefined ? (
       <ThreadListV2NestedToggle
@@ -1154,6 +1158,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           />
         ) : null}
         {nestedToggle}
+        {orchestratorMarker ? <OrchestratorRowMarker marker={orchestratorMarker} /> : null}
         <Text
           className={cn(
             "text-xs tabular-nums",

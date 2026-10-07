@@ -279,6 +279,18 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/automation": {
+      "types": "./src/state/automation.ts",
+      "default": "./src/state/automation.ts"
+    },
+    "./state/automation-presentation": {
+      "types": "./src/state/automationPresentation.ts",
+      "default": "./src/state/automationPresentation.ts"
+    },
+    "./state/automation-drafts": {
+      "types": "./src/state/automationDrafts.ts",
+      "default": "./src/state/automationDrafts.ts"
+    },
     "./state/thread-relationships": {
       "types": "./src/state/threadRelationships.ts",
       "default": "./src/state/threadRelationships.ts"

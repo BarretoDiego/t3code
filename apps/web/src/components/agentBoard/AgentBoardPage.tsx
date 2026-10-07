@@ -60,6 +60,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { ThreadAutomationMarkers } from "../automation/ThreadAutomationMarkers";
 import { SidebarInset } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
@@ -547,6 +548,12 @@ function BoardCard(props: {
         </span>
         <CardActions card={card} sources={props.sources} actions={props.actions} />
       </div>
+      <ThreadAutomationMarkers
+        environmentId={card.ref.environmentId}
+        threadId={card.ref.threadId}
+        variant="card"
+        className="mt-1.5 flex"
+      />
       {card.attention !== null || card.currentOperation !== null ? (
         <p className="mt-1.5 line-clamp-2 text-xs font-medium text-foreground/85">
           {card.attention?.label ?? card.currentOperation}

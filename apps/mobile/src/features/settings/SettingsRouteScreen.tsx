@@ -2,6 +2,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollVie
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation } from "@react-navigation/native";
 import { Platform, View } from "react-native";
+import { environmentSupportsAutomation } from "@t3tools/client-runtime/state/automation-presentation";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -155,6 +156,14 @@ function SettingsIndexSections() {
 
       <SettingsSection title="Automations">
         <SettingsRow icon="clock" label="Scheduled tasks" target="SettingsScheduledTasks" />
+        {/* Only where a selected environment's server speaks the automation RPCs. */}
+        {selectedTargets.some((target) => environmentSupportsAutomation(target.serverConfig)) ? (
+          <SettingsRow
+            icon="point.3.connected.trianglepath.dotted"
+            label="Orchestrators, hooks, peers and nodes"
+            target="SettingsAutomation"
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection title="Projects & threads">

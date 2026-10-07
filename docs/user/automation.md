@@ -130,6 +130,63 @@ t3 task validate <task> --file criteria.json
 
 Child threads appear nested under their parent in the [sidebar](./thread-sidebar.md).
 
+## In the app
+
+Hooks and orchestrators can also be managed without the CLI. These settings appear only for
+environments whose server supports automation; update the server on a machine that does not show
+them.
+
+### Orchestrators in the app
+
+An orchestrator's thread carries a marker in the thread list and in the thread header. The header
+spells out its state: idle, queued, running, waiting, paused, disabled, budget exceeded, handing
+off, not hosted here, or error.
+
+On web and desktop, open the thread's details to see the **Orchestrator** section: pause, resume,
+or disable it, and interrupt the turn it is taking now, which is a separate action from pausing.
+The section also shows its inbox, its usage against its budget, its child tasks, the questions and
+approvals it is tracking, and recent activity. The command palette has **Open orchestrator panel**
+and **Pause orchestrator** / **Resume orchestrator** for the thread you are in.
+
+- Usage the provider does not report shows as **Unknown**, not zero.
+- A child task shows **Reported** when it says it finished and **Validated** only once its
+  criteria were checked.
+- An inbox entry whose outcome is unknown stays listed until you **Requeue** or **Dismiss** it.
+- An orchestrator hosted in another environment is a read-only copy. It shows when it was last
+  observed and whether that environment is reachable; change it from the environment that hosts
+  it.
+
+Create and edit orchestrators in **Settings → Automation → Orchestrators**. Name, scope, project,
+model, profile, runtime mode, instructions, and batch window are fields; permissions, budget, and
+responsibility order are edited together as JSON, with the same keys as the CLI's definition file.
+If someone else changed the orchestrator while you were editing, saving asks you to reload it.
+
+On mobile, the thread list and header show the marker, and **Settings → Orchestrators, hooks,
+peers and nodes** lists each environment's orchestrators. Open one to see the same details and to
+pause or resume it. Creating, editing, disabling, interrupting a turn, and settling inbox entries
+need desktop, web, or the CLI.
+
+### Hooks in the app
+
+**Settings → Automation → Hooks** lists each environment's hooks with a switch to enable them.
+Create or edit a hook by choosing its event types, the projects, threads, or orchestrators it is
+limited to, and where it delivers. Retry, timeout, priority, and limits are edited as JSON.
+
+- **Test** shows which recent events match and what would be sent. It sends nothing.
+- **Deliveries** lists what each hook delivered or is holding, filtered by status. **Redeliver** a
+  failed or suppressed delivery, or dismiss it.
+- A webhook or command destination is marked **Needs operator allowlist**: it works only when
+  whoever runs that server allowed it, as described under [Hooks](#hooks).
+
+Mobile lists hooks without editing them.
+
+### Who answers a request
+
+On web and desktop, when a question or approval is waiting and something other than you is
+responsible for it, the thread, the thread list, and the Agent Operations Board name the
+orchestrator or parent thread that is, and why. Seeing a request there does not make it yours to answer. An approval that only
+you can decide says **Reserved for you**, even when an orchestrator is tracking it.
+
 ## Before closing the server
 
 `t3 status` counts this work too: a running orchestrator turn, active child tasks, jobs, and hook
