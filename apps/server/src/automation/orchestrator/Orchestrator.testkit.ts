@@ -71,7 +71,7 @@ import * as OrchestratorRuntime from "./Runtime.ts";
 export const environmentId = EnvironmentId.make("environment:orchestrator-test");
 export const projectId = ProjectId.make("project:orchestrator-test");
 export const otherProjectId = ProjectId.make("project:orchestrator-other");
-export const instanceId = ProviderInstanceId.make("codex");
+const instanceId = ProviderInstanceId.make("codex");
 export const otherInstanceId = ProviderInstanceId.make("codex-second");
 export const modelSelection = { instanceId, model: "gpt-5.4" } as const;
 const driver = ProviderDriverKind.make("codex");
@@ -86,7 +86,7 @@ export interface ProviderProbe {
   readonly usage: Ref.Ref<{ readonly input: number; readonly output: number } | null>;
 }
 
-export const makeProviderProbe = Effect.gen(function* () {
+const makeProviderProbe = Effect.gen(function* () {
   return {
     turns: yield* Ref.make<ReadonlyArray<{ readonly threadId: ThreadId; readonly text: string }>>(
       [],
@@ -446,7 +446,7 @@ const makeJournalLayer = (probe: JournalProbe) =>
     }),
   );
 
-export const makeJournalProbe = SubscriptionRef.make<ReadonlyArray<AutomationEvent>>([]).pipe(
+const makeJournalProbe = SubscriptionRef.make<ReadonlyArray<AutomationEvent>>([]).pipe(
   Effect.map((events) => new JournalProbe(events)),
 );
 
