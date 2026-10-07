@@ -166,4 +166,29 @@ describe("buildThreadActionMenuItems", () => {
     );
     expect(archiveItem?.disabled).toBe(true);
   });
+
+  it("leaves placement to the parent for a nested subagent row", () => {
+    const nested = allIds({
+      ...baseState,
+      supports: { ...baseState.supports, handoff: true },
+      nested: { readOnly: false },
+    });
+
+    for (const id of ["pin", "settle", "snooze", "unsnooze", "auto-settle"]) {
+      expect(nested).not.toContain(id);
+    }
+    expect(nested).toEqual(
+      expect.arrayContaining(["continue-on", "rename", "regenerate-title", "archive", "delete"]),
+    );
+  });
+
+  it("offers a provider-native subagent row only what works without its conversation", () => {
+    expect(
+      ids({
+        ...baseState,
+        supports: { ...baseState.supports, handoff: true },
+        nested: { readOnly: true },
+      }),
+    ).toEqual(["mark-unread", "copy", "project-settings", "archive", "delete"]);
+  });
 });
