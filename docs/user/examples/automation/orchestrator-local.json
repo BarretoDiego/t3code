@@ -1,0 +1,38 @@
+{
+  "name": "Release captain",
+  "scope": "local",
+  "projectId": "replace-with-a-project-id-from-t3-project-list",
+  "modelSelection": {
+    "instanceId": "claudeAgent",
+    "model": "claude-sonnet-4-6"
+  },
+  "runtimeMode": "approval-required",
+  "instructions": "Keep the release branch green. Delegate fixes to their own threads and check each result against its acceptance criteria before you report back.",
+  "permissions": {
+    "actions": [
+      "thread.read",
+      "thread.create",
+      "thread.send",
+      "request.answer",
+      "task.delegate",
+      "task.cancel"
+    ]
+  },
+  "budget": {
+    "maxTokens": 2000000,
+    "maxTurnsPerTask": 12,
+    "maxTurnsPerHour": 30,
+    "maxConcurrentChildren": 3,
+    "maxChildrenPerTask": 4,
+    "maxTaskAttempts": 2,
+    "maxTurnDurationMs": 900000
+  },
+  "responsibilityOrder": [
+    "explicit_owner",
+    "managing_parent",
+    "local_orchestrator",
+    "global_orchestrator",
+    "user"
+  ],
+  "batchWindowMs": 15000
+}

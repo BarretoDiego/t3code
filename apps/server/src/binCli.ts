@@ -34,6 +34,7 @@ import { forkCommand } from "./cli/fork.ts";
 import { makeGuideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
+import { orchestratorCommand } from "./cli/orchestrator.ts";
 import { scheduleCommand } from "./cli/schedule.ts";
 import { statusCommand } from "./cli/status.ts";
 import { terminalCommand } from "./cli/terminal.ts";
@@ -82,6 +83,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       threadCommand,
       terminalCommand,
       scheduleCommand,
+      orchestratorCommand,
       statusCommand,
       rpcCommand,
       skillCommand,

@@ -1,0 +1,39 @@
+{
+  "name": "Night watch",
+  "scope": "global",
+  "projectId": "replace-with-a-project-id-from-t3-project-list",
+  "modelSelection": {
+    "instanceId": "codex",
+    "model": "gpt-5.4"
+  },
+  "runtimeMode": "approval-required",
+  "instructions": "Watch every project in this environment. Answer questions agents ask when the answer is already in their thread, and leave approvals to me unless one is pre-authorized below.",
+  "permissions": {
+    "actions": [
+      "thread.read",
+      "thread.send",
+      "request.answer",
+      "request.approve",
+      "task.delegate",
+      "peer.message"
+    ],
+    "preAuthorizedApprovals": [
+      {
+        "requestKind": "file-read",
+        "decisions": ["accept"]
+      }
+    ]
+  },
+  "budget": {
+    "maxTokens": null,
+    "maxTurnsPerTask": 8,
+    "maxTurnsPerHour": 20,
+    "maxConcurrentChildren": 2,
+    "maxChildrenPerTask": 2,
+    "maxTaskAttempts": 2,
+    "maxTurnDurationMs": 600000
+  },
+  "responsibilityOrder": ["explicit_owner", "managing_parent", "global_orchestrator", "user"],
+  "batchWindowMs": 60000,
+  "desiredState": "paused"
+}
