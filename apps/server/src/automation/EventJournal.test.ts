@@ -10,6 +10,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
@@ -20,6 +21,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { internalCaller } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";
+import { JOURNAL_PRUNE_INTERVAL_MS, makeRetentionSweep } from "./events/JournalRetention.ts";
 import * as JournalStore from "./events/JournalStore.ts";
 import {
   makeJournalTestLayer,
@@ -507,6 +509,34 @@ describe("journal retention", () => {
         // New entries continue after the kept head.
         const [next] = yield* journal.append([testEvent("task.progress")]);
         assert.strictEqual(next?.cursor, 6);
+      }),
+    ),
+  );
+});
+
+describe("journal retention sweep", () => {
+  it.effect("prunes when first run and then once per interval", () =>
+    withJournal(
+      Effect.gen(function* () {
+        const journal = yield* EventJournal.EventJournal;
+        const sql = yield* SqlClient.SqlClient;
+        const sweep = yield* makeRetentionSweep;
+        yield* appendMany(2);
+        yield* TestClock.adjust("15 days");
+        yield* appendMany(1);
+        yield* sweep;
+        assert.strictEqual((yield* journal.status).oldestCursor, 3);
+
+        // Another entry is now past its age, but the sweep waits for its interval.
+        yield* appendMany(1);
+        yield* sql`UPDATE automation_journal SET recorded_at = '1969-01-01T00:00:00.000Z'`;
+        yield* sweep;
+        yield* TestClock.adjust(Duration.millis(JOURNAL_PRUNE_INTERVAL_MS - 1));
+        yield* sweep;
+        assert.strictEqual((yield* journal.status).oldestCursor, 3);
+        yield* TestClock.adjust("1 millis");
+        yield* sweep;
+        assert.strictEqual((yield* journal.status).oldestCursor, 4);
       }),
     ),
   );

@@ -118,7 +118,8 @@ export class JournalStore extends Context.Service<
     readonly page: (input: {
       readonly afterCursor: number;
       readonly throughCursor: number;
-      readonly filter?: AutomationEventFilter | undefined;
+      /** `"all"` reads the range as it is, administrative types included. */
+      readonly filter?: AutomationEventFilter | "all" | undefined;
       readonly limit: number;
     }) => Effect.Effect<
       {
@@ -426,7 +427,8 @@ const make = Effect.gen(function* () {
   };
 
   const page: JournalStore["Service"]["page"] = Effect.fn("JournalStore.page")(function* (input) {
-    const problem = input.filter === undefined ? null : filterProblem(input.filter);
+    const filter = input.filter === "all" ? undefined : input.filter;
+    const problem = filter === undefined ? null : filterProblem(filter);
     if (problem !== null) return yield* automationError("INVALID_INPUT", problem);
     if (input.throughCursor <= input.afterCursor) {
       return { entries: [], scannedThrough: input.afterCursor };
@@ -436,7 +438,7 @@ const make = Effect.gen(function* () {
       FROM automation_journal
       WHERE cursor > ${input.afterCursor}
         AND cursor <= ${input.throughCursor}
-        AND ${sql.and(filterClauses(input.filter))}
+        AND ${input.filter === "all" ? sql`1 = 1` : sql.and(filterClauses(filter))}
       ORDER BY cursor
       LIMIT ${input.limit}
     `.pipe(Effect.catchTag("SqlError", storageFailure("be read")));
