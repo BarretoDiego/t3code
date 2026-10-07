@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
-export class WebhookTransportError extends Schema.TaggedError<WebhookTransportError>()(
+class WebhookTransportError extends Schema.TaggedError<WebhookTransportError>()(
   "WebhookTransportError",
   { reason: Schema.String },
 ) {

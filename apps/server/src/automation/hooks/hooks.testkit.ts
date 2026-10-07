@@ -31,7 +31,7 @@ export const ORCHESTRATOR_ID = OrchestratorId.make("orchestrator-main");
  * Stands in for the orchestrator inbox table. It outlives a layer so a test
  * can rebuild the runtime on the same database and see what the inbox holds.
  */
-export interface InboxState {
+interface InboxState {
   /** Stored entries by `orchestratorId:dedupKey`: one per logical delivery. */
   readonly entries: Map<string, InboxEntry>;
   /** Dedup key of every call, in order, including repeats and failures. */
@@ -83,7 +83,7 @@ const inboxLayer = (state: InboxState) =>
   });
 
 /** What the webhook transport double saw and how it answers. */
-export interface WebhookState {
+interface WebhookState {
   readonly requests: Array<{
     readonly url: string;
     readonly headers: Readonly<Record<string, string>>;
@@ -116,7 +116,7 @@ const webhookLayer = (state: WebhookState) =>
   });
 
 /** Secrets kept in memory for the life of one test. */
-export const makeSecretsLayer = (secrets = new Map<string, Uint8Array>()) =>
+const makeSecretsLayer = (secrets = new Map<string, Uint8Array>()) =>
   Layer.succeed(ServerSecretStore.ServerSecretStore, {
     get: (name) => Effect.sync(() => Option.fromNullishOr(secrets.get(name))),
     set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
@@ -174,7 +174,7 @@ export const makeHookTestLayerOn = <E>(
 export const makeHookTestLayer = (options: HookTestOptions = {}) =>
   makeHookTestLayerOn(Layer.fresh(SqlitePersistenceMemory), options);
 
-export const inboxTarget: HookTarget = {
+const inboxTarget: HookTarget = {
   type: "orchestrator_inbox",
   orchestratorId: ORCHESTRATOR_ID,
 };

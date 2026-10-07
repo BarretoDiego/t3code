@@ -1,0 +1,19 @@
+{
+  "name": "Bring pending questions to the orchestrator first",
+  "enabled": true,
+  "filter": {
+    "types": ["request.opened"]
+  },
+  "target": {
+    "type": "orchestrator_inbox",
+    "orchestratorId": "main"
+  },
+  "deliveryMode": "each",
+  "retry": {
+    "maxAttempts": 8,
+    "initialDelayMs": 500,
+    "maxDelayMs": 60000
+  },
+  "timeoutMs": 10000,
+  "priority": 10
+}

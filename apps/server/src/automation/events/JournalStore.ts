@@ -29,18 +29,18 @@ import { filterProblem, typeSelectors } from "./filter.ts";
 import { randomId } from "./ids.ts";
 
 /** Entries kept when nothing else holds the journal back. */
-export const JOURNAL_RETENTION_MAX_ENTRIES = 50_000;
+const JOURNAL_RETENTION_MAX_ENTRIES = 50_000;
 /** Entries older than this are pruned even when the journal is short. */
-export const JOURNAL_RETENTION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
+const JOURNAL_RETENTION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
 /**
  * A durable consumer, hook, undelivered delivery or peer holds entries back
  * only up to these limits. Past them the entries go and the laggard gets
  * `CURSOR_EXPIRED` on its next read.
  */
-export const JOURNAL_RETENTION_HARD_MAX_ENTRIES = 250_000;
-export const JOURNAL_RETENTION_HARD_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1_000;
+const JOURNAL_RETENTION_HARD_MAX_ENTRIES = 250_000;
+const JOURNAL_RETENTION_HARD_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1_000;
 
-export interface JournalRetentionLimits {
+interface JournalRetentionLimits {
   readonly maxEntries: number;
   readonly maxAgeMs: number;
   readonly hardMaxEntries: number;

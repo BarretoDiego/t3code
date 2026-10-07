@@ -9,6 +9,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as EventStore from "../../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import { OrchestrationV2EventSinkLayerLive } from "../../orchestration-v2/runtimeLayer.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import * as EventJournal from "../EventJournal.ts";
 import {
@@ -143,6 +144,23 @@ describe("domain events in the journal", () => {
       assert.deepStrictEqual(yield* counts, [2, 2]);
       assert.deepStrictEqual(yield* Ref.get(heard), ["thread.created", "thread.organized"]);
     }).pipe(Effect.provide(makeLayer()), Effect.scoped),
+  );
+
+  it.effect("reaches the production sink when the journal is provided around it", () =>
+    Effect.gen(function* () {
+      const sink = yield* EventSink.EventSinkV2;
+      yield* sink.write({ events: [threadEvent("thread.created", makeThread("thread-wired"))] });
+      assert.deepStrictEqual(summary(yield* journalEntries), ["thread.created@thread-wired"]);
+    }).pipe(
+      Effect.provide(
+        // The runtime's own sink layer, with the journal supplied from outside it.
+        OrchestrationV2EventSinkLayerLive.pipe(
+          Layer.provideMerge(EventJournal.layer),
+          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provide(testEnvironmentLayer),
+        ),
+      ),
+    ),
   );
 
   it.effect("leaves a sink built without the journal working as before", () =>

@@ -28,6 +28,8 @@ export const makeRetentionSweep = Effect.map(JournalStore.JournalStore, (store) 
 /**
  * Prunes the journal on the shared scheduler clock. What may go is decided
  * from durable state on every run, so a restart needs nothing restored.
+ *
+ * @public The server runtime provides this next to the automation layer.
  */
 export const workerLive = Layer.effectDiscard(
   Effect.gen(function* () {

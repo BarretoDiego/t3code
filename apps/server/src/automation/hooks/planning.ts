@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 
 /** A batch hook without a window groups events that arrive within this long. */
-export const DEFAULT_HOOK_BATCH_WINDOW_MS = 5_000;
+const DEFAULT_HOOK_BATCH_WINDOW_MS = 5_000;
 /** Events one batch delivery carries at most; the rest go in the next one. */
 export const HOOK_MAX_BATCH_ENTRIES = 100;
 
@@ -54,7 +54,7 @@ export interface PlannedDelivery {
 }
 
 /** What the hook already delivered, for the limits that look back. */
-export interface DeliveryHistory {
+interface DeliveryHistory {
   /** Deliveries made so far per task. */
   readonly taskDeliveries: ReadonlyMap<string, number>;
   /** When the hook last delivered for a correlation chain, in epoch milliseconds. */
