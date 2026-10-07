@@ -202,6 +202,27 @@ Subagent threads started by the agent can't take messages; message the parent
 thread instead. When such a subagent needs an approval or an answer, the parent
 thread asks for it.
 
+### Subagent threads in the thread list
+
+Threads an agent starts, both its own subagents and the tasks it delegates through
+T3 Code, sit indented under the thread that started them, at any depth. Forks stay
+separate threads.
+
+The parent shows a count of its subagents. A dot beside the count means one of them is
+waiting for an approval or an answer, has failed, or is working, so you can tell without
+opening the list. Click the count (tap it on mobile) to show or hide the subagents. Until
+you choose, they show while any of them is working or waiting on you and fold away once
+all have finished. Your choice is remembered per thread on that device. A long list shows
+the subagents that need attention and the most recent ones; **Show more** reveals the rest.
+
+Subagents move with their parent when you pin, settle, snooze, or reorder it, and their
+own menu has no pin, settle, or snooze. If the parent is settled, snoozed, or archived
+while a subagent is still working or waiting on you, that subagent gets its own row in the
+active list until it finishes. Archiving a thread hides its finished subagents with it.
+
+On web and desktop, the thread jump shortcuts count top-level threads only, while previous
+and next thread also step through the subagents on screen.
+
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.

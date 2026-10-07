@@ -32,6 +32,7 @@ import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspace
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { useThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -39,6 +40,8 @@ import { threadListEnvironmentsAtom } from "../../state/server";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
+  ThreadListV2NestedMoreRow,
+  ThreadListV2NestedRow,
   ThreadListV2PendingRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
@@ -464,6 +467,10 @@ export function HomeScreen(props: HomeScreenProps) {
   );
   const {
     loaded: shelfPreferencesLoaded,
+    nestedExpandedByKey,
+    nestedShowAllKeys,
+    setNestedExpanded,
+    showAllNested,
     settledShelfExpanded,
     snoozedShelfExpanded,
     toggleSettledShelf,
@@ -532,12 +539,17 @@ export function HomeScreen(props: HomeScreenProps) {
     nowMinute,
     snoozeWakeTick,
   ]);
+  // The list nests subagent threads under their parents, so it reads every
+  // shell. `props.threads` is the navigation set, which leaves subagents and
+  // archived threads out; the builder needs both to place a child (and to
+  // tell an archived parent from one that is not loaded).
+  const nestableThreads = useThreadShells();
   const threadListV2Layout = useMemo(() => {
     // Settled threads are live shells; archived threads keep their original
     // "hidden from lists" meaning.
     return buildThreadListV2Items({
       pendingOrder,
-      threads: props.threads.filter((thread) => thread.archivedAt === null),
+      threads: nestableThreads,
       environmentId: props.selectedEnvironmentId,
       projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
       searchQuery: props.searchQuery,
@@ -550,8 +562,12 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: null,
+      nestedExpandedByKey,
+      nestedShowAllKeys,
     });
   }, [
+    nestedExpandedByKey,
+    nestedShowAllKeys,
     pendingOrder,
     queuedThreadKeys,
     nowMinute,
@@ -563,7 +579,7 @@ export function HomeScreen(props: HomeScreenProps) {
     snoozeEnvironmentIds,
     props.searchQuery,
     props.selectedEnvironmentId,
-    props.threads,
+    nestableThreads,
     matchedThreadKeys,
     v2ScopedProjectGroup,
   ]);
@@ -617,6 +633,7 @@ export function HomeScreen(props: HomeScreenProps) {
         queuedThreadKeys,
         moveAvailability: threadMoveAvailability,
         shelfPreferencesLoading: !shelfPreferencesLoaded,
+        nestedByKey: threadListV2Layout.nestedByKey,
       }),
     [
       nowMinute,
@@ -682,10 +699,37 @@ export function HomeScreen(props: HomeScreenProps) {
           />
         );
       }
+      if (item.type === "v2-nested-thread") {
+        return (
+          <ThreadListV2NestedRow
+            thread={item.thread}
+            threadKey={item.threadKey}
+            depth={item.depth}
+            timeLabel={item.timeLabel}
+            nested={item.nested}
+            showTrailingDivider={item.showTrailingDivider}
+            onSelectThread={props.onSelectThread}
+            onToggleNested={setNestedExpanded}
+          />
+        );
+      }
+      if (item.type === "v2-nested-more") {
+        return (
+          <ThreadListV2NestedMoreRow
+            parentKey={item.parentKey}
+            depth={item.depth}
+            hiddenCount={item.hiddenCount}
+            showTrailingDivider={item.showTrailingDivider}
+            onShowAll={showAllNested}
+          />
+        );
+      }
       const thread = item.item.thread;
       return (
         <ThreadListV2Row
           onNewThreadOnBranch={props.onNewThreadOnBranch}
+          nested={item.nested}
+          onToggleNested={setNestedExpanded}
           thread={thread}
           variant={item.item.variant}
           hasQueuedMessages={item.hasQueuedMessages}
@@ -776,6 +820,8 @@ export function HomeScreen(props: HomeScreenProps) {
       props.savedConnectionsById,
       resolveProviderInstance,
       providersByEnvironmentId,
+      setNestedExpanded,
+      showAllNested,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
       threadSearchMatchByKey,

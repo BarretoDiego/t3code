@@ -49,6 +49,9 @@ export interface Preferences {
   /** Fresh keys reset both shelves to collapsed when users update. */
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
+  /** The user's show/hide choice for a thread's nested subagents, keyed by
+      `environmentId:threadId`. Absent = decided from the subagents' status. */
+  readonly threadListNestedExpandedByKey?: Readonly<Record<string, boolean>>;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -110,6 +113,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     modelFavorites?: Preferences["modelFavorites"];
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
+    threadListNestedExpandedByKey?: Record<string, boolean>;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -196,6 +200,17 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
     preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
+  }
+  if (
+    typeof parsed.threadListNestedExpandedByKey === "object" &&
+    parsed.threadListNestedExpandedByKey !== null &&
+    !Array.isArray(parsed.threadListNestedExpandedByKey)
+  ) {
+    preferences.threadListNestedExpandedByKey = Object.fromEntries(
+      Object.entries(parsed.threadListNestedExpandedByKey).filter(
+        (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+      ),
+    );
   }
   return preferences;
 }

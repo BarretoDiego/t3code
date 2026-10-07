@@ -268,6 +268,26 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  it("keeps the user's nested subagent show/hide choices and drops malformed ones", async () => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        threadListNestedExpandedByKey: {
+          "environment-1:parent-a": true,
+          "environment-1:parent-b": false,
+          "environment-1:parent-c": "yes",
+        },
+      }),
+      10,
+    );
+
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListNestedExpandedByKey: {
+        "environment-1:parent-a": true,
+        "environment-1:parent-b": false,
+      },
+    });
+  });
+
   it("reconciles fallback preferences after SQLite recovers", async () => {
     mocks.setPreferencesJson(JSON.stringify({ baseFontSize: 15 }), 10);
     await mocks.setItemAsync(

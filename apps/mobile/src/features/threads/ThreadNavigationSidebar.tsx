@@ -27,7 +27,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
-import { useProjects, useNavigationThreadShells } from "../../state/entities";
+import { useProjects, useNavigationThreadShells, useThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
@@ -56,6 +56,8 @@ import { SidebarFilterButton } from "./sidebar-filter-button";
 import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
 import {
+  ThreadListV2NestedMoreRow,
+  ThreadListV2NestedRow,
   ThreadListV2PendingRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
@@ -289,6 +291,10 @@ function ThreadNavigationSidebarPane(
   );
   const {
     loaded: shelfPreferencesLoaded,
+    nestedExpandedByKey,
+    nestedShowAllKeys,
+    setNestedExpanded,
+    showAllNested,
     settledShelfExpanded,
     snoozedShelfExpanded,
     toggleSettledShelf,
@@ -355,10 +361,15 @@ function ThreadNavigationSidebarPane(
     nowMinute,
     snoozeWakeTick,
   ]);
+  // The list nests subagent threads under their parents, so it reads every
+  // shell. `threads` is the navigation set, which leaves subagents and
+  // archived threads out; the builder needs both to place a child (and to
+  // tell an archived parent from one that is not loaded).
+  const nestableThreads = useThreadShells();
   const threadListV2Layout = useMemo(() => {
     return buildThreadListV2Items({
       pendingOrder,
-      threads: threads.filter((thread) => thread.archivedAt === null),
+      threads: nestableThreads,
       environmentId: options.selectedEnvironmentId,
       projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
       searchQuery: props.searchQuery,
@@ -371,8 +382,12 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      nestedExpandedByKey,
+      nestedShowAllKeys,
     });
   }, [
+    nestedExpandedByKey,
+    nestedShowAllKeys,
     pendingOrder,
     queuedThreadKeys,
     nowMinute,
@@ -386,7 +401,7 @@ function ThreadNavigationSidebarPane(
     settledVisibleCount,
     settlementEnvironmentIds,
     snoozeEnvironmentIds,
-    threads,
+    nestableThreads,
     selectedProjectScope,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
@@ -435,6 +450,7 @@ function ThreadNavigationSidebarPane(
       queuedThreadKeys,
       moveAvailability: threadMoveAvailability,
       shelfPreferencesLoading: !shelfPreferencesLoaded,
+      nestedByKey: threadListV2Layout.nestedByKey,
     });
     if (settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0) {
       items.push({
@@ -668,6 +684,8 @@ function ThreadNavigationSidebarPane(
           return (
             <ThreadListV2Row
               onNewThreadOnBranch={props.onNewThreadOnBranch}
+              nested={item.nested}
+              onToggleNested={setNestedExpanded}
               thread={thread}
               variant={item.item.variant}
               hasQueuedMessages={item.hasQueuedMessages}
@@ -729,6 +747,30 @@ function ThreadNavigationSidebarPane(
             />
           );
         }
+        case "v2-nested-thread":
+          return (
+            <ThreadListV2NestedRow
+              thread={item.thread}
+              threadKey={item.threadKey}
+              depth={item.depth}
+              timeLabel={item.timeLabel}
+              nested={item.nested}
+              pane="sidebar"
+              selected={props.selectedThreadKey === item.threadKey}
+              onSelectThread={handleSelectThread}
+              onToggleNested={setNestedExpanded}
+            />
+          );
+        case "v2-nested-more":
+          return (
+            <ThreadListV2NestedMoreRow
+              parentKey={item.parentKey}
+              depth={item.depth}
+              hiddenCount={item.hiddenCount}
+              pane="sidebar"
+              onShowAll={showAllNested}
+            />
+          );
         case "v2-snoozed-shelf":
           return (
             <ThreadListV2SnoozedShelfHeader
@@ -789,8 +831,10 @@ function ThreadNavigationSidebarPane(
       providersByEnvironmentId,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
+      setNestedExpanded,
       settleThread,
       settlementEnvironmentIds,
+      showAllNested,
       showMoreSettled,
       sidebarScrollGesture,
       snoozeEnvironmentIds,
