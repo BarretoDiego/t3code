@@ -12,8 +12,11 @@ import * as PeerService from "./PeerService.ts";
 
 const environmentId = EnvironmentId.make("env-test");
 const layer = AutomationDiagnosticsService.layer.pipe(
-  Layer.provide(OrchestratorService.layer),
-  Layer.provide(PeerService.layer),
+  // Only `list` is read here; an environment with no orchestrators or peers.
+  Layer.provide(
+    Layer.mock(OrchestratorService.OrchestratorService)({ list: () => Effect.succeed([]) }),
+  ),
+  Layer.provide(Layer.mock(PeerService.PeerService)({ list: () => Effect.succeed([]) })),
   Layer.provide(
     Layer.succeed(
       ServerEnvironment,
