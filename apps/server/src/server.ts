@@ -19,6 +19,8 @@ import * as SourceControlAccounts from "./sourceControl/SourceControlAccounts.ts
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { ComputeService } from "./compute/ComputeService.ts";
 import * as AutomationLayer from "./automation/AutomationLayer.ts";
+import * as AutomationWorkers from "./automation/AutomationWorkers.ts";
+import * as EventJournal from "./automation/EventJournal.ts";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -465,7 +467,10 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
   ),
 );
 
+// The event sink records public automation events in the same transaction as
+// the domain events, so the journal must be in its environment when it is built.
 const OrchestrationV2RuntimeLayerLive = OrchestrationV2ProductionLayerLive.pipe(
+  Layer.provide(EventJournal.layer),
   Layer.provide(ProviderEventIngestor.analyticsLive),
   Layer.provide(CheckpointStoreLayerLive),
   Layer.provide(GitWorkflowLayerLive),
@@ -559,6 +564,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
   ReplayMarkers.layer,
+  AutomationWorkers.layer,
 ).pipe(
   // Server-held `sendAt` messages; the WebSocket route starts its worker once
   // commands are ready and dispatches due messages through the orchestrator.

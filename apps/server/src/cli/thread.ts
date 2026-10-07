@@ -1623,12 +1623,22 @@ const lifecycleCommands = [
   simpleThreadCommand(
     "archive",
     "Archive a thread. Refused while its agent is working: interrupt it first.",
-    (context) =>
-      single(context, (commandId) => ({
-        type: "thread.archive",
-        commandId,
-        threadId: context.thread.id,
-      })),
+    (context) => {
+      // The same guard the app applies before sending: the server itself still
+      // accepts an archive during a turn and discards the queued work.
+      const status = resolveThreadStatus(context.thread);
+      return status === "starting" || status === "running"
+        ? failCli(
+            "CONFLICT",
+            `Thread ${context.thread.id} has an active turn and cannot be archived. Interrupt it first.`,
+            { threadId: context.thread.id, status },
+          )
+        : single(context, (commandId) => ({
+            type: "thread.archive",
+            commandId,
+            threadId: context.thread.id,
+          }));
+    },
     "Archived",
   ),
   simpleThreadCommand(

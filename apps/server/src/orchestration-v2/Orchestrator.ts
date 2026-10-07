@@ -2392,27 +2392,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is already archived.`,
       });
     }
-    if (command.type === "thread.archive") {
-      // Archiving detaches the provider, so it must not land on a turn that is
-      // preparing, starting, or running. Queued work is discarded below.
-      const { runs } = yield* loadProjectionForCommand(command, ["runs"], { turnItemTypes: [] });
-      if (
-        runs.some(
-          (run) =>
-            run.status === "preparing" || run.status === "starting" || run.status === "running",
-        )
-      ) {
-        return yield* new OrchestratorDispatchError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: {
-            code: "CONFLICT",
-            detail: `Thread ${command.threadId} has an active turn and cannot be archived. Interrupt it first.`,
-            threadId: command.threadId,
-          },
-        });
-      }
-    }
     // An expiry is a fact about the stored wake time: it never wakes a thread
     // that is already awake or was snoozed again to a later time.
     if (
