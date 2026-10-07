@@ -93,14 +93,6 @@ export const decodeBody = <S extends Schema.Top>(
     ),
   );
 
-const RefusalShape = Schema.TaggedStruct("AutomationError", {
-  code: Schema.String,
-  message: Schema.String,
-  detail: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-});
-
-const isRefusal = Schema.is(RefusalShape);
-
 // ---------------------------------------------------------------------------
 // Filters and formatting
 
