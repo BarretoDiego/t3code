@@ -99,7 +99,7 @@ export class JobRecovery extends Context.Service<
   }
 >()("t3/automation/JobService/JobRecovery") {}
 
-export const LOCAL_NODE_ID = ExecutionNodeId.make("local");
+const LOCAL_NODE_ID = ExecutionNodeId.make("local");
 export const MAX_JOB_LOG_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 const MAX_TIMEOUT_MS = 24 * 60 * 60_000;

@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 
 import {
   AUTOMATION_EVENT_TYPES,
+  type AggregationCoverage,
   type EnvironmentId,
   FEDERATION_PROTOCOL_VERSION,
   type Peer,
@@ -85,4 +86,32 @@ export const toPeer = (record: PeerRecord, outboxPending: number): Peer => ({
   lastObservedAt: record.detail.lastObservedAt,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
+});
+
+/**
+ * Coverage of an answer assembled from this environment and what it holds
+ * about its peers. Peer state here is always a stored projection, so a peer is
+ * `stale` with the time it was last observed, or `unavailable` when it never
+ * was. Attach this to any such answer; a partial view must say that it is one.
+ */
+export const coverageOfPeers = (
+  self: { readonly environmentId: EnvironmentId; readonly observedAt: string },
+  peers: ReadonlyArray<Peer>,
+): AggregationCoverage => ({
+  consulted: [self],
+  unavailable: peers.flatMap((peer) =>
+    peer.lastObservedAt === null
+      ? [
+          {
+            environmentId: peer.environmentId,
+            reason: peer.statusReason ?? `Never observed (${peer.status}).`,
+          },
+        ]
+      : [],
+  ),
+  stale: peers.flatMap((peer) =>
+    peer.lastObservedAt === null
+      ? []
+      : [{ environmentId: peer.environmentId, observedAt: peer.lastObservedAt }],
+  ),
 });

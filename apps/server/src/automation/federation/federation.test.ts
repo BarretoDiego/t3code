@@ -28,7 +28,7 @@ import { automationError, internalCaller, peerSessionSubject } from "../Caller.t
 import * as EventJournal from "../EventJournal.ts";
 import * as PeerService from "../PeerService.ts";
 import * as FederationReactor from "./FederationReactor.ts";
-import { peerTokenSecretName } from "./PeerProtocol.ts";
+import { coverageOfPeers, peerTokenSecretName } from "./PeerProtocol.ts";
 import * as PeerTransport from "./PeerTransport.ts";
 import {
   addPeer,
@@ -898,6 +898,47 @@ it.layer(NodeServices.layer)("federation between two environments", (it) => {
       assert.deepStrictEqual(announced(), ["connected", "offline", "connected"]);
       assert.strictEqual((yield* peerOf(a, b)).status, "connected");
       assert.isNotNull((yield* peerOf(a, b)).lastConnectedAt);
+    }),
+  );
+
+  it.effect("reports which environments an answer covers, and how old each view is", () =>
+    Effect.gen(function* () {
+      const network = makeNetwork();
+      const a = yield* boot(yield* makeWorld("a"), network);
+      const b = yield* boot(yield* makeWorld("b"), network);
+      const c = yield* boot(yield* makeWorld("c"), network);
+      yield* pair(a, b);
+      yield* addPeer(a, c, noPermissions);
+      network.unreachable.add(c.world.origin);
+      yield* syncPeer(a, b);
+      yield* syncPeer(a, c);
+      const peers = yield* a.run(
+        Effect.flatMap(PeerService.PeerService, (service) => service.list(operator)),
+      );
+      const seenB = peers.find((peer) => peer.environmentId === b.world.id)!.lastObservedAt!;
+      // C was reachable when it was added, so there is an old view of it, not a current one.
+      const seenC = peers.find((peer) => peer.environmentId === c.world.id)!.lastObservedAt!;
+      const coverage = coverageOfPeers(
+        { environmentId: a.world.id, observedAt: "2026-01-01T00:00:00.000Z" },
+        [
+          ...peers,
+          { ...peers[0]!, environmentId: EnvironmentId.make("env-d"), lastObservedAt: null },
+        ],
+      );
+      assert.deepStrictEqual(coverage.consulted, [
+        { environmentId: a.world.id, observedAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+      assert.sameDeepMembers(
+        [...coverage.stale],
+        [
+          { environmentId: b.world.id, observedAt: seenB },
+          { environmentId: c.world.id, observedAt: seenC },
+        ],
+      );
+      assert.deepStrictEqual(
+        coverage.unavailable.map((entry) => entry.environmentId),
+        ["env-d"],
+      );
     }),
   );
 
