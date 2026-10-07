@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Migrator from "effect/unstable/sql/Migrator";
 
 import Migration0001 from "./Migrations/001_AutomationSchema.ts";
+import Migration0010 from "./Migrations/010_JournalDedup.ts";
 
 /**
  * Automation schema lives in its own ledger. The main ledger keys on the id
@@ -14,7 +15,10 @@ import Migration0001 from "./Migrations/001_AutomationSchema.ts";
  */
 export const AUTOMATION_MIGRATIONS_TABLE = "t3_automation_migrations";
 
-export const automationMigrationEntries = [[1, "AutomationSchema", Migration0001]] as const;
+export const automationMigrationEntries = [
+  [1, "AutomationSchema", Migration0001],
+  [10, "JournalDedup", Migration0010],
+] as const;
 
 const run = Migrator.make({});
 
