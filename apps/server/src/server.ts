@@ -18,6 +18,7 @@ import * as SourceControlHubService from "./sourceControl/SourceControlHubServic
 import * as SourceControlAccounts from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { ComputeService } from "./compute/ComputeService.ts";
+import * as AutomationLayer from "./automation/AutomationLayer.ts";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -691,6 +692,7 @@ const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(MarketplaceService.layer),
   Layer.provide(AiRuntimeService.layer),
   Layer.provide(ComputeService.layer),
+  Layer.provide(AutomationLayer.layer),
   Layer.provide(
     PullRequestReviewService.layer.pipe(
       Layer.provide(ReviewAgentExecutor.layer),

@@ -112,6 +112,7 @@ import {
   WsCoreRpcGroup,
   WsForkRpcGroup,
   WsRpcGroup,
+  AutomationRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import {
@@ -134,6 +135,8 @@ import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts"
 import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledMessages from "./orchestration-v2/ScheduledMessages.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import type * as AutomationLayer from "./automation/AutomationLayer.ts";
+import { callerFromSession, makeAutomationRpcHandlers } from "./automation/rpcHandlers.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -1208,6 +1211,7 @@ const makeWsRpcLayer = (
   hub: SourceControlHubService["Service"],
   accounts: SourceControlAccounts["Service"],
   scheduledMessages: ScheduledMessages.ScheduledMessages["Service"] | undefined,
+  automationServices: Context.Context<AutomationLayer.AutomationServices>,
 ) =>
   Layer.effectContext(
     Effect.gen(function* () {
@@ -4102,9 +4106,15 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
       });
-      return Context.merge(
+      const automationHandlers = yield* makeAutomationRpcHandlers({
+        caller: callerFromSession(currentSession),
+        observeEffect: observeRpcEffect,
+        observeStream: observeRpcStream,
+      }).pipe(Effect.provide(automationServices));
+      return Context.mergeAll(
         yield* WsCoreRpcGroup.toHandlers(handlers),
         yield* WsForkRpcGroup.toHandlers(forkHandlers),
+        yield* AutomationRpcGroup.toHandlers(automationHandlers),
       );
     }),
   );
@@ -4129,6 +4139,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const reviews = yield* PullRequestReviewService;
     const hub = yield* SourceControlHubService;
     const accounts = yield* SourceControlAccounts;
+    const automationServices = yield* Effect.context<AutomationLayer.AutomationServices>();
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -4187,6 +4198,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               hub,
               accounts,
               Option.getOrUndefined(scheduledMessages),
+              automationServices,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

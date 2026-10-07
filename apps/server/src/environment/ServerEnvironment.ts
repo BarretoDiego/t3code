@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  FEDERATION_PROTOCOL_VERSION,
   ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
@@ -252,6 +253,8 @@ export const make = Effect.gen(function* () {
       aiRuntimes: true,
       compute: true,
       projectCloneTracking: true,
+      automation: true,
+      federationProtocolVersions: [FEDERATION_PROTOCOL_VERSION],
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       // V2 restart recovery uses the environment-owned opt-in. The old
       // per-update request flag is not wired into the V2 update RPC path.

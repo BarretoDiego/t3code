@@ -16,6 +16,7 @@ import {
   RemotePullRequestMergeInput,
   PullRequestRevisions,
 } from "./sourceControlHub.ts";
+import { AutomationRpcGroup } from "./automationRpc.ts";
 import { ScheduledMessage, ScheduledMessageUpdate } from "./scheduledMessages.ts";
 import { ProjectId, ThreadId } from "./baseSchemas.ts";
 import {
@@ -2455,4 +2456,4 @@ export const WsForkRpcGroup = RpcGroup.make(
   WsVcsFetchRpc,
 );
 
-export const WsRpcGroup = WsCoreRpcGroup.merge(WsForkRpcGroup);
+export const WsRpcGroup = WsCoreRpcGroup.merge(WsForkRpcGroup).merge(AutomationRpcGroup);
