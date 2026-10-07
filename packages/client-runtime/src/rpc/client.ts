@@ -1,4 +1,5 @@
 import {
+  AUTOMATION_WS_METHODS,
   EnvironmentAuthorizationError,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
@@ -71,13 +72,17 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeScheduledMessages
   | typeof WS_METHODS.subscribeWorktreeSetup
   | typeof WS_METHODS.subscribeProjectClones
-  | typeof WS_METHODS.terminalAttach;
+  | typeof WS_METHODS.terminalAttach
+  | typeof AUTOMATION_WS_METHODS.orchestratorsSubscribe
+  | typeof AUTOMATION_WS_METHODS.eventsSubscribe;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.chatGptHandoffSubscribe
   | typeof WS_METHODS.cloudInstallRelayClient
   | typeof WS_METHODS.serverUpdateServerWithProgress
-  | typeof WS_METHODS.gitRunStackedAction;
+  | typeof WS_METHODS.gitRunStackedAction
+  // Ends once the job is terminal, so it is a finite stream, not a subscription.
+  | typeof AUTOMATION_WS_METHODS.jobsWatch;
 
 export type EnvironmentStreamRpcTag =
   | EnvironmentSubscriptionRpcTag
