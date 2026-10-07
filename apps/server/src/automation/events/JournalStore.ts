@@ -160,23 +160,28 @@ const make = Effect.gen(function* () {
 
   const live = yield* PubSub.unbounded<AutomationJournalEntry>();
   const listeners = new Set<(headCursor: number) => Effect.Effect<void>>();
-  // Appends signal here before their transaction commits. The publisher reads
-  // outside any transaction, and this client serializes plain statements
-  // behind an open transaction, so it sees the rows only after the commit and
-  // sees nothing when the transaction rolled back.
+  // A plain statement can run between two statements of another fiber's open
+  // transaction and would then see rows that may still roll back. A read in a
+  // transaction of its own waits for the writer instead, so it sees only what
+  // has committed. Inside a caller's transaction it simply joins it.
+  const committedRead = <A, E, R>(read: Effect.Effect<A, E, R>) => sql.withTransaction(read);
+
+  // Appends signal here before their transaction commits. The publisher's
+  // read waits for that transaction, so subscribers hear of the rows only
+  // after the commit and of nothing when it rolled back.
   const signals = yield* Queue.unbounded<Deferred.Deferred<void> | undefined>();
-  let published = yield* Effect.orDie(readHead);
+  let published = yield* Effect.orDie(committedRead(readHead));
 
   const publishCommitted = Effect.gen(function* () {
     let advanced = false;
     while (true) {
-      const rows = yield* sql<JournalRow>`
+      const rows = yield* committedRead(sql<JournalRow>`
         SELECT cursor, origin_cursor, event_json
         FROM automation_journal
         WHERE cursor > ${published}
         ORDER BY cursor
         LIMIT ${PUBLISH_PAGE_SIZE}
-      `;
+      `);
       const last = rows.at(-1);
       if (last === undefined) break;
       yield* PubSub.publishAll(live, rows.map(toEntry));
@@ -363,14 +368,14 @@ const make = Effect.gen(function* () {
   });
 
   const status: JournalStore["Service"]["status"] = Effect.gen(function* () {
-    const rows = yield* sql<{
+    const rows = yield* committedRead(sql<{
       readonly head: number | null;
       readonly oldest: number | null;
       readonly retained: number;
     }>`
       SELECT MAX(cursor) AS head, MIN(cursor) AS oldest, COUNT(*) AS retained
       FROM automation_journal
-    `;
+    `);
     return {
       environmentId,
       headCursor: rows[0]?.head ?? 0,
@@ -381,9 +386,9 @@ const make = Effect.gen(function* () {
   }).pipe(Effect.catchTag("SqlError", storageFailure("report its status")));
 
   const assertRetained: JournalStore["Service"]["assertRetained"] = (afterCursor) =>
-    sql<{ readonly oldest: number | null }>`
+    committedRead(sql<{ readonly oldest: number | null }>`
       SELECT MIN(cursor) AS oldest FROM automation_journal
-    `.pipe(
+    `).pipe(
       Effect.catchTag("SqlError", storageFailure("check retention")),
       Effect.flatMap((rows) => {
         const oldest = rows[0]?.oldest ?? null;
@@ -433,7 +438,7 @@ const make = Effect.gen(function* () {
     if (input.throughCursor <= input.afterCursor) {
       return { entries: [], scannedThrough: input.afterCursor };
     }
-    const rows = yield* sql<JournalRow>`
+    const rows = yield* committedRead(sql<JournalRow>`
       SELECT cursor, origin_cursor, event_json
       FROM automation_journal
       WHERE cursor > ${input.afterCursor}
@@ -441,7 +446,7 @@ const make = Effect.gen(function* () {
         AND ${input.filter === "all" ? sql`1 = 1` : sql.and(filterClauses(filter))}
       ORDER BY cursor
       LIMIT ${input.limit}
-    `.pipe(Effect.catchTag("SqlError", storageFailure("be read")));
+    `).pipe(Effect.catchTag("SqlError", storageFailure("be read")));
     const last = rows.at(-1);
     return {
       entries: rows.map(toEntry),

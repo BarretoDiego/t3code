@@ -11,7 +11,12 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type { EventJournal } from "../EventJournal.ts";
-import { mapDomainEvents, mappingLookups, type ThreadScope } from "./domainEventMapping.ts";
+import {
+  JOURNAL_TOOL_CALLED_EVENTS,
+  mapDomainEvents,
+  mappingLookups,
+  type ThreadScope,
+} from "./domainEventMapping.ts";
 
 const THREAD_SCOPE_CACHE_LIMIT = 5_000;
 
@@ -29,6 +34,8 @@ const JOURNALED_DOMAIN_EVENT_TYPES = new Set<OrchestrationV2DomainEvent["type"]>
   "run.created",
   "run.updated",
   "runtime-request.updated",
+  // Turn items are examined only when tool calls are journaled at all.
+  ...(JOURNAL_TOOL_CALLED_EVENTS ? (["turn-item.updated"] as const) : []),
 ]);
 
 /**

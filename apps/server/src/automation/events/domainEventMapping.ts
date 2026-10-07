@@ -17,7 +17,7 @@ import type { EventJournalAppend } from "../EventJournal.ts";
  * item. Off by default: tool calls are high-volume detail, and nothing wakes on
  * them unless a hook names the type.
  */
-export const JOURNAL_TOOL_CALLED_EVENTS = false;
+export const JOURNAL_TOOL_CALLED_EVENTS: boolean = false;
 
 export interface ThreadScope {
   readonly projectId: ProjectId;
