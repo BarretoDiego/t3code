@@ -296,6 +296,28 @@ export class RecordedPeers extends Context.Service<
   { readonly messages: Effect.Effect<ReadonlyArray<PeerMessage>> }
 >()("t3/cli/testkit/CliHarness/RecordedPeers") {}
 
+// Services this harness does not exercise answer the way a server without them does.
+const absent = () =>
+  Effect.fail(automationError("CAPABILITY_UNSUPPORTED", "Not available on this server."));
+const absentPeers = Layer.mock(PeerService.PeerService)({
+  list: absent,
+  add: absent,
+  update: absent,
+  remove: absent,
+  outbox: absent,
+  enqueue: absent,
+  hello: absent,
+  deliver: absent,
+});
+const absentResponsibility = Layer.mock(ResponsibilityService.ResponsibilityService)({
+  listRequests: absent,
+  respond: absent,
+  transferClaim: absent,
+});
+const noOrchestrators = Layer.mock(OrchestratorService.OrchestratorService)({
+  list: () => Effect.succeed([]),
+});
+
 const recordedPeersLayer = Layer.effectContext(
   Effect.gen(function* () {
     const messages = yield* Ref.make<ReadonlyArray<PeerMessage>>([]);
@@ -568,23 +590,20 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
   const journal = recordedJournalLayer.pipe(Layer.provide(database));
   const peers: Layer.Layer<PeerService.PeerService | RecordedPeers> =
     options.peers === "unsupported"
-      ? Layer.merge(
-          PeerService.layer,
-          Layer.succeed(RecordedPeers, { messages: Effect.succeed([]) }),
-        )
+      ? Layer.merge(absentPeers, Layer.succeed(RecordedPeers, { messages: Effect.succeed([]) }))
       : recordedPeersLayer;
   const engine = TaskEngine.layer.pipe(
-    Layer.provide(Layer.mergeAll(core, journal, peers, OrchestratorService.layer)),
+    Layer.provide(Layer.mergeAll(core, journal, peers, noOrchestrators)),
   );
   const automation = Layer.mergeAll(
     DelegatedTaskService.layerFromEngine.pipe(Layer.provide(engine)),
     journal,
     peers,
-    OrchestratorService.layer,
-    HookService.layer,
-    ResponsibilityService.layer,
-    JobService.layer,
-    AutomationDiagnosticsService.layer,
+    noOrchestrators,
+    Layer.mock(HookService.HookService)({}),
+    absentResponsibility,
+    Layer.mock(JobService.JobService)({}),
+    Layer.mock(AutomationDiagnosticsService.AutomationDiagnosticsService)({}),
   );
   const terminalCloses = Layer.effect(
     TerminalCloses,
