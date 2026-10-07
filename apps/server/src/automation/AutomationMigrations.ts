@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Migrator from "effect/unstable/sql/Migrator";
 
 import Migration0001 from "./Migrations/001_AutomationSchema.ts";
+import Migration0010 from "./Migrations/010_JournalDedup.ts";
 import Migration0020 from "./Migrations/020_OrchestratorRuntime.ts";
 
 /**
@@ -9,14 +10,14 @@ import Migration0020 from "./Migrations/020_OrchestratorRuntime.ts";
  * alone, so a fork migration there is masked by any later upstream migration
  * that takes the same id; a separate table has no ids to collide with.
  *
- * Reserved id ranges, so parallel work never picks the same id: events and
- * hooks 10-19, orchestrators and claims 20-29, tasks 30-39, peers, nodes and
- * jobs 40-49.
+ * The migrator skips every id at or below the highest one recorded, so a new
+ * migration always takes an id above the current maximum, whatever it is about.
  */
 export const AUTOMATION_MIGRATIONS_TABLE = "t3_automation_migrations";
 
 export const automationMigrationEntries = [
   [1, "AutomationSchema", Migration0001],
+  [10, "JournalDedup", Migration0010],
   [20, "OrchestratorRuntime", Migration0020],
 ] as const;
 

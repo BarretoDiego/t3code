@@ -33,7 +33,9 @@ import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
 import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
+import { eventsCommand } from "./cli/events.ts";
 import { forkCommand } from "./cli/fork.ts";
+import { hooksCommand } from "./cli/hooks.ts";
 import { makeGuideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
@@ -90,6 +92,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       peerCommand,
       nodeCommand,
       jobCommand,
+      eventsCommand,
+      hooksCommand,
       statusCommand,
       rpcCommand,
       skillCommand,
