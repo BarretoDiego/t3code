@@ -24,8 +24,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { type AutomationCaller, automationError } from "./Caller.ts";
+import { type AutomationCaller, automationError, type OrchestratorCaller } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";
+import { makeOrchestratorAccess } from "./orchestrator/Access.ts";
 import {
   makeStore,
   parseJson,
@@ -50,6 +51,17 @@ export class ResponsibilityService extends Context.Service<
       caller: AutomationCaller,
       input: ClaimTransferInput,
     ) => Effect.Effect<ResponsibilityClaim, AutomationError>;
+    /**
+     * Admission for an orchestrator's agent answering through the ordinary
+     * thread commands, which carry no responder and no claim generation: the
+     * request must be pending and claimed by that orchestrator right now, and
+     * an approval needs a matching pre-authorization. Fails without changing
+     * anything; the caller dispatches the thread command only after it passes.
+     */
+    readonly admitThreadResponse: (
+      caller: OrchestratorCaller,
+      input: Pick<RequestRespondInput, "threadId" | "requestId" | "decision" | "dismiss">,
+    ) => Effect.Effect<void, AutomationError>;
   }
 >()("t3/automation/ResponsibilityService") {}
 
@@ -216,6 +228,7 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const store = makeStore(sql);
+  const access = makeOrchestratorAccess(store, environmentId);
 
   const isoNow = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
@@ -246,11 +259,21 @@ const make = Effect.gen(function* () {
           DateTime.add(DateTime.makeUnsafe(now), { milliseconds: CLAIM_LEASE_MS }),
         );
 
-  const claimChanged = (claim: ResponsibilityClaim, projectId: string | null, reason: string) =>
+  const claimChanged = (
+    claim: ResponsibilityClaim,
+    projectId: string | null,
+    reason: string,
+    // Who asked for the move, when someone did. An orchestrator's agent is
+    // named as itself, never folded into the user.
+    movedBy?: AutomationCaller,
+  ) =>
     journal.append([
       {
         type: "claim.changed",
-        origin: { kind: "service" },
+        origin:
+          movedBy?.kind === "orchestrator"
+            ? { kind: "agent", actorId: movedBy.orchestratorId }
+            : { kind: "service" },
         scope: {
           ...(claim.subject.kind === "request"
             ? { threadId: claim.subject.threadId, requestId: claim.subject.requestId }
@@ -269,6 +292,17 @@ const make = Effect.gen(function* () {
           rule: claim.rule,
           generation: claim.generation,
           reason,
+          ...(movedBy?.kind === "orchestrator"
+            ? {
+                transferredBy: {
+                  kind: "orchestrator",
+                  orchestratorId: movedBy.orchestratorId,
+                  environmentId,
+                },
+              }
+            : movedBy?.kind === "client"
+              ? { transferredBy: { kind: "user" } }
+              : {}),
         },
       },
     ]);
@@ -460,6 +494,55 @@ const make = Effect.gen(function* () {
             },
           );
 
+  /**
+   * Why this orchestrator may not give this answer, or null. Answering needs
+   * `request.answer`; deciding an approval also needs `request.approve` and a
+   * pre-authorization naming the request kind, the project and the decision.
+   */
+  const orchestratorAnswerRefusal = (
+    orchestrator: StoredOrchestrator,
+    request: Pick<OrchestrationV2RuntimeRequest, "kind">,
+    projectId: string,
+    decision: RequestRespondInput["decision"],
+  ) => {
+    if (!orchestrator.config.permissions.actions.includes("request.answer")) {
+      return `Orchestrator ${orchestrator.id} does not hold request.answer.`;
+    }
+    if (!APPROVAL_KINDS.has(request.kind)) return null;
+    const grant = preAuthorization(orchestrator, request.kind, projectId);
+    return !orchestrator.config.permissions.actions.includes("request.approve") ||
+      grant === undefined ||
+      decision === undefined ||
+      !grant.decisions.includes(decision)
+      ? `Approving a ${request.kind} request is reserved for the user: orchestrator ${orchestrator.id} has no pre-authorization for this decision.`
+      : null;
+  };
+
+  /**
+   * Who is answering. The session decides it: an orchestrator's agent answers
+   * as that orchestrator and as nobody else, whatever the body says.
+   */
+  const responderFor = (
+    caller: AutomationCaller,
+    named: ResponsibilityOwner,
+  ): Effect.Effect<ResponsibilityOwner, AutomationError> => {
+    if (caller.kind !== "orchestrator") return Effect.succeed(named);
+    const self: ResponsibilityOwner = {
+      kind: "orchestrator",
+      orchestratorId: caller.orchestratorId,
+      environmentId,
+    };
+    return named.kind === "user" || sameOwner(named, self)
+      ? Effect.succeed(self)
+      : Effect.fail(
+          automationError(
+            "PERMISSION_DENIED",
+            `Orchestrator ${caller.orchestratorId} can only answer as itself.`,
+            { orchestratorId: caller.orchestratorId },
+          ),
+        );
+  };
+
   const requireCallerMayActAs = (caller: AutomationCaller, responder: ResponsibilityOwner) => {
     // A peer speaks only for orchestrators its own environment hosts.
     if (
@@ -488,7 +571,9 @@ const make = Effect.gen(function* () {
         "Give exactly one of decision, answers, or dismiss.",
       );
     }
-    yield* requireCallerMayActAs(caller, input.responder);
+    if (caller.kind === "orchestrator") yield* access.requireLive(caller);
+    const responder = yield* responderFor(caller, input.responder);
+    yield* requireCallerMayActAs(caller, responder);
     const subject = {
       kind: "request",
       threadId: input.threadId,
@@ -523,6 +608,8 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => automationError("INTERNAL", "The request could not be read.")),
       )).runtimeRequests.find((candidate) => candidate.id === input.requestId);
     if (request === undefined) return yield* notPending(null, input.requestId);
+    // The credential's own limits: the action, and the project the request lives in.
+    yield* access.authorize(caller, "request.answer", { projectId: thread.projectId });
     const approval = APPROVAL_KINDS.has(request.kind);
     if (input.dismiss === true && request.kind !== "user_input") {
       return yield* automationError("INVALID_INPUT", "Only a user-input request can be dismissed.");
@@ -545,7 +632,6 @@ const make = Effect.gen(function* () {
         if (status !== "pending") return yield* notPending(status, input.requestId);
         const orchestrators = yield* store.listOrchestrators;
         const claim = yield* ensureRequestClaim(thread, subject, orchestrators, now);
-        const { responder } = input;
         if (responder.kind !== "user") {
           if (!sameOwner(claim.owner, responder) || input.generation !== claim.generation) {
             return yield* automationError(
@@ -577,22 +663,13 @@ const make = Effect.gen(function* () {
           if (orchestrator === undefined) {
             return yield* denied(`Orchestrator ${responder.orchestratorId} is not known here.`);
           }
-          if (!orchestrator.config.permissions.actions.includes("request.answer")) {
-            return yield* denied(`Orchestrator ${orchestrator.id} does not hold request.answer.`);
-          }
-          if (approval) {
-            const grant = preAuthorization(orchestrator, request.kind, thread.projectId);
-            if (
-              !orchestrator.config.permissions.actions.includes("request.approve") ||
-              grant === undefined ||
-              input.decision === undefined ||
-              !grant.decisions.includes(input.decision)
-            ) {
-              return yield* denied(
-                `Approving a ${request.kind} request is reserved for the user: orchestrator ${orchestrator.id} has no pre-authorization for this decision.`,
-              );
-            }
-          }
+          const refusal = orchestratorAnswerRefusal(
+            orchestrator,
+            request,
+            thread.projectId,
+            input.decision,
+          );
+          if (refusal !== null) return yield* denied(refusal);
         } else if (responder.kind === "thread" && approval) {
           return yield* automationError(
             "PERMISSION_DENIED",
@@ -687,6 +764,7 @@ const make = Effect.gen(function* () {
   const transferClaim: ResponsibilityService["Service"]["transferClaim"] = Effect.fn(
     "ResponsibilityService.transferClaim",
   )(function* (caller, input) {
+    if (caller.kind === "orchestrator") yield* access.requireLive(caller);
     const replay = yield* store.getIdempotent(TRANSFER_SCOPE, input.idempotencyKey);
     if (replay !== null) {
       return yield* decodeClaim(replay).pipe(storageFailure("read stored transfer"));
@@ -763,6 +841,28 @@ const make = Effect.gen(function* () {
         { owner: current.owner },
       );
     }
+    // An orchestrator's agent may hand on only what its orchestrator owns, and
+    // only about a project inside its scope.
+    if (caller.kind === "orchestrator") {
+      if (
+        !(
+          current.owner.kind === "orchestrator" &&
+          current.owner.orchestratorId === caller.orchestratorId &&
+          current.owner.environmentId === environmentId
+        )
+      ) {
+        return yield* automationError(
+          "PERMISSION_DENIED",
+          `Orchestrator ${caller.orchestratorId} does not own this claim and cannot transfer it.`,
+          { owner: current.owner },
+        );
+      }
+      yield* access.authorize(
+        caller,
+        subject.kind === "request" ? "request.answer" : "task.delegate",
+        projectId === null ? {} : { projectId },
+      );
+    }
     if (input.expectedGeneration !== undefined && input.expectedGeneration !== current.generation) {
       return yield* automationError(
         "REVISION_MISMATCH",
@@ -786,14 +886,87 @@ const make = Effect.gen(function* () {
           );
         }
         // The new owner answers with its own permissions; a transfer grants none.
-        yield* claimChanged(moved, projectId, input.reason ?? "transferred");
+        yield* claimChanged(moved, projectId, input.reason ?? "transferred", caller);
         yield* store.putIdempotent(TRANSFER_SCOPE, input.idempotencyKey, moved, now);
         return moved;
       }),
     );
   });
 
-  return ResponsibilityService.of({ listRequests, respond, transferClaim });
+  const admitThreadResponse: ResponsibilityService["Service"]["admitThreadResponse"] = Effect.fn(
+    "ResponsibilityService.admitThreadResponse",
+  )(function* (caller, input) {
+    const thread = yield* threads
+      .getThreadShell(input.threadId)
+      .pipe(Effect.mapError(() => automationError("INTERNAL", "The thread could not be read.")));
+    if (thread === null) {
+      return yield* automationError("NOT_FOUND", `Thread ${input.threadId} does not exist.`);
+    }
+    const orchestrator = yield* access.authorize(caller, "request.answer", {
+      projectId: thread.projectId,
+    });
+    const request = (yield* threads
+      .getThreadRecords(input.threadId, ["runtimeRequests"])
+      .pipe(
+        Effect.mapError(() => automationError("INTERNAL", "The request could not be read.")),
+      )).runtimeRequests.find((candidate) => candidate.id === input.requestId);
+    if (request === undefined) return yield* notPending(null, input.requestId);
+    const subject = {
+      kind: "request",
+      threadId: input.threadId,
+      requestId: input.requestId,
+    } as const;
+    const now = yield* isoNow;
+    yield* store.transact(
+      Effect.gen(function* () {
+        const status = yield* requestStatus(input.threadId, input.requestId);
+        if (status !== "pending") return yield* notPending(status, input.requestId);
+        const claim = yield* ensureRequestClaim(
+          thread,
+          subject,
+          yield* store.listOrchestrators,
+          now,
+        );
+        if (
+          !sameOwner(claim.owner, {
+            kind: "orchestrator",
+            orchestratorId: caller.orchestratorId,
+            environmentId,
+          })
+        ) {
+          return yield* automationError(
+            "NOT_OWNER",
+            `Request ${input.requestId} is owned by someone else.`,
+            { owner: claim.owner, generation: claim.generation },
+          );
+        }
+        const refusal =
+          orchestrator === null
+            ? "The orchestrator could not be read."
+            : orchestratorAnswerRefusal(
+                orchestrator,
+                request,
+                thread.projectId,
+                input.dismiss === true ? undefined : input.decision,
+              );
+        if (refusal !== null) return yield* automationError("PERMISSION_DENIED", refusal);
+        // An answer already admitted, the user's included, is never replaced.
+        const prior = yield* sql<{ readonly responder_json: string }>`
+          SELECT responder_json FROM automation_request_responses
+          WHERE subject_key = ${subjectKey(subject)}
+        `.pipe(storageFailure("read response intent"));
+        if (prior[0] !== undefined) {
+          return yield* automationError(
+            "REQUEST_ALREADY_RESOLVED",
+            `Request ${input.requestId} already has an admitted answer.`,
+            { respondedBy: parseJson(prior[0].responder_json) as ResponsibilityOwner },
+          );
+        }
+      }),
+    );
+  });
+
+  return ResponsibilityService.of({ listRequests, respond, transferClaim, admitThreadResponse });
 });
 
 /** The service alone: the caller provides the journal. */

@@ -25,9 +25,12 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { type AutomationCaller, automationError } from "./Caller.ts";
 import { filterProblem, matchesFilter } from "./events/filter.ts";
 import * as JournalStore from "./events/JournalStore.ts";
+import { makeOrchestratorAccess } from "./orchestrator/Access.ts";
+import { makeStore } from "./orchestrator/Store.ts";
 
 /**
  * An event a server component records. The journal assigns `eventId`, cursors,
@@ -112,6 +115,8 @@ const storageFailure = (operation: string) => (cause: SqlError) =>
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* JournalStore.JournalStore;
+  const environment = yield* ServerEnvironment.ServerEnvironment;
+  const access = makeOrchestratorAccess(makeStore(sql), yield* environment.getEnvironmentId);
 
   const checkFilter = (filter: AutomationEventFilter | undefined) => {
     const problem = filter === undefined ? null : filterProblem(filter);
@@ -224,6 +229,20 @@ const make = Effect.gen(function* () {
         return yield* automationError(
           "PERMISSION_DENIED",
           "A peer forwards events from its own journal; it cannot emit into this one.",
+        );
+      }
+      // An orchestrator's agent needs event.emit, may name only projects in its
+      // scope, and cannot publish an event as being about another orchestrator.
+      yield* access.authorize(caller, "event.emit", { projectId: input.scope?.projectId });
+      if (
+        caller.kind === "orchestrator" &&
+        input.scope?.orchestratorId !== undefined &&
+        input.scope.orchestratorId !== caller.orchestratorId
+      ) {
+        return yield* automationError(
+          "PERMISSION_DENIED",
+          `Orchestrator ${caller.orchestratorId} cannot emit an event scoped to another orchestrator.`,
+          { orchestratorId: caller.orchestratorId },
         );
       }
       const type: string = input.type;

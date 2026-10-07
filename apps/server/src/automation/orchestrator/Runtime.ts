@@ -35,13 +35,16 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
+import * as ProviderRegistry from "../../provider/Services/ProviderRegistry.ts";
 import { randomUuidV4 } from "../../orchestration-v2/RandomUuid.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as Scheduler from "../../scheduling/Scheduler.ts";
 import { forkParked } from "../../serverActivation.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { automationError, internalCaller } from "../Caller.ts";
 import * as EventJournal from "../EventJournal.ts";
 import * as ResponsibilityService from "../ResponsibilityService.ts";
+import { makeAgentCredentials } from "./AgentCredentials.ts";
 import { buildTurnPrompt, clip, entryWithinScope, taskIdsOf } from "./inboxPolicy.ts";
 import { ORCHESTRATOR_INSTRUCTIONS, ORCHESTRATOR_MINI_SKILL_ID } from "./instructions.ts";
 import {
@@ -51,6 +54,7 @@ import {
   type StoredOrchestrator,
   type StoredTurn,
 } from "./Store.ts";
+import { agentShellRefusal, resolveTurnLibrary, type TurnLibrary } from "./TurnPreparation.ts";
 
 const HOUR_MS = 60 * 60 * 1_000;
 /** Informational entries shown alongside the actionable ones of a turn. */
@@ -59,8 +63,16 @@ const MAX_CHECKPOINT_GOALS = 20;
 const MAX_CHECKPOINT_DECISIONS = 20;
 const MAX_SUMMARY_CHARS = 4_000;
 const MAX_DECISION_CHARS = 600;
+/** How long a turn's agent credential lasts when the budget sets no turn duration. */
+const DEFAULT_CREDENTIAL_TTL_MS = 12 * HOUR_MS;
+const CREDENTIAL_TTL_MARGIN_MS = 5 * 60 * 1_000;
+/** Marks a `stateReason` that says no turn can start until the operator changes something. */
+const TURN_REFUSED_PREFIX = "Cannot start a turn: ";
 
 type ThreadView = Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "providerTurns">;
+
+const turnRefused = (row: StoredOrchestrator) =>
+  row.stateReason !== null && row.stateReason.startsWith(TURN_REFUSED_PREFIX);
 
 const isActiveTurn = (turn: StoredTurn) =>
   turn.status === "reserved" || turn.status === "dispatched";
@@ -289,6 +301,9 @@ const make = Effect.gen(function* () {
   const journal = yield* EventJournal.EventJournal;
   const responsibility = yield* ResponsibilityService.ResponsibilityService;
   const scheduler = yield* Scheduler.Scheduler;
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const providers = yield* ProviderRegistry.ProviderRegistry;
+  const credentials = yield* makeAgentCredentials;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const scope = yield* Effect.scope;
@@ -351,6 +366,9 @@ const make = Effect.gen(function* () {
     } else if (gate.blockedReason !== null) {
       effectiveState = "budget_exceeded";
       stateReason = gate.blockedReason;
+    } else if (gate.actionablePending > 0 && turnRefused(row)) {
+      effectiveState = "error";
+      stateReason = row.stateReason;
     } else if (gate.actionablePending > 0) {
       effectiveState = "queued";
       stateReason =
@@ -399,6 +417,7 @@ const make = Effect.gen(function* () {
     reason: string,
   ) {
     const now = yield* isoNow;
+    yield* credentials.revoke(row.id);
     const entryIds = yield* store.turnEntryIds(row.id, turn.sequence);
     yield* store.transact(
       Effect.gen(function* () {
@@ -505,6 +524,8 @@ const make = Effect.gen(function* () {
     run: OrchestrationV2Run,
   ) {
     const now = yield* isoNow;
+    // The run is over, so nothing may act as this orchestrator's agent any more.
+    yield* credentials.revoke(row.id);
     const completed = run.status === "completed";
     const entryIds = yield* store.turnEntryIds(row.id, turn.sequence);
     const inbox = yield* store.listInbox({ orchestratorId: row.id, statuses: ["reserved"] });
@@ -614,15 +635,71 @@ const make = Effect.gen(function* () {
     view.runs.find((run) => run.userMessageId === turn.messageId);
 
   /**
+   * What a turn needs before it may run: a provider whose agent can be given
+   * the orchestrator's own credential, and the configured agent profile
+   * resolved against that provider. Fails with the reason the operator sees.
+   */
+  const prepareTurn = Effect.fn("OrchestratorRuntime.prepareTurn")(function* (
+    row: StoredOrchestrator,
+    view: ThreadView | null,
+  ) {
+    if (view === null) {
+      return yield* automationError("INTERNAL", "The main thread could not be read.");
+    }
+    const selection = view.thread.modelSelection;
+    const provider = (yield* providers.getProviders).find(
+      (candidate) => candidate.instanceId === selection.instanceId,
+    );
+    const refusal = agentShellRefusal(provider, selection.instanceId);
+    if (refusal !== null) return yield* refusal;
+    const current = yield* settings.getSettings.pipe(
+      Effect.mapError(() =>
+        automationError("INTERNAL", "Server settings could not be read to apply the profile."),
+      ),
+    );
+    return yield* resolveTurnLibrary({
+      profile: row.config.profile,
+      modelSelection: selection,
+      settings: current,
+      provider,
+    });
+  });
+
+  /** Records why no turn can start. The inbox is left as it is. */
+  const refuseTurn = Effect.fn("OrchestratorRuntime.refuseTurn")(function* (
+    row: StoredOrchestrator,
+    error: AutomationError,
+  ) {
+    const reason = `${TURN_REFUSED_PREFIX}${error.code}: ${error.message}`;
+    // The sweep asks again on every pass; an unchanged refusal is not news.
+    if (row.stateReason === reason) return;
+    yield* store.setStateReason(row.id, reason, yield* isoNow);
+    yield* notifyChanged;
+  });
+
+  /**
    * Hands the turn's message to the main thread. `queue_after_active` lets the
    * thread's own queue hold it behind whatever is running, so a second
    * concurrent decision turn cannot exist. The command id was fixed when the
    * turn was reserved: repeating this after a failure returns the first receipt.
    */
-  const dispatchTurn = Effect.fn("OrchestratorRuntime.dispatchTurn")(function* (
+  const dispatchPrepared = Effect.fn("OrchestratorRuntime.dispatchPrepared")(function* (
     row: StoredOrchestrator,
     turn: StoredTurn,
+    library: TurnLibrary,
   ) {
+    const issued = yield* credentials
+      .issue({
+        orchestratorId: row.id,
+        hostGeneration: row.hostGeneration,
+        threadId: turn.threadId,
+        ttl: Duration.millis(
+          (row.config.budget.maxTurnDurationMs ?? DEFAULT_CREDENTIAL_TTL_MS) +
+            CREDENTIAL_TTL_MARGIN_MS,
+        ),
+      })
+      .pipe(Effect.result);
+    if (issued._tag === "Failure") return yield* refuseTurn(row, issued.failure);
     const dispatched = yield* threads
       .dispatch({
         type: "message.dispatch",
@@ -633,6 +710,17 @@ const make = Effect.gen(function* () {
         messageId: turn.messageId,
         text: turn.prompt,
         attachments: [],
+        // The profile adapts the turn to the thread's provider; without one the
+        // thread keeps the model it has.
+        ...(library.agentProfile === null
+          ? {}
+          : {
+              modelSelection: library.modelSelection,
+              agentProfile: library.agentProfile,
+              ...(library.miniSkillIds.length === 0
+                ? {}
+                : { miniSkillIds: [...library.miniSkillIds] }),
+            }),
         dispatchMode: { type: "queue_after_active" },
       })
       .pipe(Effect.result);
@@ -648,7 +736,9 @@ const make = Effect.gen(function* () {
       }
       if (Option.isNone(receipt.success)) {
         // Nothing committed, so the provider never saw it. The reserved turn
-        // stays and the same command is tried again on the next wake.
+        // stays and the same command is tried again on the next wake, with a
+        // credential of its own.
+        yield* credentials.revoke(row.id);
         yield* store.setStateReason(
           row.id,
           `The main thread did not accept the turn: ${dispatched.failure.message}`,
@@ -725,7 +815,13 @@ const make = Effect.gen(function* () {
             `The main thread rejected the turn: ${receipt.success.value.error ?? "no reason recorded"}`,
           );
         }
-        return yield* dispatchTurn(row, turn);
+        // Prepared again rather than remembered: the provider, the profile and
+        // the credential are facts of now, not of when the turn was reserved.
+        const library = yield* prepareTurn(row, yield* readThread(turn.threadId)).pipe(
+          Effect.result,
+        );
+        if (library._tag === "Failure") return yield* refuseTurn(row, library.failure);
+        return yield* dispatchPrepared(row, turn, library.success);
       }
       const view = yield* readThread(turn.threadId);
       const run = view === null ? undefined : findRun(view, turn);
@@ -815,6 +911,9 @@ const make = Effect.gen(function* () {
     if (gate.waitingUntilMs !== null) yield* wakeAt(row.id, gate.waitingUntilMs);
     if (gate.batch.length === 0) return yield* notifyChanged;
 
+    // Decided before anything is reserved, so a refusal leaves the inbox pending.
+    const library = yield* prepareTurn(row, view).pipe(Effect.result);
+    if (library._tag === "Failure") return yield* refuseTurn(row, library.failure);
     const entries = gate.batch.map(({ entry }) => entry);
     const context = yield* contextFor(row);
     const turnId = yield* randomUuidV4;
@@ -872,7 +971,7 @@ const make = Effect.gen(function* () {
       }),
     );
     yield* notifyChanged;
-    yield* dispatchTurn(row, turn);
+    yield* dispatchPrepared(row, turn, library.success);
   });
 
   const process = Effect.fn("OrchestratorRuntime.process")(function* (
@@ -880,6 +979,16 @@ const make = Effect.gen(function* () {
   ) {
     yield* Deferred.await(started);
     const row = yield* store.getOrchestrator(orchestratorId);
+    // Deleted, handed off, paused or disabled: its agent's credential ends now,
+    // whatever its turn is still doing.
+    if (
+      row === null ||
+      row.hostEnvironmentId !== environmentId ||
+      row.threadId === null ||
+      row.desiredState !== "active"
+    ) {
+      yield* credentials.revoke(orchestratorId);
+    }
     if (row === null || row.hostEnvironmentId !== environmentId || row.threadId === null) return;
     const hosted = { ...row, threadId: row.threadId };
     const active = (yield* store.listTurns(orchestratorId)).find(isActiveTurn);
@@ -941,6 +1050,7 @@ const make = Effect.gen(function* () {
       // other wake is handled before it has been queued.
       yield* forkParked(
         Effect.gen(function* () {
+          yield* credentials.revokeLeftovers;
           yield* wakeAllWithWork.pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Could not list orchestrators to recover", { cause }),

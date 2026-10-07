@@ -13,6 +13,7 @@ import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
@@ -27,6 +28,10 @@ import * as Socket from "effect/unstable/socket/Socket";
 import packageJson from "../../package.json" with { type: "json" };
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import {
+  AGENT_CREDENTIAL_FILE_ENV,
+  AgentCredentialDocument,
+} from "../automation/orchestrator/agentCredentialFile.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
@@ -66,6 +71,21 @@ export class EnvironmentNotFoundError extends Schema.TaggedError<EnvironmentNotF
     return this.known.length === 0
       ? `No environment named '${this.environment}'. Add one with \`t3 env add\`.`
       : `No environment named '${this.environment}'. Saved environments: ${this.known.join(", ")}.`;
+  }
+}
+
+export class AgentCredentialUnavailableError extends Schema.TaggedError<AgentCredentialUnavailableError>()(
+  "AgentCredentialUnavailableError",
+  { reason: Schema.Literals(["ended", "unreadable", "remote-target"]) },
+) {
+  override get message(): string {
+    const why =
+      this.reason === "ended"
+        ? "its credential has ended: it is valid only while the orchestrator's turn runs and the orchestrator is active"
+        : this.reason === "remote-target"
+          ? "it may only address the server that runs it, so --env and T3CODE_ENV are refused"
+          : "its credential could not be read";
+    return `This shell belongs to an orchestrator's agent, and ${why}. The CLI does not fall back to your own identity here.`;
   }
 }
 
@@ -270,16 +290,51 @@ export const findSavedEnvironment = Effect.fn("cli.findSavedEnvironment")(functi
   return environment;
 });
 
+const decodeAgentCredential = Schema.decodeUnknownEffect(AgentCredentialDocument);
+
+/**
+ * The credential of the orchestrator turn this shell runs in, when the server
+ * put one in the environment. Once the variable is set there is no way back to
+ * the user's identity: an ended or unreadable credential fails the command.
+ */
+export const readAgentCredential = Effect.gen(function* () {
+  const file = yield* Effect.gen(function* () {
+    return yield* Config.String(AGENT_CREDENTIAL_FILE_ENV).pipe(Config.option);
+  }).pipe(Effect.mapError(() => new AgentCredentialUnavailableError({ reason: "unreadable" })));
+  if (Option.isNone(file) || file.value.length === 0) {
+    return Option.none<{ readonly origin: string | null; readonly token: string }>();
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const document = yield* fs.readFileString(file.value).pipe(
+    Effect.flatMap(decodeAgentCredential),
+    Effect.mapError(() => new AgentCredentialUnavailableError({ reason: "unreadable" })),
+  );
+  if (document.token === null) {
+    return yield* new AgentCredentialUnavailableError({ reason: "ended" });
+  }
+  return Option.some({ origin: document.origin, token: document.token });
+});
+
 /**
  * Runs `use` against the server on this machine. The session is minted from
  * the local auth store and revoked on exit, so no credential outlives the
- * command.
+ * command. Inside an orchestrator's turn the command uses that turn's
+ * credential instead, so the server sees the orchestrator and not the user.
  */
 export const withLocalEnvironmentTarget = <A, E, R>(
   config: ServerConfig.ServerConfig["Service"],
   use: (target: EnvironmentTarget) => Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
+    const agent = yield* readAgentCredential;
+    if (Option.isSome(agent)) {
+      return yield* use({
+        // The server names its own origin in the credential it issued.
+        origin: agent.value.origin ?? (yield* findLocalServer(config)),
+        token: agent.value.token,
+        saved: Option.none(),
+      });
+    }
     const origin = yield* findLocalServer(config);
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     return yield* Effect.acquireUseRelease(
@@ -298,6 +353,10 @@ export const withEnvironmentTarget = <A, E, R>(
   withEnvironmentRuntime(flags, (config) =>
     Effect.gen(function* () {
       if (Option.isNone(flags.env)) return yield* withLocalEnvironmentTarget(config, use);
+      // A saved environment's token is the user's own on that server.
+      if (Option.isSome(yield* readAgentCredential)) {
+        return yield* new AgentCredentialUnavailableError({ reason: "remote-target" });
+      }
       const environment = yield* findSavedEnvironment(flags.env.value);
       return yield* use({
         origin: environment.httpBaseUrl,

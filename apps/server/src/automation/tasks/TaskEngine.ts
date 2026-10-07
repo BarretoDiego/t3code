@@ -27,6 +27,8 @@ import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import { type AutomationCaller, automationError, internalCaller } from "../Caller.ts";
 import * as EventJournal from "../EventJournal.ts";
+import { makeOrchestratorAccess } from "../orchestrator/Access.ts";
+import { makeStore } from "../orchestrator/Store.ts";
 import * as OrchestratorService from "../OrchestratorService.ts";
 import * as PeerService from "../PeerService.ts";
 import {
@@ -135,6 +137,7 @@ const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const localEnvironmentId = yield* (yield* ServerEnvironment.ServerEnvironmentIdentity)
     .getEnvironmentId;
+  const access = makeOrchestratorAccess(makeStore(sql), localEnvironmentId);
   // One writer at a time: every change is read-modify-write on a task row.
   const writes = yield* Semaphore.make(1);
 
@@ -514,7 +517,7 @@ const make = Effect.gen(function* () {
     threads.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
 
   const ownerOf = (caller: AutomationCaller, task: DelegatedTask): ResponsibilityOwner =>
-    caller.kind === "internal" && task.orchestratorId !== null
+    (caller.kind === "internal" || caller.kind === "orchestrator") && task.orchestratorId !== null
       ? {
           kind: "orchestrator",
           orchestratorId: task.orchestratorId,
@@ -532,6 +535,12 @@ const make = Effect.gen(function* () {
     const requested = input.contract.permissions ?? [];
     const denied = (message: string, actions: ReadonlyArray<string>) =>
       automationError("PERMISSION_DENIED", message, { actions: [...actions] });
+    // The agent of an orchestrator delegates under that orchestrator's own
+    // credential, state, hosting generation and scope.
+    yield* access.authorize(caller, remote ? "peer.delegate" : "task.delegate", {
+      projectId: input.target.projectId,
+      environmentId: input.target.environmentId,
+    });
     if (
       requested.includes("job.shell") &&
       caller.kind !== "internal" &&
@@ -601,7 +610,14 @@ const make = Effect.gen(function* () {
 
   const delegate: DelegatedTaskEngine["Service"]["delegate"] = Effect.fn(
     "DelegatedTaskEngine.delegate",
-  )(function* (caller, input) {
+  )(function* (caller, request) {
+    // An orchestrator's agent always delegates as its own orchestrator.
+    const actingOrchestratorId = yield* access.actingOrchestratorId(caller, request.orchestratorId);
+    if (caller.kind === "orchestrator") yield* access.requireLive(caller);
+    const input =
+      actingOrchestratorId === undefined
+        ? request
+        : { ...request, orchestratorId: actingOrchestratorId };
     const taskId = taskIdFor(localEnvironmentId, input.idempotencyKey);
     const targetEnvironmentId = input.target.environmentId ?? localEnvironmentId;
     const remote = targetEnvironmentId !== localEnvironmentId;
@@ -823,6 +839,7 @@ const make = Effect.gen(function* () {
 
   const update: DelegatedTaskEngine["Service"]["update"] = Effect.fn("DelegatedTaskEngine.update")(
     function* (caller, input) {
+      if (caller.kind === "orchestrator") yield* access.requireLive(caller);
       const idempotency = { scope: UPDATE_IDEMPOTENCY_SCOPE, key: input.idempotencyKey };
       return yield* mutate(
         Effect.gen(function* () {
@@ -835,6 +852,20 @@ const make = Effect.gen(function* () {
           );
           if (repeated[0] !== undefined) return repeated[0];
           const task = yield* requireTask(input.taskId);
+          if (caller.kind === "orchestrator") {
+            yield* access.authorize(
+              caller,
+              input.action.type === "cancel" ? "task.cancel" : "task.delegate",
+              { projectId: task.target.projectId },
+            );
+            if (task.orchestratorId !== caller.orchestratorId) {
+              return yield* automationError(
+                "PERMISSION_DENIED",
+                `Task ${task.id} was not delegated by orchestrator ${caller.orchestratorId}.`,
+                { taskId: task.id },
+              );
+            }
+          }
           if (caller.kind === "peer" && caller.environmentId !== task.originEnvironmentId) {
             return yield* automationError(
               "PERMISSION_DENIED",
@@ -1097,7 +1128,7 @@ const make = Effect.gen(function* () {
   const acceptRemote: DelegatedTaskEngine["Service"]["acceptRemote"] = Effect.fn(
     "DelegatedTaskEngine.acceptRemote",
   )(function* (caller, incoming) {
-    if (caller.kind === "client") {
+    if (caller.kind === "client" || caller.kind === "orchestrator") {
       return yield* automationError(
         "PERMISSION_DENIED",
         "Only a peer environment delivers a remote task.",
@@ -1186,7 +1217,7 @@ const make = Effect.gen(function* () {
   const applyRemoteStatus: DelegatedTaskEngine["Service"]["applyRemoteStatus"] = Effect.fn(
     "DelegatedTaskEngine.applyRemoteStatus",
   )(function* (caller, incoming) {
-    if (caller.kind === "client") {
+    if (caller.kind === "client" || caller.kind === "orchestrator") {
       return yield* automationError(
         "PERMISSION_DENIED",
         "Only a peer environment reports a remote task's status.",

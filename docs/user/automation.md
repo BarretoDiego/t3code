@@ -74,6 +74,37 @@ t3 orchestrator pause <id>      # keeps the inbox; running child tasks continue
 - After a crash, a turn whose outcome cannot be confirmed is left as `unknown` in the inbox
   instead of being run again. Decide with `t3 orchestrator inbox requeue|dismiss <entry>`.
 
+### What its agent can do
+
+During a turn, the orchestrator's agent drives T3 Code through the `t3` CLI in its shell. That
+CLI belongs to the server running the orchestrator and is signed in as the orchestrator, not as
+you, so the server checks every call against the orchestrator's `permissions`:
+
+- `actions` names what it may do: `thread.read`, `thread.create`, `thread.send`,
+  `thread.organize`, `thread.interrupt`, `request.answer`, `request.approve`, `task.delegate`,
+  `task.cancel`, `peer.delegate`, `job.run`, `job.shell`, `event.emit`.
+- `projectIds`, `environmentIds`, and `nodeIds` limit where. Leave one out to allow every
+  project, peer, or node.
+- `request.approve` does nothing alone. An approval also needs a `preAuthorizedApprovals` entry
+  naming the request kind and the decision, and a decision you already made is never replaced.
+- `job.shell` also needs `allowShell` on the node and a credential that carries
+  `automation:execute`. Turn credentials do not carry it, so an orchestrator's agent cannot run
+  shell jobs today.
+
+A call outside these limits fails with `PERMISSION_DENIED` and changes nothing. The agent cannot
+edit orchestrators, hooks, peers, or nodes, open terminals, change settings, or message its own
+thread. Permissions are read when the call arrives, so an edit applies to the turn already
+running. The credential ends with the turn, and at once when you pause, disable, or remove the
+orchestrator.
+
+Set `profile` to an [agent profile](agent-profiles.md) slug to run every turn with it. If the
+profile is removed, disabled, or has no model for the thread's provider, the orchestrator stops
+taking turns, keeps its inbox, and shows the reason in `t3 orchestrator show <id>`.
+
+Orchestrators run on Codex and Claude provider instances. On any other provider the orchestrator
+refuses to take turns and says so, because its agent could not be given its own identity there.
+Use a full-access runtime mode: a sandbox that blocks local network access also blocks the CLI.
+
 An orchestrator runs in one environment. Hosting it elsewhere means creating it there; moving a
 running orchestrator between environments is not available yet.
 

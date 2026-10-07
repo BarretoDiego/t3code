@@ -136,6 +136,7 @@ import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledMessages from "./orchestration-v2/ScheduledMessages.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import type * as AutomationLayer from "./automation/AutomationLayer.ts";
+import { makeOrchestratorRpcGate } from "./automation/orchestrator/RpcGate.ts";
 import { callerFromSession, makeAutomationRpcHandlers } from "./automation/rpcHandlers.ts";
 import {
   archivedShellStreamItemFromThreadShell,
@@ -1354,9 +1355,16 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
+      // Who the session proves the caller to be. An orchestrator's agent is a
+      // caller of its own kind; a session that only claims to be one holds no scopes.
+      const caller = callerFromSession(currentSession);
+      const commandAuthor = caller.kind === "orchestrator" ? "agent" : "user";
+      const orchestratorGate = yield* makeOrchestratorRpcGate.pipe(
+        Effect.provide(automationServices),
+      );
       const { authorizeEffect, authorizeStream } = yield* SessionGate.makeSessionGate({
         sessionId: currentSessionId,
-        scopes: currentSession.scopes,
+        scopes: caller.kind === "internal" ? [] : caller.scopes,
         changes: sessions.streamChanges,
       });
 
@@ -1889,7 +1897,7 @@ const makeWsRpcLayer = (
               .enqueueCommand(
                 ThreadMessageIntake.dispatchCommand(
                   ThreadManagementService.withCreationProvenance(command, {
-                    createdBy: "user",
+                    createdBy: commandAuthor,
                     creationSource: "creationSource" in command ? command.creationSource : "web",
                   }),
                 ).pipe(Effect.provide(intakeContext)),
@@ -1907,6 +1915,8 @@ const makeWsRpcLayer = (
                     cause,
                   });
                 }),
+                (dispatch) =>
+                  Effect.andThen(orchestratorGate.threadCommand(caller, command), dispatch),
               ),
             {
               "rpc.aggregate": "orchestrationV2",
@@ -2054,7 +2064,7 @@ const makeWsRpcLayer = (
                             : { agentProfile: input.initialMessage.agentProfile }),
                         },
                       }),
-                  createdBy: "user",
+                  createdBy: commandAuthor,
                   creationSource: input.creationSource ?? "web",
                 }).pipe(Effect.provide(intakeContext)),
               )
@@ -2098,6 +2108,7 @@ const makeWsRpcLayer = (
                       cause,
                     }),
                 }),
+                (launch) => Effect.andThen(orchestratorGate.threadLaunch(caller, input), launch),
               ),
             {
               "rpc.aggregate": "orchestration",
@@ -4094,14 +4105,18 @@ const makeWsRpcLayer = (
         [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
       });
       const automationHandlers = yield* makeAutomationRpcHandlers({
-        caller: callerFromSession(currentSession),
+        caller,
         observeEffect: observeRpcEffect,
         observeStream: observeRpcStream,
       }).pipe(Effect.provide(automationServices));
+      // For an orchestrator's agent every handler is guarded by method here, so
+      // an RPC without a rule fails closed whether or not it checks a scope.
       return Context.mergeAll(
-        yield* WsCoreRpcGroup.toHandlers(handlers),
-        yield* WsForkRpcGroup.toHandlers(forkHandlers),
-        yield* AutomationRpcGroup.toHandlers(automationHandlers),
+        yield* WsCoreRpcGroup.toHandlers(orchestratorGate.guardHandlers(caller, handlers)),
+        yield* WsForkRpcGroup.toHandlers(orchestratorGate.guardHandlers(caller, forkHandlers)),
+        yield* AutomationRpcGroup.toHandlers(
+          orchestratorGate.guardHandlers(caller, automationHandlers),
+        ),
       );
     }),
   );
