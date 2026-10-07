@@ -145,7 +145,7 @@ export const operator: AutomationCaller = {
 
 export const makeWorld = Effect.fn("makeWorld")(function* (name: string) {
   const fileSystem = yield* FileSystem.FileSystem;
-  return {
+  const world: EnvironmentWorld = {
     id: EnvironmentId.make(`env-${name}`),
     label: `Environment ${name}`,
     origin: `http://${name}.test:3773`,
@@ -153,7 +153,8 @@ export const makeWorld = Effect.fn("makeWorld")(function* (name: string) {
     journal: { entries: [], dedup: new Map() },
     tasks: { byId: new Map(), acceptCalls: 0, created: 0, remoteStatuses: [], failures: [] },
     inbox: { entries: [] },
-  } satisfies EnvironmentWorld;
+  };
+  return world;
 });
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -161,7 +162,8 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 // ---------------------------------------------------------------------------
 // Recording layers for the services other fronts own
 
-const journalLayer = (world: EnvironmentWorld) =>
+/** An in-memory journal that assigns cursors, ids and the origin environment as the real one must. */
+export const journalLayer = (world: Pick<EnvironmentWorld, "id" | "journal">) =>
   Layer.succeed(EventJournal.EventJournal, {
     status: Effect.map(nowIso, (observedAt) => ({
       environmentId: world.id,
