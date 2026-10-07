@@ -12,6 +12,7 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { ThreadAutomationMarkers } from "./automation/ThreadAutomationMarkers";
 import {
   ChangeRequestStatusIcon,
   prStatusIndicator,
@@ -804,6 +805,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <TooltipPopup side="top">{thread.title}</TooltipPopup>
             </Tooltip>
           )}
+          <ThreadAutomationMarkers
+            environmentId={thread.environmentId}
+            threadId={thread.id}
+            variant="row"
+          />
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {discoveredPorts.length > 0 && (

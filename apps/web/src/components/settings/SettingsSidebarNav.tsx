@@ -25,6 +25,7 @@ import {
   Settings2Icon,
   SparklesIcon,
   UserCogIcon,
+  WorkflowIcon,
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -50,6 +51,7 @@ import {
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
+import { useAutomationEnvironmentIds } from "../../state/automation";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
 
@@ -88,6 +90,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/ai-runtimes": BotIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/scheduled-tasks": CalendarClockIcon,
+  "/settings/automation": WorkflowIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/mini-skills": SparklesIcon,
   "/settings/agent-profiles": UserCogIcon,
@@ -116,8 +119,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
+  // Automation appears only once an environment's server supports it.
+  const hasAutomation = useAutomationEnvironmentIds().length > 0;
   const navItems = SETTINGS_NAV_ITEMS.filter(
-    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
+    (item) =>
+      (item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch)) &&
+      (item.to !== "/settings/automation" || hasAutomation),
   );
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
