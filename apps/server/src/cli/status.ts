@@ -1,4 +1,7 @@
 import {
+  AUTOMATION_WS_METHODS,
+  type AutomationDiagnostics,
+  type AutomationPendingWork,
   ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ArchivedShellSnapshot,
   type OrchestrationV2ShellStreamItem,
@@ -56,6 +59,10 @@ type StatusRpcClient = {
   ) => Effect.Effect<ReadonlyArray<GenerationJob>, Error>;
   readonly [WS_METHODS.serverGetPendingWork]: (input: {}) => Effect.Effect<
     ServerPendingWorkResult,
+    Error
+  >;
+  readonly [AUTOMATION_WS_METHODS.diagnostics]: (input: {}) => Effect.Effect<
+    AutomationDiagnostics,
     Error
   >;
   readonly [WS_METHODS.subscribeResourceTelemetry]: (input: {}) => Stream.Stream<
@@ -156,51 +163,60 @@ export const readStatus = Effect.fn("cli.status.read")(function* (
         return Effect.succeed(fallback);
       }),
     );
-  const [shell, archived, terminals, tasks, jobs, pendingWork, telemetry] = yield* Effect.all(
-    [
-      read("threads", loadShell(client), {
-        schemaVersion: 1,
-        snapshotSequence: 0,
-        threads: [],
-        archivedThreads: [],
-        projects: [],
-      }),
-      read("archived threads", client[ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]({}), {
-        schemaVersion: 1,
-        snapshotSequence: 0,
-        threads: [],
-        projects: [],
-      }),
-      read<ReadonlyArray<TerminalSummary>, Error, never>(
-        "terminals",
-        client[WS_METHODS.subscribeTerminalMetadata]({}).pipe(
-          Stream.filterMap((event) =>
-            event.type === "snapshot" ? Result.succeed(event.terminals) : Result.fail(event),
+  const [shell, archived, terminals, tasks, jobs, pendingWork, automation, telemetry] =
+    yield* Effect.all(
+      [
+        read("threads", loadShell(client), {
+          schemaVersion: 1,
+          snapshotSequence: 0,
+          threads: [],
+          archivedThreads: [],
+          projects: [],
+        }),
+        read("archived threads", client[ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]({}), {
+          schemaVersion: 1,
+          snapshotSequence: 0,
+          threads: [],
+          projects: [],
+        }),
+        read<ReadonlyArray<TerminalSummary>, Error, never>(
+          "terminals",
+          client[WS_METHODS.subscribeTerminalMetadata]({}).pipe(
+            Stream.filterMap((event) =>
+              event.type === "snapshot" ? Result.succeed(event.terminals) : Result.fail(event),
+            ),
+            Stream.runHead,
+            Effect.flatMap((snapshot) =>
+              Option.isSome(snapshot)
+                ? Effect.succeed(snapshot.value)
+                : Effect.fail(
+                    new StatusReadError({ detail: "Terminal stream ended without a snapshot." }),
+                  ),
+            ),
           ),
-          Stream.runHead,
-          Effect.flatMap((snapshot) =>
-            Option.isSome(snapshot)
-              ? Effect.succeed(snapshot.value)
-              : Effect.fail(
-                  new StatusReadError({ detail: "Terminal stream ended without a snapshot." }),
-                ),
-          ),
+          [],
         ),
-        [],
-      ),
-      read("scheduled tasks", client[WS_METHODS.scheduledTasksList]({}), { tasks: [] }),
-      read("compute jobs", loadJobs(client), []),
-      read("server work", client[WS_METHODS.serverGetPendingWork]({}), { effects: [] }),
-      read<ResourceTelemetrySnapshot | null, Error, never>(
-        "processes",
-        readProcessSnapshot(client),
-        null,
-        // The sampler slows to one sample every 15 seconds on a constrained host.
-        Duration.sum(FRESH_SAMPLE_WAIT, Duration.seconds(5)),
-      ),
-    ],
-    { concurrency: 6 },
-  );
+        read("scheduled tasks", client[WS_METHODS.scheduledTasksList]({}), { tasks: [] }),
+        read("compute jobs", loadJobs(client), []),
+        read("server work", client[WS_METHODS.serverGetPendingWork]({}), { effects: [] }),
+        read<AutomationPendingWork | null, Error, never>(
+          "automation",
+          Effect.map(
+            client[AUTOMATION_WS_METHODS.diagnostics]({}),
+            (diagnostics) => diagnostics.pendingWork,
+          ),
+          null,
+        ),
+        read<ResourceTelemetrySnapshot | null, Error, never>(
+          "processes",
+          readProcessSnapshot(client),
+          null,
+          // The sampler slows to one sample every 15 seconds on a constrained host.
+          Duration.sum(FRESH_SAMPLE_WAIT, Duration.seconds(5)),
+        ),
+      ],
+      { concurrency: 7 },
+    );
   return buildStatusReport({
     environment,
     at: yield* DateTime.now,
@@ -217,6 +233,7 @@ export const readStatus = Effect.fn("cli.status.read")(function* (
     scheduledTasks: tasks.tasks,
     jobs,
     pendingWork,
+    automation,
     telemetry,
     errors,
     includeStopped,
@@ -242,6 +259,7 @@ const inspectEnvironment = (
             scheduledTasks: [],
             jobs: [],
             pendingWork: { effects: [] },
+            automation: null,
             telemetry: null,
             errors: [{ source: "connection", detail: Cause.pretty(cause) }],
             includeStopped,

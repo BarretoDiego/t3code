@@ -7,6 +7,8 @@
 - [Mini Skills](./user/mini-skills.md)
 - [Agent Profiles](./user/agent-profiles.md)
 - [Working with threads](./user/thread-sidebar.md)
+- [Events, hooks, orchestrators, and delegated tasks](./user/automation.md)
+- [Peers, nodes, and jobs](./user/peers-and-jobs.md)
 - [Permission modes](./user/permission-modes.md)
 - [Terminal history](./user/terminal.md)
 - [Source control](./user/source-control.md)

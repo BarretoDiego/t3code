@@ -18,6 +18,9 @@ import * as SourceControlHubService from "./sourceControl/SourceControlHubServic
 import * as SourceControlAccounts from "./sourceControl/SourceControlAccounts.ts";
 import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
 import { ComputeService } from "./compute/ComputeService.ts";
+import * as AutomationLayer from "./automation/AutomationLayer.ts";
+import * as AutomationWorkers from "./automation/AutomationWorkers.ts";
+import * as EventJournal from "./automation/EventJournal.ts";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -558,6 +561,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
   ReplayMarkers.layer,
+  AutomationWorkers.layer,
 ).pipe(
   // Server-held `sendAt` messages; the WebSocket route starts its worker once
   // commands are ready and dispatches due messages through the orchestrator.
@@ -621,6 +625,11 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, ProjectFaviconResolverLayerLive)),
   Layer.provideMerge(RepositoryIdentityResolverLayerLive),
+  // The event sink records public automation events in the same transaction as
+  // the domain events, and it takes the journal from whatever is in scope when
+  // it is first built. Several compositions above name the sink, so the journal
+  // sits beneath all of them rather than beside any one.
+  Layer.provideMerge(EventJournal.layer.pipe(Layer.provide(PersistenceLayerLive))),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerSecretStore.layer),
@@ -691,6 +700,7 @@ const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(MarketplaceService.layer),
   Layer.provide(AiRuntimeService.layer),
   Layer.provide(ComputeService.layer),
+  Layer.provide(AutomationLayer.layer),
   Layer.provide(
     PullRequestReviewService.layer.pipe(
       Layer.provide(ReviewAgentExecutor.layer),

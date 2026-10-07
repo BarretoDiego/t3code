@@ -1,5 +1,6 @@
 import type { ProjectId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import { PIN_ORDER_DIGITS, pinOrderKeyBetween } from "@t3tools/shared/pinOrderKey";
 import type { EnvironmentThreadShell } from "./models.ts";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -182,52 +183,9 @@ export function getLatestThreadForProject<
 // thread's own server — neighbors, possibly living on other servers, are
 // never touched, and every client connected to the same servers converges
 // on the same order.
-const PIN_ORDER_DIGITS = "abcdefghijklmnopqrstuvwxyz";
-
-function isValidPinOrderKey(key: string): boolean {
-  if (key.length === 0) return false;
-  for (const char of key) {
-    if (!PIN_ORDER_DIGITS.includes(char)) return false;
-  }
-  // A trailing minimum digit would leave no room to sort a key immediately
-  // before this one; generators never produce it, so treat it as corrupt.
-  return key.at(-1) !== PIN_ORDER_DIGITS[0];
-}
-
-/** Midpoint of two digit strings interpreted as fractions in (0, 1).
-    "" stands for the open bound on either side. Requires a < b. */
-function pinOrderMidpoint(a: string, b: string): string {
-  if (b !== "" && a >= b) throw new Error("pinOrderMidpoint: bounds out of order");
-  if (b !== "") {
-    // Recurse past the longest common prefix ("a" pads the shorter side).
-    let n = 0;
-    while ((a.charAt(n) || PIN_ORDER_DIGITS[0]) === b.charAt(n)) n += 1;
-    if (n > 0) return b.slice(0, n) + pinOrderMidpoint(a.slice(n), b.slice(n));
-  }
-  const digitA = a === "" ? 0 : PIN_ORDER_DIGITS.indexOf(a.charAt(0));
-  const digitB = b === "" ? PIN_ORDER_DIGITS.length : PIN_ORDER_DIGITS.indexOf(b.charAt(0));
-  if (digitB - digitA > 1) {
-    return PIN_ORDER_DIGITS.charAt(Math.round((digitA + digitB) / 2));
-  }
-  // Consecutive leading digits: either b has spare digits to shorten into,
-  // or we extend a (never producing a trailing minimum digit — the base
-  // case midpoint("", "") is the middle of the alphabet).
-  if (b.length > 1) return b.charAt(0);
-  return PIN_ORDER_DIGITS.charAt(digitA) + pinOrderMidpoint(a.slice(1), "");
-}
-
-/** Key that sorts strictly between two neighbors; null bounds mean "top of
-    the pinned block" / "bottom of the keyed run". Returns null instead of
-    throwing when existing keys are corrupt or out of order — callers fall
-    back to rewriting the section. */
-export function pinOrderKeyBetween(before: string | null, after: string | null): string | null {
-  const a = before ?? "";
-  const b = after ?? "";
-  if (a !== "" && !isValidPinOrderKey(a)) return null;
-  if (b !== "" && !isValidPinOrderKey(b)) return null;
-  if (b !== "" && a >= b) return null;
-  return pinOrderMidpoint(a, b);
-}
+// The key math lives in shared so the server's CLI places a pin exactly as
+// the clients do.
+export { pinOrderKeyBetween };
 
 /** Evenly spaced keys for materializing an order. Wider keys keep a large
     active list from exhausting the space between two-digit keys. */

@@ -60,7 +60,9 @@ export interface ThreadRuntimeSummary {
   readonly updatedAt: string;
 }
 
-export function threadRuntimeIsActive(runtime: ThreadRuntimeSummary | null | undefined): boolean {
+export function threadRuntimeIsActive(
+  runtime: Pick<ThreadRuntimeSummary, "status"> | null | undefined,
+): boolean {
   return runtime !== null && runtime !== undefined && threadRunStatusIsActive(runtime.status);
 }
 

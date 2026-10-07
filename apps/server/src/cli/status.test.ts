@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  AUTOMATION_WS_METHODS,
+  EnvironmentId,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   type GenerationJob,
@@ -31,6 +33,28 @@ const client = (
   [WS_METHODS.scheduledTasksList]: () => Effect.succeed({ tasks: [] }),
   [WS_METHODS.computeListJobs]: () => Effect.succeed([]),
   [WS_METHODS.serverGetPendingWork]: () => Effect.succeed({ effects: [] }),
+  [AUTOMATION_WS_METHODS.diagnostics]: () =>
+    Effect.succeed({
+      environmentId: EnvironmentId.make("env-1"),
+      journal: {
+        environmentId: EnvironmentId.make("env-1"),
+        headCursor: 0,
+        oldestCursor: null,
+        retainedEntries: 0,
+        observedAt: "2026-01-01T00:00:00.000Z",
+      },
+      workers: [],
+      pendingWork: {
+        hookDeliveries: { pending: 0, retrying: 0, failed: 0 },
+        orchestrators: [],
+        activeTasks: 0,
+        unknownTasks: 0,
+        activeJobs: [],
+        peerOutboxPending: 0,
+      },
+      peers: [],
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
   [WS_METHODS.subscribeResourceTelemetry]: () => Stream.empty,
   ...overrides,
 });

@@ -22,6 +22,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { makeDomainEventRecorder } from "../automation/events/DomainEventRecorder.ts";
+import * as EventJournal from "../automation/EventJournal.ts";
 import { replayAndBufferProjectedLiveEvents } from "./LiveStreamBudget.ts";
 import type { UnsequencedProjectEvent } from "../persistence/Services/OrchestrationEventStore.ts";
 import { projectDomainEventForWire } from "./WireProjection.ts";
@@ -210,6 +212,9 @@ const baseLayer: Layer.Layer<
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const projectStore = yield* ProjectStore.ProjectStoreV2;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    // Optional so offline CLI commands and store-level tests can build a sink
+    // without the automation runtime. The server always provides it.
+    const automationJournal = yield* Effect.serviceOption(EventJournal.EventJournal);
     const liveEvents = yield* PubSub.unbounded<OrchestrationV2StoredEvent>();
     const liveEventsByType = new Map<
       OrchestrationV2DomainEvent["type"],
@@ -328,8 +333,20 @@ const baseLayer: Layer.Layer<
       );
     };
 
+    // Public automation events are derived here, inside the write transaction,
+    // so a state change and the journal entry describing it commit together.
+    // It runs before the projections absorb the events because it compares
+    // each run and request with the state they still hold. The journal tells
+    // its subscribers only after that transaction commits, in commit order.
+    // Project events map to no automation event, so that path records nothing.
+    const recordAutomationEvents = Option.match(automationJournal, {
+      onNone: () => (_events: ReadonlyArray<OrchestrationV2DomainEvent>) => Effect.void,
+      onSome: (journal) => makeDomainEventRecorder(sql, journal),
+    });
+
     const applyStoredEvents = (storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>) =>
       Effect.gen(function* () {
+        yield* recordAutomationEvents(storedEvents.map((stored) => stored.event));
         yield* Effect.forEach(storedEvents, (stored) => projectionStore.apply(stored.event), {
           concurrency: 1,
         });

@@ -67,6 +67,8 @@ export * from "./resourceTelemetry.ts";
 export * from "./rpc.ts";
 export * from "./aiRuntime.ts";
 export * from "./compute.ts";
+export * from "./automation.ts";
+export * from "./automationRpc.ts";
 
 export * from "./sourceControlHub.ts";
 export * from "./aiReview.ts";

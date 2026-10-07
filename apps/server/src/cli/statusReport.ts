@@ -1,4 +1,5 @@
 import type {
+  AutomationPendingWork,
   GenerationJob,
   OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadShell,
@@ -26,6 +27,7 @@ export type StatusThread = ThreadStatusInput &
     | "titleRegeneration"
   >;
 
+const activeOrchestratorStates = new Set(["queued", "running", "waiting", "handing_off"]);
 const activeThreadStatuses = new Set(["queued", "starting", "running"]);
 const activeJobStatuses = new Set(["queued", "starting", "loading", "running", "postprocessing"]);
 const infrastructureCategories = new Set([
@@ -47,6 +49,8 @@ export function buildStatusReport(input: {
   readonly scheduledTasks: ReadonlyArray<ScheduledTask>;
   readonly jobs: ReadonlyArray<GenerationJob>;
   readonly pendingWork: ServerPendingWorkResult;
+  /** Null when the server could not report it; the failed read is in `errors`. */
+  readonly automation: AutomationPendingWork | null;
   readonly telemetry: Pick<
     ResourceTelemetrySnapshot,
     "processes" | "sampleIntervalMs" | "health"
@@ -153,6 +157,41 @@ export function buildStatusReport(input: {
       `Server work ${effect.id}: ${effect.type} (${effect.status}) on ${effect.threadId}`,
     );
 
+  const automation = input.automation;
+  if (automation !== null) {
+    const inFlight = automation.hookDeliveries.pending + automation.hookDeliveries.retrying;
+    if (inFlight > 0) blockers.push(`${inFlight} hook delivery(ies) in flight`);
+    for (const orchestrator of automation.orchestrators) {
+      // Idle is not the same as safe: its children and its unread inbox are still work.
+      const reasons = [
+        ...(activeOrchestratorStates.has(orchestrator.effectiveState)
+          ? [orchestrator.effectiveState]
+          : []),
+        ...(orchestrator.activeChildren > 0
+          ? [`${orchestrator.activeChildren} active child task(s)`]
+          : []),
+        ...(orchestrator.inboxPending > 0 && orchestrator.effectiveState === "idle"
+          ? [`${orchestrator.inboxPending} unread inbox entry(ies)`]
+          : []),
+      ];
+      if (reasons.length > 0)
+        blockers.push(
+          `Orchestrator ${orchestrator.orchestratorId}: ${orchestrator.name} (${reasons.join(", ")})`,
+        );
+    }
+    if (automation.activeTasks > 0)
+      blockers.push(`${automation.activeTasks} delegated task(s) in progress`);
+    if (automation.unknownTasks > 0)
+      unknowns.push(
+        `${automation.unknownTasks} delegated task(s) with an unknown outcome; reconcile before closing.`,
+      );
+    for (const job of automation.activeJobs) {
+      if (job.status === "unknown")
+        unknowns.push(`Job ${job.jobId} on ${job.nodeId}: outcome unknown; reconcile it.`);
+      else blockers.push(`Job ${job.jobId} on ${job.nodeId}: ${job.status}`);
+    }
+  }
+
   const terminalPids = new Set(
     terminals.filter((terminal) => !terminal.busy).map((terminal) => terminal.pid),
   );
@@ -214,12 +253,18 @@ export function buildStatusReport(input: {
       scheduledTasks: scheduledTasks.length,
       jobs: jobs.length,
       serverWork: input.pendingWork.effects.length,
+      activeOrchestrators: automation?.orchestrators.length ?? 0,
+      delegatedTasks: automation?.activeTasks ?? 0,
+      nodeJobs: automation?.activeJobs.length ?? 0,
+      // Stored and resent after a restart, so it does not block closing.
+      peerOutboxPending: automation?.peerOutboxPending ?? 0,
     },
     threads: threads.filter((thread) => input.includeStopped || thread.busy || thread.paused),
     terminals: terminals.filter((terminal) => input.includeStopped || terminal.busy),
     scheduledTasks,
     jobs,
     serverWork: input.pendingWork.effects,
+    automation,
     processes,
   };
 }

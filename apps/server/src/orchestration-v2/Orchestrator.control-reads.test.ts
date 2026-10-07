@@ -143,7 +143,8 @@ it.effect(
             nodeId: NodeId.make(`node:${mode}`),
             providerTurnId: null,
             nativeRequestRef: null,
-            kind: "user_input",
+            // The live request is decided with `accept`, which only an approval takes.
+            kind: mode === "live" ? "command" : "user_input",
             status: "pending",
             responseCapability:
               mode === "live"

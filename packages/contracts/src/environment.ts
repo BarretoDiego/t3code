@@ -207,6 +207,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Native handoff transaction and private Project Sync staging RPCs. */
   threadHandoff: Schema.optionalKey(Schema.Boolean),
   threadHandoffContext: Schema.optionalKey(Schema.Boolean),
+  /** Automation RPCs: event journal, hooks, orchestrators, delegated tasks, nodes and jobs. */
+  automation: Schema.optionalKey(Schema.Boolean),
+  /** Federation protocol versions this server speaks to peer environments. */
+  federationProtocolVersions: Schema.optionalKey(Schema.Array(Schema.Int)),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

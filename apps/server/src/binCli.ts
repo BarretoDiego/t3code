@@ -15,6 +15,9 @@ import { authCommand } from "./cli/auth.ts";
 import { appCommand } from "./cli/app.ts";
 import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
+import { peerCommand } from "./cli/peer.ts";
+import { nodeCommand } from "./cli/node.ts";
+import { jobCommand } from "./cli/job.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
@@ -30,12 +33,16 @@ import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
 import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
+import { eventsCommand } from "./cli/events.ts";
 import { forkCommand } from "./cli/fork.ts";
+import { hooksCommand } from "./cli/hooks.ts";
 import { makeGuideCommand } from "./cli/guide.ts";
 import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
+import { orchestratorCommand } from "./cli/orchestrator.ts";
 import { scheduleCommand } from "./cli/schedule.ts";
 import { statusCommand } from "./cli/status.ts";
+import { taskCommand } from "./cli/task.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
@@ -80,8 +87,15 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       authCommand,
       projectCommand,
       threadCommand,
+      taskCommand,
       terminalCommand,
       scheduleCommand,
+      orchestratorCommand,
+      peerCommand,
+      nodeCommand,
+      jobCommand,
+      eventsCommand,
+      hooksCommand,
       statusCommand,
       rpcCommand,
       skillCommand,

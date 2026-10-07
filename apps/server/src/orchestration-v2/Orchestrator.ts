@@ -2392,6 +2392,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: `Thread ${command.threadId} is already archived.`,
       });
     }
+    // An expiry is a fact about the stored wake time: it never wakes a thread
+    // that is already awake or was snoozed again to a later time.
+    if (
+      command.type === "thread.unsnooze" &&
+      command.reason === "expired" &&
+      (thread.snoozedUntil == null ||
+        DateTime.toEpochMillis(thread.snoozedUntil) > DateTime.toEpochMillis(yield* DateTime.now))
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: {
+          code: "CONFLICT",
+          detail: `Thread ${command.threadId} has no snooze that is due.`,
+          threadId: command.threadId,
+        },
+      });
+    }
     if (command.type === "thread.unarchive" && thread.archivedAt === null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
@@ -2621,7 +2639,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], {
         turnItemTypes: [],
       });
-      const parsedSnoozedUntil = DateTime.make(command.snoozedUntil);
+      const parsedSnoozedUntil =
+        command.snoozeForMs === undefined
+          ? DateTime.make(command.snoozedUntil)
+          : Option.some(DateTime.add(now, { milliseconds: command.snoozeForMs }));
       if (
         Option.isNone(parsedSnoozedUntil) ||
         DateTime.toEpochMillis(parsedSnoozedUntil.value) <= DateTime.toEpochMillis(now)
@@ -2629,7 +2650,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Thread ${command.threadId} snooze wake time ${command.snoozedUntil} is not in the future.`,
+          cause: {
+            code: "INVALID_INPUT",
+            detail: `Thread ${command.threadId} snooze wake time ${command.snoozedUntil} is not in the future.`,
+            threadId: command.threadId,
+          },
         });
       }
       if (projection.runtimeRequests.some((request) => request.status === "pending")) {
@@ -6808,19 +6833,59 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           Effect.mapError(() => new OrchestratorProjectionError({ threadId: command.threadId })),
         );
       const runtimeRequest = context.request;
-      if (runtimeRequest === undefined) {
-        return yield* new OrchestratorDispatchError({
+      // `code` is the stable reason clients branch on; `detail` is the sentence shown to people.
+      const reject = (code: string, detail: string, extra: Record<string, string> = {}) =>
+        new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Runtime request ${command.requestId} was not found.`,
+          cause: {
+            code,
+            detail,
+            threadId: command.threadId,
+            requestId: command.requestId,
+            ...extra,
+          },
         });
+      if (runtimeRequest === undefined) {
+        return yield* reject("NOT_FOUND", `Runtime request ${command.requestId} was not found.`);
       }
       if (runtimeRequest.status !== "pending") {
-        return yield* new OrchestratorDispatchError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: `Runtime request ${command.requestId} is ${runtimeRequest.status}.`,
-        });
+        return yield* reject(
+          runtimeRequest.status === "expired"
+            ? "REQUEST_EXPIRED"
+            : runtimeRequest.status === "resolved"
+              ? "REQUEST_ALREADY_RESOLVED"
+              : "CONFLICT",
+          `Runtime request ${command.requestId} is ${runtimeRequest.status}.`,
+          { status: runtimeRequest.status },
+        );
+      }
+      // An approval guards an action and a question asks for information.
+      // Neither response may stand in for the other.
+      const isQuestion = runtimeRequest.kind === "user_input";
+      const guardsAnAction =
+        !isQuestion &&
+        runtimeRequest.kind !== "auth_refresh" &&
+        runtimeRequest.kind !== "dynamic_tool_call";
+      if (guardsAnAction && command.decision === undefined) {
+        return yield* reject(
+          "INVALID_INPUT",
+          `Runtime request ${command.requestId} is an approval and needs a decision; an answer does not approve it.`,
+          { kind: runtimeRequest.kind },
+        );
+      }
+      if (
+        isQuestion &&
+        command.answers === undefined &&
+        command.decision !== undefined &&
+        command.decision !== "decline" &&
+        command.decision !== "cancel"
+      ) {
+        return yield* reject(
+          "INVALID_INPUT",
+          `Runtime request ${command.requestId} is a question and needs an answer; an approval decision does not answer it.`,
+          { kind: runtimeRequest.kind },
+        );
       }
       if (runtimeRequest.responseCapability.type === "not_resumable") {
         return yield* new OrchestratorDispatchError({

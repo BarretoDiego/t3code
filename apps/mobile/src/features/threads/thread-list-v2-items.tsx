@@ -47,6 +47,7 @@ import {
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
+  type ThreadListV2NestedSummary,
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
@@ -441,9 +442,198 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   );
 });
 
+/**
+ * The count on a parent row: how many subagent threads it has, tinted by the
+ * most urgent thing any of them is doing so a collapsed parent still says
+ * when one needs the user. Pressing it shows or hides the nested rows.
+ */
+function ThreadListV2NestedToggle(props: {
+  readonly threadKey: string;
+  readonly nested: ThreadListV2NestedSummary;
+  readonly quietClassName: string;
+  readonly tintColorClassName: string;
+  readonly onToggle: (threadKey: string, expanded: boolean) => void;
+}) {
+  const { nested } = props;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={nested.label}
+      accessibilityHint={`${nested.expanded ? "Hides" : "Shows"} the subagent threads.`}
+      accessibilityState={{ expanded: nested.expanded }}
+      hitSlop={10}
+      onPress={() => props.onToggle(props.threadKey, !nested.expanded)}
+      className="flex-row items-center gap-1"
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <SymbolView
+        name={nested.expanded ? "chevron.down" : "chevron.right"}
+        size={10}
+        tintColorClassName={props.tintColorClassName}
+        type="monochrome"
+      />
+      <Text
+        className={cn(
+          "text-xs tabular-nums",
+          nested.signal === null
+            ? props.quietClassName
+            : STATUS_LABEL_BY_STATUS[nested.signal]?.className,
+        )}
+      >
+        {nested.total}
+      </Text>
+    </Pressable>
+  );
+}
+
+const NESTED_ROW_INDENT_STEP = 16;
+const NESTED_ROW_MAX_INDENT_DEPTH = 4;
+
+/**
+ * A subagent thread under its parent: indented behind a rail, one line, with
+ * its own status. Deliberately light (no swipe actions, pull request lookup,
+ * or menu), so a parent with many subagents stays cheap to scroll.
+ */
+export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: {
+  readonly thread: EnvironmentThreadShell;
+  readonly threadKey: string;
+  readonly depth: number;
+  readonly timeLabel: string;
+  readonly nested: ThreadListV2NestedSummary | null;
+  readonly pane?: "screen" | "sidebar";
+  readonly selected?: boolean;
+  readonly showTrailingDivider?: boolean;
+  readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
+  readonly onToggleNested: (threadKey: string, expanded: boolean) => void;
+}) {
+  const { thread } = props;
+  const theme = useUniwindTheme();
+  const sidebarPane = props.pane === "sidebar";
+  const selected = props.selected === true;
+  const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const status = resolveThreadListV2Status(thread);
+  const statusLabel =
+    STATUS_LABEL_BY_STATUS[status] ??
+    (status === "ready" && threadHasUnseenCompletion(thread)
+      ? { label: "Done", className: "text-adaptive-emerald-700-300" }
+      : undefined);
+  const indent =
+    (sidebarPane ? 16 : 24) +
+    (Math.min(props.depth, NESTED_ROW_MAX_INDENT_DEPTH) - 1) * NESTED_ROW_INDENT_STEP;
+  return (
+    <RowPressable
+      interactionClassName={rowAppearance.interactionClassName}
+      interactionOpacity={rowAppearance.interactionOpacity}
+      className={rowAppearance.className}
+      style={rowAppearance.style}
+      accessibilityRole="button"
+      accessibilityLabel={`Subagent: ${thread.title}${statusLabel ? `, ${statusLabel.label}` : ""}`}
+      accessibilityState={{ selected }}
+      onPress={() => props.onSelectThread(thread)}
+    >
+      <View className="min-h-[40px] flex-row items-stretch" style={{ paddingLeft: indent }}>
+        <View className={cn("w-px", sidebarPane ? "bg-drawer-border" : "bg-border")} />
+        <View
+          className={cn("min-w-0 flex-1 flex-row items-center gap-2 py-2 pl-3", "pr-5")}
+          style={sidebarPane ? { paddingRight: 12 } : undefined}
+        >
+          <Text
+            className={cn(
+              "min-w-0 flex-1 text-sm",
+              selected
+                ? selectedThreadRowColors.foregroundClassName
+                : statusLabel
+                  ? rowAppearance.foregroundClassName
+                  : rowAppearance.mutedForegroundClassName,
+            )}
+            numberOfLines={1}
+          >
+            {thread.title}
+          </Text>
+          {props.nested ? (
+            <ThreadListV2NestedToggle
+              threadKey={props.threadKey}
+              nested={props.nested}
+              quietClassName={
+                selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : rowAppearance.tertiaryForegroundClassName
+              }
+              tintColorClassName={
+                selected
+                  ? selectedThreadRowColors.mutedIconTintClassName
+                  : rowAppearance.mutedIconTintClassName
+              }
+              onToggle={props.onToggleNested}
+            />
+          ) : null}
+          <Text
+            className={cn(
+              "text-xs tabular-nums",
+              statusLabel?.className ??
+                (selected
+                  ? selectedThreadRowColors.mutedForegroundClassName
+                  : rowAppearance.tertiaryForegroundClassName),
+            )}
+          >
+            {statusLabel?.label ?? props.timeLabel}
+          </Text>
+        </View>
+      </View>
+      {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
+        <View className="ml-5 h-px bg-border-subtle" />
+      ) : null}
+    </RowPressable>
+  );
+});
+
+/** Stands in for the quiet subagents a long nested list leaves out. */
+export const ThreadListV2NestedMoreRow = memo(function ThreadListV2NestedMoreRow(props: {
+  readonly parentKey: string;
+  readonly depth: number;
+  readonly hiddenCount: number;
+  readonly pane?: "screen" | "sidebar";
+  readonly showTrailingDivider?: boolean;
+  readonly onShowAll: (parentKey: string) => void;
+}) {
+  const sidebarPane = props.pane === "sidebar";
+  const indent =
+    (sidebarPane ? 16 : 24) +
+    (Math.min(props.depth, NESTED_ROW_MAX_INDENT_DEPTH) - 1) * NESTED_ROW_INDENT_STEP;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Show ${props.hiddenCount} more subagent threads`}
+      onPress={() => props.onShowAll(props.parentKey)}
+      className={sidebarPane ? undefined : "bg-screen"}
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <View className="min-h-[36px] flex-row items-stretch" style={{ paddingLeft: indent }}>
+        <View className={cn("w-px", sidebarPane ? "bg-drawer-border" : "bg-border")} />
+        <View className="flex-1 justify-center py-2 pl-3">
+          <Text
+            className={cn(
+              "text-xs font-t3-medium",
+              sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted",
+            )}
+          >
+            Show {props.hiddenCount} more
+          </Text>
+        </View>
+      </View>
+      {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
+        <View className="ml-5 h-px bg-border-subtle" />
+      ) : null}
+    </Pressable>
+  );
+});
+
 export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly thread: EnvironmentThreadShell;
   readonly variant: "card" | "slim";
+  /** Subagent threads nested under this row, or null when it has none. */
+  readonly nested?: ThreadListV2NestedSummary | null;
+  readonly onToggleNested?: (threadKey: string, expanded: boolean) => void;
   /** A message for this thread is waiting in the outbox. */
   readonly hasQueuedMessages?: boolean;
   /** Snoozed-shelf row: shows its wake time and offers Wake. */
@@ -910,6 +1100,25 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
+  const nestedToggle =
+    props.nested != null && props.onToggleNested !== undefined ? (
+      <ThreadListV2NestedToggle
+        threadKey={`${thread.environmentId}:${thread.id}`}
+        nested={props.nested}
+        quietClassName={
+          selected
+            ? selectedThreadRowColors.mutedForegroundClassName
+            : rowAppearance.tertiaryForegroundClassName
+        }
+        tintColorClassName={
+          selected
+            ? selectedThreadRowColors.mutedIconTintClassName
+            : rowAppearance.mutedIconTintClassName
+        }
+        onToggle={props.onToggleNested}
+      />
+    ) : null;
+
   // Sidebar rows use navigation foregrounds on their active and idle surfaces.
   const cardContent = (
     <>
@@ -944,6 +1153,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             type="monochrome"
           />
         ) : null}
+        {nestedToggle}
         <Text
           className={cn(
             "text-xs tabular-nums",
@@ -1193,6 +1403,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             ) : null}
           </View>
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
+          {nestedToggle}
           <Text
             className={cn(
               "text-sm tabular-nums",

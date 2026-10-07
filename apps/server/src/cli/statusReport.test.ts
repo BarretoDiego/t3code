@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  type AutomationPendingWork,
+  ExecutionNodeId,
+  JobId,
   MessageId,
+  OrchestratorId,
   ProjectId,
   ProviderInstanceId,
   RunId,
@@ -51,6 +55,14 @@ const health = {
   retainedProcessCount: 0,
   inaccessibleProcessCount: 0,
 } as const;
+const idleAutomation: AutomationPendingWork = {
+  hookDeliveries: { pending: 0, retrying: 0, failed: 0 },
+  orchestrators: [],
+  activeTasks: 0,
+  unknownTasks: 0,
+  activeJobs: [],
+  peerOutboxPending: 0,
+};
 const base = {
   environment: "Local",
   at,
@@ -60,6 +72,7 @@ const base = {
   scheduledTasks: [],
   jobs: [],
   pendingWork: { effects: [] },
+  automation: idleAutomation,
   telemetry: { processes: [], sampleIntervalMs: 1000, health },
   errors: [],
   includeStopped: false,
@@ -277,5 +290,109 @@ describe("shutdown readiness", () => {
     });
     expect(result.readiness).toBe("busy");
     expect(formatStatusReport(result)).toContain("checkpoint.capture");
+  });
+});
+
+describe("automation work in the status report", () => {
+  const orchestrator = (
+    overrides: Partial<AutomationPendingWork["orchestrators"][number]> = {},
+  ): AutomationPendingWork["orchestrators"][number] => ({
+    orchestratorId: OrchestratorId.make("orch-1"),
+    name: "Release captain",
+    effectiveState: "idle",
+    inboxPending: 0,
+    activeChildren: 0,
+    ...overrides,
+  });
+
+  it("is ready when automation has nothing in flight", () => {
+    const result = report();
+    expect(result.safeToClose).toBe(true);
+    expect(result.blockers).toEqual([]);
+  });
+
+  it("is ready with an idle orchestrator that has no children and an empty inbox", () => {
+    const result = report({
+      automation: { ...idleAutomation, orchestrators: [orchestrator()] },
+    });
+    expect(result.safeToClose).toBe(true);
+  });
+
+  it("blocks on an idle orchestrator whose children are still working", () => {
+    const result = report({
+      automation: { ...idleAutomation, orchestrators: [orchestrator({ activeChildren: 2 })] },
+    });
+    expect(result.safeToClose).toBe(false);
+    expect(result.blockers).toEqual([
+      "Orchestrator orch-1: Release captain (2 active child task(s))",
+    ]);
+  });
+
+  it("blocks on an idle orchestrator with unread inbox entries", () => {
+    const result = report({
+      automation: { ...idleAutomation, orchestrators: [orchestrator({ inboxPending: 1 })] },
+    });
+    expect(result.readiness).toBe("busy");
+  });
+
+  it("does not block on a paused orchestrator that only holds a backlog", () => {
+    const result = report({
+      automation: {
+        ...idleAutomation,
+        orchestrators: [orchestrator({ effectiveState: "paused", inboxPending: 3 })],
+      },
+    });
+    expect(result.safeToClose).toBe(true);
+  });
+
+  it("blocks on a running orchestrator turn, running jobs, tasks and hook deliveries", () => {
+    const result = report({
+      automation: {
+        ...idleAutomation,
+        hookDeliveries: { pending: 1, retrying: 1, failed: 4 },
+        orchestrators: [orchestrator({ effectiveState: "running" })],
+        activeTasks: 2,
+        activeJobs: [
+          { jobId: JobId.make("job-1"), nodeId: ExecutionNodeId.make("local"), status: "started" },
+        ],
+      },
+    });
+    expect(result.blockers).toEqual([
+      "2 hook delivery(ies) in flight",
+      "Orchestrator orch-1: Release captain (running)",
+      "2 delegated task(s) in progress",
+      "Job job-1 on local: started",
+    ]);
+  });
+
+  it("reports unknown outcomes as unknown readiness, never as ready", () => {
+    const result = report({
+      automation: {
+        ...idleAutomation,
+        unknownTasks: 1,
+        activeJobs: [
+          { jobId: JobId.make("job-2"), nodeId: ExecutionNodeId.make("local"), status: "unknown" },
+        ],
+      },
+    });
+    expect(result.readiness).toBe("unknown");
+    expect(result.safeToClose).toBe(false);
+    expect(result.blockers).toEqual([]);
+    expect(result.unknowns).toHaveLength(2);
+  });
+
+  it("is not ready when the automation backlog could not be read", () => {
+    const result = report({
+      automation: null,
+      errors: [{ source: "automation", detail: "timeout" }],
+    });
+    expect(result.safeToClose).toBe(false);
+    expect(result.unknowns).toEqual(["automation: timeout"]);
+  });
+
+  it("does not block on peer messages waiting for an offline peer", () => {
+    const result = report({ automation: { ...idleAutomation, peerOutboxPending: 5 } });
+    expect(result.safeToClose).toBe(true);
+    expect(result.summary.peerOutboxPending).toBe(5);
   });
 });

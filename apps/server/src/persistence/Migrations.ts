@@ -10,6 +10,7 @@
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
+import { runAutomationMigrations } from "../automation/AutomationMigrations.ts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
@@ -267,6 +268,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     yield* Effect.logWarning(
       "Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name.",
     ).pipe(Effect.annotateLogs({ divergent }));
+  }
+  // Automation tables have their own ledger; a partial run targets the main ledger only.
+  if (toMigrationInclusive === undefined) {
+    yield* runAutomationMigrations();
   }
   return executedMigrations;
 });

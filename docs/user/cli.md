@@ -10,7 +10,18 @@ and for other coding agents.
 manual for agents that always matches the installed version.
 Use `t3 guide --json` for the manual and a complete command catalog with
 arguments, flags, aliases, and accepted choices, including global and hidden
-options. This works without a running server.
+options. This works without a running server. `t3 guide --topics` lists the
+manual's sections, `t3 guide --topic hooks` prints one of them (with only its
+commands under `--json`), and `--compact` prints one line per command.
+
+In `--json` mode a failed command prints `{"error":{"code","message","detail"}}`
+on stderr and exits non-zero. Codes are stable, for example `NOT_FOUND`,
+`INVALID_INPUT`, `CONFLICT`, `PERMISSION_DENIED`, `REQUEST_ALREADY_RESOLVED`,
+and `ENVIRONMENT_UNAVAILABLE`. Mutations accept `--idempotency-key <key>`:
+repeating one returns the first result instead of acting twice.
+
+See [events, hooks, orchestrators, and delegated tasks](./automation.md) and
+[peers, nodes, and jobs](./peers-and-jobs.md) for the automation commands.
 
 ## Basics
 

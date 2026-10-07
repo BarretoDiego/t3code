@@ -112,6 +112,7 @@ import {
   WsCoreRpcGroup,
   WsForkRpcGroup,
   WsRpcGroup,
+  AutomationRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import {
@@ -134,6 +135,8 @@ import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts"
 import * as IdAllocator from "./orchestration-v2/IdAllocator.ts";
 import * as ScheduledMessages from "./orchestration-v2/ScheduledMessages.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import type * as AutomationLayer from "./automation/AutomationLayer.ts";
+import { callerFromSession, makeAutomationRpcHandlers } from "./automation/rpcHandlers.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -256,6 +259,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
+import * as SessionGate from "./auth/SessionGate.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
@@ -1208,6 +1212,7 @@ const makeWsRpcLayer = (
   hub: SourceControlHubService["Service"],
   accounts: SourceControlAccounts["Service"],
   scheduledMessages: ScheduledMessages.ScheduledMessages["Service"] | undefined,
+  automationServices: Context.Context<AutomationLayer.AutomationServices>,
 ) =>
   Layer.effectContext(
     Effect.gen(function* () {
@@ -1349,25 +1354,11 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
-      const authorizationError = (requiredScope: AuthEnvironmentScope) =>
-        new EnvironmentAuthorizationError({
-          message: `The authenticated token is missing required scope: ${requiredScope}.`,
-          requiredScope,
-        });
-      const authorizeEffect = <A, E, R>(
-        requiredScope: AuthEnvironmentScope,
-        effect: Effect.Effect<A, E, R>,
-      ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? effect
-          : Effect.fail(authorizationError(requiredScope));
-      const authorizeStream = <A, E, R>(
-        requiredScope: AuthEnvironmentScope,
-        stream: Stream.Stream<A, E, R>,
-      ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? stream
-          : Stream.fail(authorizationError(requiredScope));
+      const { authorizeEffect, authorizeStream } = yield* SessionGate.makeSessionGate({
+        sessionId: currentSessionId,
+        scopes: currentSession.scopes,
+        changes: sessions.streamChanges,
+      });
 
       const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
         projectId: ProjectId,
@@ -4102,9 +4093,15 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
       });
-      return Context.merge(
+      const automationHandlers = yield* makeAutomationRpcHandlers({
+        caller: callerFromSession(currentSession),
+        observeEffect: observeRpcEffect,
+        observeStream: observeRpcStream,
+      }).pipe(Effect.provide(automationServices));
+      return Context.mergeAll(
         yield* WsCoreRpcGroup.toHandlers(handlers),
         yield* WsForkRpcGroup.toHandlers(forkHandlers),
+        yield* AutomationRpcGroup.toHandlers(automationHandlers),
       );
     }),
   );
@@ -4129,6 +4126,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const reviews = yield* PullRequestReviewService;
     const hub = yield* SourceControlHubService;
     const accounts = yield* SourceControlAccounts;
+    const automationServices = yield* Effect.context<AutomationLayer.AutomationServices>();
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -4187,6 +4185,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               hub,
               accounts,
               Option.getOrUndefined(scheduledMessages),
+              automationServices,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

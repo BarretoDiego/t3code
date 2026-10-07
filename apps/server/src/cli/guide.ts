@@ -1,9 +1,11 @@
 import * as Console from "effect/Console";
-import { Command } from "effect/unstable/cli";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import { Command, Flag } from "effect/unstable/cli";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { buildCommandCatalog } from "./commandCatalog.ts";
-import { jsonFlag, printJson } from "./common.ts";
+import { failCli, jsonFlag, printJson, reportCliFailure } from "./common.ts";
 
 /**
  * The operating manual a coding agent reads before driving T3 Code. Printed
@@ -85,7 +87,87 @@ Request and question ids come from \`show --json\` or the wait output.
   t3 thread stop <thread>              stop the provider session
   t3 thread rename <thread> "<title>"
   t3 thread pin|unpin|settle|unsettle|archive|unarchive|unsnooze|delete <thread>
-  t3 thread snooze <thread> <duration>     (30m, 2h, 1d)
+  t3 thread snooze <thread> <duration|ISO datetime>   (30m, 2h, 1d, 2026-01-31T09:00:00Z)
+  t3 thread send <thread> "<text>" [--queue | --steer]
+  t3 thread tree <thread> --json       the thread with its child threads and tasks
+  t3 thread requests [--thread <t>] --json   pending questions and approvals, with owner
+Snooze hides a thread until a time kept by the server; it never stops the
+agent. archive is refused while a turn is active: interrupt first.
+Mutations take --idempotency-key <key>: repeating one returns the first result.
+With --json a failure prints {"error":{"code","message","detail"}} on stderr.
+Codes are stable: NOT_FOUND, INVALID_INPUT, CONFLICT, PERMISSION_DENIED,
+REQUEST_ALREADY_RESOLVED, REQUEST_EXPIRED, NOT_OWNER, ENVIRONMENT_UNAVAILABLE,
+CAPABILITY_UNSUPPORTED, RESULT_UNKNOWN. A wait that times out cancels nothing.
+answer never approves and approve never answers; with several requests pending
+you must name one with --request <id>.
+
+## Delegated tasks (work handed to a managed thread, with a contract)
+  t3 task delegate --file task.json|- --json     same idempotencyKey = same task and thread
+  t3 task show|list|tree <task> --json
+  t3 task wait <task> [--timeout 30m] --json     event-driven; a timeout cancels nothing
+  t3 task send <task> "<text>"                   message the child
+  t3 task validate <task> --file criteria.json|- | t3 task reject <task> "<reason>"
+  t3 task cancel|reconcile <task>
+A finished turn makes a task "reported", not "validated": check the acceptance
+criteria, then validate or reject. "unknown" means the outcome could not be
+established: reconcile it, never assume. A target on another environment stays
+"pending_delivery" until that peer stores it.
+Example: docs/user/examples/automation/task-remote-delegation.json
+
+## Events (cursor-addressed journal; nothing is lost if you start late)
+  t3 events status --json                      headCursor, oldestCursor
+  t3 events read [--cursor N] [--type task.* --thread <id>] --json   -> nextCursor
+  t3 events watch [--cursor N | --consumer <name>] [--type ...] [--format ndjson] [--once]
+      --consumer resumes after the last line printed; --once exits when caught up
+  t3 events emit --file event.json|- [--key <k>]   type must be custom.<ns>.<name>
+  t3 events consumers list | delete <name>
+A cursor older than retention fails with CURSOR_EXPIRED and the oldest cursor;
+read current state, then resume from there. Events are not replayed for you.
+
+## Hooks (declarative delivery of matching events)
+  t3 hooks add --file hook.json|-              see docs/user/examples/automation/
+  t3 hooks edit <hook> --file changes.json|-   only the fields to change
+  t3 hooks list | show <hook> | enable|disable|remove <hook>
+  t3 hooks test <hook> [--deliver]             dry run unless --deliver
+  t3 hooks deliveries [hook] [--status failed --status suppressed]
+  t3 hooks redeliver|dismiss <delivery>
+Targets: orchestrator_inbox and cli_consumer always; webhook and command only
+where the server operator allowed them. "delivered" means stored at the target,
+not that the work it triggers is done.
+
+## Orchestrators (a persistent agent with an inbox, woken by events)
+  t3 orchestrator create --file orchestrator.json|- --json
+  t3 orchestrator edit <id> --file changes.json|-
+  t3 orchestrator list | show <id> --json      state, reason, usage, budget, host
+  t3 orchestrator send <id> "<text>"|- [--idempotency-key <k>]
+  t3 orchestrator pause|resume|disable <id> [--interrupt] | interrupt <id>
+  t3 orchestrator inbox <id> [--status s] | inbox requeue|dismiss <entry>
+  t3 orchestrator checkpoints <id> | claims <id>
+  t3 orchestrator claim transfer (--thread <t> --request <r> | --task <id>)
+     --to user|thread:<id>|orchestrator:<id> [--expected-generation n]
+  t3 orchestrator remove <id>                  the thread stays
+Pausing keeps the inbox and never cancels children. Its main thread is an
+ordinary thread: settle, snooze or archive do not pause the orchestrator.
+Examples: docs/user/examples/automation/orchestrator-local.json, orchestrator-global.json
+
+## Peers (another environment, reached directly; no relay)
+  t3 peer identity                              this environment's id
+  t3 peer credential create <caller-env-id> [--session] [--base-url <url>]
+      run on the side being called; each side adds the other
+  t3 peer add <name> <pairing-link> | <url> --token <t> [--permissions-file f|-]
+  t3 peer list|show|update|enable|disable|remove ; t3 peer outbox [peer] [--all]
+A new peer may ask nothing until you grant it. "delivered" means the peer
+stored the message. An offline peer leaves messages pending; they are sent
+once when it returns.
+
+## Nodes and jobs (run a command in an allowed workspace, traceably)
+  t3 node list|add <label> --ssh <target> --root <dir>|edit|remove|probe
+  t3 node exec <node> --file job.json|- [--wait] [--timeout 10m]   prints the job id
+  t3 job show|list|wait|logs [--follow]|cancel|reconcile <job>
+  job.json: {"cwd": "/abs", "action": {"type":"command","executable":"npm","args":["test"]}}
+A node runs nothing until it has a workspace root (t3 node edit local --root <dir>).
+wait --timeout stops waiting, not the job. An "unknown" job is never re-run
+for you: reconcile it.
 
 ## Mini skills (reusable Markdown instructions)
   t3 skill list --json | t3 skill show <skill> --json
@@ -173,17 +255,115 @@ credential, WebSocket (rpc), then the host's own report (host-tailscale*,
 tailscale-serve). Run it before retrying a command that failed to connect.
 `;
 
+/** Topic id, the guide heading it prints, and the command groups it covers. */
+const GUIDE_TOPICS = [
+  { id: "rules", heading: "## Rules", groups: [] },
+  { id: "status", heading: "## Before closing or restarting T3 Code", groups: ["status"] },
+  { id: "threads", heading: "## Core loop", groups: ["thread"], through: "## Mini skills" },
+  { id: "tasks", heading: "## Delegated tasks", groups: ["task"] },
+  { id: "events", heading: "## Events", groups: ["events"] },
+  { id: "hooks", heading: "## Hooks", groups: ["hooks"] },
+  { id: "orchestrators", heading: "## Orchestrators", groups: ["orchestrator"] },
+  { id: "peers", heading: "## Peers", groups: ["peer"] },
+  { id: "jobs", heading: "## Nodes and jobs", groups: ["node", "job"] },
+  { id: "skills", heading: "## Mini skills", groups: ["skill"] },
+  { id: "profiles", heading: "## Agent profiles", groups: ["profile"] },
+  { id: "terminals", heading: "## Terminals", groups: ["terminal"] },
+  { id: "schedules", heading: "## Scheduled tasks", groups: ["schedule"] },
+  { id: "rpc", heading: "## Anything else", groups: ["rpc"] },
+  { id: "projects", heading: "## Projects", groups: ["project"] },
+  { id: "environments", heading: "## Environments", groups: ["env", "auth"], through: null },
+] as const satisfies ReadonlyArray<{
+  readonly id: string;
+  readonly heading: string;
+  readonly groups: ReadonlyArray<string>;
+  /** Where the topic's text ends: a later heading, or null for the end. Default: the next heading. */
+  readonly through?: string | null;
+}>;
+
+export const GUIDE_TOPIC_IDS: ReadonlyArray<string> = GUIDE_TOPICS.map((topic) => topic.id);
+
+/** The guide text of one topic, or undefined when the id is unknown. */
+export const guideTopicText = (id: string): string | undefined => {
+  const topic = GUIDE_TOPICS.find((candidate) => candidate.id === id);
+  if (topic === undefined) return undefined;
+  const start = AGENT_GUIDE.indexOf(topic.heading);
+  if (start < 0) return undefined;
+  const through = "through" in topic ? topic.through : undefined;
+  const end =
+    through === null ? -1 : AGENT_GUIDE.indexOf(through ?? "\n## ", start + topic.heading.length);
+  return (end < 0 ? AGENT_GUIDE.slice(start) : AGENT_GUIDE.slice(start, end)).trimEnd();
+};
+
+type CatalogEntry = ReturnType<typeof buildCommandCatalog>[number];
+
+const topicCommands = (catalog: ReadonlyArray<CatalogEntry>, id: string) => {
+  const groups: ReadonlyArray<string> = GUIDE_TOPICS.find((topic) => topic.id === id)?.groups ?? [];
+  return catalog.filter((entry) => entry.path[1] !== undefined && groups.includes(entry.path[1]));
+};
+
+/** One line per runnable command: its usage and what it does. */
+const compactListing = (catalog: ReadonlyArray<CatalogEntry>) =>
+  catalog
+    .filter((entry) => !entry.unlisted && entry.subcommands.length === 0)
+    .map((entry) => `${entry.usage}${entry.description ? `  # ${entry.description}` : ""}`)
+    .join("\n");
+
 export const makeGuideCommand = (getRoot: () => Command.Command.Any) =>
-  Command.make("guide", { json: jsonFlag }).pipe(
+  Command.make("guide", {
+    json: jsonFlag,
+    topic: Flag.String("topic").pipe(
+      Flag.withDescription("Print one topic only. List them with --topics."),
+      Flag.optional,
+    ),
+    topics: Flag.Boolean("topics").pipe(
+      Flag.withDescription("List the guide's topics."),
+      Flag.withDefault(false),
+    ),
+    compact: Flag.Boolean("compact").pipe(
+      Flag.withDescription("One line per command instead of the prose guide."),
+      Flag.withDefault(false),
+    ),
+  }).pipe(
     Command.withDescription("Print the guide for driving T3 Code from scripts and coding agents."),
-    Command.withHandler(({ json }) =>
-      json
-        ? printJson({
+    Command.withHandler(({ json, topic, topics, compact }) =>
+      Effect.suspend(() => {
+        if (topics) {
+          return json
+            ? printJson({ topics: GUIDE_TOPIC_IDS })
+            : Console.log(GUIDE_TOPIC_IDS.join("\n"));
+        }
+        const catalog = buildCommandCatalog(getRoot());
+        const topicId = Option.getOrUndefined(topic);
+        if (topicId === undefined) {
+          if (json) {
+            return printJson({
+              schemaVersion: 1,
+              version: packageJson.version,
+              guide: AGENT_GUIDE,
+              commands: catalog,
+            });
+          }
+          return Console.log(compact ? compactListing(catalog) : AGENT_GUIDE);
+        }
+        const text = guideTopicText(topicId);
+        if (text === undefined) {
+          return failCli(
+            "NOT_FOUND",
+            `Unknown guide topic "${topicId}". Topics: ${GUIDE_TOPIC_IDS.join(", ")}.`,
+          );
+        }
+        const commands = topicCommands(catalog, topicId);
+        if (json) {
+          return printJson({
             schemaVersion: 1,
             version: packageJson.version,
-            guide: AGENT_GUIDE,
-            commands: buildCommandCatalog(getRoot()),
-          })
-        : Console.log(AGENT_GUIDE),
+            topic: topicId,
+            guide: text,
+            commands,
+          });
+        }
+        return Console.log(compact ? compactListing(commands) : text);
+      }).pipe(reportCliFailure(json)),
     ),
   );

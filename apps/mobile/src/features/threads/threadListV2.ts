@@ -12,6 +12,16 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
+  buildThreadNesting,
+  flattenThreadNesting,
+  resolveThreadNestingSignal,
+  THREAD_NESTING_CHILD_LIMIT,
+  threadNestingAncestorKeys,
+  type ThreadNestingDisplay,
+  type ThreadNestingSignal,
+  type ThreadNestingSummary,
+} from "@t3tools/client-runtime/state/thread-relationships";
+import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
@@ -197,6 +207,8 @@ export function resolveThreadListV2Status(
 
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not
     poison the whole ordering, so it sinks to the epoch instead. */
+const NO_KEYS: ReadonlySet<string> = new Set<string>();
+
 function parseTimestampMs(isoDate: string): number {
   const parsed = Date.parse(isoDate);
   return Number.isNaN(parsed) ? 0 : parsed;
@@ -226,24 +238,23 @@ export function getThreadListV2OrderedSection(input: {
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): EnvironmentThreadShell[] {
-  const threads = input.threads.filter((thread) => {
-    if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
-      return false;
-    if (
-      (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
+  const isParked = (thread: EnvironmentThreadShell) =>
+    ((input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
       thread.settledOverride === "settled" &&
-      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true
-    ) {
-      return false;
-    }
-    if (
-      (input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
-      effectiveSnoozed(thread, { now: input.now })
-    ) {
-      return false;
-    }
-    return (thread.pinnedAt != null) === (input.section === "pinned");
-  });
+      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true) ||
+    ((input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
+      effectiveSnoozed(thread, { now: input.now }));
+  // Nested subagents are placed by their parent, so only top-level rows have
+  // a slot to move.
+  const threads = buildThreadNesting({
+    threads: input.threads,
+    isListed: (thread) => thread.archivedAt === null,
+    isParked,
+  })
+    .roots.map((root) => root.thread)
+    .filter(
+      (thread) => !isParked(thread) && (thread.pinnedAt != null) === (input.section === "pinned"),
+    );
   const ordered =
     input.section === "pinned"
       ? sortPinnedThreadsByOrderKey(threads)
@@ -265,8 +276,53 @@ export interface ThreadListV2Item {
   readonly isLast: boolean;
 }
 
+/** What a row says about the subagent threads nested under it. */
+export interface ThreadListV2NestedSummary {
+  readonly total: number;
+  readonly signal: ThreadNestingSignal | null;
+  readonly expanded: boolean;
+  /** Spoken summary, e.g. "3 subagents, 1 awaiting approval". */
+  readonly label: string;
+}
+
+const NESTED_SIGNAL_PHRASE: Record<ThreadNestingSignal, string> = {
+  approval: "awaiting approval",
+  input: "awaiting input",
+  failed: "failed",
+  working: "working",
+};
+
+function summarizeNestedThreads(
+  summary: ThreadNestingSummary,
+  expanded: boolean,
+): ThreadListV2NestedSummary {
+  const reported = (["approval", "input", "failed", "working"] as const)
+    .filter((signal) => summary.counts[signal] > 0)
+    .map((signal) => `${summary.counts[signal]} ${NESTED_SIGNAL_PHRASE[signal]}`);
+  return {
+    total: summary.total,
+    signal: summary.signal,
+    expanded,
+    label: [`${summary.total} ${summary.total === 1 ? "subagent" : "subagents"}`, ...reported].join(
+      ", ",
+    ),
+  };
+}
+
+function nestedSummariesAreEqual(
+  previous: ThreadListV2NestedSummary | null,
+  next: ThreadListV2NestedSummary | null,
+): boolean {
+  if (previous === null || next === null) return previous === next;
+  return previous.expanded === next.expanded && previous.label === next.label;
+}
+
 export interface ThreadListV2Layout {
   readonly items: ThreadListV2Item[];
+  /** Subagent rows to draw under each top-level item, keyed by
+      `environmentId:threadId`. `items` itself stays top-level, so section
+      indexes, reordering, and arranging never see a nested row. */
+  readonly nestedByKey: ReadonlyMap<string, ThreadNestingDisplay<EnvironmentThreadShell>>;
   /** Settled threads beyond the render limit (behind "Show more"). */
   readonly hiddenSettledCount: number;
   /** Snoozed threads matching the current filters. */
@@ -312,6 +368,34 @@ export interface ThreadListV2ThreadListItem {
       availability without changing any shell. */
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Null when the thread has no nested subagents. */
+  readonly nested: ThreadListV2NestedSummary | null;
+}
+
+/** A subagent thread drawn indented under its parent. */
+export interface ThreadListV2NestedThreadListItem {
+  readonly type: "v2-nested-thread";
+  readonly key: string;
+  readonly thread: EnvironmentThreadShell;
+  /** `environmentId:threadId`, the key its own expansion is stored under. */
+  readonly threadKey: string;
+  /** 1 for a direct child of the top-level row. */
+  readonly depth: number;
+  readonly signal: ThreadNestingSignal | null;
+  /** Blank while the row shows a status instead of a time. */
+  readonly timeLabel: string;
+  readonly nested: ThreadListV2NestedSummary | null;
+  readonly showTrailingDivider: boolean;
+}
+
+/** Stands in for the quiet subagents a long list leaves out. */
+export interface ThreadListV2NestedMoreListItem {
+  readonly type: "v2-nested-more";
+  readonly key: string;
+  readonly parentKey: string;
+  readonly depth: number;
+  readonly hiddenCount: number;
+  readonly showTrailingDivider: boolean;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -348,6 +432,8 @@ export interface ThreadListV2SettledShelfListItem {
 
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
+  | ThreadListV2NestedThreadListItem
+  | ThreadListV2NestedMoreListItem
   | ThreadListV2PendingListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
@@ -359,6 +445,8 @@ export function isThreadListV2ListItem(value: {
 }): value is ThreadListV2ListItem {
   return (
     value.type === "v2-thread" ||
+    value.type === "v2-nested-thread" ||
+    value.type === "v2-nested-more" ||
     value.type === "v2-pending" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
@@ -391,7 +479,26 @@ export function threadListV2ListItemsAreEqual(
         previous.showTrailingDivider === item.showTrailingDivider &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
-        previous.canMoveDown === item.canMoveDown
+        previous.canMoveDown === item.canMoveDown &&
+        nestedSummariesAreEqual(previous.nested, item.nested)
+      );
+    case "v2-nested-thread":
+      return (
+        previous.type === "v2-nested-thread" &&
+        previous.key === item.key &&
+        previous.thread === item.thread &&
+        previous.depth === item.depth &&
+        previous.timeLabel === item.timeLabel &&
+        previous.showTrailingDivider === item.showTrailingDivider &&
+        nestedSummariesAreEqual(previous.nested, item.nested)
+      );
+    case "v2-nested-more":
+      return (
+        previous.type === "v2-nested-more" &&
+        previous.key === item.key &&
+        previous.depth === item.depth &&
+        previous.hiddenCount === item.hiddenCount &&
+        previous.showTrailingDivider === item.showTrailingDivider
       );
     case "v2-pending":
       return (
@@ -440,6 +547,12 @@ function resolveThreadListV2ItemTimeLabel(
   );
 }
 
+function nestedSummaryFor(
+  display: ThreadNestingDisplay<EnvironmentThreadShell> | undefined,
+): ThreadListV2NestedSummary | null {
+  return display === undefined ? null : summarizeNestedThreads(display.summary, display.expanded);
+}
+
 /**
  * Builds the shared mobile order: active → pending → snoozed shelf → settled.
  * Pending tasks are waiting rather than asking, and parked work remains
@@ -471,6 +584,8 @@ export function buildThreadListV2ListItems(input: {
   /** True while the shelf expansion preferences are still loading; stamped
       onto both shelf headers so the disabled state reaches recycled cells. */
   readonly shelfPreferencesLoading?: boolean;
+  /** The layout's `nestedByKey`. Absent = no nested rows (tests). */
+  readonly nestedByKey?: ReadonlyMap<string, ThreadNestingDisplay<EnvironmentThreadShell>>;
 }): ThreadListV2ListItem[] {
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
@@ -505,6 +620,9 @@ export function buildThreadListV2ListItems(input: {
         input.queuedThreadKeys?.has(`${item.thread.environmentId}:${item.thread.id}`) === true,
       canMoveUp: move?.canMoveUp === true,
       canMoveDown: move?.canMoveDown === true,
+      nested: nestedSummaryFor(
+        input.nestedByKey?.get(`${item.thread.environmentId}:${item.thread.id}`),
+      ),
     };
   });
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({
@@ -542,11 +660,70 @@ export function buildThreadListV2ListItems(input: {
     });
     result.push(...threadItems.slice(settledShelfHeaderIndex));
   }
+  // Nested rows follow their parent wherever the splice above put it.
+  const nestedByKey = input.nestedByKey;
+  const withNested =
+    nestedByKey === undefined || nestedByKey.size === 0
+      ? result
+      : result.flatMap((entry): ThreadListV2ListItem[] => {
+          if (entry.type !== "v2-thread") return [entry];
+          const display = nestedByKey.get(
+            `${entry.item.thread.environmentId}:${entry.item.thread.id}`,
+          );
+          if (display === undefined) return [entry];
+          return [
+            entry,
+            ...display.rows.map((row): ThreadListV2ListItem =>
+              row.kind === "more"
+                ? {
+                    type: "v2-nested-more",
+                    key: `v2-nested-more:${row.parentKey}`,
+                    parentKey: row.parentKey,
+                    depth: row.depth,
+                    hiddenCount: row.hiddenCount,
+                    showTrailingDivider: false,
+                  }
+                : {
+                    type: "v2-nested-thread",
+                    key: `v2-nested-thread:${row.key}`,
+                    thread: row.thread,
+                    threadKey: row.key,
+                    depth: row.depth,
+                    signal: resolveThreadNestingSignal(row.thread),
+                    // A row showing a status draws no time, so its minute
+                    // tick must not invalidate the cell.
+                    timeLabel:
+                      resolveThreadNestingSignal(row.thread) !== null ||
+                      threadHasUnseenCompletion(row.thread)
+                        ? ""
+                        : relativeTime(
+                            row.thread.latestUserMessageAt ??
+                              row.thread.updatedAt ??
+                              row.thread.createdAt,
+                          ),
+                    nested:
+                      row.summary === null
+                        ? null
+                        : summarizeNestedThreads(row.summary, row.expanded),
+                    showTrailingDivider: false,
+                  },
+            ),
+          ];
+        });
   // Hairlines depend on the final neighbour, so they are stamped after the
   // splice: a recycled cell only re-renders when its divider actually flips.
-  return result.map((entry, index) => {
-    if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
-    const next = result[index + 1];
+  // A parent draws none above its own nested rows; the last nested row draws
+  // the one that closes the family.
+  return withNested.map((entry, index) => {
+    if (
+      entry.type !== "v2-thread" &&
+      entry.type !== "v2-pending" &&
+      entry.type !== "v2-nested-thread" &&
+      entry.type !== "v2-nested-more"
+    ) {
+      return entry;
+    }
+    const next = withNested[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
     return showTrailingDivider === entry.showTrailingDivider
@@ -591,6 +768,11 @@ export function buildThreadListV2Items(input: {
       outbox. Such a thread has work the user is waiting on, so it stays in
       the active block even when the server has settled it. */
   readonly queuedThreadKeys?: ReadonlySet<string>;
+  /** The user's show/hide choice per parent, keyed by `environmentId:threadId`.
+      Without one, subagents show while any of them is live. */
+  readonly nestedExpandedByKey?: Readonly<Record<string, boolean>>;
+  /** Parents whose long subagent list the user opened in full. */
+  readonly nestedShowAllKeys?: ReadonlySet<string>;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -614,14 +796,14 @@ export function buildThreadListV2Items(input: {
   const settled: EnvironmentThreadShell[] = [];
   const snoozed: EnvironmentThreadShell[] = [];
   let nextSnoozeWakeAt: string | null = null;
-  for (const thread of input.threads) {
-    if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent") continue;
+  const isListed = (thread: EnvironmentThreadShell) => {
+    if (thread.archivedAt !== null) return false;
     // The server stamps settledOverride for the tail.
-    if (input.environmentId !== null && thread.environmentId !== input.environmentId) continue;
+    if (input.environmentId !== null && thread.environmentId !== input.environmentId) return false;
     if (projectKeys !== null && !projectKeys.has(`${thread.environmentId}:${thread.projectId}`)) {
-      continue;
+      return false;
     }
-    if (
+    return !(
       query.length > 0 &&
       !thread.title.toLocaleLowerCase().includes(query) &&
       !threadPullRequestSearchTerms(thread).some((term) =>
@@ -633,13 +815,25 @@ export function buildThreadListV2Items(input: {
           threadId: thread.id,
         }),
       ) !== true
-    ) {
-      continue;
-    }
-    const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
-    const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
+    );
+  };
+  const isSnoozed = (thread: EnvironmentThreadShell) =>
+    (input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
+    effectiveSnoozed(thread, { now });
+  const isSettled = (thread: EnvironmentThreadShell) =>
+    (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
+    thread.settledOverride === "settled" &&
+    input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true;
+  // Subagent threads ride under the thread that spawned them (the same forest
+  // the web sidebar builds), so only its top-level rows are sectioned.
+  const nesting = buildThreadNesting({
+    threads: input.threads,
+    isListed,
+    isParked: (thread) => isSnoozed(thread) || isSettled(thread),
+  });
+  for (const { thread } of nesting.roots) {
     // Snooze outranks settlement and pinning until the thread wakes.
-    if (supportsSnooze && effectiveSnoozed(thread, { now })) {
+    if (isSnoozed(thread)) {
       snoozed.push(thread);
       if (
         thread.snoozedUntil != null &&
@@ -650,9 +844,7 @@ export function buildThreadListV2Items(input: {
       }
       continue;
     }
-    const hasQueuedMessages =
-      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) === true;
-    if (supportsSettlement && thread.settledOverride === "settled" && !hasQueuedMessages) {
+    if (isSettled(thread)) {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
@@ -666,7 +858,25 @@ export function buildThreadListV2Items(input: {
     (left, right) =>
       parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
   );
-  const selectedThreadKey = input.selectedThreadKey ?? null;
+  // A closed shelf keeps the row that carries the selected thread: the
+  // thread itself, or the parent it is nested under.
+  const selectedPathKeys =
+    input.selectedThreadKey == null
+      ? []
+      : [input.selectedThreadKey, ...threadNestingAncestorKeys(nesting, input.selectedThreadKey)];
+  const selectedThreadKey = selectedPathKeys.at(-1) ?? null;
+  const activePathKeys = new Set(selectedPathKeys.length > 1 ? selectedPathKeys : []);
+  const nestedByKey = new Map<string, ThreadNestingDisplay<EnvironmentThreadShell>>();
+  for (const root of nesting.roots) {
+    const display = flattenThreadNesting({
+      node: root,
+      expandedOverrides: input.nestedExpandedByKey ?? {},
+      activePathKeys,
+      childLimit: THREAD_NESTING_CHILD_LIMIT,
+      showAllKeys: input.nestedShowAllKeys ?? NO_KEYS,
+    });
+    if (display !== null) nestedByKey.set(root.key, display);
+  }
   const visibleSnoozed =
     input.snoozedShelfExpanded === true
       ? orderedSnoozed
@@ -737,6 +947,7 @@ export function buildThreadListV2Items(input: {
   }
   return {
     items,
+    nestedByKey,
     hiddenSettledCount: orderedSettled.length - pagedSettled.length,
     snoozedCount: orderedSnoozed.length,
     snoozedShelfHeaderIndex,

@@ -1,0 +1,27 @@
+{
+  "name": "Tell the orchestrator when delegated work ends",
+  "enabled": true,
+  "filter": {
+    "types": [
+      "turn.completed",
+      "turn.failed",
+      "turn.interrupted",
+      "task.reported",
+      "task.failed",
+      "task.unknown"
+    ]
+  },
+  "target": {
+    "type": "orchestrator_inbox",
+    "orchestratorId": "main"
+  },
+  "deliveryMode": "batch",
+  "batchWindowMs": 3000,
+  "retry": {
+    "maxAttempts": 6,
+    "initialDelayMs": 1000,
+    "maxDelayMs": 300000
+  },
+  "timeoutMs": 10000,
+  "priority": 0
+}
