@@ -51,6 +51,10 @@
       "types": "./src/agentAwareness.ts",
       "import": "./src/agentAwareness.ts"
     },
+    "./pinOrderKey": {
+      "types": "./src/pinOrderKey.ts",
+      "import": "./src/pinOrderKey.ts"
+    },
     "./git": {
       "types": "./src/git.ts",
       "import": "./src/git.ts"

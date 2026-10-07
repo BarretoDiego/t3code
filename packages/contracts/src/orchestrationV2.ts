@@ -2577,12 +2577,19 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     snoozedUntil: IsoDateTime,
+    /**
+     * Snooze for this long from the server's clock instead of until
+     * `snoozedUntil`, which is then only the fallback for a server that
+     * predates this field.
+     */
+    snoozeForMs: Schema.optional(PositiveInt),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.unsnooze"),
     commandId: CommandId,
     threadId: ThreadId,
-    reason: Schema.Literal("user"),
+    /** `expired` is the server waking a thread whose wake time has passed; it does nothing earlier. */
+    reason: Schema.Literals(["user", "expired"]),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.auto-settle.set"),
