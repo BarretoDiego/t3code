@@ -36,6 +36,7 @@ import { profileCommand, skillCommand } from "./cli/library.ts";
 import { rpcCommand } from "./cli/rpc.ts";
 import { scheduleCommand } from "./cli/schedule.ts";
 import { statusCommand } from "./cli/status.ts";
+import { taskCommand } from "./cli/task.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
@@ -80,6 +81,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       authCommand,
       projectCommand,
       threadCommand,
+      taskCommand,
       terminalCommand,
       scheduleCommand,
       statusCommand,

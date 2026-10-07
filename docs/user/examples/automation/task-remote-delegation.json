@@ -1,0 +1,27 @@
+{
+  "idempotencyKey": "release-notes-2026-10",
+  "target": {
+    "environmentId": "REPLACE-with-the-peer-environment-id",
+    "projectId": "REPLACE-with-a-project-id-on-that-environment",
+    "workspaceStrategy": { "type": "worktree", "baseRef": "main" },
+    "modelSelection": { "instanceId": "codex", "model": "gpt-5" },
+    "runtimeMode": "auto-accept-edits"
+  },
+  "contract": {
+    "title": "Draft the October release notes",
+    "objective": "Write release notes for everything merged to main since the v0.42 tag.",
+    "context": "Notes are written for users, not contributors. Group by feature area and leave out internal refactors.",
+    "deliverables": [
+      "docs/releases/2026-10.md with the notes",
+      "A list of pull requests that had no user-visible change and were left out"
+    ],
+    "acceptanceCriteria": [
+      "Every user-visible pull request merged since v0.42 is mentioned once",
+      "Each entry links its pull request",
+      "No entry describes behavior that did not ship"
+    ],
+    "permissions": ["thread.read"],
+    "deadline": "2026-10-31T18:00:00.000Z",
+    "onParentCancel": "detach"
+  }
+}
