@@ -10,8 +10,7 @@ import * as OrchestratorService from "./OrchestratorService.ts";
 import * as PeerService from "./PeerService.ts";
 import * as ResponsibilityService from "./ResponsibilityService.ts";
 
-/** Every automation service, for the server runtime and for tests that need the whole set. */
-export const layer = Layer.mergeAll(
+const serviceLayers = Layer.mergeAll(
   EventJournal.layer,
   HookService.layer,
   ResponsibilityService.layer,
@@ -20,7 +19,9 @@ export const layer = Layer.mergeAll(
   DelegatedTaskService.layer,
   JobService.layer,
   PeerService.layer,
-  AutomationDiagnosticsService.layer,
 );
+
+/** Every automation service, for the server runtime and for tests that need the whole set. */
+export const layer = AutomationDiagnosticsService.layer.pipe(Layer.provideMerge(serviceLayers));
 
 export type AutomationServices = Layer.Success<typeof layer>;
