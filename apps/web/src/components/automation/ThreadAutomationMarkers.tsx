@@ -1,11 +1,21 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { OrchestratorThreadMarker } from "@t3tools/client-runtime/state/automation-presentation";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  RuntimeRequestId,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
 import { UserRoundCheckIcon, WorkflowIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { useRightPanelStore } from "../../rightPanelStore";
-import { useOrchestratorThreadMarker, useThreadResponsibilityMarker } from "../../state/automation";
+import { cn } from "../../lib/utils";
+import {
+  useOrchestratorThreadMarker,
+  usePendingRequestResponsibility,
+  useThreadResponsibilityMarker,
+} from "../../state/automation";
 import { useEnvironment } from "../../state/environments";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -46,17 +56,21 @@ function OrchestratorMarkerDetails({ marker }: { readonly marker: OrchestratorTh
  * than the user is responsible for a request waiting on it. Renders nothing on
  * an ordinary thread.
  *
- * `row` is two small icons for the sidebar; `header` spells the state out.
- * Neither relies on colour: the state has its own glyph and a text label.
+ * `row` is two small icons for the sidebar. `header` spells the state out and
+ * opens the orchestrator panel. `card` spells it out without acting, for lists
+ * such as the Agent Operations Board. None relies on colour: the state has
+ * its own glyph and a text label.
  */
 export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
   environmentId,
   threadId,
   variant,
+  className,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly variant: "row" | "header";
+  readonly variant: "row" | "header" | "card";
+  readonly className?: string;
 }) {
   const threadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
@@ -65,9 +79,13 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
   const orchestrator = useOrchestratorThreadMarker(threadRef);
   const responsibility = useThreadResponsibilityMarker(threadRef);
   if (orchestrator === null && responsibility === null) return null;
+  const spelledOut = variant !== "row";
 
   return (
-    <span className="inline-flex shrink-0 items-center gap-1" data-thread-automation-markers>
+    <span
+      className={cn("inline-flex min-w-0 shrink-0 items-center gap-1.5", className)}
+      data-thread-automation-markers
+    >
       {orchestrator !== null ? (
         <Tooltip>
           <TooltipTrigger
@@ -79,6 +97,8 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
                   aria-label={`${orchestrator.accessibleLabel}. Open orchestrator panel`}
                   onClick={() => openThreadDetailsPanel(threadRef)}
                 />
+              ) : variant === "card" ? (
+                <span className="inline-flex min-w-0 items-center gap-1 text-2xs text-muted-foreground" />
               ) : (
                 <span
                   role="img"
@@ -91,6 +111,9 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
             <WorkflowIcon aria-hidden className="size-3 text-muted-foreground" />
             <AutomationStatusGlyph status={orchestrator.state} className="size-3" />
             {variant === "header" ? <span>{orchestrator.state.label}</span> : null}
+            {variant === "card" ? (
+              <span className="truncate">Orchestrator · {orchestrator.state.label}</span>
+            ) : null}
           </TooltipTrigger>
           <TooltipPopup side="top">
             <OrchestratorMarkerDetails marker={orchestrator} />
@@ -101,16 +124,22 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
         <Tooltip>
           <TooltipTrigger
             render={
-              <span
-                role="img"
-                aria-label={responsibility.accessibleLabel}
-                className="inline-flex items-center gap-0.5 text-2xs text-muted-foreground"
-              />
+              spelledOut ? (
+                <span className="inline-flex min-w-0 items-center gap-1 text-2xs text-muted-foreground" />
+              ) : (
+                <span
+                  role="img"
+                  aria-label={responsibility.accessibleLabel}
+                  className="inline-flex items-center text-muted-foreground"
+                />
+              )
             }
           >
-            <UserRoundCheckIcon aria-hidden className="size-3" />
-            {variant === "header" ? (
-              <span>{responsibility.ownerLabel ?? "Several owners"}</span>
+            <UserRoundCheckIcon aria-hidden className="size-3 shrink-0" />
+            {spelledOut ? (
+              <span className="truncate">
+                {responsibility.ownerLabel ?? "Several owners"} responsible
+              </span>
             ) : null}
           </TooltipTrigger>
           <TooltipPopup side="top">{responsibility.accessibleLabel}</TooltipPopup>
@@ -119,3 +148,32 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
     </span>
   );
 });
+
+/**
+ * Under a pending question or approval: who is responsible for it when that is
+ * not simply the user, and that an approval is reserved for the user. Renders
+ * nothing for an ordinary request, and nothing on servers without automation.
+ */
+export function PendingRequestResponsibilityNote({
+  environmentId,
+  threadId,
+  requestId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly requestId: RuntimeRequestId;
+}) {
+  const responsibility = usePendingRequestResponsibility(environmentId, threadId, requestId);
+  if (responsibility === null || (!responsibility.delegated && !responsibility.reservedForUser)) {
+    return null;
+  }
+  return (
+    <p className="text-2xs text-muted-foreground" role="note" data-request-responsibility>
+      <span className="font-medium text-foreground/80">{responsibility.summary}.</span>{" "}
+      {responsibility.note}
+      {responsibility.leaseExpired
+        ? " Its claim has expired, which does not prove it stopped."
+        : ""}
+    </p>
+  );
+}

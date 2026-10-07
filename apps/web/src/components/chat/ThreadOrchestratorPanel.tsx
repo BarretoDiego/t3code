@@ -11,11 +11,9 @@ import {
   presentOrchestratorState,
   presentResponsibility,
   resolveEnvironmentReachability,
-  resolveOrchestratorView,
   summarizeOrchestratorInbox,
 } from "@t3tools/client-runtime/state/automation-presentation";
 import type { EnvironmentId, InboxEntry, ThreadId } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   BanIcon,
@@ -29,7 +27,11 @@ import {
 import { type ReactNode, useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
-import { automationEnvironment, useThreadOrchestrator } from "../../state/automation";
+import {
+  automationEnvironment,
+  useResponsibilityLookup,
+  useThreadOrchestrator,
+} from "../../state/automation";
 import { useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -544,8 +546,7 @@ function OrchestratorRequests({
 }) {
   const { orchestrator, environmentId } = view;
   const navigate = useNavigate();
-  const views = useAtomValue(automationEnvironment.orchestratorViewsAtom);
-  const threadShells = useThreadShells();
+  const lookup = useResponsibilityLookup(environmentId);
   const requestsQuery = useEnvironmentQuery(
     automationEnvironment.pendingRequests({
       environmentId,
@@ -554,14 +555,6 @@ function OrchestratorRequests({
   );
   const requests = requestsQuery.data?.requests ?? [];
   if (requestsQuery.error === null && requests.length === 0) return null;
-  const lookup = {
-    orchestratorName: (orchestratorId: string, hostEnvironmentId: string) =>
-      resolveOrchestratorView(views, orchestratorId, hostEnvironmentId)?.orchestrator.name ?? null,
-    threadTitle: (threadId: string) =>
-      threadShells.find(
-        (thread) => thread.environmentId === environmentId && thread.id === threadId,
-      )?.title ?? null,
-  };
   return (
     <>
       <Subheading>Pending requests it tracks</Subheading>

@@ -20,8 +20,6 @@ export const AUTOMATION_SETTINGS_ANCHORS = {
   nodes: "automation-nodes",
 } as const;
 
-export type AutomationSettingsSection = keyof typeof AUTOMATION_SETTINGS_ANCHORS;
-
 interface AutomationEnvironmentCandidate {
   readonly environmentId: EnvironmentId;
   readonly connection: { readonly phase: string };
