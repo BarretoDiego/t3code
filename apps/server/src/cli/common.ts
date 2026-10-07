@@ -143,6 +143,7 @@ const THREAD_CLI_REASON_CODES: Record<string, CliErrorCode> = {
 };
 
 const TAG_CODES: Record<string, CliErrorCode> = {
+  AutomationCliError: "INVALID_INPUT",
   EnvironmentServerNotRunningError: "ENVIRONMENT_UNAVAILABLE",
   EnvironmentServerConnectError: "ENVIRONMENT_UNAVAILABLE",
   RpcClientError: "ENVIRONMENT_UNAVAILABLE",

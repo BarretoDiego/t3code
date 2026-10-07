@@ -589,6 +589,14 @@ const make = Effect.gen(function* () {
         [needed],
       );
     }
+    // The orchestrator's own state and child budgets: paused, too many
+    // children at once, too many under one task, too many attempts.
+    yield* orchestrators.authorizeDelegation({
+      orchestratorId: orchestrator.id,
+      action: needed,
+      projectId: input.target.projectId,
+      parentTaskId: input.parentTaskId,
+    });
   });
 
   const delegate: DelegatedTaskEngine["Service"]["delegate"] = Effect.fn(

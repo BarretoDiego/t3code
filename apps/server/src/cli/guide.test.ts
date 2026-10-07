@@ -7,7 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { makeCli } from "../binCli.ts";
 import { buildCommandCatalog } from "./commandCatalog.ts";
-import { AGENT_GUIDE } from "./guide.ts";
+import { AGENT_GUIDE, GUIDE_TOPIC_IDS, guideTopicText } from "./guide.ts";
 
 const runGuide = (...args: string[]) =>
   NodeChildProcess.spawnSync(
@@ -118,5 +118,64 @@ describe("command catalog metadata", () => {
       unlisted: true,
       description: expect.stringContaining("unavailable"),
     });
+  });
+
+  it("lists its topics, and every topic has text in the guide", () => {
+    const result = runGuide("--topics");
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().split("\n")).toEqual(GUIDE_TOPIC_IDS);
+    for (const id of GUIDE_TOPIC_IDS) {
+      const text = guideTopicText(id);
+      expect(text, id).toBeDefined();
+      expect(AGENT_GUIDE).toContain(text);
+    }
+  });
+
+  it("prints one topic with only that topic's commands", () => {
+    const result = runGuide("--topic", "hooks", "--json");
+    expect(result.status).toBe(0);
+    const guide = JSON.parse(result.stdout);
+    expect(guide.topic).toBe("hooks");
+    expect(guide.guide.startsWith("## Hooks")).toBe(true);
+    expect(guide.guide).not.toContain("## Orchestrators");
+    expect(guide.commands.length).toBeGreaterThan(0);
+    expect(guide.commands.every((entry: { path: string[] }) => entry.path[1] === "hooks")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the whole thread section together under one topic", () => {
+    const text = guideTopicText("threads");
+    expect(text).toContain("## Core loop");
+    expect(text).toContain("## Approvals and questions");
+    expect(text).toContain("## Controlling and organizing");
+    expect(text).not.toContain("## Mini skills");
+  });
+
+  it("prints a compact listing of runnable commands", () => {
+    const result = runGuide("--topic", "jobs", "--compact");
+    expect(result.status).toBe(0);
+    const lines = result.stdout.trim().split("\n");
+    expect(lines.length).toBeGreaterThan(3);
+    expect(lines.every((line) => line.startsWith("t3 node") || line.startsWith("t3 job"))).toBe(
+      true,
+    );
+  });
+
+  it("refuses an unknown topic with a code and names the valid ones", () => {
+    const result = runGuide("--topic", "nope", "--json");
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toBe("");
+    const failure = JSON.parse(result.stderr);
+    expect(failure.error.code).toBe("NOT_FOUND");
+    expect(failure.error.message).toContain("orchestrators");
+  });
+
+  it("documents every command group the CLI exposes for automation", () => {
+    const groups = new Set(buildCommandCatalog(makeCli()).map((entry) => entry.path[1]));
+    for (const group of ["task", "events", "hooks", "orchestrator", "peer", "node", "job"]) {
+      expect(groups.has(group), group).toBe(true);
+      expect(AGENT_GUIDE).toContain(`t3 ${group} `);
+    }
   });
 });

@@ -101,24 +101,6 @@ const RefusalShape = Schema.TaggedStruct("AutomationError", {
 
 const isRefusal = Schema.is(RefusalShape);
 
-/** In `--json` mode a server refusal is also printed as `{ "error": { "code", ... } }`. */
-export const reportingErrors =
-  (json: boolean) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(
-      Effect.tapError((error) =>
-        json && isRefusal(error)
-          ? printJson({
-              error: {
-                code: error.code,
-                message: error.message,
-                ...(error.detail === undefined ? {} : { detail: error.detail }),
-              },
-            })
-          : Effect.void,
-      ),
-    );
-
 // ---------------------------------------------------------------------------
 // Filters and formatting
 
@@ -254,7 +236,6 @@ const watchCommand = Command.make("watch", {
                   : Console.error(`caught up at cursor ${item.cursor}; waiting for events`)
                 ).pipe(Effect.andThen(acknowledge(item.cursor))),
           ),
-          reportingErrors(flags.json),
         );
       }),
     ),
@@ -280,7 +261,7 @@ const readCommand = Command.make("read", {
           ...(Option.isSome(flags.cursor) ? { afterCursor: flags.cursor.value } : {}),
           ...(filter === undefined ? {} : { filter }),
           limit: flags.limit,
-        }).pipe(reportingErrors(flags.json));
+        });
         if (flags.json) return yield* printJson(result);
         yield* Console.log(
           [
@@ -298,7 +279,7 @@ const statusCommand = Command.make("status", { ...environmentTargetFlags, json: 
   Command.withHandler(
     withClient(
       Effect.fn("cli.events.status")(function* (client, flags) {
-        const status = yield* client[M.eventsStatus]({}).pipe(reportingErrors(flags.json));
+        const status = yield* client[M.eventsStatus]({});
         yield* flags.json ? printJson(status) : Console.log(formatStatus(status));
       }),
     ),
@@ -325,7 +306,7 @@ const emitCommand = Command.make("emit", {
         const input = yield* decodeBody(AutomationEventEmitInput, yield* readBodyText(flags.file), {
           idempotencyKey: Option.getOrElse(flags.key, () => NodeCrypto.randomUUID()),
         });
-        const result = yield* client[M.eventsEmit](input).pipe(reportingErrors(flags.json));
+        const result = yield* client[M.eventsEmit](input);
         if (flags.json) return yield* printJson(result);
         yield* Console.log(
           `${result.created ? "Recorded" : "Already recorded as"} ${result.entry.event.type} at cursor ${result.entry.cursor} (${result.entry.event.eventId}).`,
@@ -343,7 +324,7 @@ const consumersListCommand = Command.make("list", {
   Command.withHandler(
     withClient(
       Effect.fn("cli.events.consumers.list")(function* (client, flags) {
-        const { consumers } = yield* client[M.consumersList]({}).pipe(reportingErrors(flags.json));
+        const { consumers } = yield* client[M.consumersList]({});
         if (flags.json) return yield* printJson(consumers);
         yield* Console.log(
           consumers.length === 0
@@ -370,7 +351,7 @@ const consumersDeleteCommand = Command.make("delete", {
       Effect.fn("cli.events.consumers.delete")(function* (client, flags) {
         const result = yield* client[M.consumersDelete]({
           consumerId: EventConsumerId.make(flags.consumer),
-        }).pipe(reportingErrors(flags.json));
+        });
         if (flags.json) return yield* printJson(result);
         yield* Console.log(
           result.removed

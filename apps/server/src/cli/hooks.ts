@@ -27,7 +27,6 @@ import {
   decodeBody,
   formatEntryLine,
   readBodyText,
-  reportingErrors,
 } from "./events.ts";
 
 const M = AUTOMATION_WS_METHODS;
@@ -171,7 +170,7 @@ const addCommand = Command.make("add", {
     withClient(
       Effect.fn("cli.hooks.add")(function* (client, flags) {
         const input = yield* decodeHookBody(yield* readBodyText(flags.file));
-        const hook = yield* client[M.hooksUpsert](input).pipe(reportingErrors(flags.json));
+        const hook = yield* client[M.hooksUpsert](input);
         yield* printHook(hook, flags.json, `Created ${hook.id}.`);
       }),
     ),
@@ -195,7 +194,7 @@ const editCommand = Command.make("edit", {
         if (input.id !== existing.id) {
           return yield* fail(`The body names hook ${input.id}, not ${existing.id}.`);
         }
-        const hook = yield* client[M.hooksUpsert](input).pipe(reportingErrors(flags.json));
+        const hook = yield* client[M.hooksUpsert](input);
         yield* printHook(hook, flags.json, `Updated ${hook.id}.`);
       }),
     ),
@@ -207,7 +206,7 @@ const listCommand = Command.make("list", { ...environmentTargetFlags, json: json
   Command.withHandler(
     withClient(
       Effect.fn("cli.hooks.list")(function* (client, flags) {
-        const hooks = yield* loadHooks(client).pipe(reportingErrors(flags.json));
+        const hooks = yield* loadHooks(client);
         if (flags.json) return yield* printJson(hooks);
         yield* Console.log(hooks.length === 0 ? "No hooks." : hooks.map(formatHookLine).join("\n"));
       }),
@@ -240,7 +239,7 @@ const setEnabledCommand = (name: "enable" | "disable", description: string) =>
           const hook = yield* client[M.hooksSetEnabled]({
             hookId: existing.id,
             enabled: name === "enable",
-          }).pipe(reportingErrors(flags.json));
+          });
           if (flags.json) return yield* printJson(hook);
           yield* Console.log(`${hook.enabled ? "Enabled" : "Disabled"} ${hook.id}.`);
         }),
@@ -258,9 +257,7 @@ const removeCommand = Command.make("remove", {
     withClient(
       Effect.fn("cli.hooks.remove")(function* (client, flags) {
         const existing = yield* resolveHook(client, flags.hook);
-        const result = yield* client[M.hooksDelete]({ hookId: existing.id }).pipe(
-          reportingErrors(flags.json),
-        );
+        const result = yield* client[M.hooksDelete]({ hookId: existing.id }).pipe();
         if (flags.json) return yield* printJson(result);
         yield* Console.log(`Removed ${existing.id} (${existing.name}).`);
       }),
@@ -294,7 +291,7 @@ const testCommand = Command.make("test", {
           ...(Option.isSome(flags.cursor) ? { afterCursor: flags.cursor.value } : {}),
           ...(Option.isSome(flags.limit) ? { limit: flags.limit.value } : {}),
           ...(flags.deliver ? { deliver: true } : {}),
-        }).pipe(reportingErrors(flags.json));
+        });
         if (flags.json) return yield* printJson(result);
         yield* Console.log(
           [
@@ -347,7 +344,7 @@ const deliveriesCommand = Command.make("deliveries", {
           ...(hook === undefined ? {} : { hookId: hook.id }),
           ...(flags.status.length === 0 ? {} : { statuses: flags.status }),
           limit: flags.limit,
-        }).pipe(reportingErrors(flags.json));
+        });
         if (flags.json) return yield* printJson(deliveries);
         yield* Console.log(
           deliveries.length === 0
@@ -375,7 +372,7 @@ const deliveryActionCommand = (
         Effect.fn(`cli.hooks.${name}`)(function* (client, flags) {
           const delivery = yield* client[method]({
             deliveryId: HookDeliveryId.make(flags.delivery),
-          }).pipe(reportingErrors(flags.json));
+          });
           if (flags.json) return yield* printJson(delivery);
           yield* Console.log(
             name === "redeliver"
