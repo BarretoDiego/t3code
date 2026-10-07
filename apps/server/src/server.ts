@@ -467,10 +467,7 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
   ),
 );
 
-// The event sink records public automation events in the same transaction as
-// the domain events, so the journal must be in its environment when it is built.
 const OrchestrationV2RuntimeLayerLive = OrchestrationV2ProductionLayerLive.pipe(
-  Layer.provide(EventJournal.layer),
   Layer.provide(ProviderEventIngestor.analyticsLive),
   Layer.provide(CheckpointStoreLayerLive),
   Layer.provide(GitWorkflowLayerLive),
@@ -628,6 +625,11 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
   Layer.provideMerge(ProjectEnrichmentService.layer),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, ProjectFaviconResolverLayerLive)),
   Layer.provideMerge(RepositoryIdentityResolverLayerLive),
+  // The event sink records public automation events in the same transaction as
+  // the domain events, and it takes the journal from whatever is in scope when
+  // it is first built. Several compositions above name the sink, so the journal
+  // sits beneath all of them rather than beside any one.
+  Layer.provideMerge(EventJournal.layer.pipe(Layer.provide(PersistenceLayerLive))),
   Layer.provideMerge(ServerEnvironmentLayerLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerSecretStore.layer),
