@@ -259,6 +259,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
+import * as SessionGate from "./auth/SessionGate.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
@@ -1353,25 +1354,11 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
-      const authorizationError = (requiredScope: AuthEnvironmentScope) =>
-        new EnvironmentAuthorizationError({
-          message: `The authenticated token is missing required scope: ${requiredScope}.`,
-          requiredScope,
-        });
-      const authorizeEffect = <A, E, R>(
-        requiredScope: AuthEnvironmentScope,
-        effect: Effect.Effect<A, E, R>,
-      ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? effect
-          : Effect.fail(authorizationError(requiredScope));
-      const authorizeStream = <A, E, R>(
-        requiredScope: AuthEnvironmentScope,
-        stream: Stream.Stream<A, E, R>,
-      ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? stream
-          : Stream.fail(authorizationError(requiredScope));
+      const { authorizeEffect, authorizeStream } = yield* SessionGate.makeSessionGate({
+        sessionId: currentSessionId,
+        scopes: currentSession.scopes,
+        changes: sessions.streamChanges,
+      });
 
       const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
         projectId: ProjectId,
