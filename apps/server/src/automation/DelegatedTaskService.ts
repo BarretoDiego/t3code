@@ -12,7 +12,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { type AutomationCaller, unsupported } from "./Caller.ts";
+import type { AutomationCaller } from "./Caller.ts";
+import * as EventJournal from "./EventJournal.ts";
+import * as OrchestratorService from "./OrchestratorService.ts";
+import * as PeerService from "./PeerService.ts";
+import * as TaskEngine from "./tasks/TaskEngine.ts";
 
 /** Delegated tasks: the contract, the managed thread that runs it, and its verified outcome. */
 export class DelegatedTaskService extends Context.Service<
@@ -52,13 +56,30 @@ export class DelegatedTaskService extends Context.Service<
   }
 >()("t3/automation/DelegatedTaskService") {}
 
-// Replaced by the real implementation; until then every call reports the capability as absent.
-export const layer = Layer.succeed(DelegatedTaskService, {
-  delegate: () => Effect.fail(unsupported("DelegatedTaskService")),
-  get: () => Effect.fail(unsupported("DelegatedTaskService")),
-  list: () => Effect.fail(unsupported("DelegatedTaskService")),
-  update: () => Effect.fail(unsupported("DelegatedTaskService")),
-  threadTree: () => Effect.fail(unsupported("DelegatedTaskService")),
-  acceptRemote: () => Effect.fail(unsupported("DelegatedTaskService")),
-  applyRemoteStatus: () => Effect.fail(unsupported("DelegatedTaskService")),
-});
+/** The service as a view of the task engine. Tests provide the engine's dependencies directly. */
+export const layerFromEngine = Layer.effect(
+  DelegatedTaskService,
+  Effect.gen(function* () {
+    const engine = yield* TaskEngine.DelegatedTaskEngine;
+    return DelegatedTaskService.of({
+      delegate: engine.delegate,
+      get: (_caller, taskId) => engine.get(taskId),
+      list: (_caller, input) => engine.list(input),
+      update: engine.update,
+      threadTree: (_caller, threadId) => engine.threadTree(threadId),
+      acceptRemote: engine.acceptRemote,
+      applyRemoteStatus: engine.applyRemoteStatus,
+    });
+  }),
+);
+
+/**
+ * Needs, beyond its sibling automation services: `SqlClient`,
+ * `ThreadManagementService`, `ThreadLaunchService`, and
+ * `ServerEnvironmentIdentity`. The engine is exposed as well, so the task
+ * reactor shares this instance.
+ */
+export const layer = layerFromEngine.pipe(
+  Layer.provideMerge(TaskEngine.layer),
+  Layer.provide(Layer.mergeAll(EventJournal.layer, PeerService.layer, OrchestratorService.layer)),
+);
