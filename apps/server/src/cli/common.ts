@@ -150,6 +150,7 @@ const TAG_CODES: Record<string, CliErrorCode> = {
   SocketError: "ENVIRONMENT_UNAVAILABLE",
   EnvironmentNotFoundError: "NOT_FOUND",
   EnvironmentAuthorizationError: "PERMISSION_DENIED",
+  AgentCredentialUnavailableError: "PERMISSION_DENIED",
   OrchestratorSubagentThreadReadOnlyError: "CAPABILITY_UNSUPPORTED",
   OrchestratorCommandIdConflictError: "CONFLICT",
   OrchestratorCommandPreviouslyRejectedError: "CONFLICT",

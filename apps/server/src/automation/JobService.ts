@@ -37,6 +37,8 @@ import { type AutomationCaller, automationError } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";
 import * as JobAuthority from "./jobs/JobAuthority.ts";
 import * as JobExecutor from "./jobs/JobExecutor.ts";
+import { makeOrchestratorAccess } from "./orchestrator/Access.ts";
+import { makeStore } from "./orchestrator/Store.ts";
 import * as OrchestratorService from "./OrchestratorService.ts";
 
 /** Execution nodes and the traceable jobs that run on them. */
@@ -180,6 +182,28 @@ const make = Effect.gen(function* () {
         ),
       );
 
+  const access = makeOrchestratorAccess(makeStore(sql), yield* environment.getEnvironmentId);
+
+  /**
+   * A job an orchestrator's agent may steer: one that orchestrator requested,
+   * on a node it may use. Any other caller passes untouched.
+   */
+  const requireOwnJob = (caller: AutomationCaller, job: Job) =>
+    Effect.gen(function* () {
+      if (caller.kind !== "orchestrator") return;
+      yield* access.authorize(caller, "job.run", { nodeId: job.nodeId });
+      if (
+        job.requestedBy.kind !== "orchestrator" ||
+        job.requestedBy.orchestratorId !== caller.orchestratorId
+      ) {
+        return yield* automationError(
+          "PERMISSION_DENIED",
+          `Job ${job.id} was not requested by orchestrator ${caller.orchestratorId}.`,
+          { jobId: job.id },
+        );
+      }
+    });
+
   const requireOperator = (caller: AutomationCaller) =>
     caller.kind === "peer"
       ? Effect.fail(
@@ -260,6 +284,7 @@ const make = Effect.gen(function* () {
   const upsertNode: JobService["Service"]["upsertNode"] = Effect.fn("JobService.upsertNode")(
     function* (caller, input) {
       yield* requireOperator(caller);
+      yield* access.operatorOnly(caller, "configure execution nodes");
       const nodes = yield* loadNodes;
       const existing = input.id === undefined ? undefined : nodes.find((n) => n.id === input.id);
       const transport = input.transport;
@@ -314,6 +339,7 @@ const make = Effect.gen(function* () {
   const removeNode: JobService["Service"]["removeNode"] = Effect.fn("JobService.removeNode")(
     function* (caller, nodeId) {
       yield* requireOperator(caller);
+      yield* access.operatorOnly(caller, "remove execution nodes");
       if (nodeId === LOCAL_NODE_ID) {
         return yield* invalid("The built-in `local` node cannot be removed. Disable it instead.");
       }
@@ -342,6 +368,7 @@ const make = Effect.gen(function* () {
   const probeNode: JobService["Service"]["probeNode"] = Effect.fn("JobService.probeNode")(
     function* (caller, nodeId) {
       yield* requireOperator(caller);
+      yield* access.operatorOnly(caller, "probe execution nodes");
       const node = yield* requireNode(nodeId);
       const probed = yield* executor.probe(node).pipe(Effect.result);
       const observedAt = yield* nowIso;
@@ -694,6 +721,9 @@ const make = Effect.gen(function* () {
   const submit: JobService["Service"]["submit"] = Effect.fn("JobService.submit")(
     function* (caller, input) {
       yield* requireOperator(caller);
+      // An orchestrator's agent submits as its own orchestrator, whatever the body names.
+      const orchestratorId = yield* access.actingOrchestratorId(caller, input.orchestratorId);
+      if (caller.kind === "orchestrator") yield* access.requireLive(caller);
       const jobId = JobId.make(
         `job_${NodeCrypto.createHash("sha256").update(input.idempotencyKey).digest("hex").slice(0, 32)}`,
       );
@@ -711,14 +741,15 @@ const make = Effect.gen(function* () {
         });
       }
       const shell = input.action.type === "shell";
+      yield* access.authorize(caller, "job.run", { nodeId: node.id });
       const permissions =
-        input.orchestratorId === undefined
+        orchestratorId === undefined
           ? undefined
-          : yield* authority.orchestratorPermissions(input.orchestratorId);
+          : yield* authority.orchestratorPermissions(orchestratorId);
       if (permissions === null) {
         return yield* automationError(
           "NOT_FOUND",
-          `No orchestrator ${input.orchestratorId} is hosted here.`,
+          `No orchestrator ${orchestratorId} is hosted here.`,
         );
       }
       const deny = (message: string) =>
@@ -736,7 +767,10 @@ const make = Effect.gen(function* () {
         if (!node.allowShell) {
           return yield* deny(`Node ${node.id} does not allow shell jobs.`);
         }
-        if (caller.kind === "client" && !caller.scopes.includes(AuthAutomationExecuteScope)) {
+        if (
+          (caller.kind === "client" || caller.kind === "orchestrator") &&
+          !caller.scopes.includes(AuthAutomationExecuteScope)
+        ) {
           return yield* deny(`Shell jobs need the ${AuthAutomationExecuteScope} scope.`);
         }
         if (permissions !== undefined && !permissions.actions.includes("job.shell")) {
@@ -759,9 +793,9 @@ const make = Effect.gen(function* () {
         environmentId: self,
         nodeId: node.id,
         requestedBy:
-          input.orchestratorId === undefined
+          orchestratorId === undefined
             ? { kind: "user" }
-            : { kind: "orchestrator", orchestratorId: input.orchestratorId, environmentId: self },
+            : { kind: "orchestrator", orchestratorId, environmentId: self },
         requestedByEnvironmentId: self,
         taskId: input.taskId ?? null,
         threadId: input.threadId ?? null,
@@ -833,6 +867,7 @@ const make = Effect.gen(function* () {
     function* (caller, jobId) {
       yield* requireOperator(caller);
       const current = yield* readJob(jobId);
+      yield* requireOwnJob(caller, current);
       if (isTerminal(current.status)) return current;
       const state = live.get(jobId);
       if (state === undefined) {
@@ -887,6 +922,7 @@ const make = Effect.gen(function* () {
     function* (caller, jobId) {
       yield* requireOperator(caller);
       const { job: stored, row } = yield* readRow(jobId).pipe(guarded("reconcile"));
+      yield* requireOwnJob(caller, stored);
       // A job this server is supervising, or one that ended, is already as known as it gets.
       if (live.has(jobId) || isTerminal(stored.status)) return overlay(stored);
       const nodes = yield* loadNodes;

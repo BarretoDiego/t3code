@@ -35,9 +35,13 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import { CodexProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import { withAgentShellEnvironment } from "../../orchestration-v2/AgentShellEnvironment.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as IdAllocator from "../../orchestration-v2/IdAllocator.ts";
 import type {
@@ -46,7 +50,10 @@ import type {
   ProviderAdapterV2TurnInput,
 } from "../../orchestration-v2/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
+import {
+  makeOrchestratorV2ReplayLayerWithRegistry,
+  makeReplayServerConfig,
+} from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "../../orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
@@ -75,11 +82,25 @@ const instanceId = ProviderInstanceId.make("codex");
 export const otherInstanceId = ProviderInstanceId.make("codex-second");
 export const modelSelection = { instanceId, model: "gpt-5.4" } as const;
 const driver = ProviderDriverKind.make("codex");
+/** An instance of a provider whose agent cannot be given an orchestrator's credential. */
+export const unsupportedInstanceId = ProviderInstanceId.make("opencode-test");
+const unsupportedDriver = ProviderDriverKind.make("opencode");
+/** What a provider process inherits before any thread-specific environment is applied. */
+export const PROVIDER_BASE_PATH = "/usr/bin:/bin";
+
+/** One turn as the scripted provider received it. */
+export interface ProviderTurnRecord {
+  readonly threadId: ThreadId;
+  readonly text: string;
+  readonly model: string;
+  /** The environment the adapter hands the process that runs the agent's commands. */
+  readonly environment: NodeJS.ProcessEnv;
+}
 
 /** What the scripted provider did, and the switches a test flips to shape the next turn. */
 export interface ProviderProbe {
   /** Every turn a provider was asked to run, in order. */
-  readonly turns: Ref.Ref<ReadonlyArray<{ readonly threadId: ThreadId; readonly text: string }>>;
+  readonly turns: Ref.Ref<ReadonlyArray<ProviderTurnRecord>>;
   /** When set, the next turn stays running until the deferred completes. */
   readonly holdNextTurn: Ref.Ref<Deferred.Deferred<void> | null>;
   /** Tokens each completed turn reports; null reports nothing, as some providers do. */
@@ -88,9 +109,7 @@ export interface ProviderProbe {
 
 const makeProviderProbe = Effect.gen(function* () {
   return {
-    turns: yield* Ref.make<ReadonlyArray<{ readonly threadId: ThreadId; readonly text: string }>>(
-      [],
-    ),
+    turns: yield* Ref.make<ReadonlyArray<ProviderTurnRecord>>([]),
     holdNextTurn: yield* Ref.make<Deferred.Deferred<void> | null>(null),
     usage: yield* Ref.make<{ readonly input: number; readonly output: number } | null>(null),
   } satisfies ProviderProbe;
@@ -106,6 +125,7 @@ const REQUEST_PREFIX = "REQUEST:";
 function makeScriptedAdapter(
   probe: ProviderProbe,
   adapterInstanceId: ProviderInstanceId,
+  driver = ProviderDriverKind.make("codex"),
 ): ProviderAdapterV2Shape {
   return {
     instanceId: adapterInstanceId,
@@ -258,7 +278,16 @@ function makeScriptedAdapter(
             Effect.gen(function* () {
               yield* Ref.update(probe.turns, (turns) => [
                 ...turns,
-                { threadId: turn.threadId, text: turn.message.text },
+                {
+                  threadId: turn.threadId,
+                  text: turn.message.text,
+                  model: turn.modelSelection.model,
+                  // What a real adapter does where it spawns the agent's process.
+                  environment: withAgentShellEnvironment(
+                    { PATH: PROVIDER_BASE_PATH },
+                    turn.threadId,
+                  ),
+                },
               ]);
               const at = yield* DateTime.now;
               const providerTurnId = ProviderTurnId.make(
@@ -340,9 +369,12 @@ function makeScriptedAdapter(
   };
 }
 
-const providerSnapshot = (providerInstanceId: ProviderInstanceId): ServerProvider => ({
+const providerSnapshot = (
+  providerInstanceId: ProviderInstanceId,
+  snapshotDriver = driver,
+): ServerProvider => ({
   instanceId: providerInstanceId,
-  driver,
+  driver: snapshotDriver,
   enabled: true,
   installed: true,
   version: "test",
@@ -464,6 +496,9 @@ const project = (id: ProjectId, workspaceRoot: string) => ({
   deletedAt: null,
 });
 
+/** Server settings a test starts from, for example the agent profiles that exist. */
+export type EngineSettings = Parameters<typeof ServerSettings.layerTest>[0];
+
 /**
  * Everything below the automation services, built once per test: SQLite, the
  * real orchestration engine driven by the scripted provider, thread launch,
@@ -474,12 +509,31 @@ export function makeEngineLayer(input: {
   readonly cwd: string;
   readonly provider: ProviderProbe;
   readonly journal: JournalProbe;
+  readonly settings?: EngineSettings | undefined;
 }) {
   const database = SqlitePersistenceMemory;
   const registry = ProviderAdapterRegistry.makeLayer([
     makeScriptedAdapter(input.provider, instanceId),
     makeScriptedAdapter(input.provider, otherInstanceId),
+    makeScriptedAdapter(input.provider, unsupportedInstanceId, unsupportedDriver),
   ]);
+  const serverConfig = Layer.effect(
+    ServerConfig.ServerConfig,
+    makeReplayServerConfig(input.name).pipe(Effect.orDie),
+  ).pipe(Layer.provide(NodeServices.layer));
+  const identity = Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+    getEnvironmentId: Effect.succeed(environmentId),
+  });
+  // The real session store, so an orchestrator's agent credential is issued,
+  // authenticated and revoked exactly as on a server.
+  const auth = EnvironmentAuth.layer.pipe(
+    Layer.provide(database),
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(identity),
+    Layer.provide(serverConfig),
+    Layer.provide(NodeServices.layer),
+    Layer.orDie,
+  );
   const engine = makeOrchestratorV2ReplayLayerWithRegistry(
     {
       name: input.name,
@@ -515,8 +569,12 @@ export function makeEngineLayer(input: {
       runForThread: () => Effect.succeed({ status: "no-script" as const }),
     }),
     Layer.mock(TextGeneration.TextGeneration)({}),
-    ServerSettings.layerTest(),
-    makeProviderRegistryLayer([providerSnapshot(instanceId), providerSnapshot(otherInstanceId)]),
+    ServerSettings.layerTest(input.settings ?? {}),
+    makeProviderRegistryLayer([
+      providerSnapshot(instanceId),
+      providerSnapshot(otherInstanceId),
+      providerSnapshot(unsupportedInstanceId, unsupportedDriver),
+    ]),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       folderForThread: () => Effect.succeed(Option.none()),
@@ -536,6 +594,10 @@ export function makeEngineLayer(input: {
     Layer.mock(ServerEnvironment.ServerEnvironment)({
       getEnvironmentId: Effect.succeed(environmentId),
     }),
+    identity,
+    serverConfig,
+    auth,
+    NodeServices.layer,
   ).pipe(Layer.provide(NodeServices.layer));
 }
 
@@ -640,6 +702,7 @@ export const withEngine = <A, E>(
     readonly provider: ProviderProbe;
     readonly journal: JournalProbe;
   }) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof makeEngineLayer>> | Scope.Scope>,
+  options: { readonly settings?: EngineSettings } = {},
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -647,7 +710,9 @@ export const withEngine = <A, E>(
       const provider = yield* makeProviderProbe;
       const journal = yield* makeJournalProbe;
       return yield* body({ cwd, provider, journal }).pipe(
-        Effect.provide(makeEngineLayer({ name, cwd, provider, journal })),
+        Effect.provide(
+          makeEngineLayer({ name, cwd, provider, journal, settings: options.settings }),
+        ),
       );
     }),
   );
