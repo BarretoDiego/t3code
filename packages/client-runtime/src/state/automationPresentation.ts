@@ -69,7 +69,7 @@ type StatusTable = Readonly<
 >;
 
 /** "budget_exceeded" reads as "Budget exceeded" when no table knows the status. */
-export function humanizeAutomationStatus(status: string): string {
+function humanizeAutomationStatus(status: string): string {
   const words = status
     .replace(/[_.-]+/g, " ")
     .trim()
@@ -540,11 +540,11 @@ export function orchestratorStateActions(view: OrchestratorView): {
 // Budget and usage
 // ---------------------------------------------------------------------------
 
-export function formatAutomationCount(value: number): string {
+function formatAutomationCount(value: number): string {
   return String(Math.trunc(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-export function formatAutomationDuration(ms: number): string {
+function formatAutomationDuration(ms: number): string {
   if (ms < 1_000) return `${ms} ms`;
   const seconds = ms / 1_000;
   if (seconds < 60) return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} s`;
@@ -780,7 +780,7 @@ const RESPONSIBILITY_RULES: Readonly<Record<string, string>> = {
   user: "no automated owner applies",
 };
 
-export function responsibilityRuleLabel(rule: string): string {
+function responsibilityRuleLabel(rule: string): string {
   return RESPONSIBILITY_RULES[rule] ?? humanizeAutomationStatus(rule).toLowerCase();
 }
 
@@ -811,7 +811,7 @@ export interface ResponsibilityPresentation {
   readonly leaseExpired: boolean;
 }
 
-export function responsibilityOwnerLabel(
+function responsibilityOwnerLabel(
   owner: ResponsibilityOwner,
   lookup: ResponsibilityLookup,
 ): string {

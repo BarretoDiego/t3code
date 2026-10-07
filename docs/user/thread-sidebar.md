@@ -223,6 +223,17 @@ active list until it finishes. Archiving a thread hides its finished subagents w
 On web and desktop, the thread jump shortcuts count top-level threads only, while previous
 and next thread also step through the subagents on screen.
 
+Subagents nest the same way in every sidebar style. In the **Legacy** style they sit indented
+inside their project's list, and only top-level threads count toward a project's **Show more**.
+
+### Orchestrator threads in the thread list
+
+A thread that belongs to an [orchestrator](./automation.md#orchestrators-in-the-app) has a small
+marker beside its title. Hover it on web and desktop to read the orchestrator's name, state,
+host environment, and model; on mobile the state is written next to the marker. On web and
+desktop, a second marker appears when an orchestrator or a parent thread, not you, is responsible
+for a question or approval waiting on that thread.
+
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.

@@ -329,7 +329,7 @@ export interface HookDraft {
   readonly policyJson: string;
 }
 
-export const DEFAULT_HOOK_POLICY = {
+const DEFAULT_HOOK_POLICY = {
   retry: DEFAULT_HOOK_RETRY_POLICY,
   timeoutMs: 10_000,
   priority: 0,
@@ -593,7 +593,7 @@ export function summarizeHookTarget(
 // ---------------------------------------------------------------------------
 
 /** A new peer may ask for nothing until it is given permissions. */
-export const DEFAULT_PEER_PERMISSIONS = { inbound: [], forwardEventTypes: [] } as const;
+const DEFAULT_PEER_PERMISSIONS = { inbound: [], forwardEventTypes: [] } as const;
 
 export interface PeerAddDraft {
   readonly name: string;

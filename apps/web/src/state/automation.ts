@@ -1,14 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createAutomationEnvironmentAtoms } from "@t3tools/client-runtime/state/automation";
+import {
+  createAutomationEnvironmentAtoms,
+  type ThreadAutomationMarkers,
+} from "@t3tools/client-runtime/state/automation";
 import {
   automationThreadKey,
-  type OrchestratorThreadMarker,
   type OrchestratorView,
   presentResponsibility,
   resolveOrchestratorView,
   type ResponsibilityLookup,
   type ResponsibilityPresentation,
-  type ThreadResponsibilityMarker,
 } from "@t3tools/client-runtime/state/automation-presentation";
 import type {
   EnvironmentId,
@@ -30,14 +31,11 @@ export const automationEnvironment = createAutomationEnvironmentAtoms(connection
   serverConfigsAtom: environmentServerConfigsAtom,
 });
 
-const NO_MARKER_ATOM = Atom.make<OrchestratorThreadMarker | null>(null).pipe(
-  Atom.withLabel("web-automation:no-orchestrator-marker"),
+const NO_MARKERS_ATOM = Atom.make<ThreadAutomationMarkers | null>(null).pipe(
+  Atom.withLabel("web-automation:no-thread-markers"),
 );
 const NO_VIEW_ATOM = Atom.make<OrchestratorView | null>(null).pipe(
   Atom.withLabel("web-automation:no-orchestrator-view"),
-);
-const NO_RESPONSIBILITY_ATOM = Atom.make<ThreadResponsibilityMarker | null>(null).pipe(
-  Atom.withLabel("web-automation:no-thread-responsibility"),
 );
 
 const NO_INPUT = {};
@@ -53,13 +51,16 @@ export function useAutomationEnvironmentIds(): ReadonlyArray<EnvironmentId> {
   return useAtomValue(automationEnvironment.automationEnvironmentIdsAtom);
 }
 
-/** The orchestrator marker for a thread row. Null for every ordinary thread. */
-export function useOrchestratorThreadMarker(
+/**
+ * What a thread row marks: its orchestrator, and requests something other than
+ * the user is responsible for. Null for every ordinary thread.
+ */
+export function useThreadAutomationMarkers(
   ref: ScopedThreadRef | null,
-): OrchestratorThreadMarker | null {
+): ThreadAutomationMarkers | null {
   const key = threadKey(ref);
   return useAtomValue(
-    key === null ? NO_MARKER_ATOM : automationEnvironment.orchestratorMarkerAtom(key),
+    key === null ? NO_MARKERS_ATOM : automationEnvironment.threadMarkersAtom(key),
   );
 }
 
@@ -68,16 +69,6 @@ export function useThreadOrchestrator(ref: ScopedThreadRef | null): Orchestrator
   const key = threadKey(ref);
   return useAtomValue(
     key === null ? NO_VIEW_ATOM : automationEnvironment.orchestratorViewAtom(key),
-  );
-}
-
-/** Set when something other than the user is responsible for a request on the thread. */
-export function useThreadResponsibilityMarker(
-  ref: ScopedThreadRef | null,
-): ThreadResponsibilityMarker | null {
-  const key = threadKey(ref);
-  return useAtomValue(
-    key === null ? NO_RESPONSIBILITY_ATOM : automationEnvironment.threadResponsibilityAtom(key),
   );
 }
 

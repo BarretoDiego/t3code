@@ -54,6 +54,21 @@ waiting: something queued before a permission was removed is refused when it wou
 - `t3 peer disable <peer>` stops sending and refuses the peer's calls without losing what is
   queued. `t3 peer remove <peer>` also deletes its credential and cancels what was waiting.
 
+### Peers in the app
+
+On web and desktop, **Settings → Automation → Peers** lists each environment's peers with their
+connection status, when they were last seen, how many messages are waiting to be sent, and what
+each peer may ask for. The switch disables a peer without losing what is queued.
+
+- **This environment's ID** is at the top of the list, with a copy button. Give it to the other
+  side for step 2 above.
+- **Add peer** takes the link the other side printed, or its URL and a token.
+- **Edit** changes the name, URL, and permissions. Permissions use the same JSON as above.
+- **Remove** also deletes the credential and cancels what was waiting.
+
+Minting a credential for another environment still needs `t3 peer credential create` on the
+machine that will be called. Mobile lists peers and their status without editing them.
+
 ## Nodes
 
 A node is a machine an environment can run commands on. Every environment has `local`, the machine
@@ -67,6 +82,18 @@ t3 node probe "Build box"
 
 A node runs nothing until it has a workspace root: jobs may only run inside those directories.
 `t3 node probe` records what it saw and when. It is a snapshot, not a promise about the next job.
+
+### Nodes and jobs in the app
+
+On web and desktop, **Settings → Automation → Nodes and jobs** lists each environment's nodes with
+their workspace roots, whether shell lines are allowed, and the last probe with its age. **Probe**
+takes a new snapshot. Add, edit, or remove nodes there.
+
+**Recent jobs** below shows each job's status and exit code. A job whose exit code was never seen
+says so instead of showing zero. **Show log tail** loads the end of its output.
+
+Submitting, cancelling, and reconciling jobs still use the CLI. Mobile lists nodes without editing
+them and does not list jobs.
 
 ## Jobs
 

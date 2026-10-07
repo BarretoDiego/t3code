@@ -12,9 +12,8 @@ import { memo, useMemo } from "react";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { cn } from "../../lib/utils";
 import {
-  useOrchestratorThreadMarker,
   usePendingRequestResponsibility,
-  useThreadResponsibilityMarker,
+  useThreadAutomationMarkers,
 } from "../../state/automation";
 import { useEnvironment } from "../../state/environments";
 import { Button } from "../ui/button";
@@ -76,9 +75,9 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
   );
-  const orchestrator = useOrchestratorThreadMarker(threadRef);
-  const responsibility = useThreadResponsibilityMarker(threadRef);
-  if (orchestrator === null && responsibility === null) return null;
+  const markers = useThreadAutomationMarkers(threadRef);
+  if (markers === null) return null;
+  const { orchestrator, responsibility } = markers;
   const spelledOut = variant !== "row";
 
   return (
