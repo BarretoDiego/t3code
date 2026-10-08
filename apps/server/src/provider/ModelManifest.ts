@@ -36,7 +36,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
 import { ProviderCompatibilityPolicy } from "./providerCompatibility.ts";
-import type { ServerProviderDraft } from "./providerSnapshot.ts";
+import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
 
 const MODEL_MANIFEST_URL =
   "https://raw.githubusercontent.com/pingdotgg/t3code/main/apps/server/src/provider/model-manifest.json";
@@ -221,10 +221,7 @@ function isLegacyModel(
   const catalogModel =
     catalog?.find((model) => model.slug === slug) ??
     catalog?.find((model) => model.slug === family);
-  if (catalogModel) return catalogModel.status === "legacy";
-  const currentModels = manifest.currentModels[driverKind];
-  if (!currentModels) return false;
-  return !currentModels.includes(slug) && !currentModels.includes(family);
+  return catalogModel?.status === "legacy";
 }
 
 /**
