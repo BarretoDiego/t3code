@@ -191,6 +191,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -262,6 +263,7 @@ export function layerWithRegistry<Error>(
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+    readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -288,6 +290,7 @@ export function layerWithRegistry<Error>(
   const layerProvidedRegistry = registryLayer.pipe(Layer.provide(layerContinuationRequests));
   const layerServerSettings = ServerSettings.layerTest({
     responseStreamingMode: "turn",
+    ...options.settings,
     ...(options.continueThreadsAfterServerUpdate === undefined
       ? {}
       : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
@@ -385,7 +388,15 @@ export function layerWithRegistry<Error>(
     ),
   );
   const layerProviderTurnControlServiceProvided = ProviderTurnControlService.layer.pipe(
-    Layer.provide(Layer.merge(layerStores, layerProviderSessionManagerProvided)),
+    Layer.provide(
+      Layer.mergeAll(
+        layerStores,
+        layerProviderSessionManagerProvided,
+        layerEventSinkProvided,
+        IdAllocator.layer,
+        layerServerSettings,
+      ),
+    ),
   );
   const layerRuntimeRequestServiceProvided = RuntimeRequestService.layer.pipe(
     Layer.provide(Layer.merge(layerStores, layerProviderSessionManagerProvided)),

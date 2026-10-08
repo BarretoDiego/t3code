@@ -23,6 +23,9 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import * as EventSink from "./EventSink.ts";
+import * as IdAllocator from "./IdAllocator.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import type { ProviderAdapterV2SessionRuntime } from "./ProviderAdapter.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
@@ -278,7 +281,15 @@ it.effect(
         }),
       );
       const layerControl = ProviderTurnControlService.layer.pipe(
-        Layer.provide(Layer.merge(layerProjection, layerSessionManager)),
+        Layer.provide(
+          Layer.mergeAll(
+            layerProjection,
+            layerSessionManager,
+            IdAllocator.layer,
+            ServerSettings.layerTest(),
+            Layer.mock(EventSink.EventSinkV2)({}),
+          ),
+        ),
       );
 
       const [ordinaryInterrupt, unrelatedRestart] = yield* Effect.gen(function* () {
