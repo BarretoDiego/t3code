@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { resolveAgentTaskConfiguration } from "./agentTaskConfiguration.ts";
 const id = ProviderInstanceId.make("local-opencode");
 const skillId = MiniSkillId.make("security");

@@ -35,7 +35,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { runSnapshotGit } from "../workspace/ProjectSyncGitSnapshot.ts";
 import { getNativeHandoffDriver } from "./NativeHandoffDrivers.ts";
 import { openTransferredClaudeSession } from "./TransferredClaudeSession.ts";

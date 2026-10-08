@@ -15,13 +15,13 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import type {
   ProviderAdapterV2Event,
   ProviderAdapterV2OpenSessionInput,
   ProviderAdapterV2RuntimeRequestResponseInput,
   ProviderAdapterV2TurnInput,
-} from "../orchestration-v2/ProviderAdapter.ts";
+} from "@t3tools/provider-core/server/ProviderAdapter";
 import { make } from "./ReviewAgentExecutor.ts";
 
 const driver = ProviderDriverKind.make("codex");

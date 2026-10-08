@@ -4,7 +4,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { randomUuidV4 } from "../orchestration-v2/RandomUuid.ts";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { automationError } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";
 import { classifyDelivery } from "./orchestrator/inboxPolicy.ts";
