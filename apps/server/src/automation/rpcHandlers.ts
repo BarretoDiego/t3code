@@ -8,6 +8,10 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as SqlClient from "effect/sql/SqlClient";
+
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 import * as AutomationDiagnosticsService from "./AutomationDiagnosticsService.ts";
 import { type AutomationCaller, PEER_SESSION_SUBJECT_PREFIX } from "./Caller.ts";
@@ -15,23 +19,32 @@ import * as DelegatedTaskService from "./DelegatedTaskService.ts";
 import * as EventJournal from "./EventJournal.ts";
 import * as HookService from "./HookService.ts";
 import * as JobService from "./JobService.ts";
+import { orchestratorCallerFromSession } from "./orchestrator/CredentialRegistry.ts";
+import { makeAutomationMethodGate } from "./orchestrator/RpcGate.ts";
+import { makeStore } from "./orchestrator/Store.ts";
 import * as OrchestratorService from "./OrchestratorService.ts";
 import * as PeerService from "./PeerService.ts";
 import * as ResponsibilityService from "./ResponsibilityService.ts";
 
 const M = AUTOMATION_WS_METHODS;
+type AutomationRpcMethod = RpcGroup.Rpcs<typeof AutomationRpcGroup>["_tag"];
 const traceAttributes = { "rpc.aggregate": "automation" } as const;
 
 /**
  * A session is a peer only when it holds the federation scope and its subject
- * names the peer environment. Both are set by the server when it issues the
- * credential, so a client cannot claim to be a peer.
+ * names the peer environment; it is an orchestrator's agent only when the
+ * orchestrator runtime issued that very session. Both are decided by the server
+ * when it issues the credential, so a client cannot claim to be either. A
+ * session that carries an orchestrator's subject without having been issued by
+ * the runtime holds no scopes at all.
  */
 export const callerFromSession = (session: {
+  readonly sessionId: string;
   readonly subject: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }): AutomationCaller =>
-  session.scopes.includes(AuthFederationPeerScope) &&
+  orchestratorCallerFromSession(session) ??
+  (session.scopes.includes(AuthFederationPeerScope) &&
   session.subject.startsWith(PEER_SESSION_SUBJECT_PREFIX)
     ? {
         kind: "peer",
@@ -41,7 +54,7 @@ export const callerFromSession = (session: {
         subject: session.subject,
         scopes: session.scopes,
       }
-    : { kind: "client", subject: session.subject, scopes: session.scopes };
+    : { kind: "client", subject: session.subject, scopes: session.scopes });
 
 /** Thin WebSocket handlers for the automation RPC group: one service call each. */
 export const makeAutomationRpcHandlers = Effect.fn("makeAutomationRpcHandlers")(function* (input: {
@@ -66,10 +79,26 @@ export const makeAutomationRpcHandlers = Effect.fn("makeAutomationRpcHandlers")(
   const peers = yield* PeerService.PeerService;
   const diagnostics = yield* AutomationDiagnosticsService.AutomationDiagnosticsService;
   const { caller } = input;
-  const run = <A, E, R>(method: string, effect: Effect.Effect<A, E, R>) =>
-    input.observeEffect(method, effect, traceAttributes);
-  const stream = <A, E, R>(method: string, value: Stream.Stream<A, E, R>) =>
-    input.observeStream(method, value, traceAttributes);
+  const sql = yield* SqlClient.SqlClient;
+  const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
+  // What an orchestrator's agent may call at all; the services check the rest.
+  const admit = makeAutomationMethodGate(makeStore(sql), yield* identity.getEnvironmentId);
+  const run = <A, E, R>(
+    method: AutomationRpcMethod,
+    effect: Effect.Effect<A, E, R>,
+    payload?: unknown,
+  ) =>
+    input.observeEffect(
+      method,
+      Effect.andThen(admit(caller, method, payload), effect),
+      traceAttributes,
+    );
+  const stream = <A, E, R>(method: AutomationRpcMethod, value: Stream.Stream<A, E, R>) =>
+    input.observeStream(
+      method,
+      Stream.unwrap(Effect.as(admit(caller, method, undefined), value)),
+      traceAttributes,
+    );
   const removed = (value: boolean) => ({ removed: value });
 
   return AutomationRpcGroup.of({
@@ -139,7 +168,7 @@ export const makeAutomationRpcHandlers = Effect.fn("makeAutomationRpcHandlers")(
         Effect.map(orchestrators.delete(caller, payload.orchestratorId), removed),
       ),
     [M.orchestratorsSend]: (payload) =>
-      run(M.orchestratorsSend, orchestrators.send(caller, payload)),
+      run(M.orchestratorsSend, orchestrators.send(caller, payload), payload),
     [M.orchestratorsInbox]: (payload) =>
       run(
         M.orchestratorsInbox,

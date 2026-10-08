@@ -1,3 +1,5 @@
+import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../state/session";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
@@ -26,6 +28,17 @@ import {
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
+  buildThreadNesting,
+  flattenThreadNesting,
+  resolveThreadNestingSignal,
+  reuseEqualThreadNestingDisplay,
+  THREAD_NESTING_CHILD_LIMIT,
+  threadNestingAncestorKeys,
+  type ThreadNestingDisplay,
+  type ThreadNestingRow,
+  type ThreadNestingSummary,
+} from "@t3tools/client-runtime/state/thread-relationships";
+import {
   planPinnedReorder,
   resolveSettledThreadTimestamp,
 } from "@t3tools/client-runtime/state/thread-sort";
@@ -39,6 +52,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import {
+  isProviderNativeSubagentThread,
   resolveEnvironmentMachineKind,
   type EnvironmentMachineKind,
   type ProjectIconOverride,
@@ -51,10 +65,12 @@ import {
   AlarmClockOffIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
   ClockIcon,
+  CornerDownRightIcon,
   FolderIcon,
   FolderPlusIcon,
   GitBranchIcon,
@@ -161,6 +177,7 @@ import {
   useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
+import { ThreadAutomationMarkers } from "./automation/ThreadAutomationMarkers";
 import {
   ThreadWorktreeIndicator,
   prStatusIndicator,
@@ -730,6 +747,334 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   );
 });
 
+const NO_NESTING_PATH: ReadonlySet<string> = new Set<string>();
+
+/** What a nested row or a parent's count reports, most urgent first. */
+type SidebarAttentionClass = "approval" | "input" | "failed" | "unread" | "working";
+
+/** Same hues as the grouped sidebar, so a dot means the same thing in either layout. */
+const ATTENTION_DOT_CLASS: Record<SidebarAttentionClass, string> = {
+  approval: "bg-amber-600 dark:bg-amber-300",
+  input: "bg-indigo-600 dark:bg-indigo-300",
+  failed: "bg-red-600 dark:bg-red-300",
+  unread: "bg-success ",
+  working: "bg-sky-600 dark:bg-sky-400",
+};
+
+const ATTENTION_LABEL: Record<SidebarAttentionClass, string> = {
+  approval: "awaiting approval",
+  input: "awaiting input",
+  failed: "failed",
+  unread: "done, unread",
+  working: "working",
+};
+
+/** Indent per nesting level inside the tree rail; deeper levels share the last step. */
+const NESTED_DEPTH_CLASS = ["pl-2", "pl-6", "pl-10", "pl-14"] as const;
+
+function nestedDepthClass(depth: number): string {
+  return NESTED_DEPTH_CLASS[Math.min(Math.max(depth, 1), NESTED_DEPTH_CLASS.length) - 1]!;
+}
+
+const NESTED_SIGNAL_LABEL = {
+  approval: "Approval",
+  input: "Input",
+  failed: "Failed",
+  working: "Working",
+} as const;
+
+function nestedSummaryLabel(summary: ThreadNestingSummary): string {
+  const reported = (["approval", "input", "failed", "working"] as const)
+    .filter((signal) => summary.counts[signal] > 0)
+    .map((signal) => `${summary.counts[signal]} ${ATTENTION_LABEL[signal]}`);
+  return [`${summary.total} ${summary.total === 1 ? "subagent" : "subagents"}`, ...reported].join(
+    ", ",
+  );
+}
+
+/**
+ * The count on a parent row. It states how many subagents the thread has and
+ * the most urgent thing any of them is doing, so a collapsed parent still
+ * says when one needs the user. Clicking it shows or hides the nested rows.
+ */
+const SidebarNestedToggle = memo(function SidebarNestedToggle(props: {
+  threadKey: string;
+  summary: ThreadNestingSummary;
+  expanded: boolean;
+  onToggle: (threadKey: string, expanded: boolean) => void;
+}) {
+  const { expanded, onToggle, summary, threadKey } = props;
+  const label = nestedSummaryLabel(summary);
+  const handleClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle(threadKey, !expanded);
+    },
+    [expanded, onToggle, threadKey],
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            data-testid="sidebar-nested-toggle"
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Hide" : "Show"} ${label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={handleClick}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className="inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-sm px-1 text-xs tabular-nums text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        {expanded ? (
+          <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
+        ) : (
+          <ChevronRightIcon aria-hidden className="size-3 shrink-0" />
+        )}
+        {summary.signal !== null ? (
+          <span
+            aria-hidden
+            className={cn("size-1.5 shrink-0 rounded-full", ATTENTION_DOT_CLASS[summary.signal])}
+          />
+        ) : null}
+        <CornerDownRightIcon aria-hidden className="size-3 shrink-0" />
+        {summary.total}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+});
+
+interface SidebarNestedRowHandlers {
+  readonly onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
+  readonly onThreadActivate: (threadRef: ScopedThreadRef) => void;
+  readonly onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
+  readonly onRenameTitleChange: (title: string) => void;
+  readonly onCommitRename: (
+    threadRef: ScopedThreadRef,
+    title: string,
+    originalTitle: string,
+  ) => void;
+  readonly onCancelRename: () => void;
+  readonly onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  readonly onToggleNested: (threadKey: string, expanded: boolean) => void;
+}
+
+/**
+ * One subagent under its parent. Deliberately light: it reads only the shell
+ * it is given, so a parent with dozens of children adds no git, pull request,
+ * or terminal subscriptions.
+ */
+const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
+  props: SidebarNestedRowHandlers & {
+    row: Extract<ThreadNestingRow<SidebarThreadSummary>, { kind: "thread" }>;
+    isActive: boolean;
+    isRenaming: boolean;
+    renamingTitle: string;
+    providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+  },
+) {
+  const {
+    isRenaming,
+    onCancelRename,
+    onCommitRename,
+    onContextMenu,
+    onRenameTitleChange,
+    onStartRename,
+    onThreadActivate,
+    onThreadClick,
+    renamingTitle,
+    row,
+  } = props;
+  const thread = row.thread;
+  const threadRef = useMemo(
+    () => scopeThreadRef(thread.environmentId, thread.id),
+    [thread.environmentId, thread.id],
+  );
+  const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[row.key]);
+  const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(row.key));
+  // The provider owns a native subagent's title, so it cannot be renamed here.
+  const canRename = !isProviderNativeSubagentThread(thread.source);
+  const signal = resolveThreadNestingSignal(thread);
+  const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
+  const attention: SidebarAttentionClass | null = signal ?? (isUnread ? "unread" : null);
+  const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
+  const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+
+  const renameCommittedRef = useRef(false);
+  useEffect(() => {
+    if (isRenaming) renameCommittedRef.current = false;
+  }, [isRenaming]);
+
+  return (
+    <li data-thread-item className="list-none">
+      <div
+        role="button"
+        tabIndex={0}
+        data-testid="sidebar-row-nested"
+        aria-current={props.isActive ? "page" : undefined}
+        className={cn(
+          "group/sidebar-row relative flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-xs outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          nestedDepthClass(row.depth),
+          props.isActive
+            ? "bg-sidebar-row-active text-sidebar-foreground"
+            : isSelected
+              ? "bg-sidebar-row-selected text-sidebar-foreground"
+              : attention === null
+                ? "text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-row-hover",
+        )}
+        onClick={(event) => onThreadClick(event, threadRef)}
+        onDoubleClick={(event) => {
+          if (!canRename || isRenaming) return;
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if ((event.target as HTMLElement).closest("button, a, input")) return;
+          event.preventDefault();
+          onStartRename(threadRef, thread.title);
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onThreadActivate(threadRef);
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+        }}
+      >
+        {attention !== null ? (
+          <span
+            aria-hidden
+            className={cn("size-1.5 shrink-0 rounded-full", ATTENTION_DOT_CLASS[attention])}
+          />
+        ) : null}
+        {providerEntry !== null ? (
+          <span className="inline-flex shrink-0 items-center">
+            <ProviderInstanceIcon
+              driverKind={providerEntry.driverKind}
+              displayName={providerEntry.displayName}
+              accentColor={providerEntry.accentColor}
+              icon={undefined}
+              showBadge={false}
+              iconClassName="size-3.5 opacity-60"
+            />
+          </span>
+        ) : null}
+        <ThreadSubagentMarker />
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renamingTitle}
+            aria-label="Thread title"
+            onChange={(event) => onRenameTitleChange(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                renameCommittedRef.current = true;
+                onCommitRename(threadRef, renamingTitle, thread.title);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                renameCommittedRef.current = true;
+                onCancelRename();
+              }
+            }}
+            onBlur={() => {
+              if (!renameCommittedRef.current) {
+                onCommitRename(threadRef, renamingTitle, thread.title);
+              }
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-xs text-card-foreground outline-none focus:border-foreground"
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+        )}
+        {row.summary !== null ? (
+          <SidebarNestedToggle
+            threadKey={row.key}
+            summary={row.summary}
+            expanded={row.expanded}
+            onToggle={props.onToggleNested}
+          />
+        ) : null}
+        <span className="shrink-0 tabular-nums text-secondary-label">
+          {signal !== null ? (
+            <span role="status">{NESTED_SIGNAL_LABEL[signal]}</span>
+          ) : isUnread ? (
+            <span role="status">Done</span>
+          ) : (
+            threadTimeLabel(thread)
+          )}
+        </span>
+      </div>
+    </li>
+  );
+});
+
+/** The subagent rows hanging from one top-level thread, on a tree rail. */
+const SidebarNestedThreadList = memo(function SidebarNestedThreadList(
+  props: SidebarNestedRowHandlers & {
+    parentTitle: string;
+    rows: ReadonlyArray<ThreadNestingRow<SidebarThreadSummary>>;
+    activeKey: string | null;
+    renamingKey: string | null;
+    renamingTitle: string;
+    providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+    onShowAllNested: (parentKey: string) => void;
+  },
+) {
+  const { activeKey, onShowAllNested, parentTitle, renamingKey, rows, ...rowProps } = props;
+  return (
+    <ul
+      role="group"
+      aria-label={`Subagents of ${parentTitle}`}
+      data-testid="sidebar-nested-list"
+      // Nested rows are placed by their parent: a press here must not start
+      // dragging the parent card.
+      onPointerDown={(event) => event.stopPropagation()}
+      className="mb-1 ml-4 flex flex-col gap-px border-l border-sidebar-border"
+    >
+      {rows.map((row) =>
+        row.kind === "settled" ? (
+          <li key={row.key} className="list-none">
+            <ThreadNestedSettledHeader row={row} onToggle={rowProps.onToggleNested} />
+          </li>
+        ) : row.kind === "more" ? (
+          <li key={row.key} className="list-none">
+            <button
+              type="button"
+              onClick={() => onShowAllNested(row.parentKey)}
+              className={cn(
+                "flex h-6 w-full cursor-pointer items-center rounded-md pr-2 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                nestedDepthClass(row.depth),
+              )}
+            >
+              Show {row.hiddenCount} more
+            </button>
+          </li>
+        ) : (
+          <SidebarNestedThreadRow
+            key={row.key}
+            {...rowProps}
+            row={row}
+            isActive={row.key === activeKey}
+            isRenaming={row.key === renamingKey}
+            renamingTitle={row.key === renamingKey ? rowProps.renamingTitle : ""}
+          />
+        ),
+      )}
+    </ul>
+  );
+});
+
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
@@ -781,6 +1126,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
+  // Subagent threads nested under this row. The object keeps its identity
+  // until one of its rows changes, so unrelated shell updates skip this row.
+  nested?: ThreadNestingDisplay<SidebarThreadSummary> | undefined;
+  // The open / renaming thread when it is one of this row's nested rows.
+  activeNestedKey: string | null;
+  renamingNestedKey: string | null;
+  onToggleNested: (threadKey: string, expanded: boolean) => void;
+  onShowAllNested: (parentKey: string) => void;
+  // Set when this top-level row is itself a subagent shown away from its
+  // parent; null when the parent's title is unknown.
+  subagentParentTitle?: string | null | undefined;
 }) {
   const {
     isRenaming,
@@ -1130,34 +1486,41 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
     />
   ) : (
-    <span
-      className={cn(
-        "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
-        variant === "card"
-          ? cn(
-              "truncate",
-              isUnread || isWoke
-                ? "text-foreground"
-                : shouldRecede
-                  ? "text-secondary-label"
-                  : status === "failed"
-                    ? "text-foreground/95"
-                    : "text-foreground/90",
-            )
-          : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
-              props.isActive || isWoke
-                ? "text-foreground"
-                : isUnread
-                  ? "text-muted-foreground"
-                  : "text-secondary-label/70",
-            ),
-        isRegeneratingTitle && "opacity-50",
-      )}
-    >
-      {thread.title}
-    </span>
+    <>
+      <span
+        className={cn(
+          "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+          shouldRecede ? "font-normal" : "font-medium",
+          variant === "card"
+            ? cn(
+                "truncate",
+                isUnread || isWoke
+                  ? "text-foreground"
+                  : shouldRecede
+                    ? "text-secondary-label"
+                    : status === "failed"
+                      ? "text-foreground/95"
+                      : "text-foreground/90",
+              )
+            : cn(
+                "truncate group-hover/sidebar-row:text-foreground",
+                props.isActive || isWoke
+                  ? "text-foreground"
+                  : isUnread
+                    ? "text-muted-foreground"
+                    : "text-secondary-label/70",
+              ),
+          isRegeneratingTitle && "opacity-50",
+        )}
+      >
+        {thread.title}
+      </span>
+      <ThreadAutomationMarkers
+        environmentId={thread.environmentId}
+        threadId={thread.id}
+        variant="row"
+      />
+    </>
   );
 
   // A real link so cmd/ctrl+click and middle-click open the host in the
@@ -1221,6 +1584,41 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     )
   ) : null;
 
+  const nested = props.nested ?? null;
+  const nestedToggle =
+    nested === null ? null : (
+      <SidebarNestedToggle
+        threadKey={threadKey}
+        summary={nested.summary}
+        expanded={nested.expanded}
+        onToggle={props.onToggleNested}
+      />
+    );
+  const nestedList =
+    nested !== null && nested.rows.length > 0 ? (
+      <SidebarNestedThreadList
+        parentTitle={thread.title}
+        rows={nested.rows}
+        activeKey={props.activeNestedKey}
+        renamingKey={props.renamingNestedKey}
+        renamingTitle={renamingTitle}
+        providerEntryByInstanceId={props.providerEntryByInstanceId}
+        onThreadClick={onThreadClick}
+        onThreadActivate={onThreadActivate}
+        onStartRename={onStartRename}
+        onRenameTitleChange={onRenameTitleChange}
+        onCommitRename={onCommitRename}
+        onCancelRename={onCancelRename}
+        onContextMenu={onContextMenu}
+        onToggleNested={props.onToggleNested}
+        onShowAllNested={props.onShowAllNested}
+      />
+    ) : null;
+  const subagentMarker =
+    thread.lineage.relationshipToParent === "subagent" ? (
+      <ThreadSubagentMarker parentTitle={props.subagentParentTitle} />
+    ) : null;
+
   if (variant === "slim") {
     return (
       <li
@@ -1262,7 +1660,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 className="size-4"
               />
             </span>
+            {subagentMarker}
             {title}
+            {nestedToggle}
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1365,6 +1765,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           </TooltipTrigger>
           {detailsTooltip}
         </Tooltip>
+        {nestedList}
       </li>
     );
   }
@@ -1537,8 +1938,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 ) : null}
               </span>
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              {subagentMarker}
               {title}
+              {nestedToggle}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -1602,6 +2005,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         </TooltipTrigger>
         {detailsTooltip}
       </Tooltip>
+      {nestedList}
     </li>
   );
 });
@@ -1686,9 +2090,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               tabIndex={-1}
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
-              aria-label={
-                props.projectTitle ? `${thread.title}, ${props.projectTitle}` : thread.title
-              }
+              aria-label={`${thread.lineage.relationshipToParent === "subagent" ? "Subagent: " : ""}${thread.title}${props.projectTitle ? `, ${props.projectTitle}` : ""}`}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
@@ -1708,6 +2110,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             projectIcon={props.projectIcon}
             className="size-4 shrink-0"
           />
+          {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
@@ -2097,6 +2500,7 @@ export default function Sidebar() {
   // merging, no optimistic holds. Archived threads remain hidden here —
   // archive keeps its original "remove from sidebar" meaning.
   const {
+    threadNesting,
     pinnedThreads,
     reorderablePinnedKeys,
     activeThreads,
@@ -2110,29 +2514,35 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
-      (thread) =>
+    // Threads on servers without the settlement capability (old server,
+    // or descriptor not loaded yet) never classify as settled: the user
+    // could neither un-settle nor pin them, so auto-settling them would
+    // strand rows in a tail with no working affordances.
+    const isSettledThread = (thread: EnvironmentThreadShell) =>
+      serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement === true &&
+      thread.settledOverride === "settled";
+    const isSnoozedThread = (thread: EnvironmentThreadShell) =>
+      serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
+      effectiveSnoozed(thread, { now: preciseNow });
+    // Subagent threads ride under the thread that spawned them, so only the
+    // forest's top-level rows are sorted into sections.
+    const nesting = buildThreadNesting({
+      threads,
+      isListed: (thread) =>
         thread.archivedAt === null &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-    );
+    });
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
-    for (const thread of visible) {
-      // Threads on servers without the settlement capability (old server,
-      // or descriptor not loaded yet) never classify as settled: the user
-      // could neither un-settle nor pin them, so auto-settling them would
-      // strand rows in a tail with no working affordances.
-      const supportsSettlement =
-        serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement === true;
-      const supportsSnooze =
-        serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
-      // Snooze outranks settlement and pinning until the thread wakes.
-      if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
+    for (const { thread, summary } of nesting.roots) {
+      // Keep a live family visible together without changing its saved shelf.
+      const carriesLiveWork = summary?.live === true;
+      if (!carriesLiveWork && isSnoozedThread(thread)) {
         snoozed.push(thread);
-      } else if (supportsSettlement && thread.settledOverride === "settled") {
+      } else if (!carriesLiveWork && isSettledThread(thread)) {
         settled.push(thread);
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
@@ -2146,6 +2556,7 @@ export default function Sidebar() {
     // sort, or mixed-version fleets would render different pinned orders on
     // web and mobile from the same data.
     return {
+      threadNesting: nesting,
       pinnedThreads: sortPinnedThreadsForSidebar(pinned),
       reorderablePinnedKeys: new Set(
         pinned
@@ -2168,13 +2579,89 @@ export default function Sidebar() {
     };
   }, [nowMinute, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
 
+  const nestedExpandedById = useUiStateStore((state) => state.threadChildrenExpandedById);
+  const setThreadChildrenExpanded = useUiStateStore((state) => state.setThreadChildrenExpanded);
+  // Opening a long child list in full is a glance, like opening a section's
+  // history: component state, so it does not outlive the session.
+  const [fullNestedKeys, setFullNestedKeys] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const showAllNested = useCallback((parentKey: string) => {
+    setFullNestedKeys((current) => new Set(current).add(parentKey));
+  }, []);
+  // The open thread and the rows above it: a collapsed parent still draws
+  // this path, so the highlight for what the user is reading never vanishes.
+  const routeNestingAncestors = useMemo(
+    () => threadNestingAncestorKeys(threadNesting, routeThreadKey),
+    [routeThreadKey, threadNesting],
+  );
+  const routeNestingRootKey = routeNestingAncestors.at(-1) ?? null;
+  // The top-level row that carries the open thread: itself, or the parent it
+  // is nested under. Shelves keep this row visible while they are closed.
+  const routeRowKey = routeNestingRootKey ?? routeThreadKey;
+  const routeNestingPath = useMemo(
+    () =>
+      routeThreadKey === null || routeNestingAncestors.length === 0
+        ? NO_NESTING_PATH
+        : new Set([routeThreadKey, ...routeNestingAncestors]),
+    [routeNestingAncestors, routeThreadKey],
+  );
+  // Rows to draw under each top-level thread. A display keeps its identity
+  // until one of its own rows changes, so a shell event on one thread does
+  // not re-render every parent in the list.
+  const nestingDisplayCacheRef = useRef<
+    ReadonlyMap<string, ThreadNestingDisplay<EnvironmentThreadShell>>
+  >(new Map());
+  const nestingDisplayByKey = useMemo(() => {
+    const next = new Map<string, ThreadNestingDisplay<EnvironmentThreadShell>>();
+    for (const root of threadNesting.roots) {
+      const display = reuseEqualThreadNestingDisplay(
+        nestingDisplayCacheRef.current.get(root.key),
+        flattenThreadNesting({
+          node: root,
+          expandedOverrides: nestedExpandedById,
+          activePathKeys: routeNestingPath,
+          childLimit: THREAD_NESTING_CHILD_LIMIT,
+          showAllKeys: fullNestedKeys,
+        }),
+      );
+      if (display !== null) next.set(root.key, display);
+    }
+    nestingDisplayCacheRef.current = next;
+    return next;
+  }, [fullNestedKeys, nestedExpandedById, routeNestingPath, threadNesting]);
+  const nestedThreads = useMemo(
+    () =>
+      [...threadNesting.nodeByKey.values()].flatMap((node) =>
+        node.parentKey === null ? [] : [node.thread],
+      ),
+    [threadNesting],
+  );
+  const nestedThreadKeys = useMemo(
+    () =>
+      new Set(
+        nestedThreads.map((thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        ),
+      ),
+    [nestedThreads],
+  );
+  const nestedThreadKeysRef = useRef(nestedThreadKeys);
+  nestedThreadKeysRef.current = nestedThreadKeys;
+
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
+    () => [
+      ...pinnedThreads,
+      ...activeThreads,
+      ...snoozedThreads,
+      ...settledThreads,
+      ...nestedThreads,
+    ],
+    [activeThreads, nestedThreads, pinnedThreads, settledThreads, snoozedThreads],
   );
   const threadSearchResults = useMemo(
     () => searchSidebarThreads(searchableThreads, threadSearchQuery),
@@ -2230,17 +2717,17 @@ export default function Sidebar() {
     // The open thread must never hide under "Show more": navigating into a
     // deep settled thread (search, deep link) pulls its row into the visible
     // tail so the highlight and the un-settle affordance stay reachable.
-    if (routeThreadKey !== null) {
+    if (routeRowKey !== null) {
       const routeThread = settledThreads
         .slice(settledVisibleCount)
         .find(
           (thread) =>
-            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeRowKey,
         );
       if (routeThread !== undefined) visible.push(routeThread);
     }
     return visible;
-  }, [routeThreadKey, settledThreads, settledVisibleCount]);
+  }, [routeRowKey, settledThreads, settledVisibleCount]);
   const hiddenSettledCount = settledThreads.length - visibleSettledThreads.length;
   const showMoreSettled = useCallback(
     () => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT),
@@ -2257,13 +2744,12 @@ export default function Sidebar() {
   );
   const renderedSettledThreads = useMemo(() => {
     if (settledShelfExpanded) return visibleSettledThreads;
-    if (routeThreadKey === null) return [];
+    if (routeRowKey === null) return [];
     const routeThread = visibleSettledThreads.find(
-      (thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+      (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeRowKey,
     );
     return routeThread === undefined ? [] : [routeThread];
-  }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
+  }, [routeRowKey, settledShelfExpanded, visibleSettledThreads]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump
@@ -2283,24 +2769,48 @@ export default function Sidebar() {
     // snoozed thread reached by route (deep link, open before snoozing
     // elsewhere) keeps its row — with highlight and wake affordance — same
     // exception the settled tail's "Show more" makes.
-    if (routeThreadKey === null) return [];
+    if (routeRowKey === null) return [];
     const routeThread = snoozedThreads.find(
-      (thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+      (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeRowKey,
     );
     return routeThread === undefined ? [] : [routeThread];
-  }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
+  }, [routeRowKey, snoozedShelfExpanded, snoozedThreads]);
 
   const orderedThreads = useMemo(
     () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
     [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
   );
-  const orderedThreadKeys = useMemo(
+  // Top-level rows only. Jump shortcuts and post-park navigation count
+  // these, so a parent opening its subagents does not renumber the list.
+  const topLevelThreadKeys = useMemo(
     () =>
       orderedThreads.map((thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       ),
     [orderedThreads],
+  );
+  const topLevelThreadKeysRef = useRef(topLevelThreadKeys);
+  topLevelThreadKeysRef.current = topLevelThreadKeys;
+  // Every drawn row in drawn order, nested ones after their parent: what
+  // previous/next traversal and shift-range selection walk.
+  const visibleThreads = useMemo(
+    () =>
+      orderedThreads.flatMap((thread) => {
+        const display = nestingDisplayByKey.get(
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        );
+        return display === undefined
+          ? [thread]
+          : [thread, ...display.rows.flatMap((row) => (row.kind === "thread" ? [row.thread] : []))];
+      }),
+    [nestingDisplayByKey, orderedThreads],
+  );
+  const orderedThreadKeys = useMemo(
+    () =>
+      visibleThreads.map((thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
+    [visibleThreads],
   );
   // Rows call back into the click handler without carrying the ordered list as
   // a prop — a fresh array identity per shell update would defeat every row's
@@ -2311,12 +2821,12 @@ export default function Sidebar() {
   const threadByKey = useMemo(
     () =>
       new Map(
-        orderedThreads.map(
+        visibleThreads.map(
           (thread) =>
             [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), thread] as const,
         ),
       ),
-    [orderedThreads],
+    [visibleThreads],
   );
   // Handlers read these through refs: depending on per-update Map/Set
   // identities would give every row a fresh callback prop on each shell
@@ -2352,14 +2862,14 @@ export default function Sidebar() {
 
   const jumpLabelByKey = useMemo(() => {
     const mapping = new Map<string, string>();
-    for (const [index, threadKey] of orderedThreadKeys.entries()) {
+    for (const [index, threadKey] of topLevelThreadKeys.entries()) {
       const jumpCommand = threadJumpCommandForIndex(index);
       if (!jumpCommand) break;
       const label = shortcutLabelForCommand(keybindings, jumpCommand);
       if (label) mapping.set(threadKey, label);
     }
     return mapping;
-  }, [keybindings, orderedThreadKeys]);
+  }, [keybindings, topLevelThreadKeys]);
   const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
 
   // Settled threads are live shells, so opening one is plain navigation:
@@ -2519,7 +3029,7 @@ export default function Sidebar() {
     (threadKey: string, coParkingKeys?: ReadonlySet<string>): (() => void) | null => {
       if (routeThreadKeyRef.current !== threadKey) return null;
       const shell = threadByKeyRef.current.get(threadKey);
-      const orderedKeys = orderedThreadKeysRef.current;
+      const orderedKeys = topLevelThreadKeysRef.current;
       const settledKeys = settledThreadKeysRef.current;
       const snoozedKeys = snoozedThreadKeysRef.current;
       const currentIndex = orderedKeys.indexOf(threadKey);
@@ -2884,15 +3394,27 @@ export default function Sidebar() {
         const thread = threadByKeyRef.current.get(threadKey);
         return thread ? [thread] : [];
       });
-      const canSnoozeSelection = selectedThreads.every(
-        (thread) =>
-          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true &&
-          canSnooze(thread, { now: selectionNow.toISOString() }),
-      );
+      // A nested subagent sits wherever its parent sits, so settling or
+      // snoozing it would change nothing on screen. Those two count and act
+      // on the top-level rows of the selection only.
+      const isNestedRow = (thread: EnvironmentThreadShell) =>
+        nestedThreadKeysRef.current.has(
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        );
+      const placeableThreads = selectedThreads.filter((thread) => !isNestedRow(thread));
+      const canSnoozeSelection =
+        placeableThreads.length > 0 &&
+        placeableThreads.every(
+          (thread) =>
+            serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze ===
+              true && canSnooze(thread, { now: selectionNow.toISOString() }),
+        );
       const titleRegenerationThreads = selectedThreads.filter(
         (thread) =>
           serverConfigs.get(thread.environmentId)?.environment.capabilities
-            .threadTitleRegeneration === true,
+            .threadTitleRegeneration === true &&
+          // The provider owns a native subagent's title.
+          !(isNestedRow(thread) && isProviderNativeSubagentThread(thread.source)),
       );
       const regeneratableTitleThreads = titleRegenerationThreads.filter(
         (thread) => thread.titleRegeneration == null,
@@ -2905,12 +3427,14 @@ export default function Sidebar() {
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
-            { id: "settle", label: `Settle (${count})` },
+            ...(placeableThreads.length > 0
+              ? [{ id: "settle", label: `Settle (${placeableThreads.length})` }]
+              : []),
             ...(canSnoozeSelection
               ? [
                   {
                     id: "snooze",
-                    label: `Snooze (${count})`,
+                    label: `Snooze (${placeableThreads.length})`,
                     children: snoozePresets.map((preset) => ({
                       id: `snooze:${preset.id}`,
                       label: `${preset.label} (${preset.whenLabel})`,
@@ -2936,7 +3460,7 @@ export default function Sidebar() {
           const coSnoozingKeys = new Set(threadKeys);
           clearSelection();
           const outcomes = await Promise.all(
-            selectedThreads.map(async (thread) => {
+            placeableThreads.map(async (thread) => {
               const threadRef = scopeThreadRef(thread.environmentId, thread.id);
               const outcome = await performSnooze(threadRef, preset, { coSnoozingKeys });
               return { outcome, threadRef };
@@ -2957,7 +3481,7 @@ export default function Sidebar() {
                 type: failedCount > 0 ? "warning" : "success",
                 title:
                   failedCount > 0
-                    ? `Snoozed ${snoozedCount} of ${selectedThreads.length} threads`
+                    ? `Snoozed ${snoozedCount} of ${placeableThreads.length} threads`
                     : `Snoozed ${snoozedCount} thread${snoozedCount === 1 ? "" : "s"}`,
                 description:
                   failedCount > 0
@@ -3017,7 +3541,7 @@ export default function Sidebar() {
         const coSettlingKeys = new Set(threadKeys);
         for (const threadKey of threadKeys) {
           const thread = threadByKeyRef.current.get(threadKey);
-          if (!thread || thread.settledOverride === "settled") continue;
+          if (!thread || thread.settledOverride === "settled" || isNestedRow(thread)) continue;
           attemptSettle(scopeThreadRef(thread.environmentId, thread.id), { coSettlingKeys });
         }
         clearSelection();
@@ -3162,6 +3686,9 @@ export default function Sidebar() {
                 handoff: canHandoffThread(threadRef),
               },
               snoozePresets,
+              ...(nestedThreadKeysRef.current.has(threadKey)
+                ? { nested: { readOnly: isProviderNativeSubagentThread(thread.source) } }
+                : {}),
             }),
             position,
           ),
@@ -3425,7 +3952,7 @@ export default function Sidebar() {
       }
       const jumpIndex = threadJumpIndexFromCommand(command ?? "");
       if (jumpIndex === null) return;
-      navigateToThreadKey(orderedThreadKeys[jumpIndex] ?? null);
+      navigateToThreadKey(topLevelThreadKeys[jumpIndex] ?? null);
     };
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
@@ -3436,6 +3963,7 @@ export default function Sidebar() {
     routeTerminalOpen,
     routeThreadKey,
     threadByKey,
+    topLevelThreadKeys,
   ]);
 
   // Same predicate as v1: hints show only while the held modifiers exactly
@@ -3838,6 +4366,13 @@ export default function Sidebar() {
                     // not from the sidebar second-guessing what still matters.
                     const isCard = section === "active" || section === "pinned";
                     const rowVariant = isCard ? "card" : "slim";
+                    const nestedDisplay = nestingDisplayByKey.get(threadKey);
+                    const renamingNestedKey =
+                      renamingThreadKey !== null &&
+                      nestedDisplay?.rows.some((row) => row.key === renamingThreadKey) === true
+                        ? renamingThreadKey
+                        : null;
+                    const detachedFrom = threadNesting.nodeByKey.get(threadKey)?.detachedFrom;
                     return (
                       <SidebarThreadRow
                         // Keyed per variant on purpose: when a thread settles,
@@ -3922,7 +4457,19 @@ export default function Sidebar() {
                         onCommitRename={commitThreadRename}
                         onCancelRename={cancelThreadRename}
                         isRenaming={renamingThreadKey === threadKey}
-                        renamingTitle={renamingThreadKey === threadKey ? renamingTitle : ""}
+                        renamingTitle={
+                          renamingThreadKey === threadKey || renamingNestedKey !== null
+                            ? renamingTitle
+                            : ""
+                        }
+                        nested={nestedDisplay}
+                        activeNestedKey={routeNestingRootKey === threadKey ? routeThreadKey : null}
+                        renamingNestedKey={renamingNestedKey}
+                        onToggleNested={setThreadChildrenExpanded}
+                        onShowAllNested={showAllNested}
+                        subagentParentTitle={
+                          detachedFrom == null ? undefined : (detachedFrom.parent?.title ?? null)
+                        }
                         onContextMenu={handleThreadContextMenu}
                         onSettle={attemptSettle}
                         onUnsettle={attemptUnsettle}

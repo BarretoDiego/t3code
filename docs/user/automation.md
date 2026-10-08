@@ -74,6 +74,37 @@ t3 orchestrator pause <id>      # keeps the inbox; running child tasks continue
 - After a crash, a turn whose outcome cannot be confirmed is left as `unknown` in the inbox
   instead of being run again. Decide with `t3 orchestrator inbox requeue|dismiss <entry>`.
 
+### What its agent can do
+
+During a turn, the orchestrator's agent drives T3 Code through the `t3` CLI in its shell. That
+CLI belongs to the server running the orchestrator and is signed in as the orchestrator, not as
+you, so the server checks every call against the orchestrator's `permissions`:
+
+- `actions` names what it may do: `thread.read`, `thread.create`, `thread.send`,
+  `thread.organize`, `thread.interrupt`, `request.answer`, `request.approve`, `task.delegate`,
+  `task.cancel`, `peer.delegate`, `job.run`, `job.shell`, `event.emit`.
+- `projectIds`, `environmentIds`, and `nodeIds` limit where. Leave one out to allow every
+  project, peer, or node.
+- `request.approve` does nothing alone. An approval also needs a `preAuthorizedApprovals` entry
+  naming the request kind and the decision, and a decision you already made is never replaced.
+- `job.shell` also needs `allowShell` on the node and a credential that carries
+  `automation:execute`. Turn credentials do not carry it, so an orchestrator's agent cannot run
+  shell jobs today.
+
+A call outside these limits fails with `PERMISSION_DENIED` and changes nothing. The agent cannot
+edit orchestrators, hooks, peers, or nodes, open terminals, change settings, or message its own
+thread. Permissions are read when the call arrives, so an edit applies to the turn already
+running. The credential ends with the turn, and at once when you pause, disable, or remove the
+orchestrator.
+
+Set `profile` to an [agent profile](agent-profiles.md) slug to run every turn with it. If the
+profile is removed, disabled, or has no model for the thread's provider, the orchestrator stops
+taking turns, keeps its inbox, and shows the reason in `t3 orchestrator show <id>`.
+
+Orchestrators run on Codex and Claude provider instances. On any other provider the orchestrator
+refuses to take turns and says so, because its agent could not be given its own identity there.
+Use a full-access runtime mode: a sandbox that blocks local network access also blocks the CLI.
+
 An orchestrator runs in one environment. Hosting it elsewhere means creating it there; moving a
 running orchestrator between environments is not available yet.
 
@@ -98,6 +129,63 @@ t3 task validate <task> --file criteria.json
   `"onParentCancel": "cancel"`.
 
 Child threads appear nested under their parent in the [sidebar](./thread-sidebar.md).
+
+## In the app
+
+Hooks and orchestrators can also be managed without the CLI. These settings appear only for
+environments whose server supports automation; update the server on a machine that does not show
+them.
+
+### Orchestrators in the app
+
+An orchestrator's thread carries a marker in the thread list and in the thread header. The header
+spells out its state: idle, queued, running, waiting, paused, disabled, budget exceeded, handing
+off, not hosted here, or error.
+
+On web and desktop, open the thread's details to see the **Orchestrator** section: pause, resume,
+or disable it, and interrupt the turn it is taking now, which is a separate action from pausing.
+The section also shows its inbox, its usage against its budget, its child tasks, the questions and
+approvals it is tracking, and recent activity. The command palette has **Open orchestrator panel**
+and **Pause orchestrator** / **Resume orchestrator** for the thread you are in.
+
+- Usage the provider does not report shows as **Unknown**, not zero.
+- A child task shows **Reported** when it says it finished and **Validated** only once its
+  criteria were checked.
+- An inbox entry whose outcome is unknown stays listed until you **Requeue** or **Dismiss** it.
+- An orchestrator hosted in another environment is a read-only copy. It shows when it was last
+  observed and whether that environment is reachable; change it from the environment that hosts
+  it.
+
+Create and edit orchestrators in **Settings → Automation → Orchestrators**. Name, scope, project,
+model, profile, runtime mode, instructions, and batch window are fields; permissions, budget, and
+responsibility order are edited together as JSON, with the same keys as the CLI's definition file.
+If someone else changed the orchestrator while you were editing, saving asks you to reload it.
+
+On mobile, the thread list and header show the marker, and **Settings → Orchestrators, hooks,
+peers and nodes** lists each environment's orchestrators. Open one to see the same details and to
+pause or resume it. Creating, editing, disabling, interrupting a turn, and settling inbox entries
+need desktop, web, or the CLI.
+
+### Hooks in the app
+
+**Settings → Automation → Hooks** lists each environment's hooks with a switch to enable them.
+Create or edit a hook by choosing its event types, the projects, threads, or orchestrators it is
+limited to, and where it delivers. Retry, timeout, priority, and limits are edited as JSON.
+
+- **Test** shows which recent events match and what would be sent. It sends nothing.
+- **Deliveries** lists what each hook delivered or is holding, filtered by status. **Redeliver** a
+  failed or suppressed delivery, or dismiss it.
+- A webhook or command destination is marked **Needs operator allowlist**: it works only when
+  whoever runs that server allowed it, as described under [Hooks](#hooks).
+
+Mobile lists hooks without editing them.
+
+### Who answers a request
+
+On web and desktop, when a question or approval is waiting and something other than you is
+responsible for it, the thread, the thread list, and the Agent Operations Board name the
+orchestrator or parent thread that is, and why. Seeing a request there does not make it yours to answer. An approval that only
+you can decide says **Reserved for you**, even when an orchestrator is tracking it.
 
 ## Before closing the server
 

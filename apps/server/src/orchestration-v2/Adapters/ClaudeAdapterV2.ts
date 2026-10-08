@@ -129,6 +129,7 @@ import {
   makeProviderRetryTurnItem,
 } from "@t3tools/provider-core/server/failure";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
+import { withAgentShellEnvironment } from "../AgentShellEnvironment.ts";
 import { providerMessageTextWithAttachmentPaths } from "../AttachmentPrompt.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
@@ -7385,7 +7386,9 @@ export function makeClaudeAdapterV2(
             cwd: turnInput.runtimePolicy.cwd,
             attachmentsDir,
             settings: adapterOptions.settings,
-            environment: adapterOptions.environment,
+            // Claude Code's shell inherits the query's environment, so a thread
+            // that carries one (an orchestrator's main thread) gets it per query.
+            environment: withAgentShellEnvironment(adapterOptions.environment, turnInput.threadId),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...mcpOverrides,
             permissionMode: queryPolicy.permissionMode,

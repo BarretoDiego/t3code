@@ -1755,6 +1755,29 @@ describe("subagent threads nested under their parent", () => {
             : row.type,
     );
 
+  it("draws a nested Settled shelf and preserves its expansion and recycled-list updates", () => {
+    const done = subagentOf(root, "done", { settledOverride: "settled", settledAt: NOW });
+    const busy = subagentOf(root, "busy", working);
+    const threads = [root, done, busy];
+    const folded = listRows(threads);
+    expect(describeRows(folded)).toEqual(["root", "> busy", "v2-nested-settled"]);
+    const header = folded.at(-1)!;
+    expect(header).toMatchObject({
+      type: "v2-nested-settled",
+      count: 1,
+      expanded: false,
+      groupKey: `${environmentId}:root:settled`,
+    });
+    const expanded = listRows(threads, {
+      nestedExpandedByKey: { [`${environmentId}:root:settled`]: true },
+    });
+    expect(describeRows(expanded)).toEqual(["root", "> busy", "v2-nested-settled", "> done"]);
+    const openHeader = expanded.find((row) => row.type === "v2-nested-settled")!;
+    expect(threadListV2ListItemsAreEqual(header, openHeader)).toBe(false);
+    expect(threadListV2ListItemsAreEqual(header, { ...header })).toBe(true);
+    expect(threadJumpTarget(expanded, "thread.jump.2")).toBeNull();
+  });
+
   it("draws a working subagent under its parent and keeps forks at the top level", () => {
     const child = subagentOf(root, "child", working);
     const grandchild = subagentOf(child, "grandchild", working);
@@ -1811,7 +1834,7 @@ describe("subagent threads nested under their parent", () => {
     expect(describeRows(rows)).toEqual(["root", "> done"]);
   });
 
-  it("lifts a working subagent out of a settled parent into the active list", () => {
+  it("shows a settled parent together with its working subagents in the active list", () => {
     const settledRoot = makeThread({
       id: ThreadId.make("settled-root"),
       title: "Settled root",
@@ -1821,14 +1844,66 @@ describe("subagent threads nested under their parent", () => {
     const rows = listRows(
       [
         settledRoot,
-        subagentOf(settledRoot, "still-working", working),
-        subagentOf(settledRoot, "done"),
+        subagentOf(settledRoot, "still-working", { ...working, createdAt: isoAt(BASE_MS) }),
+        subagentOf(settledRoot, "done", { createdAt: isoAt(BASE_MS + MINUTE_MS) }),
       ],
       { settledShelfExpanded: false },
     );
 
-    expect(describeRows(rows)).toEqual(["still-working", "v2-settled-shelf"]);
+    expect(describeRows(rows)).toEqual(["settled-root", "> still-working", "> done"]);
+    expect(settledRoot.settledOverride).toBe("settled");
   });
+
+  it.each(["settled", "snoozed"] as const)(
+    "keeps a %s family together through child activity and returns it to its saved shelf",
+    (shelf) => {
+      const parent = makeThread({
+        id: ThreadId.make("parked-parent"),
+        title: "Parked parent",
+        ...(shelf === "settled"
+          ? { settledOverride: "settled" as const, settledAt: NOW }
+          : { snoozedUntil: isoAt(BASE_MS + 60 * MINUTE_MS) }),
+      });
+      const child = subagentOf(parent, "child", working);
+      const grandchild = subagentOf(child, "grandchild", { hasPendingUserInput: true });
+      const threads = [parent, child, grandchild];
+      expect(describeRows(listRows(threads, { settledShelfExpanded: false }))).toEqual([
+        parent.id,
+        "> child",
+        "> > grandchild",
+      ]);
+      expect(
+        getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map((t) => t.id),
+      ).toEqual([parent.id]);
+      const layout = buildThreadListV2Items({
+        threads,
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+      });
+      expect(layout.settledCount + layout.snoozedCount).toBe(0);
+      expect(layout.nestedByKey.get(`${environmentId}:${parent.id}`)?.summary?.signal).toBe(
+        "input",
+      );
+      const quiet = buildThreadListV2Items({
+        threads: [
+          parent,
+          { ...child, runtime: null },
+          { ...grandchild, hasPendingUserInput: false },
+        ],
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+        snoozedShelfExpanded: true,
+      });
+      expect(quiet.settledCount + quiet.snoozedCount).toBe(1);
+      expect(quiet.items.map((item) => item.thread.id)).toEqual([parent.id]);
+      expect(parent.settledOverride).toBe(shelf === "settled" ? "settled" : null);
+      expect(parent.snoozedUntil).toBe(
+        shelf === "snoozed" ? isoAt(BASE_MS + 60 * MINUTE_MS) : null,
+      );
+    },
+  );
 
   it("gives a search hit its own row when only the subagent matches", () => {
     const layout = buildThreadListV2Items({

@@ -1,4 +1,5 @@
-"use client";
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
+("use client");
 
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
@@ -66,7 +67,10 @@ import {
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
+  PauseIcon,
+  PlayIcon,
   RotateCcwIcon,
+  WorkflowIcon,
   SettingsIcon,
   SquarePenIcon,
   SunIcon,
@@ -152,6 +156,10 @@ import {
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+import { reportAutomationFailure } from "./automation/automationCommands";
+import { openThreadDetailsPanel } from "./automation/ThreadAutomationMarkers";
+import { automationEnvironment, useThreadOrchestrator } from "../state/automation";
+import { orchestratorStateActions } from "@t3tools/client-runtime/state/automation-presentation";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -774,6 +782,17 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const activeOrchestrator = useThreadOrchestrator(
+    useMemo(
+      () =>
+        activeThread === null ? null : scopeThreadRef(activeThread.environmentId, activeThread.id),
+      [activeThread],
+    ),
+  );
+  const setOrchestratorState = useAtomCommand(automationEnvironment.setOrchestratorState, {
+    label: "orchestrator set state",
+    reportFailure: false,
+  });
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1446,7 +1465,12 @@ function OpenCommandPaletteDialog(props: {
         projectTitleById,
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-        renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+        renderLeadingContent: (thread) => (
+          <>
+            <ThreadRowLeadingStatus thread={thread} />
+            {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
+          </>
+        ),
         renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
         renderDescription: (thread, { projectTitle }) => {
           const modelInstanceId =
@@ -2047,6 +2071,45 @@ function OpenCommandPaletteDialog(props: {
         icon: <PullRequestGlyph.link className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");
+        },
+      });
+    }
+  }
+
+  if (activeThread !== null && activeOrchestrator !== null) {
+    const view = activeOrchestrator;
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    const stateActions = orchestratorStateActions(view);
+    actionItems.push({
+      kind: "action",
+      value: "action:open-orchestrator-panel",
+      searchTerms: ["orchestrator", "automation", "inbox", "budget", "child tasks", "panel"],
+      title: "Open orchestrator panel",
+      description: view.orchestrator.name,
+      icon: <WorkflowIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openThreadDetailsPanel(threadRef);
+      },
+    });
+    if (stateActions.canPause || stateActions.canResume) {
+      const desiredState = stateActions.canPause ? "paused" : "active";
+      actionItems.push({
+        kind: "action",
+        value: "action:toggle-orchestrator",
+        searchTerms: ["orchestrator", "pause", "resume", "automation", "stop", "start"],
+        title: stateActions.canPause ? "Pause orchestrator" : "Resume orchestrator",
+        description: view.orchestrator.name,
+        icon: stateActions.canPause ? (
+          <PauseIcon className={ITEM_ICON_CLASS} />
+        ) : (
+          <PlayIcon className={ITEM_ICON_CLASS} />
+        ),
+        run: async () => {
+          const result = await setOrchestratorState({
+            environmentId: view.environmentId,
+            input: { orchestratorId: view.orchestrator.id, desiredState },
+          });
+          reportAutomationFailure("Could not change the orchestrator", result);
         },
       });
     }

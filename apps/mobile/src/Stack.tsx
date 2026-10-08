@@ -92,6 +92,10 @@ import {
   SettingsEnvironmentSourceControlRouteScreen,
 } from "./features/settings/SettingsServerControlsRouteScreen";
 import {
+  SettingsAutomationOrchestratorRouteScreen,
+  SettingsAutomationRouteScreen,
+} from "./features/settings/SettingsAutomationRouteScreen";
+import {
   SettingsScheduledTasksRouteScreen,
   SettingsScheduledTaskNewRouteScreen,
   SettingsScheduledTaskEditRouteScreen,
@@ -336,6 +340,16 @@ const SettingsContentStack = createV5SheetStackNavigator({
         // Leave room to center UIKit's title beside the two trailing actions.
         headerTitleStyle: { fontSize: 16, fontWeight: "800" },
       },
+    }),
+    SettingsAutomation: createNativeStackScreen({
+      screen: SettingsAutomationRouteScreen,
+      linking: "automation",
+      options: { title: "Automation" },
+    }),
+    SettingsAutomationOrchestrator: createNativeStackScreen({
+      screen: SettingsAutomationOrchestratorRouteScreen,
+      linking: "automation/:environmentId/orchestrators/:orchestratorId",
+      options: { title: "Orchestrator" },
     }),
     SettingsScheduledTaskNew: createNativeStackScreen({
       screen: SettingsScheduledTaskNewRouteScreen,

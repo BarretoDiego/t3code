@@ -281,6 +281,7 @@ import { searchAgentProfiles } from "../../agentProfileSearch";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { PendingRequestResponsibilityNote } from "../automation/ThreadAutomationMarkers";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -6931,6 +6932,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         approval={activePendingApproval}
                         pendingCount={pendingApprovals.length}
                       />
+                      {activeThreadId !== null ? (
+                        <PendingRequestResponsibilityNote
+                          environmentId={environmentId}
+                          threadId={activeThreadId}
+                          requestId={activePendingApproval.requestId}
+                        />
+                      ) : null}
                     </ComposerBanner.Content>
                     <ComposerBanner.Actions>
                       <ComposerPendingApprovalActions
@@ -6946,20 +6954,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </ComposerBanner.Actions>
                   </ComposerBanner.Row>
                 ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
-                  <ComposerPendingUserInputPanel
-                    pendingUserInputs={pendingUserInputs}
-                    disabled={!canOperateThread}
-                    respondingRequestIds={
-                      activePendingIsResponding && activePendingUserInput
-                        ? [...respondingRequestIds, activePendingUserInput.requestId]
-                        : respondingRequestIds
-                    }
-                    answers={activePendingDraftAnswers}
-                    questionIndex={activePendingQuestionIndex}
-                    onToggleOption={onSelectActivePendingUserInputOption}
-                    onAdvance={onAdvanceActivePendingUserInput}
-                    onDismiss={onDismissActivePendingUserInput}
-                  />
+                  <>
+                    {activeThreadId !== null && pendingUserInputs[0] ? (
+                      <PendingRequestResponsibilityNote
+                        environmentId={environmentId}
+                        threadId={activeThreadId}
+                        requestId={pendingUserInputs[0].requestId}
+                      />
+                    ) : null}
+                    <ComposerPendingUserInputPanel
+                      disabled={!canOperateThread}
+                      pendingUserInputs={pendingUserInputs}
+                      respondingRequestIds={
+                        activePendingIsResponding && activePendingUserInput
+                          ? [...respondingRequestIds, activePendingUserInput.requestId]
+                          : respondingRequestIds
+                      }
+                      answers={activePendingDraftAnswers}
+                      questionIndex={activePendingQuestionIndex}
+                      onToggleOption={onSelectActivePendingUserInputOption}
+                      onAdvance={onAdvanceActivePendingUserInput}
+                      onDismiss={onDismissActivePendingUserInput}
+                    />
+                  </>
                 ) : !isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan ? (
                   <ComposerPlanFollowUpBanner
                     key={activeProposedPlan.id}
@@ -6967,6 +6984,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 ) : isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <div data-chat-composer-collapsed-controls="true">
+                    {activeThreadId !== null && pendingUserInputs[0] ? (
+                      <PendingRequestResponsibilityNote
+                        environmentId={environmentId}
+                        threadId={activeThreadId}
+                        requestId={pendingUserInputs[0].requestId}
+                      />
+                    ) : null}
                     <ComposerPendingUserInputPanel
                       pendingUserInputs={pendingUserInputs}
                       disabled={!canOperateThread}

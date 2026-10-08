@@ -1,9 +1,12 @@
+import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { Spinner } from "~/components/ui/spinner";
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   FolderPlusIcon,
   Globe2Icon,
@@ -12,6 +15,7 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { ThreadAutomationMarkers } from "./automation/ThreadAutomationMarkers";
 import {
   ChangeRequestStatusIcon,
   prStatusIndicator,
@@ -208,6 +212,13 @@ import {
   ThreadStatusPill,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
+import {
+  legacyProjectThreadRows,
+  legacyStandaloneRow,
+  type LegacyThreadRow,
+  nestLegacyProjectThreads,
+} from "./legacySidebarNesting";
+import { threadNestingAncestorKeys } from "@t3tools/client-runtime/state/thread-relationships";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
@@ -324,8 +335,17 @@ function buildThreadJumpLabelMap(input: {
   return mapping.size > 0 ? mapping : EMPTY_THREAD_JUMP_LABELS;
 }
 
+/** Left inset per nesting level; deeper levels share the last step. */
+const NESTED_ROW_INSET_CLASS = ["", "pl-6", "pl-9", "pl-12"] as const;
+
 interface SidebarThreadRowProps {
   thread: SidebarThreadSummary;
+  // 0 for a top-level row; a subagent thread sits indented under its parent.
+  depth: number;
+  // Set when the row has subagent threads under it: their count, and whether they show.
+  nestedCount: number | null;
+  nestedExpanded: boolean;
+  onToggleNested: (threadKey: string, expanded: boolean) => void;
   orderedProjectThreadKeys: readonly string[];
   isActive: boolean;
   openPullRequestsInRightPanel: boolean;
@@ -381,6 +401,10 @@ function checkTaskPermission(environmentId: EnvironmentId): boolean {
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
   const {
+    depth,
+    nestedCount,
+    nestedExpanded,
+    onToggleNested,
     orderedProjectThreadKeys,
     isActive,
     openPullRequestsInRightPanel,
@@ -755,13 +779,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ? "bg-sidebar-row-selected text-sidebar-foreground hover:bg-sidebar-row-active"
               : "text-sidebar-muted-foreground/80 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
           isFileDragOver && "ring-1 ring-inset ring-primary/70",
+          NESTED_ROW_INSET_CLASS[Math.min(depth, NESTED_ROW_INSET_CLASS.length - 1)],
         )}
+        data-nested-depth={depth}
         onClick={handleRowClick}
         onDoubleClick={handleRowDoubleClick}
         onKeyDown={handleRowKeyDown}
         onContextMenu={handleRowContextMenu}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           {prStatus && pr && (
             <Tooltip>
               <TooltipTrigger
@@ -828,6 +855,36 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <TooltipPopup side="top">{thread.title}</TooltipPopup>
             </Tooltip>
           )}
+          <ThreadAutomationMarkers
+            environmentId={thread.environmentId}
+            threadId={thread.id}
+            variant="row"
+          />
+          {nestedCount !== null ? (
+            <button
+              type="button"
+              data-testid="sidebar-nested-toggle"
+              aria-expanded={nestedExpanded}
+              aria-label={`${nestedExpanded ? "Hide" : "Show"} ${nestedCount} ${
+                nestedCount === 1 ? "subagent" : "subagents"
+              }`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleNested(threadKey, !nestedExpanded);
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              className="inline-flex h-5 shrink-0 cursor-pointer items-center gap-0.5 rounded-sm px-1 text-xs tabular-nums text-secondary-label outline-hidden hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              {nestedExpanded ? (
+                <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
+              ) : (
+                <ChevronRightIcon aria-hidden className="size-3 shrink-0" />
+              )}
+              {nestedCount}
+            </button>
+          ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {canOperatePreview && discoveredPorts.length > 0 && (
@@ -986,7 +1043,8 @@ interface SidebarProjectThreadListProps {
   hasOverflowingThreads: boolean;
   hiddenThreadStatus: ThreadStatusPill | null;
   orderedProjectThreadKeys: readonly string[];
-  renderedThreads: readonly SidebarThreadSummary[];
+  renderedRows: readonly LegacyThreadRow<SidebarThreadSummary>[];
+  onToggleNested: (threadKey: string, expanded: boolean) => void;
   showEmptyThreadState: boolean;
   shouldShowThreadPanel: boolean;
   isThreadListExpanded: boolean;
@@ -1042,7 +1100,8 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     hasOverflowingThreads,
     hiddenThreadStatus,
     orderedProjectThreadKeys,
-    renderedThreads,
+    renderedRows,
+    onToggleNested,
     showEmptyThreadState,
     shouldShowThreadPanel,
     isThreadListExpanded,
@@ -1092,12 +1151,22 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
         </SidebarMenuSubItem>
       ) : null}
       {shouldShowThreadPanel &&
-        renderedThreads.map((thread) => {
-          const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+        renderedRows.map((row) => {
+          if (row.kind === "settled")
+            return (
+              <SidebarMenuSubItem key={row.key}>
+                <ThreadNestedSettledHeader row={row} onToggle={onToggleNested} />
+              </SidebarMenuSubItem>
+            );
+          const { thread, key: threadKey } = row;
           return (
             <SidebarThreadRow
               key={threadKey}
               thread={thread}
+              depth={row.depth}
+              nestedCount={row.summary?.total ?? null}
+              nestedExpanded={row.expanded}
+              onToggleNested={onToggleNested}
               orderedProjectThreadKeys={orderedProjectThreadKeys}
               isActive={activeRouteThreadKey === threadKey}
               openPullRequestsInRightPanel={openPullRequestsInRightPanel}
@@ -1355,7 +1424,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     return counts;
   }, [memberProjectByScopedKey, project.memberProjects, projectThreads]);
 
-  const { projectStatus, visibleProjectThreads, orderedProjectThreadKeys } = useMemo(() => {
+  const nestedExpandedById = useUiStateStore((state) => state.threadChildrenExpandedById);
+  const setThreadChildrenExpanded = useUiStateStore((state) => state.setThreadChildrenExpanded);
+  const { projectStatus, visibleProjectThreads, projectNesting } = useMemo(() => {
     const lastVisitedAtByThreadKey = new Map(
       projectThreads.map((thread, index) => [
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -1381,9 +1452,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads.map((thread) => resolveProjectThreadStatus(thread)),
     );
     return {
-      orderedProjectThreadKeys: visibleProjectThreads.map((thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-      ),
+      // Subagent threads ride under the thread that started them, so only the
+      // forest's top-level rows count toward the preview limit.
+      projectNesting: nestLegacyProjectThreads({
+        sortedThreads: visibleProjectThreads,
+        archivedThreads: projectThreads.filter((thread) => thread.archivedAt !== null),
+      }),
       projectStatus,
       visibleProjectThreads,
     };
@@ -1404,7 +1478,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const {
     hasOverflowingThreads,
     hiddenThreadStatus,
-    renderedThreads,
+    orderedProjectThreadKeys,
+    renderedRows,
     showEmptyThreadState,
     shouldShowThreadPanel,
   } = useMemo(() => {
@@ -1425,38 +1500,56 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         },
       });
     };
-    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;
+    const { nesting, topLevel } = projectNesting;
+    const hasOverflowingThreads = topLevel.length > sidebarThreadPreviewCount;
     const previewThreads =
       isThreadListExpanded || !hasOverflowingThreads
-        ? visibleProjectThreads
-        : visibleProjectThreads.slice(0, sidebarThreadPreviewCount);
-    const visibleThreadKeys = new Set(
-      [...previewThreads, ...(pinnedCollapsedThread ? [pinnedCollapsedThread] : [])].map((thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-      ),
+        ? topLevel
+        : topLevel.slice(0, sidebarThreadPreviewCount);
+    // The open thread and the rows above it: a parent with its subagents
+    // folded away still draws this path.
+    const activePathKeys =
+      activeRouteThreadKey === null
+        ? new Set<string>()
+        : new Set([
+            activeRouteThreadKey,
+            ...threadNestingAncestorKeys(nesting, activeRouteThreadKey),
+          ]);
+    const renderedRows = pinnedCollapsedThread
+      ? [legacyStandaloneRow(pinnedCollapsedThread)]
+      : legacyProjectThreadRows({
+          nesting,
+          topLevel: previewThreads,
+          expandedOverrides: nestedExpandedById,
+          activePathKeys,
+        });
+    const renderedThreadKeys = new Set(
+      renderedRows.filter((row) => row.kind === "thread").map((row) => row.key),
     );
-    const renderedThreads = pinnedCollapsedThread
-      ? [pinnedCollapsedThread]
-      : visibleProjectThreads.filter((thread) =>
-          visibleThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
-        );
     const hiddenThreads = visibleProjectThreads.filter(
       (thread) =>
-        !visibleThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+        !renderedThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
     );
     return {
       hasOverflowingThreads,
       hiddenThreadStatus: resolveProjectStatusIndicator(
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
-      renderedThreads,
+      // Drawn order, which is what shift-range selection walks.
+      orderedProjectThreadKeys: renderedRows
+        .filter((row) => row.kind === "thread")
+        .map((row) => row.key),
+      renderedRows,
       showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
+    activeRouteThreadKey,
     isThreadListExpanded,
+    nestedExpandedById,
     pinnedCollapsedThread,
     projectExpanded,
+    projectNesting,
     projectThreads,
     sidebarThreadPreviewCount,
     threadLastVisitedAts,
@@ -2542,7 +2635,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hasOverflowingThreads={hasOverflowingThreads}
         hiddenThreadStatus={hiddenThreadStatus}
         orderedProjectThreadKeys={orderedProjectThreadKeys}
-        renderedThreads={renderedThreads}
+        renderedRows={renderedRows}
+        onToggleNested={setThreadChildrenExpanded}
         showEmptyThreadState={showEmptyThreadState}
         shouldShowThreadPanel={shouldShowThreadPanel}
         isThreadListExpanded={isThreadListExpanded}
@@ -3550,12 +3644,17 @@ export default function LegacySidebar() {
   const visibleSidebarThreadKeys = useMemo(
     () =>
       sortedProjects.flatMap((project) => {
-        const projectThreads = sortThreads(
-          (threadsByProjectKey.get(project.projectKey) ?? []).filter(
-            (thread) => thread.archivedAt === null,
-          ),
+        const allProjectThreads = threadsByProjectKey.get(project.projectKey) ?? [];
+        const unarchivedProjectThreads = sortThreads(
+          allProjectThreads.filter((thread) => thread.archivedAt === null),
           sidebarThreadSortOrder,
         );
+        // Jump shortcuts count top-level rows, so a parent showing its
+        // subagents does not renumber the list.
+        const projectThreads = nestLegacyProjectThreads({
+          sortedThreads: unarchivedProjectThreads,
+          archivedThreads: allProjectThreads.filter((thread) => thread.archivedAt !== null),
+        }).topLevel;
         const projectExpanded = resolveProjectExpanded(
           projectExpandedById,
           projectExpansionPreferenceKeys(project),
@@ -3563,7 +3662,7 @@ export default function LegacySidebar() {
         const activeThreadKey = routeThreadKey ?? undefined;
         const pinnedCollapsedThread =
           !projectExpanded && activeThreadKey
-            ? (projectThreads.find(
+            ? (unarchivedProjectThreads.find(
                 (thread) =>
                   scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) ===
                   activeThreadKey,

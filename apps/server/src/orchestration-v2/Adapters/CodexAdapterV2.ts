@@ -109,6 +109,7 @@ import { ProviderEventLoggers } from "../../provider/ProviderEventLoggers.ts";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { withAgentShellEnvironment } from "../AgentShellEnvironment.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
@@ -1713,7 +1714,12 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           providerSessionId: input.providerSessionId,
           runtimePolicy: input.runtimePolicy,
           settings: resolvedRuntime?.config ?? adapterOptions.settings,
-          environment: resolvedRuntime?.environment ?? adapterOptions.environment,
+          // The app-server's shell inherits this environment, so a thread that
+          // carries one (an orchestrator's main thread) gets it at spawn.
+          environment: withAgentShellEnvironment(
+            resolvedRuntime?.environment ?? adapterOptions.environment,
+            input.threadId,
+          ),
         });
         const additionalContextByThread = yield* Ref.make(
           new Map<

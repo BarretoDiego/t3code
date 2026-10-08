@@ -140,6 +140,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledMessages from "./orchestration-v2/ScheduledMessages.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import type * as AutomationLayer from "./automation/AutomationLayer.ts";
+import { makeOrchestratorRpcGate } from "./automation/orchestrator/RpcGate.ts";
 import { callerFromSession, makeAutomationRpcHandlers } from "./automation/rpcHandlers.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
@@ -1371,6 +1372,13 @@ const layerWsRpc = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
+      // Who the session proves the caller to be. An orchestrator's agent is a
+      // caller of its own kind; a session that only claims to be one holds no scopes.
+      const caller = callerFromSession(currentSession);
+      const commandAuthor = caller.kind === "orchestrator" ? "agent" : "user";
+      const orchestratorGate = yield* makeOrchestratorRpcGate.pipe(
+        Effect.provide(automationServices),
+      );
       // A webhook URL starts agent runs, so only sessions that may operate
       // see it; read-only sessions still see the task itself.
       const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
@@ -1381,7 +1389,7 @@ const layerWsRpc = (
             };
       const { authorizeEffect, authorizeStream } = yield* SessionGate.makeSessionGate({
         sessionId: currentSessionId,
-        scopes: currentSession.scopes,
+        scopes: caller.kind === "internal" ? [] : caller.scopes,
         changes: sessions.streamChanges,
       });
 
@@ -1922,7 +1930,7 @@ const layerWsRpc = (
                     ? threadLaunch.retryPreparation(command)
                     : ThreadMessageIntake.dispatchCommand(
                         ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
+                          createdBy: commandAuthor,
                           creationSource:
                             "creationSource" in command ? command.creationSource : "web",
                         }),
@@ -1930,6 +1938,8 @@ const layerWsRpc = (
                   ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
+                  (dispatch) =>
+                    Effect.andThen(orchestratorGate.threadCommand(caller, command), dispatch),
                   Effect.tap(() => recordClientCommandAnalytics(command)),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
@@ -2071,11 +2081,12 @@ const layerWsRpc = (
                               : { context: input.initialMessage.context }),
                           },
                         }),
-                    createdBy: "user",
+                    createdBy: commandAuthor,
                     creationSource: input.creationSource ?? "web",
                   }).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
+                  (launch) => Effect.andThen(orchestratorGate.threadLaunch(caller, input), launch),
                   Effect.tap(() =>
                     analytics
                       .record("client.thread.started", originProps)
@@ -3442,14 +3453,18 @@ const layerWsRpc = (
         [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
       });
       const automationHandlers = yield* makeAutomationRpcHandlers({
-        caller: callerFromSession(currentSession),
+        caller,
         observeEffect: observeRpcEffect,
         observeStream: observeRpcStream,
       }).pipe(Effect.provide(automationServices));
+      // For an orchestrator's agent every handler is guarded by method here, so
+      // an RPC without a rule fails closed whether or not it checks a scope.
       return Context.mergeAll(
-        yield* WsCoreRpcGroup.toHandlers(handlers),
-        yield* WsForkRpcGroup.toHandlers(forkHandlers),
-        yield* AutomationRpcGroup.toHandlers(automationHandlers),
+        yield* WsCoreRpcGroup.toHandlers(orchestratorGate.guardHandlers(caller, handlers)),
+        yield* WsForkRpcGroup.toHandlers(orchestratorGate.guardHandlers(caller, forkHandlers)),
+        yield* AutomationRpcGroup.toHandlers(
+          orchestratorGate.guardHandlers(caller, automationHandlers),
+        ),
       );
     }),
   );

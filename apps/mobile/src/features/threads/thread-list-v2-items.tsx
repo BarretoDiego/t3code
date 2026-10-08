@@ -32,6 +32,8 @@ import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSym
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
+import { useOrchestratorThreadMarker } from "../../state/automation";
+import { OrchestratorRowMarker } from "../automation/automation-status";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentScope } from "../../state/session";
@@ -546,6 +548,7 @@ export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: 
           className={cn("min-w-0 flex-1 flex-row items-center gap-2 py-2 pl-3", "pr-5")}
           style={sidebarPane ? { paddingRight: 12 } : undefined}
         >
+          <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
           <Text
             className={cn(
               "min-w-0 flex-1 text-sm",
@@ -629,6 +632,45 @@ export const ThreadListV2NestedMoreRow = memo(function ThreadListV2NestedMoreRow
             Show {props.hiddenCount} more
           </Text>
         </View>
+      </View>
+      {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
+        <View className="ml-5 h-px bg-border-subtle" />
+      ) : null}
+    </Pressable>
+  );
+});
+
+export const ThreadListV2NestedSettledRow = memo(function ThreadListV2NestedSettledRow(props: {
+  readonly groupKey: string;
+  readonly depth: number;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly pane?: "screen" | "sidebar";
+  readonly showTrailingDivider?: boolean;
+  readonly onToggle: (key: string, expanded: boolean) => void;
+}) {
+  const sidebarPane = props.pane === "sidebar";
+  const indent =
+    (sidebarPane ? 16 : 24) +
+    (Math.min(props.depth, NESTED_ROW_MAX_INDENT_DEPTH) - 1) * NESTED_ROW_INDENT_STEP;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Settled subagents (${props.count})`}
+      accessibilityState={{ expanded: props.expanded }}
+      onPress={() => props.onToggle(props.groupKey, !props.expanded)}
+      style={({ pressed }) => ({ paddingLeft: indent, opacity: pressed ? 0.6 : 1 })}
+    >
+      <View className="min-h-[36px] flex-row items-center gap-2 py-2 pl-3">
+        <SymbolView name={props.expanded ? "chevron.down" : "chevron.right"} size={12} />
+        <Text
+          className={cn(
+            "text-xs font-t3-medium",
+            sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted",
+          )}
+        >
+          Settled ({props.count})
+        </Text>
       </View>
       {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
         <View className="ml-5 h-px bg-border-subtle" />
@@ -1115,6 +1157,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
+  // Null for every ordinary thread; reads a derived atom, not a subscription.
+  const orchestratorMarker = useOrchestratorThreadMarker(thread.environmentId, thread.id);
+  const accessibilityTitle =
+    thread.lineage.relationshipToParent === "subagent" ? `Subagent: ${thread.title}` : thread.title;
   const nestedToggle =
     props.nested != null && props.onToggleNested !== undefined ? (
       <ThreadListV2NestedToggle
@@ -1159,6 +1205,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
+        {thread.lineage.relationshipToParent === "subagent" ? (
+          <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
+        ) : null}
         {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
         {pinnedRow ? (
           <SymbolView
@@ -1169,6 +1218,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           />
         ) : null}
         {nestedToggle}
+        {orchestratorMarker ? <OrchestratorRowMarker marker={orchestratorMarker} /> : null}
         <Text
           className={cn(
             "text-xs tabular-nums",
@@ -1334,7 +1384,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         className={rowAppearance.className}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          props.hasQueuedMessages
+            ? `${accessibilityTitle}, messages queued to send`
+            : accessibilityTitle
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
@@ -1366,7 +1418,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          props.hasQueuedMessages
+            ? `${accessibilityTitle}, messages queued to send`
+            : accessibilityTitle
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
@@ -1395,6 +1449,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 workspaceRoot={props.project.workspaceRoot}
               />
             </View>
+          ) : null}
+          {thread.lineage.relationshipToParent === "subagent" ? (
+            <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
           ) : null}
           <View className="min-w-0 flex-1">
             <Text

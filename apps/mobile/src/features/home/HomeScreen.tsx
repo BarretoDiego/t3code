@@ -47,6 +47,7 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
   ThreadListV2NestedMoreRow,
+  ThreadListV2NestedSettledRow,
   ThreadListV2NestedRow,
   ThreadListV2PendingRow,
   ThreadListV2Row,
@@ -762,6 +763,19 @@ export function HomeScreen(props: HomeScreenProps) {
             showTrailingDivider={item.showTrailingDivider}
             onSelectThread={props.onSelectThread}
             onToggleNested={setNestedExpanded}
+          />
+        );
+      }
+      if (item.type === "v2-nested-settled") {
+        return (
+          <ThreadListV2NestedSettledRow
+            groupKey={item.groupKey}
+            pane={primaryColumn ? "sidebar" : "screen"}
+            showTrailingDivider={item.showTrailingDivider}
+            depth={item.depth}
+            count={item.count}
+            expanded={item.expanded}
+            onToggle={setNestedExpanded}
           />
         );
       }

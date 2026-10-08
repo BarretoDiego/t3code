@@ -8,6 +8,7 @@ import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
+import { automationCapableEnvironments } from "./automationSettings.logic";
 import { useEnvironmentScope } from "~/state/session";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
@@ -60,6 +61,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
         }),
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+        hasAutomation: automationCapableEnvironments(environments).length > 0,
         managedTunnelActive,
       }),
     [

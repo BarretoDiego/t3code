@@ -21,6 +21,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { ThreadHandoffIndicator } from "../ThreadHandoffIndicator";
+import { ThreadAutomationMarkers } from "../automation/ThreadAutomationMarkers";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -356,6 +357,13 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {isServerThread && (
+        <ThreadAutomationMarkers
+          environmentId={activeThreadEnvironmentId}
+          threadId={activeThreadId}
+          variant="header"
+        />
+      )}
       {isServerThread && <ThreadHandoffIndicator threadRef={activeThreadRef} />}
     </div>
   );

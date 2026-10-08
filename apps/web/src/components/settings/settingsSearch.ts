@@ -21,6 +21,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/scheduled-tasks"
+  | "/settings/automation"
   | "/settings/source-control"
   | "/settings/mini-skills"
   | "/settings/agent-profiles"
@@ -71,6 +72,8 @@ export interface SettingsSearchItem {
    */
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  /** Its section exists only when an environment's server speaks the automation RPCs. */
+  readonly requiresAutomation?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -82,6 +85,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly hasAutomation?: boolean;
   readonly managedTunnelActive?: boolean;
 }
 
@@ -99,6 +103,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/ai-runtimes": "AI Runtimes",
   "/settings/integrations": "Integrations",
   "/settings/scheduled-tasks": "Scheduled Tasks",
+  "/settings/automation": "Automation",
   "/settings/source-control": "Source Control",
   "/settings/mini-skills": "Mini Skills",
   "/settings/agent-profiles": "Agent Profiles",
@@ -962,6 +967,34 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["pull request trusted environments shared credentials permissions read actions"],
   },
   {
+    id: "automation-orchestrators",
+    title: "Orchestrators",
+    to: "/settings/automation",
+    searchTerms: ["persistent agent inbox budget pause resume permissions instructions model"],
+    requiresAutomation: true,
+  },
+  {
+    id: "automation-hooks",
+    title: "Hooks",
+    to: "/settings/automation",
+    searchTerms: ["event rule webhook command deliveries redeliver filter test dry run"],
+    requiresAutomation: true,
+  },
+  {
+    id: "automation-peers",
+    title: "Peers",
+    to: "/settings/automation",
+    searchTerms: ["other environment federation pairing link token permissions outbox offline"],
+    requiresAutomation: true,
+  },
+  {
+    id: "automation-nodes",
+    title: "Nodes and jobs",
+    to: "/settings/automation",
+    searchTerms: ["execution machine ssh workspace root shell probe job log exit code"],
+    requiresAutomation: true,
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
@@ -987,6 +1020,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/storage": "project-defaults",
   "/settings/connections": "connections",
   "/settings/scheduled-tasks": null,
+  "/settings/automation": null,
   "/settings/archived": "project-defaults",
   "/settings/agent-profiles": null,
   "/settings/ai-runtimes": null,
@@ -1110,6 +1144,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.requiresAutomation || availability.hasAutomation === true) &&
       (!item.managedTunnelOnly || availability.managedTunnelActive === true),
   );
 }

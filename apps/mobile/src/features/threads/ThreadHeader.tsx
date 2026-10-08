@@ -9,6 +9,7 @@ import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 
 export function ThreadHeader(
   props: Parameters<typeof useThreadHeaderOptions>[0] & {
+    readonly orchestrator?: { readonly label: string; readonly onPress: () => void } | undefined;
     readonly hasThreadCwd: boolean;
     readonly hasWorkspaceRoot: boolean;
     readonly fileInspectorSupported: boolean;
@@ -30,6 +31,12 @@ export function ThreadHeader(
   });
   const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
     const actions: ScreenHeaderAction[] = [];
+    if (props.orchestrator)
+      actions.push({
+        accessibilityLabel: props.orchestrator.label,
+        icon: "point.3.connected.trianglepath.dotted",
+        onPress: props.orchestrator.onPress,
+      });
     if (props.handoffSupported && props.onOpenHandoff)
       actions.push({
         accessibilityLabel: "Continue on…",
@@ -73,6 +80,7 @@ export function ThreadHeader(
     }
     return actions;
   }, [
+    props.orchestrator,
     props.handoffSupported,
     props.onOpenHandoff,
     props.inspectorMode,
@@ -95,7 +103,7 @@ export function ThreadHeader(
         subtitle={props.subtitle}
         sidebar={native.sidebar}
         options={native.options}
-        optionsVersion={native.optionsVersion}
+        optionsVersion={[native.optionsVersion, props.orchestrator?.label]}
         trailing={
           props.fileInspectorSupported && props.hasThreadCwd ? (
             <ScreenHeaderButton

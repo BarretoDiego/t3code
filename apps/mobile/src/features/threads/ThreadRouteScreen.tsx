@@ -69,6 +69,7 @@ import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useOrchestratorThreadMarker } from "../../state/automation";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
@@ -418,7 +419,33 @@ function ThreadRouteContent(
 
   /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
+  const orchestratorMarker = useOrchestratorThreadMarker(
+    selectedThread?.environmentId,
+    selectedThread?.id,
+  );
+  const orchestratorHeaderAction = useMemo(
+    () =>
+      orchestratorMarker === null
+        ? undefined
+        : {
+            label: `${orchestratorMarker.accessibleLabel}. Open orchestrator`,
+            onPress: () =>
+              navigation.navigate("SettingsSheet", {
+                screen: "SettingsContent",
+                params: {
+                  screen: "SettingsAutomationOrchestrator",
+                  params: {
+                    environmentId: orchestratorMarker.environmentId,
+                    orchestratorId: orchestratorMarker.orchestratorId,
+                  },
+                },
+              }),
+          },
+    [navigation, orchestratorMarker],
+  );
   const headerSubtitle = [
+    // In words, so the state does not depend on an icon or a colour.
+    orchestratorMarker === null ? null : `Orchestrator ${orchestratorMarker.state.label}`,
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
   ]
@@ -1087,6 +1114,7 @@ function ThreadRouteContent(
         onOpenFilesInspector={handleOpenFilesInspector}
         onReturnToThread={props.onReturnToThread}
         handoffSupported={handoffSupported}
+        orchestrator={orchestratorHeaderAction}
         onOpenHandoff={() => setHandoffOpen(true)}
       />
 

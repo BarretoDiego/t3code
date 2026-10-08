@@ -1,3 +1,5 @@
+import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../state/session";
 import { isProviderNativeSubagentThread, resolveEnvironmentMachineKind } from "@t3tools/contracts";
@@ -182,6 +184,7 @@ import {
   useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
+import { ThreadAutomationMarkers } from "./automation/ThreadAutomationMarkers";
 import {
   ThreadWorktreeIndicator,
   prStatusIndicator,
@@ -912,6 +915,7 @@ const SidebarNestedToggle = memo(function SidebarNestedToggle(props: {
             className={cn("size-1.5 shrink-0 rounded-full", ATTENTION_DOT_CLASS[summary.signal])}
           />
         ) : null}
+        <CornerDownRightIcon aria-hidden className="size-3 shrink-0" />
         {summary.total}
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
@@ -1035,6 +1039,7 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
             />
           </span>
         ) : null}
+        <ThreadSubagentMarker />
         {isRenaming ? (
           <input
             autoFocus
@@ -1065,7 +1070,14 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
             className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-xs text-card-foreground outline-none focus:border-foreground"
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <>
+            <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+            <ThreadAutomationMarkers
+              environmentId={thread.environmentId}
+              threadId={thread.id}
+              variant="row"
+            />
+          </>
         )}
         {row.summary !== null ? (
           <SidebarNestedToggle
@@ -1113,7 +1125,11 @@ const SidebarNestedThreadList = memo(function SidebarNestedThreadList(
       className="mb-1 ml-4 flex flex-col gap-px border-l border-sidebar-border"
     >
       {rows.map((row) =>
-        row.kind === "more" ? (
+        row.kind === "settled" ? (
+          <li key={row.key} className="list-none">
+            <ThreadNestedSettledHeader row={row} onToggle={rowProps.onToggleNested} />
+          </li>
+        ) : row.kind === "more" ? (
           <li key={row.key} className="list-none">
             <button
               type="button"
@@ -1552,34 +1568,41 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
     />
   ) : (
-    <span
-      className={cn(
-        "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
-        variant === "card"
-          ? cn(
-              "truncate",
-              isUnread || isWoke
-                ? "text-foreground"
-                : shouldRecede
-                  ? "text-secondary-label"
-                  : status === "failed"
-                    ? "text-foreground/95"
-                    : "text-foreground/90",
-            )
-          : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
-              props.isActive || isWoke
-                ? "text-foreground"
-                : isUnread
-                  ? "text-muted-foreground"
-                  : "text-secondary-label/70",
-            ),
-        isRegeneratingTitle && "opacity-50",
-      )}
-    >
-      {thread.title}
-    </span>
+    <>
+      <span
+        className={cn(
+          "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+          shouldRecede ? "font-normal" : "font-medium",
+          variant === "card"
+            ? cn(
+                "truncate",
+                isUnread || isWoke
+                  ? "text-foreground"
+                  : shouldRecede
+                    ? "text-secondary-label"
+                    : status === "failed"
+                      ? "text-foreground/95"
+                      : "text-foreground/90",
+              )
+            : cn(
+                "truncate group-hover/sidebar-row:text-foreground",
+                props.isActive || isWoke
+                  ? "text-foreground"
+                  : isUnread
+                    ? "text-muted-foreground"
+                    : "text-secondary-label/70",
+              ),
+          isRegeneratingTitle && "opacity-50",
+        )}
+      >
+        {thread.title}
+      </span>
+      <ThreadAutomationMarkers
+        environmentId={thread.environmentId}
+        threadId={thread.id}
+        variant="row"
+      />
+    </>
   );
 
   // A real link so cmd/ctrl+click and middle-click open the host in the
@@ -1674,19 +1697,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       />
     ) : null;
   const subagentMarker =
-    props.subagentParentTitle === undefined ? null : (
-      <span
-        role="img"
-        aria-label={
-          props.subagentParentTitle === null
-            ? "Subagent"
-            : `Subagent of ${props.subagentParentTitle}`
-        }
-        className="inline-flex shrink-0 items-center text-muted-foreground/65"
-      >
-        <CornerDownRightIcon aria-hidden className="size-3" />
-      </span>
-    );
+    thread.lineage.relationshipToParent === "subagent" ? (
+      <ThreadSubagentMarker parentTitle={props.subagentParentTitle} />
+    ) : null;
 
   if (variant === "slim") {
     return (
@@ -2242,9 +2255,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               tabIndex={-1}
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
-              aria-label={
-                props.projectTitle ? `${thread.title}, ${props.projectTitle}` : thread.title
-              }
+              aria-label={`${thread.lineage.relationshipToParent === "subagent" ? "Subagent: " : ""}${thread.title}${props.projectTitle ? `, ${props.projectTitle}` : ""}`}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
@@ -2263,6 +2274,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             className="size-4 shrink-0"
             fallbackIcon={MessageSquareIcon}
           />
+          {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
@@ -2797,17 +2809,17 @@ export default function Sidebar() {
         (threadProviderFilter === null ||
           resolveThreadProviderIdentity(thread, providerEntriesByEnvironment).driverKind ===
             threadProviderFilter),
-      isParked: (thread) => isSnoozedThread(thread) || isSettledThread(thread),
     });
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
-    for (const { thread } of nesting.roots) {
-      // Snooze outranks settlement and pinning until the thread wakes.
-      if (isSnoozedThread(thread)) {
+    for (const { thread, summary } of nesting.roots) {
+      // Keep a live family visible together without changing its saved shelf.
+      const carriesLiveWork = summary?.live === true;
+      if (!carriesLiveWork && isSnoozedThread(thread)) {
         snoozed.push(thread);
-      } else if (isSettledThread(thread)) {
+      } else if (!carriesLiveWork && isSettledThread(thread)) {
         settled.push(thread);
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);

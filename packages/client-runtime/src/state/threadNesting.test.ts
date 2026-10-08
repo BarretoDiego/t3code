@@ -63,7 +63,9 @@ function thread(
         : state === "failed"
           ? { status: "failed" }
           : { status: "completed" },
-    ...(options.settled === undefined ? {} : { settled: options.settled }),
+    ...(options.settled === undefined
+      ? {}
+      : { settled: options.settled, settledOverride: options.settled ? "settled" : "active" }),
     ...(options.creationSource === undefined ? {} : { creationSource: options.creationSource }),
     ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
   };
@@ -76,7 +78,6 @@ function build(
   return buildThreadNesting({
     threads,
     isListed,
-    isParked: (candidate) => candidate.settled === true,
   });
 }
 
@@ -117,9 +118,11 @@ function display(
 
 function rowLabels(shown: ReturnType<typeof display>): string[] {
   return (shown?.rows ?? []).map((row) =>
-    row.kind === "more"
-      ? `${"  ".repeat(row.depth - 1)}+${row.hiddenCount} more`
-      : `${"  ".repeat(row.depth - 1)}${row.thread.id}`,
+    row.kind === "settled"
+      ? `${"  ".repeat(row.depth - 1)}Settled (${row.count})`
+      : row.kind === "more"
+        ? `${"  ".repeat(row.depth - 1)}+${row.hiddenCount} more`
+        : `${"  ".repeat(row.depth - 1)}${row.thread.id}`,
   );
 }
 
@@ -289,7 +292,7 @@ describe("children of a parent that is tucked away", () => {
   });
 
   it.each(["working", "approval", "input"] as const)(
-    "lifts a %s child out of a settled parent",
+    "keeps a %s child grouped under a settled parent",
     (state) => {
       const nesting = build([
         thread("parent", { settled: true }),
@@ -297,31 +300,35 @@ describe("children of a parent that is tucked away", () => {
         thread("live", { parent: "parent", state }),
       ]);
 
-      expect(outline(nesting)).toEqual(["parent", "parent > done", "live"]);
-      expect(nesting.nodeByKey.get("env:live")?.detachedFrom?.reason).toBe("parked");
-      // The parent no longer claims work that is shown elsewhere.
+      expect(outline(nesting)).toEqual(["parent", "parent > done", "parent > live"]);
+      expect(nesting.nodeByKey.get("env:live")?.detachedFrom).toBeNull();
+      // A closed history shelf must not split an active family.
       expect(nesting.nodeByKey.get("env:parent")?.summary).toMatchObject({
-        total: 1,
-        live: false,
+        total: 2,
+        live: true,
       });
     },
   );
 
-  it("lifts a quiet child together with its working grandchild", () => {
+  it("keeps a working grandchild grouped through its quiet parent", () => {
     const nesting = build([
       thread("parent", { settled: true }),
       thread("child", { parent: "parent" }),
       thread("grandchild", { parent: "child", state: "working" }),
     ]);
 
-    expect(outline(nesting)).toEqual(["parent", "child", "child > grandchild"]);
+    expect(outline(nesting)).toEqual(["parent", "parent > child", "parent > child > grandchild"]);
   });
 
-  it("returns a lifted child to its parent once it goes quiet", () => {
+  it("keeps the same hierarchy as a child goes quiet", () => {
     const parent = thread("parent", { settled: true });
     const working = thread("child", { parent: "parent", state: "working" });
 
-    expect(outline(build([parent, working]))).toEqual(["parent", "child"]);
+    expect(outline(build([parent, working]))).toEqual(["parent", "parent > child"]);
+    expect(build([parent, working]).roots[0]?.summary?.live).toBe(true);
+    expect(
+      build([parent, { ...working, runtime: { status: "completed" } }]).roots[0]?.summary?.live,
+    ).toBe(false);
     expect(outline(build([parent, { ...working, runtime: { status: "completed" } }]))).toEqual([
       "parent",
       "parent > child",
@@ -526,5 +533,110 @@ describe("reusing an unchanged display", () => {
     expect(reuseEqualThreadNestingDisplay(first, sameRows)).toBe(first);
     expect(reuseEqualThreadNestingDisplay(first, changedChild)).toBe(changedChild);
     expect(reuseEqualThreadNestingDisplay(first, null)).toBeNull();
+  });
+});
+
+describe("settled subagent groups", () => {
+  it("keeps concluded children in their family and opens their own settled shelf", () => {
+    const parent = thread("parent");
+    const done = thread("done", { parent: "parent", settled: true });
+    const busy = thread("busy", { parent: "parent", state: "working" });
+    const nesting = build([parent, done, busy]);
+    expect(outline(nesting)).toEqual(["parent", "parent > done", "parent > busy"]);
+    expect(rowLabels(display(nesting, "parent"))).toEqual(["busy", "Settled (1)"]);
+    expect(
+      rowLabels(display(nesting, "parent", { overrides: { "env:parent:settled": true } })),
+    ).toEqual(["busy", "Settled (1)", "done"]);
+    expect(done.settledOverride).toBe("settled");
+  });
+
+  it.each(["working", "approval", "input", "failed"] as const)(
+    "keeps a settled child with %s outside the quiet shelf",
+    (state) => {
+      const done = thread("child", { parent: "parent", settled: true, state });
+      const nesting = build([thread("parent"), done]);
+      expect(rowLabels(display(nesting, "parent", { overrides: { "env:parent": true } }))).toEqual([
+        "child",
+      ]);
+      expect(done.settledOverride).toBe("settled");
+    },
+  );
+
+  it("keeps a quiet settled parent with an active grandchild outside Settled", () => {
+    const nesting = build([
+      thread("parent"),
+      thread("child", { parent: "parent", settled: true }),
+      thread("grandchild", { parent: "child", state: "working" }),
+    ]);
+    expect(rowLabels(display(nesting, "parent"))).toEqual(["child", "  grandchild"]);
+  });
+
+  it("keeps the selected concluded descendant visible through collapsed groups", () => {
+    const nesting = build([
+      thread("parent"),
+      thread("child", { parent: "parent", settled: true }),
+      thread("selected", { parent: "child", settled: true }),
+      thread("other", { parent: "parent", settled: true }),
+    ]);
+    expect(
+      rowLabels(
+        display(nesting, "parent", {
+          active: "selected",
+          overrides: { "env:parent": false, "env:parent:settled": false },
+        }),
+      ),
+    ).toEqual(["Settled (2)", "child", "  Settled (1)", "  selected"]);
+    expect(nesting.roots.map((node) => node.thread.id)).toEqual(["parent"]);
+  });
+
+  it("bounds the settled list independently and reveals its remainder without duplicates", () => {
+    const children = Array.from({ length: 9 }, (_, index) =>
+      thread(`done-${index}`, { parent: "parent", settled: true }),
+    );
+    const nesting = build([thread("parent"), ...children]);
+    const overrides = { "env:parent": true, "env:parent:settled": true };
+    const bounded = display(nesting, "parent", { overrides });
+    expect(rowLabels(bounded)).toEqual([
+      "Settled (9)",
+      ...children.slice(1).map((child) => child.id),
+      "+1 more",
+    ]);
+    expect(bounded?.rows.at(-1)).toMatchObject({ kind: "more", parentKey: "env:parent:settled" });
+    const all = display(nesting, "parent", { overrides, showAll: ["parent:settled"] });
+    expect(rowLabels(all)).toEqual(["Settled (9)", ...children.map((child) => child.id)]);
+    expect(new Set(all?.rows.map((row) => row.key)).size).toBe(10);
+  });
+
+  it("moves a concluded child back into live work, then returns it to Settled", () => {
+    const parent = thread("parent");
+    const done = thread("child", { parent: "parent", settled: true });
+    const overrides = { "env:parent": true };
+    const before = display(build([parent, done]), "parent", { overrides });
+    expect(rowLabels(before)).toEqual(["Settled (1)"]);
+    const busy = { ...done, runtime: { status: "running" as const } };
+    const running = display(build([parent, busy]), "parent", { overrides });
+    expect(rowLabels(running)).toEqual(["child"]);
+    expect(reuseEqualThreadNestingDisplay(before, running)).toBe(running);
+    expect(rowLabels(display(build([parent, done]), "parent", { overrides }))).toEqual([
+      "Settled (1)",
+    ]);
+  });
+
+  it("invalidates a changed shelf count or expansion and reuses an unchanged display", () => {
+    const nesting = build([thread("parent"), thread("done", { parent: "parent", settled: true })]);
+    const overrides = { "env:parent": true };
+    const before = display(nesting, "parent", { overrides })!;
+    expect(reuseEqualThreadNestingDisplay(before, display(nesting, "parent", { overrides }))).toBe(
+      before,
+    );
+    const next = {
+      ...before,
+      rows: before.rows.map((row) => (row.kind === "settled" ? { ...row, count: 2 } : row)),
+    };
+    expect(reuseEqualThreadNestingDisplay(before, next)).toBe(next);
+    const opened = display(nesting, "parent", {
+      overrides: { ...overrides, "env:parent:settled": true },
+    });
+    expect(reuseEqualThreadNestingDisplay(before, opened)).toBe(opened);
   });
 });
