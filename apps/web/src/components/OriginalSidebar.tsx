@@ -1,3 +1,4 @@
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../state/session";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
@@ -838,6 +839,7 @@ const SidebarNestedToggle = memo(function SidebarNestedToggle(props: {
             className={cn("size-1.5 shrink-0 rounded-full", ATTENTION_DOT_CLASS[summary.signal])}
           />
         ) : null}
+        <CornerDownRightIcon aria-hidden className="size-3 shrink-0" />
         {summary.total}
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
@@ -961,6 +963,7 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
             />
           </span>
         ) : null}
+        <ThreadSubagentMarker />
         {isRenaming ? (
           <input
             autoFocus
@@ -1607,19 +1610,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       />
     ) : null;
   const subagentMarker =
-    props.subagentParentTitle === undefined ? null : (
-      <span
-        role="img"
-        aria-label={
-          props.subagentParentTitle === null
-            ? "Subagent"
-            : `Subagent of ${props.subagentParentTitle}`
-        }
-        className="inline-flex shrink-0 items-center text-muted-foreground/65"
-      >
-        <CornerDownRightIcon aria-hidden className="size-3" />
-      </span>
-    );
+    thread.lineage.relationshipToParent === "subagent" ? (
+      <ThreadSubagentMarker parentTitle={props.subagentParentTitle} />
+    ) : null;
 
   if (variant === "slim") {
     return (
@@ -2535,17 +2528,17 @@ export default function Sidebar() {
         thread.archivedAt === null &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-      isParked: (thread) => isSnoozedThread(thread) || isSettledThread(thread),
     });
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
-    for (const { thread } of nesting.roots) {
-      // Snooze outranks settlement and pinning until the thread wakes.
-      if (isSnoozedThread(thread)) {
+    for (const { thread, summary } of nesting.roots) {
+      // Keep a live family visible together without changing its saved shelf.
+      const carriesLiveWork = summary?.live === true;
+      if (!carriesLiveWork && isSnoozedThread(thread)) {
         snoozed.push(thread);
-      } else if (isSettledThread(thread)) {
+      } else if (!carriesLiveWork && isSettledThread(thread)) {
         settled.push(thread);
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);

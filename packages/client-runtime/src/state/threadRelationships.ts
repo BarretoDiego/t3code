@@ -302,7 +302,7 @@ export interface ThreadNestingSummary {
   readonly live: boolean;
 }
 
-export type ThreadNestingDetachReason = "parked" | "archived" | "unlisted" | "missing" | "cycle";
+export type ThreadNestingDetachReason = "archived" | "unlisted" | "missing" | "cycle";
 
 export interface ThreadNestingNode<T> {
   /** `environmentId:threadId`, the scoped thread key both clients already use. */
@@ -401,18 +401,16 @@ function summarizeThreadNestingCounts(counted: ThreadNestingCounts): ThreadNesti
  *   tell an archived parent from one that is not loaded.
  * - `isListed` is the list's own filter (archive, project scope, provider,
  *   search). An unlisted thread gets no row.
- * - `isParked` says a top-level row sits in a shelf the user may have closed
- *   (snoozed, settled).
  *
- * A child follows its parent's row wherever that row is. It takes a top-level
- * row of its own only when the parent cannot carry it: the parent is not
- * loaded, is filtered out, or is parked or archived while the child still has
- * live work. Quiet children of an archived parent leave with it.
+ * A child follows its parent's row wherever that row is. Lists keep the
+ * whole family visible while its summary has live work, even when the
+ * parent is settled or snoozed. A child takes its own top-level row when
+ * the parent is missing, filtered out, or archived. Quiet children of an
+ * archived parent leave with it.
  */
 export function buildThreadNesting<T extends ThreadNestingThread>(input: {
   readonly threads: ReadonlyArray<T>;
   readonly isListed: (thread: T) => boolean;
-  readonly isParked: (thread: T) => boolean;
 }): ThreadNesting<T> {
   const shellByKey = new Map<string, T>();
   for (const thread of input.threads) {
@@ -493,24 +491,7 @@ export function buildThreadNesting<T extends ThreadNestingThread>(input: {
     attach(lead);
   }
 
-  const roots: Array<ThreadNestingDraft<T>> = [];
-  const pending = starts.filter((draft) => draft.detachReason !== "archived" || draft.liveBearing);
-  for (let index = 0; index < pending.length; index += 1) {
-    const root = pending[index]!;
-    roots.push(root);
-    if (!input.isParked(root.thread)) continue;
-    // A shelf can be closed, and live work must not sit behind a closed shelf.
-    const staying: Array<ThreadNestingDraft<T>> = [];
-    for (const child of root.children) {
-      if (!child.liveBearing) {
-        staying.push(child);
-        continue;
-      }
-      child.detachReason = "parked";
-      pending.push(child);
-    }
-    root.children = staying;
-  }
+  const roots = starts.filter((draft) => draft.detachReason !== "archived" || draft.liveBearing);
   roots.sort((left, right) => left.order - right.order);
 
   const nodeByKey = new Map<string, ThreadNestingNode<T>>();

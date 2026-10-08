@@ -260,12 +260,13 @@ export function getThreadListV2OrderedSection(input: {
   const threads = buildThreadNesting({
     threads: input.threads,
     isListed: (thread) => thread.archivedAt === null,
-    isParked,
   })
-    .roots.map((root) => root.thread)
-    .filter(
-      (thread) => !isParked(thread) && (thread.pinnedAt != null) === (input.section === "pinned"),
-    );
+    .roots.filter(
+      ({ thread, summary }) =>
+        (summary?.live === true || !isParked(thread)) &&
+        (thread.pinnedAt != null) === (input.section === "pinned"),
+    )
+    .map((root) => root.thread);
   const ordered =
     input.section === "pinned"
       ? sortPinnedThreadsByOrderKey(threads)
@@ -918,11 +919,11 @@ export function buildThreadListV2Items(input: {
   const nesting = buildThreadNesting({
     threads: input.threads,
     isListed,
-    isParked: (thread) => isSnoozed(thread) || isSettled(thread),
   });
-  for (const { thread } of nesting.roots) {
-    // Snooze outranks settlement and pinning until the thread wakes.
-    if (isSnoozed(thread)) {
+  for (const { thread, summary } of nesting.roots) {
+    // Keep a live family visible together without changing its saved shelf.
+    const carriesLiveWork = summary?.live === true;
+    if (!carriesLiveWork && isSnoozed(thread)) {
       snoozed.push(thread);
       if (
         thread.snoozedUntil != null &&
@@ -933,11 +934,11 @@ export function buildThreadListV2Items(input: {
       }
       continue;
     }
-    if (isSettled(thread)) {
+    if (!carriesLiveWork && isSettled(thread)) {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
-    } else if (workingShelfEnabled && isThreadWorking(thread)) {
+    } else if (workingShelfEnabled && (isThreadWorking(thread) || carriesLiveWork)) {
       working.push(thread);
     } else {
       active.push(thread);

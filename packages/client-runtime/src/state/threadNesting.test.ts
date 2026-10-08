@@ -76,7 +76,6 @@ function build(
   return buildThreadNesting({
     threads,
     isListed,
-    isParked: (candidate) => candidate.settled === true,
   });
 }
 
@@ -289,7 +288,7 @@ describe("children of a parent that is tucked away", () => {
   });
 
   it.each(["working", "approval", "input"] as const)(
-    "lifts a %s child out of a settled parent",
+    "keeps a %s child grouped under a settled parent",
     (state) => {
       const nesting = build([
         thread("parent", { settled: true }),
@@ -297,31 +296,35 @@ describe("children of a parent that is tucked away", () => {
         thread("live", { parent: "parent", state }),
       ]);
 
-      expect(outline(nesting)).toEqual(["parent", "parent > done", "live"]);
-      expect(nesting.nodeByKey.get("env:live")?.detachedFrom?.reason).toBe("parked");
-      // The parent no longer claims work that is shown elsewhere.
+      expect(outline(nesting)).toEqual(["parent", "parent > done", "parent > live"]);
+      expect(nesting.nodeByKey.get("env:live")?.detachedFrom).toBeNull();
+      // A closed history shelf must not split an active family.
       expect(nesting.nodeByKey.get("env:parent")?.summary).toMatchObject({
-        total: 1,
-        live: false,
+        total: 2,
+        live: true,
       });
     },
   );
 
-  it("lifts a quiet child together with its working grandchild", () => {
+  it("keeps a working grandchild grouped through its quiet parent", () => {
     const nesting = build([
       thread("parent", { settled: true }),
       thread("child", { parent: "parent" }),
       thread("grandchild", { parent: "child", state: "working" }),
     ]);
 
-    expect(outline(nesting)).toEqual(["parent", "child", "child > grandchild"]);
+    expect(outline(nesting)).toEqual(["parent", "parent > child", "parent > child > grandchild"]);
   });
 
-  it("returns a lifted child to its parent once it goes quiet", () => {
+  it("keeps the same hierarchy as a child goes quiet", () => {
     const parent = thread("parent", { settled: true });
     const working = thread("child", { parent: "parent", state: "working" });
 
-    expect(outline(build([parent, working]))).toEqual(["parent", "child"]);
+    expect(outline(build([parent, working]))).toEqual(["parent", "parent > child"]);
+    expect(build([parent, working]).roots[0]?.summary?.live).toBe(true);
+    expect(
+      build([parent, { ...working, runtime: { status: "completed" } }]).roots[0]?.summary?.live,
+    ).toBe(false);
     expect(outline(build([parent, { ...working, runtime: { status: "completed" } }]))).toEqual([
       "parent",
       "parent > child",

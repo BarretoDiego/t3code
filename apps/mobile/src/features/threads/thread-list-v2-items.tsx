@@ -548,6 +548,7 @@ export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: 
           className={cn("min-w-0 flex-1 flex-row items-center gap-2 py-2 pl-3", "pr-5")}
           style={sidebarPane ? { paddingRight: 12 } : undefined}
         >
+          <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
           <Text
             className={cn(
               "min-w-0 flex-1 text-sm",
@@ -1163,6 +1164,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         >
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
+        {thread.lineage.relationshipToParent === "subagent" ? (
+          <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
+        ) : null}
         {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
         {pinnedRow ? (
           <SymbolView
@@ -1400,6 +1404,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 workspaceRoot={props.project.workspaceRoot}
               />
             </View>
+          ) : null}
+          {thread.lineage.relationshipToParent === "subagent" ? (
+            <Text className={cn("text-xs", rowAppearance.mutedForegroundClassName)}>Subagent</Text>
           ) : null}
           <View className="min-w-0 flex-1">
             <Text

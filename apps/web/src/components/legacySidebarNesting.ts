@@ -43,8 +43,6 @@ export function nestLegacyProjectThreads<T extends ThreadNestingThread>(input: {
   const nesting = buildThreadNesting({
     threads: [...input.sortedThreads, ...(input.archivedThreads ?? [])],
     isListed: (thread) => thread.archivedAt === null,
-    // The legacy list has no shelves a row could be parked in.
-    isParked: () => false,
   });
   return { nesting, topLevel: nesting.roots.map((root) => root.thread) };
 }

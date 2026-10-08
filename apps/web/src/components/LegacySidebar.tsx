@@ -1,3 +1,4 @@
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { Spinner } from "~/components/ui/spinner";
@@ -786,6 +787,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         onContextMenu={handleRowContextMenu}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           {prStatus && pr && (
             <Tooltip>
               <TooltipTrigger
