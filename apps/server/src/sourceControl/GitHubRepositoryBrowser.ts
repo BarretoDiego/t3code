@@ -2,7 +2,7 @@ import { encodeRepositoryFilePath } from "./SourceControlRepositoryBrowser.ts";
 import { SourceControlHubError, type RemoteRepositoryRef } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { GitHubCli } from "./GitHubCli.ts";
+import type { GitHubApi } from "./GitHubApi.ts";
 import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 
 const Repository = Schema.Struct({
@@ -36,36 +36,28 @@ export const pageNumber = (cursor?: string) =>
   cursor && /^[1-9]\d{0,6}$/.test(cursor) ? Number(cursor) : 1;
 
 export function makeGitHubRepositoryBrowser(
-  github: Pick<GitHubCli["Service"], "execute">,
-  cwd: string,
+  github: Pick<GitHubApi["Service"], "rest">,
 ): SourceControlRepositoryBrowser {
   const rawRequest = (path: string, body?: unknown, patch = false) =>
     github
-      .execute({
-        cwd,
-        args: [
-          "api",
-          "--hostname",
-          "github.com",
-          "--method",
-          body === undefined ? "GET" : "POST",
-          "--header",
-          `Accept: ${patch ? "application/vnd.github.diff" : "application/vnd.github+json"}`,
-          path,
-          ...(body === undefined ? [] : ["--input", "-"]),
-        ],
-        ...(body === undefined ? {} : { stdin: JSON.stringify(body) }),
-        maxOutputBytes: 4_000_000,
+      .rest({
+        host: "github.com",
+        operation: "repositoryBrowser",
+        path: path.replace(/^\//, ""),
+        method: body === undefined ? "GET" : "POST",
+        accept: patch ? "application/vnd.github.diff" : "application/vnd.github+json",
+        ...(body === undefined ? {} : { body }),
+        maxResponseBytes: 4_000_000,
       })
       .pipe(Effect.mapError(failure));
   const request = (path: string, body?: unknown, patch = false) =>
     rawRequest(path, body, patch).pipe(
       Effect.flatMap((result) =>
-        result.stdoutTruncated
+        result.truncated
           ? Effect.fail(
               new SourceControlHubError({ message: "GitHub response exceeded the size limit." }),
             )
-          : Effect.succeed(result.stdout),
+          : Effect.succeed(result.body),
       ),
     );
   const json = <S extends Schema.Top>(path: string, schema: S, body?: unknown) =>
@@ -156,7 +148,7 @@ export function makeGitHubRepositoryBrowser(
           undefined,
           true,
         );
-        return { patch: result.stdout, truncated: result.stdoutTruncated };
+        return { patch: result.body, truncated: result.truncated };
       }),
     readFile: (input) =>
       Effect.gen(function* () {

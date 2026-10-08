@@ -36,7 +36,7 @@ import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -45,7 +45,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { writeFileStringAtomically } from "../atomicWrite.ts";
@@ -768,7 +768,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
-      const actual = `sha256-${Encoding.encodeHex(digest)}`;
+      const actual = `sha256-${Hex.encode(digest)}`;
       if (actual !== catalog.integrity) {
         return yield* error({
           operation: "validate",

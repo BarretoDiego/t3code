@@ -13,10 +13,10 @@ import type * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Path from "effect/Path";
-import type * as SqlClient from "effect/unstable/sql/SqlClient";
+import type * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { automationError } from "../Caller.ts";
 import * as EventJournal from "../EventJournal.ts";
 import { testEnvironmentLayer } from "../events/journal.testkit.ts";
@@ -172,7 +172,7 @@ export const makeHookTestLayerOn = <E>(
 
 /** The same over a private in-memory database. */
 export const makeHookTestLayer = (options: HookTestOptions = {}) =>
-  makeHookTestLayerOn(Layer.fresh(SqlitePersistenceMemory), options);
+  makeHookTestLayerOn(Layer.fresh(SqlitePersistence.layerMemory), options);
 
 const inboxTarget: HookTarget = {
   type: "orchestrator_inbox",

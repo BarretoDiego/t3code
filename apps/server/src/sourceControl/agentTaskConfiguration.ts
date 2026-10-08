@@ -7,7 +7,7 @@ import {
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 
 /** One profile/skill resolver for source-control tasks; harness execution remains in its provider. */
 export const resolveAgentTaskConfiguration = Effect.fn(function* (

@@ -8,7 +8,7 @@ import type {
   ProjectSyncManifestResult,
 } from "@t3tools/contracts";
 import { PROJECT_SYNC_MAX_PATHS_PER_REQUEST, WS_METHODS } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {

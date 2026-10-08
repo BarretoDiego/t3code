@@ -9,10 +9,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as Config from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import {
-  SqlitePersistenceMemory,
-  layerConfig as SqliteLive,
-} from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { ComputeService } from "./ComputeService.ts";
 
 const environment = ServerEnvironment.of({
@@ -20,7 +17,7 @@ const environment = ServerEnvironment.of({
   getDescriptor: Effect.die("unused"),
 });
 const layer = ComputeService.layer.pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "t3-compute-service-test-" })),
   Layer.provideMerge(NodeServices.layer),
   Layer.provide(Layer.succeed(ServerEnvironment, environment)),
@@ -30,7 +27,9 @@ it.effect(
   "recovers configuration and unfinished jobs after closing and recreating the service",
   () =>
     Effect.gen(function* () {
-      const restartedLayer = ComputeService.layer.pipe(Layer.provide(SqliteLive));
+      const restartedLayer = ComputeService.layer.pipe(
+        Layer.provide(SqlitePersistence.layerConfig),
+      );
       const submitted = yield* Effect.gen(function* () {
         const compute = yield* ComputeService;
         yield* compute.saveProvider({

@@ -21,7 +21,7 @@ import {
 } from "../../cli/testkit/CliHarness.ts";
 import { threadCommand } from "../../cli/thread.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { makeSqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as SnoozeExpiry from "./SnoozeExpiry.ts";
 
 const thread = (...args: ReadonlyArray<string>) => runCli(threadCommand, args);
@@ -93,7 +93,7 @@ it.effect("an overdue snooze is woken when the server comes back", () =>
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-snooze-restart-" });
-    const database = makeSqlitePersistenceLive(path.join(directory, "state.sqlite")).pipe(
+    const database = SqlitePersistence.layerFromPath(path.join(directory, "state.sqlite")).pipe(
       Layer.provide(NodeServices.layer),
     );
 

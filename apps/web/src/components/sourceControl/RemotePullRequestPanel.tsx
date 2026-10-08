@@ -525,7 +525,7 @@ function RemoteDiff({
   const selected = selectedPath
     ? files.find((file) => resolveFileDiffPath(file) === selectedPath)
     : files[0];
-  const viewer = useRef<CodeViewHandle<PullRequestReviewThread>>(null);
+  const viewer = useRef<CodeViewHandle<PullRequestReviewThread, never>>(null);
   const selectedId = selected ? buildFileDiffRenderKey(selected) : null;
   const nextCursor = query.data?.nextCursor;
   useEffect(() => {

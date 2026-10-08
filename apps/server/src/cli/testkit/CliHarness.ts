@@ -57,10 +57,10 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestConsole from "effect/testing/TestConsole";
-import { Command } from "effect/unstable/cli";
-import type { MigrationError } from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import { Command } from "effect/cli";
+import type { MigrationError } from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 import * as AutomationDiagnosticsService from "../../automation/AutomationDiagnosticsService.ts";
 import { type AutomationCaller, automationError } from "../../automation/Caller.ts";
@@ -89,7 +89,7 @@ import {
   shellStreamItemFromThreadShell,
 } from "../../orchestration-v2/ShellStream.ts";
 import {
-  makeOrchestratorV2ReplayLayerWithRegistry,
+  layerWithRegistry,
   makeReplayServerConfig,
 } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
@@ -97,13 +97,13 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as ThreadMessageIntake from "../../orchestration-v2/ThreadMessageIntake.ts";
 import { userFacingDispatchErrorMessage } from "../../orchestration-v2/UserFacingErrors.ts";
 import { projectThreadProjectionForWire } from "../../orchestration-v2/WireProjection.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectCloneTracker from "../../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
-import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
+import { layer as layerProviderRegistryMock } from "../../provider/testUtils/providerRegistryMock.ts";
 import * as Scheduler from "../../scheduling/Scheduler.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
@@ -526,10 +526,10 @@ export interface CliHarnessOptions {
  * recording doubles, the in-process RPC client, and a captured console.
  */
 export function makeCliHarness(options: CliHarnessOptions = {}) {
-  const database = (options.database ?? SqlitePersistenceMemory).pipe(Layer.orDie);
-  const orchestrator = makeOrchestratorV2ReplayLayerWithRegistry(
+  const database = (options.database ?? SqlitePersistence.layerMemory).pipe(Layer.orDie);
+  const orchestrator = layerWithRegistry(
     { name: "cli-harness" },
-    ProviderAdapterRegistry.makeLayer([adapter]),
+    ProviderAdapterRegistry.layerFromAdapters([adapter]),
     { databaseLayer: database, runEffectWorker: false },
   ).pipe(Layer.orDie);
   const threadManagement = ThreadManagement.layer.pipe(Layer.provide(orchestrator));
@@ -559,7 +559,7 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
       generateBranchName: () => Effect.succeed({ branch: "generated-branch" }),
     }),
     ServerSettings.layerTest(),
-    makeProviderRegistryLayer(undefined),
+    layerProviderRegistryMock(undefined),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       folderForThread: () => Effect.succeed(Option.none()),

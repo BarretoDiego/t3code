@@ -4,13 +4,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as EventStore from "../../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
-import { OrchestrationV2EventSinkLayerLive } from "../../orchestration-v2/runtimeLayer.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as RuntimeLayer from "../../orchestration-v2/runtimeLayer.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as EventJournal from "../EventJournal.ts";
 import {
   makeChildThread,
@@ -29,7 +29,7 @@ const makeLayer = () =>
   EventSink.layer.pipe(
     Layer.provideMerge(Layer.mergeAll(EventStore.layer, ProjectionStore.layer)),
     Layer.provideMerge(EventJournal.layer),
-    Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+    Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
     Layer.provide(testEnvironmentLayer),
   );
 
@@ -154,9 +154,9 @@ describe("domain events in the journal", () => {
     }).pipe(
       Effect.provide(
         // The runtime's own sink layer, with the journal supplied from outside it.
-        OrchestrationV2EventSinkLayerLive.pipe(
+        RuntimeLayer.layerEventSink.pipe(
           Layer.provideMerge(EventJournal.layer),
-          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
           Layer.provide(testEnvironmentLayer),
         ),
       ),
@@ -179,7 +179,7 @@ describe("domain events in the journal", () => {
       Effect.provide(
         EventSink.layer.pipe(
           Layer.provideMerge(Layer.mergeAll(EventStore.layer, ProjectionStore.layer)),
-          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
         ),
       ),
     ),

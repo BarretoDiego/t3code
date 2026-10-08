@@ -22,8 +22,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 import { type AutomationCaller, automationError } from "./Caller.ts";
 import { filterProblem, matchesFilter } from "./events/filter.ts";
@@ -163,7 +163,7 @@ const make = Effect.gen(function* () {
       FROM automation_consumers
       WHERE consumer_id = ${consumerId}
     `.pipe(
-      Effect.catchTag("SqlError", storageFailure("read the consumer")),
+      Effect.catchTags({ SqlError: storageFailure("read the consumer") }),
       Effect.map((rows) => rows[0]),
     );
 
@@ -180,7 +180,7 @@ const make = Effect.gen(function* () {
       INSERT INTO automation_consumers (consumer_id, cursor, updated_at)
       VALUES (${consumerId}, ${start}, ${DateTime.formatIso(yield* DateTime.now)})
       ON CONFLICT(consumer_id) DO NOTHING
-    `.pipe(Effect.catchTag("SqlError", storageFailure("create the consumer")));
+    `.pipe(Effect.catchTags({ SqlError: storageFailure("create the consumer") }));
     return start;
   });
 
@@ -298,7 +298,7 @@ const make = Effect.gen(function* () {
             return { entry, created: true };
           }),
         )
-        .pipe(Effect.catchTag("SqlError", storageFailure("record the event")));
+        .pipe(Effect.catchTags({ SqlError: storageFailure("record the event") }));
     },
   );
 
@@ -308,7 +308,7 @@ const make = Effect.gen(function* () {
       FROM automation_consumers
       ORDER BY consumer_id
     `.pipe(
-      Effect.catchTag("SqlError", storageFailure("list consumers")),
+      Effect.catchTags({ SqlError: storageFailure("list consumers") }),
       Effect.map((rows) => rows.map(toConsumer)),
     );
 
@@ -331,7 +331,7 @@ const make = Effect.gen(function* () {
         updated_at = CASE WHEN excluded.cursor > cursor THEN excluded.updated_at ELSE updated_at END,
         cursor = MAX(cursor, excluded.cursor)
       RETURNING consumer_id, cursor, updated_at
-    `.pipe(Effect.catchTag("SqlError", storageFailure("acknowledge the cursor")));
+    `.pipe(Effect.catchTags({ SqlError: storageFailure("acknowledge the cursor") }));
       const row = rows[0];
       if (row === undefined) {
         return yield* Effect.die(new Error(`Consumer ${input.consumerId} was not stored.`));
@@ -346,7 +346,7 @@ const make = Effect.gen(function* () {
       WHERE consumer_id = ${consumerId}
       RETURNING consumer_id
     `.pipe(
-      Effect.catchTag("SqlError", storageFailure("delete the consumer")),
+      Effect.catchTags({ SqlError: storageFailure("delete the consumer") }),
       Effect.map((rows) => rows.length > 0),
     );
 

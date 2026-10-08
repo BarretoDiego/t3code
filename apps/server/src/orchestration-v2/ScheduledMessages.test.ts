@@ -14,7 +14,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import migration from "../persistence/Migrations/058_ScheduledMessages.ts";
 import upgradeMigration from "../persistence/Migrations/062_ScheduledMessagesOrchestrationV2.ts";

@@ -1,10 +1,15 @@
+import { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { EnvironmentId, type DiscoveredProjectScript } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { type DiscoveredProjectScript } from "@t3tools/contracts";
+import { AsyncResult } from "effect/reactivity";
 import { act, StrictMode, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+vi.mock("~/state/session", () => ({
+  readEnvironmentScope: () => true,
+  useEnvironmentScope: () => true,
+}));
 vi.mock("./ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? children : null),
   DialogDescription: "p",
@@ -80,6 +85,7 @@ function editor(nextRequest: ProjectScriptEditorRequest) {
   return (
     <StrictMode>
       <ProjectScriptEditorDialog
+        environmentId={EnvironmentId.make("test")}
         request={nextRequest}
         scripts={[]}
         workspace={{ environmentId: EnvironmentId.make("local"), cwd: "/repo" }}

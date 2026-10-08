@@ -23,7 +23,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 
 import { jsonFlag, printJson, printJsonLine } from "./common.ts";
 import { DurationFromString } from "./config.ts";

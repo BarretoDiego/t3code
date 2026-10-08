@@ -19,8 +19,8 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import { automationError } from "../Caller.ts";
@@ -321,7 +321,7 @@ const make = Effect.gen(function* () {
         .withTransaction(
           Effect.forEach(events, (event) => appendOne(event, recordedAt), { concurrency: 1 }),
         )
-        .pipe(Effect.catchTag("SqlError", storageFailure("record events")));
+        .pipe(Effect.catchTags({ SqlError: storageFailure("record events") }));
       yield* notify;
       return entries;
     },
@@ -362,7 +362,7 @@ const make = Effect.gen(function* () {
           { concurrency: 1 },
         ),
       )
-      .pipe(Effect.catchTag("SqlError", storageFailure("store peer events")));
+      .pipe(Effect.catchTags({ SqlError: storageFailure("store peer events") }));
     yield* notify;
     return stored.filter((entry) => entry !== undefined);
   });
@@ -383,13 +383,13 @@ const make = Effect.gen(function* () {
       retainedEntries: rows[0]?.retained ?? 0,
       observedAt: DateTime.formatIso(yield* DateTime.now),
     };
-  }).pipe(Effect.catchTag("SqlError", storageFailure("report its status")));
+  }).pipe(Effect.catchTags({ SqlError: storageFailure("report its status") }));
 
   const assertRetained: JournalStore["Service"]["assertRetained"] = (afterCursor) =>
     committedRead(sql<{ readonly oldest: number | null }>`
       SELECT MIN(cursor) AS oldest FROM automation_journal
     `).pipe(
-      Effect.catchTag("SqlError", storageFailure("check retention")),
+      Effect.catchTags({ SqlError: storageFailure("check retention") }),
       Effect.flatMap((rows) => {
         const oldest = rows[0]?.oldest ?? null;
         return oldest !== null && afterCursor < oldest - 1
@@ -446,7 +446,7 @@ const make = Effect.gen(function* () {
         AND ${input.filter === "all" ? sql`1 = 1` : sql.and(filterClauses(filter))}
       ORDER BY cursor
       LIMIT ${input.limit}
-    `).pipe(Effect.catchTag("SqlError", storageFailure("be read")));
+    `).pipe(Effect.catchTags({ SqlError: storageFailure("be read") }));
     const last = rows.at(-1);
     return {
       entries: rows.map(toEntry),
@@ -461,7 +461,7 @@ const make = Effect.gen(function* () {
       FROM automation_journal
       WHERE event_id = ${eventId}
     `.pipe(
-      Effect.catchTag("SqlError", storageFailure("be read")),
+      Effect.catchTags({ SqlError: storageFailure("be read") }),
       Effect.map((rows) => (rows[0] === undefined ? undefined : toEntry(rows[0]))),
     );
 
@@ -517,7 +517,7 @@ const make = Effect.gen(function* () {
             return through;
           }),
         )
-        .pipe(Effect.catchTag("SqlError", storageFailure("be pruned")));
+        .pipe(Effect.catchTags({ SqlError: storageFailure("be pruned") }));
     },
   );
 

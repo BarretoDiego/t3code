@@ -1,3 +1,5 @@
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../state/session";
 import { isProviderNativeSubagentThread, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { autoAnimate } from "@formkit/auto-animate";
@@ -4218,6 +4220,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              canOperate: readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {

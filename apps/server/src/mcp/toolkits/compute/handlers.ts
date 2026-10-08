@@ -27,7 +27,7 @@ export const handlers = {
   "compute.submit": (request) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.requireComputeCapability();
-      if (request.context?.threadId && request.context.threadId !== scope.threadId)
+      if (request.context?.threadId && request.context.threadId !== scope.thread.threadId)
         return yield* new ComputeError({
           code: "compute-forbidden",
           message: "Compute tools are scoped to the current thread.",
@@ -36,7 +36,7 @@ export const handlers = {
       return yield* compute.submit({
         request: {
           ...request,
-          context: { ...request.context, threadId: scope.threadId },
+          context: { ...request.context, threadId: scope.thread.threadId },
         },
       });
     }),
@@ -45,7 +45,7 @@ export const handlers = {
       const scope = yield* McpInvocationContext.requireComputeCapability();
       const compute = yield* ComputeService;
       const job = yield* compute.getJob(input);
-      if (job.request.context?.threadId !== scope.threadId)
+      if (job.request.context?.threadId !== scope.thread.threadId)
         return yield* new ComputeError({
           code: "job-not-found",
           message: "Job not found in this thread.",
@@ -57,7 +57,7 @@ export const handlers = {
       const scope = yield* McpInvocationContext.requireComputeCapability();
       const compute = yield* ComputeService;
       const job = yield* compute.getJob(input);
-      if (job.request.context?.threadId !== scope.threadId)
+      if (job.request.context?.threadId !== scope.thread.threadId)
         return yield* new ComputeError({
           code: "job-not-found",
           message: "Job not found in this thread.",

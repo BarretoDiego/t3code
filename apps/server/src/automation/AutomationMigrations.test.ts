@@ -1,8 +1,8 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { migrationEntries, runMigrations } from "../persistence/Migrations.ts";
 import {
   AUTOMATION_MIGRATIONS_TABLE,
@@ -10,7 +10,7 @@ import {
   runAutomationMigrations,
 } from "./AutomationMigrations.ts";
 
-it.layer(SqlitePersistenceMemory)("automation migrations", (it) => {
+it.layer(SqlitePersistence.layerMemory)("automation migrations", (it) => {
   it.effect("records automation schema in its own ledger, leaving the main ledger alone", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

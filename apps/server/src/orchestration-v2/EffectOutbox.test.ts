@@ -4,7 +4,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { EffectOutboxV2, layer } from "./EffectOutbox.ts";
 
 it.effect(
@@ -66,5 +66,5 @@ it.effect(
         (yield* outbox.pendingWork).effects.map((effect) => effect.id),
         ["deferred"],
       );
-    }).pipe(Effect.provide(layer.pipe(Layer.provide(SqlitePersistenceMemory)))),
+    }).pipe(Effect.provide(layer.pipe(Layer.provide(SqlitePersistence.layerMemory)))),
 );

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { OrchestrationV2EventSinkLayerLive } from "../orchestration-v2/runtimeLayer.ts";
+import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as AutomationLayer from "./AutomationLayer.ts";
 import * as JournalRetention from "./events/JournalRetention.ts";
@@ -43,5 +43,5 @@ export const layer = Layer.mergeAll(
   Layer.provide(AutomationLayer.layer),
   Layer.provide(Scheduler.layer),
   // The same layer value the orchestration runtime builds, so both read one live event feed.
-  Layer.provide(OrchestrationV2EventSinkLayerLive),
+  Layer.provide(RuntimeLayer.layerEventSink),
 );

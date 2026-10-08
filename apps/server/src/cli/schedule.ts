@@ -19,7 +19,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import { jsonFlag, printJson, withClient } from "./common.ts";
 import { DurationFromString } from "./config.ts";
@@ -101,6 +101,7 @@ function formatInterval(everyMs: number): string {
 /** A schedule in the words a person would use, e.g. "every 2h" or "Mon, Wed at 09:00". */
 export function describeSchedule(schedule: ScheduledTask["schedule"]): string {
   if (schedule.type === "interval") return `every ${formatInterval(schedule.everyMs)}`;
+  if (schedule.type === "webhook") return "on webhook";
   const days = schedule.weekdays ?? [];
   const when =
     days.length === 0 || days.length === 7

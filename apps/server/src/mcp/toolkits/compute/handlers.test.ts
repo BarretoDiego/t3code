@@ -15,10 +15,14 @@ import { handlers } from "./handlers.ts";
 
 const scope: McpInvocationScope = {
   environmentId: EnvironmentId.make("env"),
-  threadId: ThreadId.make("own"),
-  providerInstanceId: ProviderInstanceId.make("codex"),
-  providerSessionId: "session",
+  thread: {
+    threadId: ThreadId.make("own"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerSessionId: "session",
+  },
   issuedAt: 0,
+  requestNamespace: "test",
+  client: undefined,
   capabilities: new Set(["compute"]),
 };
 const request = { capability: "image.generate", operation: "generate", parameters: {} };
@@ -108,6 +112,6 @@ it.effect("binds valid submissions to the authenticated thread", () =>
       }),
       Effect.provideService(McpInvocationContext, scope),
     );
-    expect(accepted.request.context?.threadId).toBe(scope.threadId);
+    expect(accepted.request.context?.threadId).toBe(scope.thread!.threadId);
   }),
 );

@@ -5,8 +5,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag } from "effect/unstable/cli";
-import { RpcSchema } from "effect/unstable/rpc";
+import { Argument, Command, Flag } from "effect/cli";
+import { RpcSchema } from "effect/rpc";
 
 import { RPC_REQUIRED_SCOPES } from "../auth/RpcAuthorization.ts";
 import { environmentTargetFlags, withFlatEnvironmentRpc } from "./environmentRpc.ts";

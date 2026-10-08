@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
-import { Flag } from "effect/unstable/cli";
+import { Flag } from "effect/cli";
 
 import { randomUuidV4 } from "../orchestration-v2/RandomUuid.ts";
 import { DurationFromString } from "./config.ts";

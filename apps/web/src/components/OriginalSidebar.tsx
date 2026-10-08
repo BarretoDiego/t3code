@@ -1,3 +1,5 @@
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../state/session";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
@@ -3136,6 +3138,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              canOperate: readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {

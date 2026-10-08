@@ -8,10 +8,10 @@
  * schema is always up to date before the application starts.
  */
 
-import * as Migrator from "effect/unstable/sql/Migrator";
+import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import { runAutomationMigrations } from "../automation/AutomationMigrations.ts";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
 // Import all migrations statically
@@ -78,6 +78,10 @@ import Migration0060 from "./Migrations/060_ProjectionProjectLinkKey.ts";
 import Migration0061 from "./Migrations/055_OrchestrationV2.ts";
 import Migration0062 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
 import Migration0063 from "./Migrations/062_ScheduledMessagesOrchestrationV2.ts";
+import Migration0064 from "./Migrations/057_ScheduledTaskWebhooks.ts";
+import Migration0065 from "./Migrations/058_WebhookRelayDeliveries.ts";
+import Migration0066 from "./Migrations/059_McpAppModelContext.ts";
+import Migration0067 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -167,6 +171,10 @@ export const migrationEntries = [
   // Scheduled messages stored V1 turn-start commands; rewrite them as V2
   // `message.dispatch` commands so held messages survive the upgrade.
   [63, "ScheduledMessagesOrchestrationV2", Migration0063],
+  [64, "ScheduledTaskWebhooks", Migration0064],
+  [65, "WebhookRelayDeliveries", Migration0065],
+  [66, "McpAppModelContext", Migration0066],
+  [67, "ThreadSnapshotWindowIndexes", Migration0067],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

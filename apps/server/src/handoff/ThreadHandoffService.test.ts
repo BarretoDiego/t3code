@@ -34,7 +34,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import { runSnapshotGit } from "../workspace/ProjectSyncGitSnapshot.ts";
 import { getNativeHandoffDriver } from "./NativeHandoffDrivers.ts";
@@ -141,9 +141,9 @@ const test = <E>(
   body: Effect.Effect<
     void,
     E,
-    import("effect/Scope").Scope | import("effect/unstable/sql/SqlClient").SqlClient
+    import("effect/Scope").Scope | import("effect/sql/SqlClient").SqlClient
   >,
-) => body.pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory));
+) => body.pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory));
 
 it.effect("rejecting an unacknowledged destination reservation is idempotent", () =>
   test(
@@ -386,7 +386,7 @@ const makeTwoServices = (contextDriver?: string) =>
       await NodeFSP.writeFile(NodePath.join(sourceRoot, "file.txt"), "unstaged\n");
       await NodeFSP.writeFile(NodePath.join(sourceRoot, "notes.txt"), "untracked\n");
     });
-    const destinationDb = yield* Layer.build(Layer.fresh(SqlitePersistenceMemory));
+    const destinationDb = yield* Layer.build(Layer.fresh(SqlitePersistence.layerMemory));
     const destinationJournal = yield* makeHandoffJournal.pipe(Effect.provide(destinationDb));
     const destinationChanges = yield* PubSub.unbounded<ThreadHandoffRecord>();
     const events = sourceHistory(sourceDriver);

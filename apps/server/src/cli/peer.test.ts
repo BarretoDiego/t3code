@@ -18,7 +18,7 @@ import * as SessionStore from "../auth/SessionStore.ts";
 import { callerFromSession } from "../automation/rpcHandlers.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import {
   formatOutboxLine,
   formatPeer,
@@ -30,9 +30,9 @@ import {
 const CALLER = EnvironmentId.make("env-caller");
 
 const authLayer = EnvironmentAuth.layer.pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(ServerSecretStore.layer),
-  Layer.provide(ServerEnvironment.identityLayer),
+  Layer.provide(ServerEnvironment.layerIdentity),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-cli-test-" })),
 );
 

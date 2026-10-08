@@ -6,7 +6,7 @@ import {
   type AuthEnvironmentScope,
   type AutomationRpcGroup,
 } from "@t3tools/contracts";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 type AutomationRpcMethod = RpcGroup.Rpcs<typeof AutomationRpcGroup>["_tag"];
 const M = AUTOMATION_WS_METHODS;

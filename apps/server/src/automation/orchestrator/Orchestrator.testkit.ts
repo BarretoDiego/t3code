@@ -33,7 +33,7 @@ import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
@@ -46,17 +46,17 @@ import type {
   ProviderAdapterV2TurnInput,
 } from "../../orchestration-v2/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
+import { layerWithRegistry } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "../../orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectCloneTracker from "../../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
-import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
+import { layer as layerProviderRegistryMock } from "../../provider/testUtils/providerRegistryMock.ts";
 import * as Scheduler from "../../scheduling/Scheduler.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
@@ -475,12 +475,12 @@ export function makeEngineLayer(input: {
   readonly provider: ProviderProbe;
   readonly journal: JournalProbe;
 }) {
-  const database = SqlitePersistenceMemory;
-  const registry = ProviderAdapterRegistry.makeLayer([
+  const database = SqlitePersistence.layerMemory;
+  const registry = ProviderAdapterRegistry.layerFromAdapters([
     makeScriptedAdapter(input.provider, instanceId),
     makeScriptedAdapter(input.provider, otherInstanceId),
   ]);
-  const engine = makeOrchestratorV2ReplayLayerWithRegistry(
+  const engine = layerWithRegistry(
     {
       name: input.name,
       runtimePolicyOverride: {
@@ -516,7 +516,7 @@ export function makeEngineLayer(input: {
     }),
     Layer.mock(TextGeneration.TextGeneration)({}),
     ServerSettings.layerTest(),
-    makeProviderRegistryLayer([providerSnapshot(instanceId), providerSnapshot(otherInstanceId)]),
+    layerProviderRegistryMock([providerSnapshot(instanceId), providerSnapshot(otherInstanceId)]),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       folderForThread: () => Effect.succeed(Option.none()),

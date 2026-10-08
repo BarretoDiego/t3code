@@ -28,7 +28,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { SourceControlHubService } from "../sourceControl/SourceControlHubService.ts";
 import { RemotePullRequestService } from "../sourceControl/RemotePullRequestService.ts";

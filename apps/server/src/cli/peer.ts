@@ -26,7 +26,7 @@ import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
+import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import { peerSessionSubject } from "../automation/Caller.ts";
@@ -380,7 +380,7 @@ const withLocalAuth = <A, E>(
     const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
     return yield* run.pipe(
       Effect.provide(
-        EnvironmentAuth.runtimeLayer.pipe(
+        EnvironmentAuth.layerRuntime.pipe(
           Layer.provide(ServerConfig.layer(config)),
           Layer.provide(Layer.succeed(References.MinimumLogLevel, "Error")),
         ),

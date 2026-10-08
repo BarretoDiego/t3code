@@ -30,7 +30,7 @@ import * as Stream from "effect/Stream";
 import { randomUuidV4 } from "../orchestration-v2/RandomUuid.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import { type AutomationCaller, automationError } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";
 import * as OrchestratorInbox from "./OrchestratorInbox.ts";

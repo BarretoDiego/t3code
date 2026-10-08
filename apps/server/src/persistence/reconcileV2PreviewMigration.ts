@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 // Upstream's published V2 previews recorded `OrchestrationV2` as migration 53,
 // then 54, and upstream main renumbers those ledgers to its own 53–56. This

@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { makeGitHubRepositoryBrowser } from "./GitHubRepositoryBrowser.ts";
 import { bitbucketPagePath, makeBitbucketRepositoryBrowser } from "./BitbucketRepositoryBrowser.ts";
-import type { GitHubCli } from "./GitHubCli.ts";
+import type { GitHubApi } from "./GitHubApi.ts";
 import type { BitbucketApi } from "./BitbucketApi.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -18,15 +18,17 @@ const bitbucketRef = {
 // Browser ports deliberately require only their transport, leaving CLI discovery out of API tests.
 const gh = (response: string, truncated = false) =>
   ({
-    execute: () =>
+    rest: () =>
       Effect.succeed({
-        stdout: response,
+        body: response,
+        status: 200,
+        headers: {},
         stderr: "",
         exitCode: 0,
-        stdoutTruncated: truncated,
+        truncated,
         stderrTruncated: false,
       }),
-  }) as unknown as GitHubCli["Service"];
+  }) as unknown as GitHubApi["Service"];
 const bb = (response: string, paths: string[]) =>
   ({
     request: (input: { url: string }) => {
@@ -48,7 +50,6 @@ describe("source control repository adapters", () => {
       };
       const browser = makeGitHubRepositoryBrowser(
         gh(encodeJson(Array.from({ length: 50 }, () => repository))),
-        "/tmp",
       );
       const page = yield* browser.listRepositories({ provider: "github" });
       expect(page.nextCursor).toBe("2");
@@ -65,10 +66,9 @@ describe("source control repository adapters", () => {
     Effect.gen(function* () {
       const refs = yield* makeGitHubRepositoryBrowser(
         gh('[{"name":"main","commit":{"sha":"abc"}}]'),
-        "/tmp",
       ).listRefs({ ...githubRef, kind: "branch" });
       expect(refs.items[0]).toMatchObject({ name: "main", sha: "abc", kind: "branch" });
-      const invalid = makeGitHubRepositoryBrowser(gh("[]", true), "/tmp");
+      const invalid = makeGitHubRepositoryBrowser(gh("[]", true));
       expect(
         yield* invalid.listRepositories({ provider: "github" }).pipe(Effect.flip),
       ).toBeDefined();
@@ -78,7 +78,6 @@ describe("source control repository adapters", () => {
     Effect.gen(function* () {
       const browser = makeGitHubRepositoryBrowser(
         gh(encodeJson({ merge_base_commit: { sha: "c".repeat(40) } })),
-        "/tmp",
       );
       const error = yield* browser
         .compare({ ...githubRef, mode: "incremental", baseSha: sha, headSha: head })

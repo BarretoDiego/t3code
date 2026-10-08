@@ -22,14 +22,14 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { internalCaller } from "../automation/Caller.ts";
 import * as TaskEngine from "../automation/tasks/TaskEngine.ts";
 import { taskIdFor, taskThreadId } from "../automation/tasks/TaskModel.ts";
 import * as TaskReactor from "../automation/tasks/TaskReactor.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
-import { makeSqlitePersistenceLive } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { taskCommand } from "./task.ts";
 import {
   attachSession,
@@ -688,7 +688,7 @@ describe("task reconciliation", () => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-task-restart-" });
-      const database = makeSqlitePersistenceLive(path.join(directory, "state.sqlite")).pipe(
+      const database = SqlitePersistence.layerFromPath(path.join(directory, "state.sqlite")).pipe(
         Layer.provide(NodeServices.layer),
       );
 
