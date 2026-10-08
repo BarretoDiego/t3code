@@ -42,7 +42,7 @@ export function composeMessagePrompt(input: {
   if (input.threadSkills.length === 0 && input.miniSkillIds.length === 0 && !agentProfile) {
     return null;
   }
-  const requestSkills = input.miniSkillIds.flatMap((skillId) =>
+  const requestSkills = [...new Set(input.miniSkillIds)].flatMap((skillId) =>
     settings.miniSkills.filter((skill) => skill.id === skillId),
   );
   const prompt = composeTurnPromptWithAgentProfile({

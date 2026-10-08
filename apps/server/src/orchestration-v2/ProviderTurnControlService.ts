@@ -7,6 +7,7 @@ import {
   RunAttemptId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -14,6 +15,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as EventSink from "./EventSink.ts";
+import * as IdAllocator from "./IdAllocator.ts";
+import { composeMessagePrompt } from "./MessagePromptComposition.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
@@ -73,12 +78,19 @@ export class ProviderTurnControlServiceV2 extends Context.Service<
 export const layer: Layer.Layer<
   ProviderTurnControlServiceV2,
   never,
-  ProjectionStore.ProjectionStoreV2 | ProviderSessionManager.ProviderSessionManagerV2
+  | ProjectionStore.ProjectionStoreV2
+  | ProviderSessionManager.ProviderSessionManagerV2
+  | EventSink.EventSinkV2
+  | IdAllocator.IdAllocatorV2
+  | ServerSettings.ServerSettingsService
 > = Layer.effect(
   ProviderTurnControlServiceV2,
   Effect.gen(function* () {
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
 
     const load = (input: {
       readonly threadId: ThreadId;
@@ -314,6 +326,22 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
+          const projectedText = projectComposerContextForProvider({
+            text: message.text,
+            records: message.context?.records ?? [],
+          });
+          // A steer joins an existing provider turn, so it must compose its own
+          // request context without repeating the thread's initial instructions.
+          const composedPrompt =
+            (message.miniSkillIds ?? []).length === 0 && message.agentProfile === undefined
+              ? null
+              : composeMessagePrompt({
+                  text: projectedText,
+                  threadSkills: [],
+                  miniSkillIds: message.miniSkillIds ?? [],
+                  agentProfile: message.agentProfile,
+                  settings: yield* serverSettings.getSettings,
+                });
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -322,10 +350,7 @@ export const layer: Layer.Layer<
               providerTurnId: loaded.providerTurn.id,
               message: {
                 messageId: message.id,
-                text: projectComposerContextForProvider({
-                  text: message.text,
-                  records: message.context?.records ?? [],
-                }),
+                text: composedPrompt?.prompt ?? projectedText,
                 attachments: message.attachments,
                 createdBy: message.createdBy,
                 creationSource: message.creationSource,
@@ -354,6 +379,33 @@ export const layer: Layer.Layer<
                 }),
               ),
             );
+          if (composedPrompt !== null) {
+            const item = yield* projections.getTurnItem({
+              threadId: input.threadId,
+              itemId: idAllocator.derive.userTurnItem({ messageId: message.id }),
+            });
+            if (item?.type === "user_message") {
+              const now = yield* DateTime.now;
+              yield* eventSink.write({
+                events: [
+                  {
+                    id: yield* idAllocator.allocate.event({ threadId: input.threadId }),
+                    type: "turn-item.updated",
+                    threadId: input.threadId,
+                    runId: run.id,
+                    ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+                    providerInstanceId: run.providerInstanceId,
+                    occurredAt: now,
+                    payload: {
+                      ...item,
+                      promptContext: composedPrompt.promptContext,
+                      updatedAt: now,
+                    },
+                  },
+                ],
+              });
+            }
+          }
         }).pipe(
           Effect.mapError((cause) =>
             isProviderTurnControlError(cause)

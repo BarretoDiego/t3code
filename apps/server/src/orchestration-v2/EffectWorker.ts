@@ -259,6 +259,12 @@ export const layerExecutor: Layer.Layer<
                       text: message.text,
                       ...(message.context ? { context: message.context } : {}),
                       attachments: message.attachments,
+                      ...(message.miniSkillIds === undefined
+                        ? {}
+                        : { miniSkillIds: message.miniSkillIds }),
+                      ...(message.agentProfile === undefined
+                        ? {}
+                        : { agentProfile: message.agentProfile }),
                       // A user's follow-up starts on the thread's saved selection,
                       // which already holds the steer's choice. A delegated
                       // completion stays pinned to the run it reports to.

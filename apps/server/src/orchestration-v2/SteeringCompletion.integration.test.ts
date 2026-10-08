@@ -1,6 +1,10 @@
 import { assert, it } from "@effect/vitest";
 import {
   CommandId,
+  MiniSkillId,
+  AgentProfileId,
+  DEFAULT_AGENT_PROFILE_WRAPPER,
+  type OrchestrationV2ConversationMessage,
   MessageId,
   EventId,
   NodeId,
@@ -22,6 +26,7 @@ import * as Stream from "effect/Stream";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import {
   ProviderAdapterSteerRunError,
@@ -422,7 +427,17 @@ const composerSelection = {
   options: [...runSelection.options, { id: "fastMode", value: false }],
 };
 
-const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function* (name: string) {
+const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function* (
+  name: string,
+  options: {
+    readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
+    readonly restart?: boolean;
+    readonly firstMessageContext?: Pick<
+      OrchestrationV2ConversationMessage,
+      "miniSkillIds" | "agentProfile"
+    >;
+  } = {},
+) {
   const cwd = yield* checkpointWorkspace(name);
   const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
   const started: ProviderAdapterV2TurnInput[] = [];
@@ -432,7 +447,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     turns: {
       ...CodexProviderCapabilitiesV2.turns,
       supportsActiveSteering: true,
-      supportsSteeringByInterruptRestart: false,
+      supportsSteeringByInterruptRestart: options.restart === true,
     },
   };
   const adapter: ProviderAdapterV2Shape = {
@@ -506,7 +521,30 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
             Effect.sync(() => {
               steered.push(turn.message.text);
             }),
-          interruptTurn: () => Effect.void,
+          interruptTurn: () =>
+            Effect.gen(function* () {
+              if (!options.restart) return;
+              const turn = started.at(-1)!;
+              yield* Queue.offer(events, {
+                type: "provider_turn.updated",
+                driver,
+                providerTurn: {
+                  id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
+                  providerThreadId: turn.providerThread.id,
+                  nodeId: turn.rootNodeId,
+                  runAttemptId: turn.attemptId,
+                  nativeTurnRef: {
+                    driver,
+                    nativeId: `native:${turn.attemptId}`,
+                    strength: "strong",
+                  },
+                  ordinal: turn.providerTurnOrdinal,
+                  status: "interrupted",
+                  startedAt: now,
+                  completedAt: yield* DateTime.now,
+                },
+              });
+            }),
           respondToRuntimeRequest: () => Effect.void,
           readThreadSnapshot: () => Effect.die("unused"),
           rollbackThread: () => Effect.die("unused"),
@@ -517,7 +555,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   const layer = ProviderReplayHarness.layerWithRegistry(
     { name },
     ProviderAdapterRegistry.layerSingle(adapter),
-    { runEffectWorker: false },
+    { runEffectWorker: false, settings: options.settings },
   );
   // Creates the thread and starts its first turn on `runSelection`.
   const startFirstTurn = Effect.gen(function* () {
@@ -552,6 +590,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
       threadId,
       messageId: MessageId.make("message:first"),
       text: "first",
+      ...options.firstMessageContext,
       attachments: [],
       modelSelection: runSelection,
       dispatchMode: { type: "start_immediately" },
@@ -645,6 +684,7 @@ it.effect("starts a steer that missed the turn on the saved next-turn selection"
     Effect.gen(function* () {
       const { events, started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
         "steering-selection-follow-up",
+        { settings: requestSkillSettings },
       );
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -657,6 +697,7 @@ it.effect("starts a steer that missed the turn on the saved next-turn selection"
           threadId,
           messageId: MessageId.make("message:steer"),
           text: "late steer",
+          ...selectedRequestContext,
           attachments: [],
           modelSelection: composerSelection,
           dispatchMode: { type: "steer_active", targetRunId: first.runId },
@@ -700,10 +741,141 @@ it.effect("starts a steer that missed the turn on the saved next-turn selection"
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.deepEqual(steered, []);
         assert.equal(started.length, 2);
+        assert.include(started[1]!.message.text, "Selected request instructions");
+        assert.include(started[1]!.message.text, "Profile instructions");
+        assert.include(started[1]!.message.text, "late steer");
         assert.equal(started[1]?.message.messageId, MessageId.make("message:steer"));
         assert.deepEqual(started[1]?.modelSelection, composerSelection);
         assert.deepEqual(projection.thread.modelSelection, composerSelection);
       }).pipe(Effect.provide(layer));
     }),
   ),
+);
+
+const requestSkill = {
+  id: MiniSkillId.make("request-skill"),
+  name: "Request skill",
+  description: "",
+  content: "Selected request instructions",
+  enabledByDefaultForNewThreads: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+const requestSkillSettings = { miniSkills: [requestSkill] };
+const selectedRequestContext = {
+  miniSkillIds: [requestSkill.id, requestSkill.id, MiniSkillId.make("deleted-skill")],
+  agentProfile: {
+    profileId: AgentProfileId.make("profile"),
+    profileName: "Profile",
+    instructions: "Profile instructions",
+    promptTemplate: DEFAULT_AGENT_PROFILE_WRAPPER,
+  },
+};
+
+it.effect.each(["steer", "promote queued", "restart"] as const)(
+  "delivers selected mini skills and profile through $0 and leaves the transcript verbatim",
+  (delivery) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
+          `mini-skills-${delivery.replaceAll(" ", "-")}`,
+          {
+            settings: requestSkillSettings,
+            firstMessageContext: selectedRequestContext,
+            restart: delivery === "restart",
+          },
+        );
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const threadId = yield* startFirstTurn;
+          const first = started[0]!;
+          assert.include(first.message.text, requestSkill.content);
+          assert.include(first.message.text, "Profile instructions");
+          const messageId = MessageId.make("message:selected");
+          const command = {
+            type: "message.dispatch" as const,
+            commandId: CommandId.make("selected"),
+            threadId,
+            messageId,
+            text: "Review this change",
+            attachments: [],
+            ...selectedRequestContext,
+            createdBy: "user" as const,
+            creationSource: "web" as const,
+          };
+          yield* orchestrator.dispatch({
+            ...command,
+            dispatchMode:
+              delivery === "steer"
+                ? { type: "steer_active", targetRunId: first.runId }
+                : delivery === "restart"
+                  ? { type: "restart_active", targetRunId: first.runId }
+                  : { type: "queue_after_active" },
+          });
+          if (delivery === "promote queued") {
+            const queued = yield* orchestrator.getThreadProjection(threadId);
+            const queuedRun = queued.runs.find((run) => run.userMessageId === messageId)!;
+            assert.equal(queuedRun.status, "queued");
+            yield* orchestrator.dispatch({
+              type: "queued-message.promote-to-steer",
+              commandId: CommandId.make("promote"),
+              threadId,
+              queuedRunId: queuedRun.id,
+              targetRunId: first.runId,
+            });
+          }
+          const restarted =
+            delivery === "restart"
+              ? yield* orchestrator.streamDomainEvents.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.type === "provider-turn.updated" &&
+                      event.payload.status === "running" &&
+                      event.payload.runAttemptId !== first.attemptId,
+                  ),
+                  Stream.take(1),
+                  Stream.runDrain,
+                  Effect.forkScoped,
+                )
+              : null;
+          yield* worker.drain();
+          if (restarted !== null) yield* Fiber.join(restarted);
+          assert.lengthOf(started, delivery === "restart" ? 2 : 1);
+          assert.lengthOf(steered, delivery === "restart" ? 0 : 1);
+          const deliveredPrompt = delivery === "restart" ? started[1]!.message.text : steered[0]!;
+          assert.include(deliveredPrompt, requestSkill.content);
+          assert.equal(deliveredPrompt.split(requestSkill.content).length - 1, 1);
+          assert.include(deliveredPrompt, "Profile instructions");
+          assert.include(deliveredPrompt, command.text);
+          const projection = yield* orchestrator.getThreadProjection(threadId);
+          const message = projection.messages.find((m) => m.id === messageId)!;
+          assert.equal(message.text, command.text);
+          assert.deepEqual(message.miniSkillIds, selectedRequestContext.miniSkillIds);
+          assert.deepEqual(message.agentProfile, selectedRequestContext.agentProfile);
+          const item = projection.turnItems.find(
+            (item) => item.type === "user_message" && item.messageId === messageId,
+          );
+          assert.equal(item?.type, "user_message");
+          if (item?.type === "user_message") {
+            assert.equal(item.text, command.text);
+            assert.deepEqual(item.promptContext?.requestSkills, [requestSkill.name]);
+            assert.equal(item.promptContext?.profileName, "Profile");
+            assert.equal(item.promptContext?.prompt, deliveredPrompt);
+          }
+          // Request skills belong only to the selected message.
+          yield* orchestrator.dispatch({
+            ...command,
+            commandId: CommandId.make("plain"),
+            messageId: MessageId.make("message:plain"),
+            text: "Continue",
+            miniSkillIds: [],
+            agentProfile: undefined,
+            dispatchMode: { type: "steer_active", targetRunId: first.runId },
+          });
+          yield* worker.drain();
+          assert.equal(steered.at(-1), "Continue");
+        }).pipe(Effect.provide(layer));
+      }),
+    ),
 );

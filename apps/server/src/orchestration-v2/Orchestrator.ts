@@ -3803,6 +3803,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
+    readonly promptInputs: Pick<
+      OrchestrationV2ConversationMessage,
+      "miniSkillIds" | "agentProfile"
+    >;
     readonly forceRestart: boolean;
   }) =>
     Effect.gen(function* () {
@@ -3964,6 +3968,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             text: input.text,
             attachments: input.attachments,
             ...(input.context ? { context: input.context } : {}),
+            ...input.promptInputs,
             streaming: false,
             createdAt: now,
             updatedAt: now,
@@ -4868,6 +4873,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : (projection.runs.find((run) => run.id === dispatchMode.targetRunId)
                   ?.modelSelection ?? modelSelection),
           delegatedCompletion,
+          promptInputs: messagePromptInputs(command),
           targetRunId: dispatchMode.targetRunId,
           messageId: command.messageId,
           text: dispatchText,
@@ -7540,6 +7546,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         modelSelection: projection.thread.modelSelection,
         targetRunId: command.targetRunId,
         messageId: queuedMessage.id,
+        promptInputs: messagePromptInputs(queuedMessage),
         text: queuedMessage.text,
         attachments: queuedMessage.attachments,
         ...(queuedMessage.context ? { context: queuedMessage.context } : {}),
