@@ -8,9 +8,9 @@ export type {
 } from "./ComposerPromptEditorTiptap";
 
 /**
- * The composer editor uses Tiptap in both modes. `richTextEnabled` toggles
- * Markdown styling, never the editor engine, so plain prompts serialize
- * byte-identically.
+ * The composer editor. Tiptap in both modes: the `richTextEnabled` setting
+ * toggles Markdown styling, never the engine. Plain mode keeps Markdown
+ * markers literal; `literalText` also preserves context-token sources as text.
  */
 export function ComposerPromptEditor(props: ComposerPromptEditorProps) {
   return <ComposerPromptEditorTiptap {...props} />;
