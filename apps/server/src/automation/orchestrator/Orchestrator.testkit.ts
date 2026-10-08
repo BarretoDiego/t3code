@@ -43,18 +43,18 @@ import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import { CodexProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { withAgentShellEnvironment } from "../../orchestration-v2/AgentShellEnvironment.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
-import * as IdAllocator from "../../orchestration-v2/IdAllocator.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import type {
   ProviderAdapterV2Event,
   ProviderAdapterV2Shape,
   ProviderAdapterV2TurnInput,
-} from "../../orchestration-v2/ProviderAdapter.ts";
+} from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import {
   layerWithRegistry,
   makeReplayServerConfig,
 } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "../../orchestration-v2/testkit/ReplayFixtureWorkspace.ts";
+import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";

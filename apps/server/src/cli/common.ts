@@ -8,7 +8,7 @@ import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 import { Flag } from "effect/cli";
 
-import { randomUuidV4 } from "../orchestration-v2/RandomUuid.ts";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { DurationFromString } from "./config.ts";
 import {
   type EnvironmentRpcClient,

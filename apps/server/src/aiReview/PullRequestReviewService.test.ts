@@ -19,7 +19,7 @@ import {
 import * as Config from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { SourceControlHubService } from "../sourceControl/SourceControlHubService.ts";
 import { RemotePullRequestService } from "../sourceControl/RemotePullRequestService.ts";
