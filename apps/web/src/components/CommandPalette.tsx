@@ -1,4 +1,5 @@
-"use client";
+import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
+("use client");
 
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
@@ -1464,7 +1465,12 @@ function OpenCommandPaletteDialog(props: {
         projectTitleById,
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-        renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
+        renderLeadingContent: (thread) => (
+          <>
+            <ThreadRowLeadingStatus thread={thread} />
+            {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
+          </>
+        ),
         renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
         renderDescription: (thread, { projectTitle }) => {
           const modelInstanceId =

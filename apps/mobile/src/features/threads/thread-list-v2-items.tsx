@@ -1120,6 +1120,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   // Null for every ordinary thread; reads a derived atom, not a subscription.
   const orchestratorMarker = useOrchestratorThreadMarker(thread.environmentId, thread.id);
+  const accessibilityTitle =
+    thread.lineage.relationshipToParent === "subagent" ? `Subagent: ${thread.title}` : thread.title;
   const nestedToggle =
     props.nested != null && props.onToggleNested !== undefined ? (
       <ThreadListV2NestedToggle
@@ -1343,7 +1345,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         className={rowAppearance.className}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          props.hasQueuedMessages
+            ? `${accessibilityTitle}, messages queued to send`
+            : accessibilityTitle
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
@@ -1375,7 +1379,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
+          props.hasQueuedMessages
+            ? `${accessibilityTitle}, messages queued to send`
+            : accessibilityTitle
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}

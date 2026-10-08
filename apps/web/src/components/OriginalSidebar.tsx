@@ -2085,9 +2085,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               tabIndex={-1}
               aria-selected={props.isHighlighted}
               aria-current={props.isRouteActive ? "page" : undefined}
-              aria-label={
-                props.projectTitle ? `${thread.title}, ${props.projectTitle}` : thread.title
-              }
+              aria-label={`${thread.lineage.relationshipToParent === "subagent" ? "Subagent: " : ""}${thread.title}${props.projectTitle ? `, ${props.projectTitle}` : ""}`}
               onMouseMove={props.onHighlight}
               onClick={props.onSelect}
               className={cn(
@@ -2107,6 +2105,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             projectIcon={props.projectIcon}
             className="size-4 shrink-0"
           />
+          {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
