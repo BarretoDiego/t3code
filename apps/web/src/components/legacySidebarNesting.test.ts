@@ -53,7 +53,7 @@ function rows(input: {
     topLevel: input.limit === undefined ? topLevel : topLevel.slice(0, input.limit),
     expandedOverrides: input.expanded ?? {},
     activePathKeys: new Set(input.active ?? []),
-  }).map((row) => `${"  ".repeat(row.depth)}${row.thread.id}`);
+  }).map((row) => `${"  ".repeat(row.depth)}${row.kind === "thread" ? row.thread.id : "Settled"}`);
 }
 
 describe("legacy sidebar nesting", () => {
@@ -115,7 +115,10 @@ describe("legacy sidebar nesting", () => {
       activePathKeys: new Set(),
     });
     expect(parent).toMatchObject({ depth: 0, expanded: true });
-    expect(parent?.summary).toMatchObject({ total: 2, signal: "approval" });
+    expect(parent?.kind === "thread" ? parent.summary : null).toMatchObject({
+      total: 2,
+      signal: "approval",
+    });
     expect(child).toMatchObject({ depth: 1, summary: null });
   });
 
@@ -172,4 +175,21 @@ describe("legacy sidebar nesting", () => {
   it("returns no rows for an empty project", () => {
     expect(rows({ sorted: [] })).toEqual([]);
   });
+});
+
+it("keeps settled descendants grouped without adding shelf headers to thread selections", () => {
+  const parent = thread("parent");
+  const done = { ...thread("done", { parent: "parent" }), settledOverride: "settled" as const };
+  const { nesting, topLevel } = nestLegacyProjectThreads({ sortedThreads: [parent, done] });
+  const rows = legacyProjectThreadRows({
+    nesting,
+    topLevel,
+    expandedOverrides: { "laptop:parent": true, "laptop:parent:settled": true },
+    activePathKeys: new Set(),
+  });
+  expect(rows.map((row) => row.kind)).toEqual(["thread", "settled", "thread"]);
+  expect(rows.filter((row) => row.kind === "thread").map((row) => row.thread.id)).toEqual([
+    "parent",
+    "done",
+  ]);
 });

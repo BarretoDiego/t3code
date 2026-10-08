@@ -1,3 +1,4 @@
+import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
@@ -1151,6 +1152,12 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
       ) : null}
       {shouldShowThreadPanel &&
         renderedRows.map((row) => {
+          if (row.kind === "settled")
+            return (
+              <SidebarMenuSubItem key={row.key}>
+                <ThreadNestedSettledHeader row={row} onToggle={onToggleNested} />
+              </SidebarMenuSubItem>
+            );
           const { thread, key: threadKey } = row;
           return (
             <SidebarThreadRow
@@ -1516,7 +1523,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           expandedOverrides: nestedExpandedById,
           activePathKeys,
         });
-    const renderedThreadKeys = new Set(renderedRows.map((row) => row.key));
+    const renderedThreadKeys = new Set(
+      renderedRows.filter((row) => row.kind === "thread").map((row) => row.key),
+    );
     const hiddenThreads = visibleProjectThreads.filter(
       (thread) =>
         !renderedThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
@@ -1527,7 +1536,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
       // Drawn order, which is what shift-range selection walks.
-      orderedProjectThreadKeys: renderedRows.map((row) => row.key),
+      orderedProjectThreadKeys: renderedRows
+        .filter((row) => row.kind === "thread")
+        .map((row) => row.key),
       renderedRows,
       showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,

@@ -640,6 +640,45 @@ export const ThreadListV2NestedMoreRow = memo(function ThreadListV2NestedMoreRow
   );
 });
 
+export const ThreadListV2NestedSettledRow = memo(function ThreadListV2NestedSettledRow(props: {
+  readonly groupKey: string;
+  readonly depth: number;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly pane?: "screen" | "sidebar";
+  readonly showTrailingDivider?: boolean;
+  readonly onToggle: (key: string, expanded: boolean) => void;
+}) {
+  const sidebarPane = props.pane === "sidebar";
+  const indent =
+    (sidebarPane ? 16 : 24) +
+    (Math.min(props.depth, NESTED_ROW_MAX_INDENT_DEPTH) - 1) * NESTED_ROW_INDENT_STEP;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Settled subagents (${props.count})`}
+      accessibilityState={{ expanded: props.expanded }}
+      onPress={() => props.onToggle(props.groupKey, !props.expanded)}
+      style={({ pressed }) => ({ paddingLeft: indent, opacity: pressed ? 0.6 : 1 })}
+    >
+      <View className="min-h-[36px] flex-row items-center gap-2 py-2 pl-3">
+        <SymbolView name={props.expanded ? "chevron.down" : "chevron.right"} size={12} />
+        <Text
+          className={cn(
+            "text-xs font-t3-medium",
+            sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-muted",
+          )}
+        >
+          Settled ({props.count})
+        </Text>
+      </View>
+      {!sidebarPane && THREAD_LIST_V2_ROW_DIVIDERS && props.showTrailingDivider === true ? (
+        <View className="ml-5 h-px bg-border-subtle" />
+      ) : null}
+    </Pressable>
+  );
+});
+
 export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly thread: EnvironmentThreadShell;
   readonly variant: "card" | "slim";

@@ -1755,6 +1755,29 @@ describe("subagent threads nested under their parent", () => {
             : row.type,
     );
 
+  it("draws a nested Settled shelf and preserves its expansion and recycled-list updates", () => {
+    const done = subagentOf(root, "done", { settledOverride: "settled", settledAt: NOW });
+    const busy = subagentOf(root, "busy", working);
+    const threads = [root, done, busy];
+    const folded = listRows(threads);
+    expect(describeRows(folded)).toEqual(["root", "> busy", "v2-nested-settled"]);
+    const header = folded.at(-1)!;
+    expect(header).toMatchObject({
+      type: "v2-nested-settled",
+      count: 1,
+      expanded: false,
+      groupKey: `${environmentId}:root:settled`,
+    });
+    const expanded = listRows(threads, {
+      nestedExpandedByKey: { [`${environmentId}:root:settled`]: true },
+    });
+    expect(describeRows(expanded)).toEqual(["root", "> busy", "v2-nested-settled", "> done"]);
+    const openHeader = expanded.find((row) => row.type === "v2-nested-settled")!;
+    expect(threadListV2ListItemsAreEqual(header, openHeader)).toBe(false);
+    expect(threadListV2ListItemsAreEqual(header, { ...header })).toBe(true);
+    expect(threadJumpTarget(expanded, "thread.jump.2")).toBeNull();
+  });
+
   it("draws a working subagent under its parent and keeps forks at the top level", () => {
     const child = subagentOf(root, "child", working);
     const grandchild = subagentOf(child, "grandchild", working);

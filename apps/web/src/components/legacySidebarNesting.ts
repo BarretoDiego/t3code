@@ -4,6 +4,7 @@ import {
   type ThreadNesting,
   type ThreadNestingSummary,
   type ThreadNestingThread,
+  type ThreadNestingRow,
 } from "@t3tools/client-runtime/state/thread-relationships";
 
 /**
@@ -19,15 +20,18 @@ export interface LegacyProjectNesting<T> {
   readonly topLevel: ReadonlyArray<T>;
 }
 
-export interface LegacyThreadRow<T> {
-  readonly key: string;
-  readonly thread: T;
-  /** 0 for a top-level row. */
-  readonly depth: number;
-  /** Set on a row that has subagents under it. */
-  readonly summary: ThreadNestingSummary | null;
-  readonly expanded: boolean;
-}
+export type LegacyThreadRow<T> =
+  | Extract<ThreadNestingRow<T>, { kind: "settled" }>
+  | {
+      readonly kind: "thread";
+      readonly key: string;
+      readonly thread: T;
+      /** 0 for a top-level row. */
+      readonly depth: number;
+      /** Set on a row that has subagents under it. */
+      readonly summary: ThreadNestingSummary | null;
+      readonly expanded: boolean;
+    };
 
 const NO_KEYS: ReadonlySet<string> = new Set<string>();
 
@@ -74,6 +78,7 @@ export function legacyProjectThreadRows<T extends ThreadNestingThread>(input: {
             showAllKeys: NO_KEYS,
           });
     rows.push({
+      kind: "thread",
       key,
       thread,
       depth: 0,
@@ -81,8 +86,13 @@ export function legacyProjectThreadRows<T extends ThreadNestingThread>(input: {
       expanded: display?.expanded ?? false,
     });
     for (const row of display?.rows ?? []) {
+      if (row.kind === "settled") {
+        rows.push(row);
+        continue;
+      }
       if (row.kind !== "thread") continue;
       rows.push({
+        kind: "thread",
         key: row.key,
         thread: row.thread,
         depth: row.depth,
@@ -97,6 +107,7 @@ export function legacyProjectThreadRows<T extends ThreadNestingThread>(input: {
 /** A nested thread shown on its own, such as the open thread of a collapsed project. */
 export function legacyStandaloneRow<T extends ThreadNestingThread>(thread: T): LegacyThreadRow<T> {
   return {
+    kind: "thread",
     key: `${thread.environmentId}:${thread.id}`,
     thread,
     depth: 0,

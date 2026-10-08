@@ -405,6 +405,16 @@ export interface ThreadListV2NestedThreadListItem {
 }
 
 /** Stands in for the quiet subagents a long list leaves out. */
+export interface ThreadListV2NestedSettledListItem {
+  readonly type: "v2-nested-settled";
+  readonly key: string;
+  readonly groupKey: string;
+  readonly depth: number;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly showTrailingDivider: boolean;
+}
+
 export interface ThreadListV2NestedMoreListItem {
   readonly type: "v2-nested-more";
   readonly key: string;
@@ -459,6 +469,7 @@ export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2NestedThreadListItem
   | ThreadListV2NestedMoreListItem
+  | ThreadListV2NestedSettledListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2SnoozedShelfListItem
@@ -473,6 +484,7 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-thread" ||
     value.type === "v2-nested-thread" ||
     value.type === "v2-nested-more" ||
+    value.type === "v2-nested-settled" ||
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
     value.type === "v2-snoozed-shelf" ||
@@ -518,6 +530,15 @@ export function threadListV2ListItemsAreEqual(
         previous.timeLabel === item.timeLabel &&
         previous.showTrailingDivider === item.showTrailingDivider &&
         nestedSummariesAreEqual(previous.nested, item.nested)
+      );
+    case "v2-nested-settled":
+      return (
+        previous.type === "v2-nested-settled" &&
+        previous.key === item.key &&
+        previous.depth === item.depth &&
+        previous.count === item.count &&
+        previous.expanded === item.expanded &&
+        previous.showTrailingDivider === item.showTrailingDivider
       );
     case "v2-nested-more":
       return (
@@ -727,39 +748,49 @@ export function buildThreadListV2ListItems(input: {
           return [
             entry,
             ...display.rows.map((row): ThreadListV2ListItem =>
-              row.kind === "more"
+              row.kind === "settled"
                 ? {
-                    type: "v2-nested-more",
-                    key: `v2-nested-more:${row.parentKey}`,
-                    parentKey: row.parentKey,
+                    type: "v2-nested-settled",
+                    key: `v2-nested-settled:${row.key}`,
+                    groupKey: row.key,
                     depth: row.depth,
-                    hiddenCount: row.hiddenCount,
+                    count: row.count,
+                    expanded: row.expanded,
                     showTrailingDivider: false,
                   }
-                : {
-                    type: "v2-nested-thread",
-                    key: `v2-nested-thread:${row.key}`,
-                    thread: row.thread,
-                    threadKey: row.key,
-                    depth: row.depth,
-                    signal: resolveThreadNestingSignal(row.thread),
-                    // A row showing a status draws no time, so its minute
-                    // tick must not invalidate the cell.
-                    timeLabel:
-                      resolveThreadNestingSignal(row.thread) !== null ||
-                      threadHasUnseenCompletion(row.thread)
-                        ? ""
-                        : relativeTime(
-                            row.thread.latestUserMessageAt ??
-                              row.thread.updatedAt ??
-                              row.thread.createdAt,
-                          ),
-                    nested:
-                      row.summary === null
-                        ? null
-                        : summarizeNestedThreads(row.summary, row.expanded),
-                    showTrailingDivider: false,
-                  },
+                : row.kind === "more"
+                  ? {
+                      type: "v2-nested-more",
+                      key: `v2-nested-more:${row.key}`,
+                      parentKey: row.parentKey,
+                      depth: row.depth,
+                      hiddenCount: row.hiddenCount,
+                      showTrailingDivider: false,
+                    }
+                  : {
+                      type: "v2-nested-thread",
+                      key: `v2-nested-thread:${row.key}`,
+                      thread: row.thread,
+                      threadKey: row.key,
+                      depth: row.depth,
+                      signal: resolveThreadNestingSignal(row.thread),
+                      // A row showing a status draws no time, so its minute
+                      // tick must not invalidate the cell.
+                      timeLabel:
+                        resolveThreadNestingSignal(row.thread) !== null ||
+                        threadHasUnseenCompletion(row.thread)
+                          ? ""
+                          : relativeTime(
+                              row.thread.latestUserMessageAt ??
+                                row.thread.updatedAt ??
+                                row.thread.createdAt,
+                            ),
+                      nested:
+                        row.summary === null
+                          ? null
+                          : summarizeNestedThreads(row.summary, row.expanded),
+                      showTrailingDivider: false,
+                    },
             ),
           ];
         });
@@ -772,7 +803,8 @@ export function buildThreadListV2ListItems(input: {
       entry.type !== "v2-thread" &&
       entry.type !== "v2-pending" &&
       entry.type !== "v2-nested-thread" &&
-      entry.type !== "v2-nested-more"
+      entry.type !== "v2-nested-more" &&
+      entry.type !== "v2-nested-settled"
     ) {
       return entry;
     }

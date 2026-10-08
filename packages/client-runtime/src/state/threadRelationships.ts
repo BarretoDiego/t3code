@@ -285,6 +285,7 @@ export interface ThreadNestingThread {
   readonly id: string;
   readonly createdAt: string;
   readonly archivedAt: string | null;
+  readonly settledOverride?: "settled" | "active" | null;
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
   readonly hasPendingApprovals: boolean;
@@ -561,6 +562,14 @@ export function threadNestingAncestorKeys<T>(
 
 export type ThreadNestingRow<T> =
   | {
+      readonly kind: "settled";
+      readonly key: string;
+      readonly parentKey: string;
+      readonly depth: number;
+      readonly count: number;
+      readonly expanded: boolean;
+    }
+  | {
       readonly kind: "thread";
       readonly key: string;
       readonly thread: T;
@@ -593,7 +602,9 @@ export interface ThreadNestingDisplay<T> {
  * what the user is looking at never disappears. An expanded parent with more
  * than `childLimit` children keeps every child that has something to report
  * and fills the rest with the newest quiet ones; the remainder waits behind a
- * `more` row until its parent is in `showAllKeys`.
+ * `more` row until its parent is in `showAllKeys`. Settled children keep their
+ * lineage inside a separate collapsible group; a new signal on them or their
+ * descendants brings them back above that group.
  */
 export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
   readonly node: ThreadNestingNode<T>;
@@ -613,37 +624,68 @@ export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
     (node.summary?.signal ?? null) !== null;
 
   const visit = (parent: ThreadNestingNode<T>, expanded: boolean) => {
-    let shown = parent.children;
-    if (!expanded) {
-      shown = shown.filter((child) => input.activePathKeys.has(child.key));
-    } else if (shown.length > input.childLimit && !input.showAllKeys.has(parent.key)) {
-      const kept = new Set(shown.filter(reportsSomething));
-      for (let index = shown.length - 1; index >= 0 && kept.size < input.childLimit; index -= 1) {
-        kept.add(shown[index]!);
+    const settled = parent.children.filter(
+      (child) =>
+        child.thread.settledOverride === "settled" &&
+        resolveThreadNestingSignal(child.thread) === null &&
+        child.summary?.signal == null,
+    );
+    const settledKeys = new Set(settled.map((child) => child.key));
+    const unsettled = parent.children.filter((child) => !settledKeys.has(child.key));
+    const draw = (
+      children: ReadonlyArray<ThreadNestingNode<T>>,
+      expanded: boolean,
+      groupKey: string,
+    ) => {
+      let shown = children;
+      if (!expanded) {
+        shown = shown.filter((child) => input.activePathKeys.has(child.key));
+      } else if (shown.length > input.childLimit && !input.showAllKeys.has(groupKey)) {
+        const kept = new Set(shown.filter(reportsSomething));
+        for (let index = shown.length - 1; index >= 0 && kept.size < input.childLimit; index -= 1) {
+          kept.add(shown[index]!);
+        }
+        shown = shown.filter((child) => kept.has(child));
       }
-      shown = shown.filter((child) => kept.has(child));
-    }
-    for (const child of shown) {
-      const childExpanded = isExpanded(child);
+      for (const child of shown) {
+        const childExpanded = isExpanded(child);
+        rows.push({
+          kind: "thread",
+          key: child.key,
+          thread: child.thread,
+          parentKey: parent.key,
+          depth: child.depth - input.node.depth,
+          summary: child.summary,
+          expanded: childExpanded,
+        });
+        visit(child, childExpanded);
+      }
+      if (expanded && shown.length < children.length) {
+        rows.push({
+          kind: "more",
+          key: `${groupKey}:more`,
+          parentKey: groupKey,
+          depth: parent.depth - input.node.depth + 1,
+          hiddenCount: children.length - shown.length,
+        });
+      }
+    };
+    draw(unsettled, expanded, parent.key);
+    if (
+      settled.length > 0 &&
+      (expanded || settled.some((child) => input.activePathKeys.has(child.key)))
+    ) {
+      const key = `${parent.key}:settled`;
+      const settledExpanded = input.expandedOverrides[key] ?? false;
       rows.push({
-        kind: "thread",
-        key: child.key,
-        thread: child.thread,
-        parentKey: parent.key,
-        depth: child.depth - input.node.depth,
-        summary: child.summary,
-        expanded: childExpanded,
-      });
-      visit(child, childExpanded);
-    }
-    if (expanded && shown.length < parent.children.length) {
-      rows.push({
-        kind: "more",
-        key: `${parent.key}:more`,
+        kind: "settled",
+        key,
         parentKey: parent.key,
         depth: parent.depth - input.node.depth + 1,
-        hiddenCount: parent.children.length - shown.length,
+        count: settled.length,
+        expanded: settledExpanded,
       });
+      draw(settled, settledExpanded, key);
     }
   };
   const expanded = isExpanded(input.node);
@@ -681,6 +723,11 @@ export function reuseEqualThreadNestingDisplay<T>(
   for (const [index, row] of next.rows.entries()) {
     const before = previous.rows[index]!;
     if (before.key !== row.key || before.depth !== row.depth) return next;
+    if (before.kind === "settled" || row.kind === "settled") {
+      if (before.kind !== "settled" || row.kind !== "settled") return next;
+      if (before.count !== row.count || before.expanded !== row.expanded) return next;
+      continue;
+    }
     if (before.kind === "more" || row.kind === "more") {
       if (before.kind !== "more" || row.kind !== "more") return next;
       if (before.hiddenCount !== row.hiddenCount) return next;

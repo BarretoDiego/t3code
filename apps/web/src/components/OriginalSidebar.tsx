@@ -1,3 +1,4 @@
+import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../state/session";
@@ -1042,7 +1043,11 @@ const SidebarNestedThreadList = memo(function SidebarNestedThreadList(
       className="mb-1 ml-4 flex flex-col gap-px border-l border-sidebar-border"
     >
       {rows.map((row) =>
-        row.kind === "more" ? (
+        row.kind === "settled" ? (
+          <li key={row.key} className="list-none">
+            <ThreadNestedSettledHeader row={row} onToggle={rowProps.onToggleNested} />
+          </li>
+        ) : row.kind === "more" ? (
           <li key={row.key} className="list-none">
             <button
               type="button"

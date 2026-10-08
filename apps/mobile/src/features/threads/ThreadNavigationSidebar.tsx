@@ -57,6 +57,7 @@ import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
 import {
   ThreadListV2NestedMoreRow,
+  ThreadListV2NestedSettledRow,
   ThreadListV2NestedRow,
   ThreadListV2PendingRow,
   ThreadListV2Row,
@@ -782,6 +783,17 @@ function ThreadNavigationSidebarPane(
               selected={props.selectedThreadKey === item.threadKey}
               onSelectThread={handleSelectThread}
               onToggleNested={setNestedExpanded}
+            />
+          );
+        case "v2-nested-settled":
+          return (
+            <ThreadListV2NestedSettledRow
+              groupKey={item.groupKey}
+              depth={item.depth}
+              count={item.count}
+              expanded={item.expanded}
+              pane="sidebar"
+              onToggle={setNestedExpanded}
             />
           );
         case "v2-nested-more":
