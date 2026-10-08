@@ -58,7 +58,7 @@ export function ThreadHandoffIndicator({ threadRef }: { readonly threadRef: Scop
     ? record
       ? `Last known owner: ${ownerLabel}`
       : "Execution owner unavailable"
-    : query.isPending && !record
+    : query.isPending && !query.isSuccess && !record
       ? "Checking execution owner…"
       : `Running on ${ownerLabel}`;
   const status = query.error
