@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { runMigrations } from "../src/persistence/Migrations.ts";
+import { ORCHESTRATION_V2_MIGRATION_ID, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
 
@@ -197,7 +197,44 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
         { sharedHome: sourceDir },
       );
-      assert.include(result.executedMigrations, "55_OrchestrationV2");
+      assert.include(result.executedMigrations, `${ORCHESTRATION_V2_MIGRATION_ID}_OrchestrationV2`);
+    }),
+  );
+
+  it.effect("accepts reconciled fork slots while preserving the source history", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-reconciled-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "migrate-dev-db-reconciled-dest-",
+      });
+      const source = yield* createFixtureSource(sourceDir);
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE effect_sql_migrations SET name = 'ProjectionThreadsMiniSkills' WHERE migration_id = 48`;
+          yield* sql`UPDATE effect_sql_migrations SET name = 'ReconcileProjectionThreadFeatures' WHERE migration_id = 54`;
+        }),
+      );
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      );
+      const recorded = Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        return yield* sql<{
+          migration_id: number;
+          name: string;
+        }>`SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id IN (48,54) ORDER BY migration_id`;
+      });
+      const expected = [
+        { migration_id: 48, name: "ProjectionThreadsMiniSkills" },
+        { migration_id: 54, name: "ReconcileProjectionThreadFeatures" },
+      ];
+      assert.deepStrictEqual(yield* withDatabase(source, recorded), expected);
+      assert.deepStrictEqual(yield* withDatabase(result.databasePath, recorded), expected);
+      assert.isAbove(result.projects.length, 0);
     }),
   );
 
