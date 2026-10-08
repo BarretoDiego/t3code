@@ -12,8 +12,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { FetchHttpClient } from "effect/unstable/http";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { FetchHttpClient } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { readAgentCredential, withLocalEnvironmentTarget } from "../../cli/environmentRpc.ts";

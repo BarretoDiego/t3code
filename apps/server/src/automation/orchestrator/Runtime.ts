@@ -31,11 +31,11 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
-import * as ProviderRegistry from "../../provider/Services/ProviderRegistry.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import { randomUuidV4 } from "../../orchestration-v2/RandomUuid.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as Scheduler from "../../scheduling/Scheduler.ts";

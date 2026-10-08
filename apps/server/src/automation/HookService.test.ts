@@ -20,9 +20,9 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import * as SqlitePersistence from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as EventJournal from "./EventJournal.ts";
 import { testClient, testEnvironmentLayer, testEvent } from "./events/journal.testkit.ts";
@@ -682,10 +682,7 @@ describe("hook delivery across a restart", () => {
           HookRuntime.workerLive.pipe(
             Layer.provide(Scheduler.layer),
             Layer.provideMerge(
-              makeHookTestLayerOn(
-                SqlitePersistence.makeSqlitePersistenceLive(databasePath),
-                options,
-              ),
+              makeHookTestLayerOn(SqlitePersistence.layerFromPath(databasePath), options),
             ),
           ),
         ),
@@ -709,7 +706,7 @@ describe("hook delivery across a restart", () => {
       }).pipe(
         Effect.provide(
           EventJournal.layer.pipe(
-            Layer.provideMerge(SqlitePersistence.makeSqlitePersistenceLive(databasePath)),
+            Layer.provideMerge(SqlitePersistence.layerFromPath(databasePath)),
             Layer.provide(testEnvironmentLayer),
           ),
         ),

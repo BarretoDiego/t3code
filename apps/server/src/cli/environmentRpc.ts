@@ -19,11 +19,11 @@ import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
-import { Flag, GlobalFlag } from "effect/unstable/cli";
-import { FetchHttpClient } from "effect/unstable/http";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
-import * as Socket from "effect/unstable/socket/Socket";
+import { Flag, GlobalFlag } from "effect/cli";
+import { FetchHttpClient } from "effect/http";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
+import { RpcClient, RpcSerialization } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -269,7 +269,7 @@ export const withEnvironmentRuntime = <A, E, R>(
     const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
     return yield* use(config).pipe(
       Effect.provide(
-        Layer.mergeAll(EnvironmentAuth.runtimeLayer, ServerSecretStore.layer).pipe(
+        Layer.mergeAll(EnvironmentAuth.layerRuntime, ServerSecretStore.layer).pipe(
           Layer.provideMerge(FetchHttpClient.layer),
           Layer.provide(ServerConfig.layer(config)),
           Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),

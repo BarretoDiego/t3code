@@ -25,11 +25,11 @@ import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
-import { makeSqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { type AutomationCaller, internalCaller, peerSessionSubject } from "../Caller.ts";
 import * as EventJournal from "../EventJournal.ts";
 import {
@@ -107,7 +107,7 @@ const layerFor = (input: World) =>
       Layer.mergeAll(
         Layer.unwrap(
           Effect.map(ServerConfig.ServerConfig, (config) =>
-            makeSqlitePersistenceLive(config.dbPath),
+            SqlitePersistence.layerFromPath(config.dbPath),
           ),
         ),
         Layer.succeed(ServerEnvironment.ServerEnvironment, {

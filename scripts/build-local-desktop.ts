@@ -8,7 +8,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { resolveNightlyTargetVersion } from "./resolve-nightly-release.ts";
 

@@ -26,7 +26,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import {

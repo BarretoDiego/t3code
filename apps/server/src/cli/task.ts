@@ -15,7 +15,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import { randomUuidV4 } from "../orchestration-v2/RandomUuid.ts";
 import {

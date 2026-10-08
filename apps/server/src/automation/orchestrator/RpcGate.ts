@@ -17,9 +17,9 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcSchema from "effect/unstable/rpc/RpcSchema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as RpcSchema from "effect/rpc/RpcSchema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";

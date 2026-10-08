@@ -5,8 +5,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Argument, Command, Flag } from "effect/unstable/cli";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import { Argument, Command, Flag } from "effect/cli";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import { baseDirFlag } from "./config.ts";
 import { printJson } from "./common.ts";

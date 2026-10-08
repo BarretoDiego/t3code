@@ -13,10 +13,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import {
-  SqlitePersistenceMemory,
-  makeSqlitePersistenceLive,
-} from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { makeHandoffJournal } from "./HandoffJournal.ts";
 import { assertExecutionOwner, committedOwner, transitionHandoff } from "./lifecycle.ts";
 
@@ -76,7 +73,7 @@ it.effect("serializes competing destinations and retries a lost acknowledgement"
         }),
       ),
     ).toMatchObject({ code: "conflict" });
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("retains the source fence across service recreation and rejects abort after commit", () =>
@@ -136,7 +133,7 @@ it.effect("retains the source fence across service recreation and rejects abort 
       destinationEnvironmentId: source,
     });
     expect(reverse.owner.generation).toBe(1);
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.each(["preflighting", ...phases.slice(0, 6)] as const)(
@@ -221,7 +218,7 @@ it.effect("reserves before import and cancels durably without granting destinati
     // An old cancellation retry cannot change the new reservation's head.
     yield* restarted.rejectIncoming(record.handoffId);
     expect((yield* restarted.head(record.owner.threadId))?.handoffId).toBe(retry.handoffId);
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("commits only the matching current reservation at a newer revision", () =>
@@ -253,7 +250,7 @@ it.effect("commits only the matching current reservation at a newer revision", (
         }),
       ),
     ).toMatchObject({ code: "conflict" });
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("serializes competing incoming reservations without changing the winning owner", () =>
@@ -272,7 +269,7 @@ it.effect("serializes competing incoming reservations without changing the winni
     expect(results.filter(Exit.isSuccess)).toHaveLength(1);
     const winning = results.find(Exit.isSuccess);
     expect(yield* first.head(record.owner.threadId)).toEqual(winning?.value);
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect(
@@ -319,7 +316,7 @@ it.effect(
       });
       expect(unseen.owner.generation).toBe(4);
       expect(committedOwner(unseen).environmentId).toBe("third");
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect(
@@ -352,7 +349,7 @@ it.effect(
       expect(yield* Effect.flip(journal.acceptIncoming(incoming))).toMatchObject({
         code: "conflict",
       });
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("rejects conflicting incoming source identity and invalid local destination", () =>
@@ -371,7 +368,7 @@ it.effect("rejects conflicting incoming source identity and invalid local destin
       });
     }
     expect(yield* journal.head(record.owner.threadId)).toEqual(incoming);
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect(
@@ -423,14 +420,14 @@ it.effect(
         owner: { ...returned.owner, generation: 4, environmentId: EnvironmentId.make("third") },
       });
       expect(committedOwner(missed).generation).toBe(5);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
 it.effect("reads ownership written by an independent database handle after an earlier miss", () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-handoff-handles-"));
   const filename = NodePath.join(directory, "state.sqlite");
   const persistence = () =>
-    makeSqlitePersistenceLive(filename).pipe(Layer.provide(NodeServices.layer));
+    SqlitePersistence.layerFromPath(filename).pipe(Layer.provide(NodeServices.layer));
   return Effect.gen(function* () {
     const reader = yield* makeHandoffJournal;
     expect(yield* reader.head(record.owner.threadId)).toBeNull();

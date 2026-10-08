@@ -1,5 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- CLI flags use synchronous UUID factories and stable keyed identifiers.
 import * as NodeCrypto from "node:crypto";
-
 import {
   AUTOMATION_WS_METHODS,
   CommandId,
@@ -37,7 +37,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import {
   type CliFailure,

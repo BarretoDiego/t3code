@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous SHA-256 preserves persisted identifiers and byte digests.
 import * as NodeCrypto from "node:crypto";
 
 import { ComputeError, type GenerationJob } from "@t3tools/contracts";

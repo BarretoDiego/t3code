@@ -23,7 +23,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { HttpBody, HttpClient, HttpRouter } from "effect/unstable/http";
+import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";

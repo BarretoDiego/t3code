@@ -34,30 +34,29 @@ import {
 
 export const AUTOMATION_CONTRACT_VERSION = 1;
 
-const makeId = <Brand extends string>(brand: Brand) =>
-  TrimmedNonEmptyString.check(Schema.isMaxLength(200)).pipe(Schema.brand(brand));
+const AutomationIdString = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 
-export const HookId = makeId("HookId");
+export const HookId = AutomationIdString.pipe(Schema.brand("HookId"));
 export type HookId = typeof HookId.Type;
-export const HookDeliveryId = makeId("HookDeliveryId");
+export const HookDeliveryId = AutomationIdString.pipe(Schema.brand("HookDeliveryId"));
 export type HookDeliveryId = typeof HookDeliveryId.Type;
-export const EventConsumerId = makeId("EventConsumerId");
+export const EventConsumerId = AutomationIdString.pipe(Schema.brand("EventConsumerId"));
 export type EventConsumerId = typeof EventConsumerId.Type;
-export const OrchestratorId = makeId("OrchestratorId");
+export const OrchestratorId = AutomationIdString.pipe(Schema.brand("OrchestratorId"));
 export type OrchestratorId = typeof OrchestratorId.Type;
-export const DelegatedTaskId = makeId("DelegatedTaskId");
+export const DelegatedTaskId = AutomationIdString.pipe(Schema.brand("DelegatedTaskId"));
 export type DelegatedTaskId = typeof DelegatedTaskId.Type;
 /** A machine that executes jobs for an environment. Distinct from the run-graph `NodeId`. */
-export const ExecutionNodeId = makeId("ExecutionNodeId");
+export const ExecutionNodeId = AutomationIdString.pipe(Schema.brand("ExecutionNodeId"));
 export type ExecutionNodeId = typeof ExecutionNodeId.Type;
-export const JobId = makeId("JobId");
+export const JobId = AutomationIdString.pipe(Schema.brand("JobId"));
 export type JobId = typeof JobId.Type;
-export const InboxEntryId = makeId("InboxEntryId");
+export const InboxEntryId = AutomationIdString.pipe(Schema.brand("InboxEntryId"));
 export type InboxEntryId = typeof InboxEntryId.Type;
-export const PeerMessageId = makeId("PeerMessageId");
+export const PeerMessageId = AutomationIdString.pipe(Schema.brand("PeerMessageId"));
 export type PeerMessageId = typeof PeerMessageId.Type;
 /** Caller-chosen key. Repeating a mutation with the same key returns the first result. */
-export const IdempotencyKey = makeId("IdempotencyKey");
+export const IdempotencyKey = AutomationIdString.pipe(Schema.brand("IdempotencyKey"));
 export type IdempotencyKey = typeof IdempotencyKey.Type;
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);

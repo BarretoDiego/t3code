@@ -19,8 +19,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Random from "effect/Random";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 import * as Scheduler from "../../scheduling/Scheduler.ts";
 import { automationError } from "../Caller.ts";
@@ -606,7 +606,7 @@ const make = Effect.gen(function* () {
       }
       yield* attempt(hook, stored);
       return toDelivery((yield* read)[0] ?? stored);
-    }).pipe(Effect.catchTag("SqlError", hookStorageFailure("record the delivery")));
+    }).pipe(Effect.catchTags({ SqlError: hookStorageFailure("record the delivery") }));
   });
 
   const recover: HookRuntime["Service"]["recover"] = Effect.gen(function* () {
@@ -618,7 +618,7 @@ const make = Effect.gen(function* () {
       SET status = 'retrying', next_attempt_at = ${now}, updated_at = ${now}
       WHERE status = 'delivering'
     `;
-  }).pipe(Effect.catchTag("SqlError", hookStorageFailure("recover deliveries")));
+  }).pipe(Effect.catchTags({ SqlError: hookStorageFailure("recover deliveries") }));
 
   return HookRuntime.of({ prepareTarget: targets.prepare, wake, drain, deliverEntries, recover });
 });

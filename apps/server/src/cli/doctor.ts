@@ -21,9 +21,9 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Command, Flag } from "effect/unstable/cli";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import { Command, Flag } from "effect/cli";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { jsonFlag, printJson, printJsonLine } from "./common.ts";
@@ -390,25 +390,26 @@ const diagnose = Effect.fn("cli.doctor.diagnose")(function* (
             machine,
           }),
         ).pipe(
-          Effect.catchTag("EnvironmentServerNotRunningError", () =>
-            Effect.succeed<EnvironmentInspection>({
-              name: "local",
-              descriptor: null,
-              section: {
-                id: "local",
-                title: "Local server",
-                checks: [
-                  {
-                    id: "http",
-                    status: "warn",
-                    summary: "No T3 Code server is running on this machine.",
-                    hint: "Start the desktop app or run `t3`.",
-                  },
-                ],
-              },
-              tailscale: null,
-            }),
-          ),
+          Effect.catchTags({
+            EnvironmentServerNotRunningError: () =>
+              Effect.succeed<EnvironmentInspection>({
+                name: "local",
+                descriptor: null,
+                section: {
+                  id: "local",
+                  title: "Local server",
+                  checks: [
+                    {
+                      id: "http",
+                      status: "warn",
+                      summary: "No T3 Code server is running on this machine.",
+                      hint: "Start the desktop app or run `t3`.",
+                    },
+                  ],
+                },
+                tailscale: null,
+              }),
+          }),
         ),
       ]
     : [];

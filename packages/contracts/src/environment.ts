@@ -77,6 +77,13 @@ export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.T
 export const ServerSelfUpdateMethod = Schema.Literals(["boot-service", "respawn", "desktop-app"]);
 export type ServerSelfUpdateMethod = typeof ServerSelfUpdateMethod.Type;
 
+/** Proven ownership for a manual update; unknown installs omit this descriptor. */
+export const ServerInstallation = Schema.Union([
+  Schema.Struct({ kind: Schema.Literals(["npx", "pnpm-dlx", "bunx"]) }),
+  Schema.Struct({ kind: Schema.Literal("npm-global"), prefix: TrimmedNonEmptyString }),
+]);
+export type ServerInstallation = typeof ServerInstallation.Type;
+
 /** What update path a client should offer for a server: one of the RPC
     self-update methods above, or "desktop-managed" when the backend's
     version belongs to the T3 Code desktop app supervising it — updating the
@@ -123,6 +130,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadAutoSettlement: Schema.optionalKey(Schema.Boolean),
   storageCleanup: Schema.optionalKey(Schema.Boolean),
   projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
+  /** Server honors the `worktreesDirectory` setting. */
+  worktreesDirectory: Schema.optionalKey(Schema.Boolean),
   /** Server persists the opt-in for continuing interrupted threads after restarts. */
   threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
   /** Server resolves `projectSettingsOverrides`; older servers ignore the key. */
@@ -140,6 +149,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   usageLimitSources: Schema.optionalKey(Schema.Boolean),
   /** Server persists custom model rates and applies them to usage summaries. */
   usagePriceOverrides: Schema.optionalKey(Schema.Boolean),
+  /** Server persists model mappings and folds mapped usage into the target model. */
+  usageModelAliases: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.pin / thread.unpin commands. Same
       version-skew contract as threadSettlement. */
   threadPinning: Schema.optionalKey(Schema.Boolean),
@@ -173,6 +184,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
   serverSelfUpdate: Schema.optionalKey(ServerSelfUpdateCapability),
+  /** Manual commands must update this install, not the host's default global prefix. */
+  serverInstallation: ForwardCompatibleOptional(ServerInstallation),
   /** Server can stream self-update progress before acknowledging the
       restart. Clients fall back to server.updateServer when absent. */
   serverSelfUpdateProgress: Schema.optionalKey(Schema.Boolean),
@@ -211,6 +224,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   automation: Schema.optionalKey(Schema.Boolean),
   /** Federation protocol versions this server speaks to peer environments. */
   federationProtocolVersions: Schema.optionalKey(Schema.Array(Schema.Int)),
+  /** Server hosts preview tabs in its own headless Chromium (`runtime:
+      "server"`) and streams them over `/api/preview-stream`. Clients
+      without a local browser runtime open server tabs here. */
+  serverBrowser: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
@@ -232,6 +249,17 @@ export const RepositoryIdentityLocator = Schema.Struct({
 });
 export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 
+/**
+ * The checkout's own remote when it names a different repository than the canonical one, such as
+ * a fork that tracks its upstream. Clients group and label by it so a fork stays distinct from the
+ * repository it forked, while pull request features keep the canonical identity.
+ */
+export const RepositoryOrigin = Schema.Struct({
+  canonicalKey: TrimmedNonEmptyString,
+  displayName: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type RepositoryOrigin = typeof RepositoryOrigin.Type;
+
 export const RepositoryIdentity = Schema.Struct({
   canonicalKey: TrimmedNonEmptyString,
   locator: RepositoryIdentityLocator,
@@ -242,8 +270,21 @@ export const RepositoryIdentity = Schema.Struct({
   provider: Schema.optionalKey(TrimmedNonEmptyString),
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
+  origin: Schema.optionalKey(RepositoryOrigin),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
+
+/** Key clients group checkouts by: a fork's own remote, otherwise the canonical repository. */
+export function repositoryGroupingKeyOf(identity: RepositoryIdentity): string {
+  return identity.origin?.canonicalKey ?? identity.canonicalKey;
+}
+
+/** Label clients show for a checkout's repository, matching `repositoryGroupingKeyOf`. */
+export function repositoryGroupingDisplayNameOf(identity: RepositoryIdentity): string | undefined {
+  return identity.origin
+    ? (identity.origin.displayName ?? identity.origin.canonicalKey)
+    : identity.displayName;
+}
 
 export const ScopedProjectRef = Schema.Struct({
   environmentId: EnvironmentId,

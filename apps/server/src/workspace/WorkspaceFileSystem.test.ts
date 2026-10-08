@@ -19,13 +19,13 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-const ProjectLayer = WorkspaceFileSystem.layer.pipe(
+const layerProject = WorkspaceFileSystem.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
   Layer.provide(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
 );
 
-const TestLayer = Layer.empty.pipe(
-  Layer.provideMerge(ProjectLayer),
+const layerTest = Layer.empty.pipe(
+  Layer.provideMerge(layerProject),
   Layer.provideMerge(WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer))),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
@@ -58,7 +58,7 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
   yield* fileSystem.writeFileString(absolutePath, contents).pipe(Effect.orDie);
 });
 
-it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
+it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (it) => {
   describe("discoverScripts", () => {
     it.effect("discovers root and nested scripts, inheriting the nearest package manager", () =>
       Effect.gen(function* () {

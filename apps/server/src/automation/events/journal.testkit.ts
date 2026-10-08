@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { type AutomationCaller } from "../Caller.ts";
 import * as EventJournal from "../EventJournal.ts";
 
@@ -17,7 +17,7 @@ export const testEnvironmentLayer = Layer.succeed(ServerEnvironment.ServerEnviro
 /** The journal over a private in-memory database. */
 export const makeJournalTestLayer = () =>
   EventJournal.layer.pipe(
-    Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+    Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
     Layer.provide(testEnvironmentLayer),
   );
 

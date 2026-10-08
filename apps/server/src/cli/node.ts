@@ -20,7 +20,7 @@ import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import { jsonFlag, printJson, timeoutFlag, withClient } from "./common.ts";
 import { type EnvironmentRpcClient, environmentTargetFlags } from "./environmentRpc.ts";

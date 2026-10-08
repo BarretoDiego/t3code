@@ -2,10 +2,10 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as AutomationDiagnosticsService from "./AutomationDiagnosticsService.ts";
 import * as OrchestratorService from "./OrchestratorService.ts";
 import * as PeerService from "./PeerService.ts";
@@ -26,7 +26,7 @@ const layer = AutomationDiagnosticsService.layer.pipe(
       }),
     ),
   ),
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
 );
 
 const now = "2026-01-01T00:00:00.000Z";

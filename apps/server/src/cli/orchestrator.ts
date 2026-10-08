@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- CLI flags use synchronous UUID factories and stable keyed identifiers.
+import * as NodeCrypto from "node:crypto";
 /**
  * `t3 orchestrator` - persistent orchestrators.
  *
@@ -5,7 +7,6 @@
  * checkpoints. It is woken by what lands in its inbox, never by polling. These
  * commands create and edit one, talk to it, and inspect what it is doing.
  */
-import * as NodeCrypto from "node:crypto";
 
 import {
   AUTOMATION_WS_METHODS,
@@ -32,7 +33,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 
 import { jsonFlag, printJson, withClient } from "./common.ts";
 import { type EnvironmentRpcClient, environmentTargetFlags } from "./environmentRpc.ts";

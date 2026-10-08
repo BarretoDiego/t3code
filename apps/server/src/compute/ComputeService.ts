@@ -31,7 +31,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { ServerConfig } from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import { ComputeJobRepositoryLive } from "../persistence/Layers/ComputeJobs.ts";
+import { ComputeJobRepositoryLive } from "../persistence/ComputeJobs.ts";
 import { ComputeJobRepository } from "../persistence/Services/ComputeJobs.ts";
 import { ComputeProviderAdapterRegistry } from "./ComputeProviderAdapter.ts";
 import { ComputeProviderAdapterRegistryLive } from "./ComputeProviderAdapters.ts";
@@ -233,6 +233,7 @@ export const makeComputeService = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ServerConfig, config),
+      Effect.provideService(Crypto.Crypto, crypto),
     );
     yield* repository
       .saveJob(job)

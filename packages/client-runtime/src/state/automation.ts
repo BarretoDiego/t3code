@@ -9,7 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import { request } from "../rpc/client.ts";
@@ -197,7 +197,7 @@ export function createAutomationEnvironmentAtoms<R, E>(
     transform: (stream) =>
       stream.pipe(
         Stream.scan(
-          EMPTY_AUTOMATION_CHANGE_COUNTERS,
+          () => EMPTY_AUTOMATION_CHANGE_COUNTERS,
           (counters, item: AutomationEventsStreamItem) =>
             item.type === "entry"
               ? applyAutomationChange(counters, item.entry.event.type)

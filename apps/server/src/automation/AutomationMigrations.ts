@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as Migrator from "effect/unstable/sql/Migrator";
+import * as Migrator from "effect/sql/Migrator";
 
 import Migration0001 from "./Migrations/001_AutomationSchema.ts";
 import Migration0010 from "./Migrations/010_JournalDedup.ts";

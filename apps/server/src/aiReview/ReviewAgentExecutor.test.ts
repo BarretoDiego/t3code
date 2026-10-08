@@ -14,7 +14,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import type {
   ProviderAdapterV2Event,

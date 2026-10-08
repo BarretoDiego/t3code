@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import * as Config from "../config.ts";
 import * as Secrets from "../auth/ServerSecretStore.ts";

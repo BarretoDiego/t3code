@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { internalCaller, type OrchestratorCaller } from "../Caller.ts";

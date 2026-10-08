@@ -30,7 +30,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
@@ -38,8 +38,8 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
-import { OrchestrationV2EventSinkLayerLive } from "../orchestration-v2/runtimeLayer.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import {
   issueProjectSyncExportUrl,
   issueProjectSyncImportUrl,
@@ -1226,6 +1226,6 @@ export function createThreadHandoffService(
  * stores are the same memoized instances the orchestration runtime uses. */
 export const layer = Layer.effect(ThreadHandoffService, make).pipe(
   Layer.provide(
-    Layer.mergeAll(OrchestrationV2EventSinkLayerLive, ProjectionStore.layer, ProjectStore.layer),
+    Layer.mergeAll(RuntimeLayer.layerEventSink, ProjectionStore.layer, ProjectStore.layer),
   ),
 );

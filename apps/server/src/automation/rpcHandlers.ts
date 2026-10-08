@@ -8,8 +8,8 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 

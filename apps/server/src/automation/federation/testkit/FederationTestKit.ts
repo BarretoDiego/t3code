@@ -40,14 +40,14 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EnvironmentAuth from "../../../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as SessionStore from "../../../auth/SessionStore.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
-import { makeSqlitePersistenceLive } from "../../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as Scheduler from "../../../scheduling/Scheduler.ts";
 import {
   type AutomationCaller,
@@ -506,7 +506,7 @@ const environmentLayer = (world: EnvironmentWorld, network: Network) =>
         ServerSecretStore.layer,
         Layer.unwrap(
           Effect.map(ServerConfig.ServerConfig, (config) =>
-            makeSqlitePersistenceLive(config.dbPath),
+            SqlitePersistence.layerFromPath(config.dbPath),
           ),
         ),
         Layer.succeed(ServerEnvironment.ServerEnvironment, {

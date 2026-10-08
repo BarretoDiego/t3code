@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";

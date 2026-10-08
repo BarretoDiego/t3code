@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import { resolveAgentTaskConfiguration } from "./agentTaskConfiguration.ts";
 const id = ProviderInstanceId.make("local-opencode");

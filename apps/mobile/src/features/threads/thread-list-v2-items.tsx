@@ -17,7 +17,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
@@ -36,6 +36,7 @@ import { useOrchestratorThreadMarker } from "../../state/automation";
 import { OrchestratorRowMarker } from "../automation/automation-status";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { useEnvironmentScope } from "../../state/session";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
@@ -194,10 +195,12 @@ type ThreadListV2ShelfHeaderProps = {
   readonly pane?: "screen" | "sidebar";
 };
 
+const SHELF_LABEL = { working: "Working", snoozed: "Snoozed", settled: "Settled" } as const;
+
 function ThreadListV2ShelfHeader(
-  props: ThreadListV2ShelfHeaderProps & { readonly kind: "snoozed" | "settled" },
+  props: ThreadListV2ShelfHeaderProps & { readonly kind: keyof typeof SHELF_LABEL },
 ) {
-  const label = props.kind === "snoozed" ? "Snoozed" : "Settled";
+  const label = SHELF_LABEL[props.kind];
   return (
     <ThreadListV2Section
       label={props.expanded ? label : `${label} (${props.count})`}
@@ -213,6 +216,12 @@ function ThreadListV2ShelfHeader(
     />
   );
 }
+
+export const ThreadListV2WorkingShelfHeader = memo(function ThreadListV2WorkingShelfHeader(
+  props: ThreadListV2ShelfHeaderProps,
+) {
+  return <ThreadListV2ShelfHeader {...props} kind="working" />;
+});
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(
   props: ThreadListV2ShelfHeaderProps,
@@ -771,8 +780,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   // label as the web sidebar, sourced from the server-side visited watermark
   // so checking a thread on any device clears it everywhere.
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
+  const workingLabel = STATUS_LABEL_BY_STATUS[status];
   const statusLabel =
-    STATUS_LABEL_BY_STATUS[status] ??
+    // A native /goal keeps the agent going across turns until it is met.
+    (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
+      ? { ...workingLabel, label: "Goal" }
+      : workingLabel) ??
     (isUnread ? { label: "Done", className: "text-adaptive-emerald-700-300" } : undefined);
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.
@@ -780,6 +793,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
+  const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
@@ -1097,8 +1111,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : null,
     [handleMenuAction, snoozePresetActions, swipeActions.secondary, thread.title],
   );
-  const swipeAccessibilityHint =
-    secondaryAction === null
+  const swipeAccessibilityHint = !canOperateThread
+    ? "Opens the thread"
+    : secondaryAction === null
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
@@ -1427,6 +1442,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         </View>
       </RowPressable>
     );
+
+  if (!canOperateThread) return rowContent(() => {});
 
   return (
     <View collapsable={false}>

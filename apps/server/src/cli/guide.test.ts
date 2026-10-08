@@ -2,7 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
 import * as Effect from "effect/Effect";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 import { describe, expect, it } from "vite-plus/test";
 
 import { makeCli } from "../binCli.ts";

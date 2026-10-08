@@ -17,7 +17,7 @@ import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { internalCaller } from "./Caller.ts";
 import * as EventJournal from "./EventJournal.ts";

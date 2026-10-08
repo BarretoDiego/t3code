@@ -2,8 +2,8 @@ import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import OrchestrationV2 from "./Migrations/055_OrchestrationV2.ts";
@@ -17,6 +17,10 @@ describe("V2 migration ledger", () => {
         [61, "OrchestrationV2"],
         [62, "RemoveRedundantProjectionIndexes"],
         [63, "ScheduledMessagesOrchestrationV2"],
+        [64, "ScheduledTaskWebhooks"],
+        [65, "WebhookRelayDeliveries"],
+        [66, "McpAppModelContext"],
+        [67, "ThreadSnapshotWindowIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`

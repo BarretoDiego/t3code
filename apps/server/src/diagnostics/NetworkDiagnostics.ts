@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerConfig from "../config.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";

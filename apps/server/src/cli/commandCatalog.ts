@@ -1,9 +1,9 @@
 import * as Option from "effect/Option";
-import type { Command } from "effect/unstable/cli";
-import * as GlobalFlag from "effect/unstable/cli/GlobalFlag";
-import type * as HelpDoc from "effect/unstable/cli/HelpDoc";
-import * as Param from "effect/unstable/cli/Param";
-import * as Primitive from "effect/unstable/cli/Primitive";
+import type { Command } from "effect/cli";
+import * as GlobalFlag from "effect/cli/GlobalFlag";
+import type * as HelpDoc from "effect/cli/HelpDoc";
+import * as Param from "effect/cli/Param";
+import * as Primitive from "effect/cli/Primitive";
 
 // These fields are present on Effect commands but are not part of its public
 // Command type. Isolate the read-only adapter; the catalog tests guard upgrades.

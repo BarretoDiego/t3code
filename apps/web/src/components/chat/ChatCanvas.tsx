@@ -11,13 +11,18 @@ import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout, type ChatCanvasPreview } from "./chatCanvasLayout";
 import type { PreviewMiniPlayerObstacles } from "../preview/previewMiniPlayerLayout";
 
-/** Owns the available conversation space. Floating cards never reserve it themselves. */
+/**
+ * Owns the available conversation space. Cards only report where they sit; the
+ * canvas decides when chat moves over to make room for them.
+ */
 export function ChatCanvas({
   composerOverlayElement,
+  detailsCardTopInset = 0,
   children,
   ...props
 }: Omit<ComponentProps<"div">, "className" | "style" | "ref"> & {
   composerOverlayElement: HTMLElement | null;
+  detailsCardTopInset?: number;
 }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const widthProbeRef = useRef<HTMLDivElement | null>(null);
@@ -96,14 +101,24 @@ export function ChatCanvas({
     const container = { width: measurements.width, height: measurements.height };
     return {
       container,
+      lane: { padding: measurements.padding, minChatWidth: measurements.minChatWidth },
       layout: resolveChatCanvasLayout({ ...measurements, container, preview, detailsCard }),
       previewKey: preview?.key ?? null,
       reportPreview,
       clearPreview,
       registerTimeline,
       reportDetailsCard,
+      detailsCardTopInset,
     };
-  }, [measurements, preview, detailsCard, reportPreview, clearPreview, reportDetailsCard]);
+  }, [
+    measurements,
+    preview,
+    detailsCard,
+    reportPreview,
+    clearPreview,
+    reportDetailsCard,
+    detailsCardTopInset,
+  ]);
   const { layout } = context;
   return (
     <ChatCanvasContext value={context}>

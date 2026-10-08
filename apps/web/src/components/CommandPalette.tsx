@@ -32,6 +32,9 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  AuthFilesystemReadScope,
   type DesktopWslState,
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -72,6 +75,7 @@ import {
   SunIcon,
   TextSearchIcon,
 } from "lucide-react";
+import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useCallback,
   useDeferredValue,
@@ -84,6 +88,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import type { LegendListRef } from "@legendapp/list/react";
 import { useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
@@ -104,11 +109,12 @@ import {
 } from "./settings/ThemePreviewCircles";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
-import { filesystemEnvironment } from "../state/filesystem";
+import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -168,9 +174,12 @@ import {
   buildRootGroups,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
+  buildCommandPaletteRows,
   enumerateCommandPaletteItems,
+  findHighlightedCommandPaletteItem,
   type CommandPaletteActionItem,
   type CommandPaletteOpenIntent,
+  type CommandPaletteProject,
   type CommandPaletteSubmenuItem,
   type CommandPaletteView,
   filterCommandPaletteGroups,
@@ -181,12 +190,14 @@ import {
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   type SearchOverlayMode,
-  type CommandPaletteProject,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
-import { CommandPaletteResults } from "./CommandPaletteResults";
+import {
+  CommandPaletteVirtualizedResults,
+  scrollCommandPaletteRowIntoView,
+} from "./CommandPaletteResults";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon, ForgejoIcon } from "./Icons";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
@@ -731,6 +742,15 @@ function OpenCommandPaletteDialog(props: {
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  const resultListRef = useRef<LegendListRef | null>(null);
+  // Typing or entering a submenu clears the highlight. Base UI keeps its own on the
+  // first row, but the palette shows none until the user navigates, and the first
+  // ArrowDown lands on it.
+  const highlightClearedRef = useRef(false);
+  function clearTypedHighlight(): void {
+    highlightClearedRef.current = true;
+    setHighlightedItemValue(null);
+  }
   const clientSettings = useClientSettings();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
@@ -1071,6 +1091,7 @@ function OpenCommandPaletteDialog(props: {
     [addProjectEnvironmentOptions, environments],
   );
   const browseEnvironmentId = addProjectEnvironmentId ?? defaultAddProjectEnvironmentId;
+  const canCreateProject = useEnvironmentScope(browseEnvironmentId, AuthOrchestrationOperateScope);
   const browseEnvironment =
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
   // A desktop-local secondary backend (today: the WSL backend). The picker is
@@ -1163,6 +1184,9 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const activeThreadId = activeThread?.id;
+  const supportsThreadFind =
+    environments.find((environment) => environment.environmentId === activeThread?.environmentId)
+      ?.serverConfig?.threadFind === true;
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
@@ -1185,11 +1209,14 @@ function OpenCommandPaletteDialog(props: {
   );
   const relativePathNeedsActiveProject =
     isExplicitRelativeProjectPath(query.trim()) && currentProjectCwdForBrowse === null;
-  const browseQuery = useEnvironmentQuery(
+  const browseAccess = useFilesystemReadAccess(browseEnvironmentId);
+  const hasBrowseTarget =
     isBrowsing &&
-      browsePath.directoryPath.length > 0 &&
-      browseEnvironmentId !== null &&
-      !relativePathNeedsActiveProject
+    browsePath.directoryPath.length > 0 &&
+    browseEnvironmentId !== null &&
+    !relativePathNeedsActiveProject;
+  const browseQuery = useEnvironmentQuery(
+    browseAccess.canReadFiles && hasBrowseTarget
       ? filesystemEnvironment.browse({
           environmentId: browseEnvironmentId,
           input: {
@@ -1200,7 +1227,11 @@ function OpenCommandPaletteDialog(props: {
       : null,
   );
   const browseResult = browseQuery.data;
-  const isBrowsePending = browseQuery.isPending;
+  const isBrowsePending = hasBrowseTarget && (browseAccess.isPending || browseQuery.isPending);
+  const browseAccessError =
+    hasBrowseTarget && !browseAccess.isPending && !browseAccess.canReadFiles
+      ? (browseAccess.error ?? "This connection cannot browse host folders.")
+      : null;
   const browseEntries = browseResult?.entries ?? EMPTY_BROWSE_ENTRIES;
   const { visibleEntries: visibleBrowseEntries, exactEntry: exactBrowseEntry } = useMemo(
     () =>
@@ -1227,7 +1258,10 @@ function OpenCommandPaletteDialog(props: {
       const environment = environments.find(
         (candidate) => candidate.environmentId === environmentId,
       );
-      if (!canPreloadBrowsePath(environment?.connection.phase)) {
+      if (
+        !readEnvironmentScope(environmentId, AuthFilesystemReadScope) ||
+        !canPreloadBrowsePath(environment?.connection.phase)
+      ) {
         return;
       }
 
@@ -1359,62 +1393,68 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
-  const projectThreadItems = useMemo(
-    () =>
-      enumerateCommandPaletteItems([
-        ...buildProjectActionItems({
-          // The no-project home shows once, as the "No project" item below.
-          projects: pickerProjects.filter(
-            (project) => !isScratchProject(project, scratchWorkspaceRootFor(project.environmentId)),
-          ),
-          valuePrefix: "new-thread-in",
-          searchTerms: projectPickerSearchTerms,
-          renderDescription: renderProjectPickerDescription,
-          renderTrailingContent: renderProjectPickerEnvironments,
-          icon: projectFaviconIcon,
-          runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            await handleNewThread(
-              contextualRefBelongsToGroup
-                ? contextualProjectRef
-                : scopeProjectRef(project.environmentId, project.id),
+  const projectThreadItems = useMemo(() => {
+    const isScratch = (project: CommandPaletteProject) =>
+      isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
+    const projectItems = enumerateCommandPaletteItems(
+      buildProjectActionItems({
+        // The no-project home shows once, as the "No project" item below.
+        projects: pickerProjects.filter((project) => !isScratch(project)),
+        valuePrefix: "new-thread-in",
+        searchTerms: projectPickerSearchTerms,
+        renderDescription: renderProjectPickerDescription,
+        renderTrailingContent: renderProjectPickerEnvironments,
+        icon: projectFaviconIcon,
+        runProject: async (project) => {
+          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+          const contextualRefBelongsToGroup =
+            contextualProjectRef !== null &&
+            group?.memberProjectRefs.some(
+              (projectRef) =>
+                projectRef.environmentId === contextualProjectRef.environmentId &&
+                projectRef.projectId === contextualProjectRef.projectId,
             );
-          },
-        }),
-        ...(scratchTargetEnvironmentId === null
-          ? []
-          : [
-              {
-                kind: "action" as const,
-                value: "new-thread-in:no-project",
-                searchTerms: ["no project", "without project", "none"],
-                title: "No project",
-                icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
-                shortcutCommand: "chat.newWithoutProject" as const,
-                run: () => startScratchThread(scratchTargetEnvironmentId),
-              },
-            ]),
-      ]),
-    [
-      contextualProjectRef,
-      handleNewThread,
-      pickerProjects,
-      projectGroupByTargetKey,
-      projectPickerSearchTerms,
-      renderProjectPickerDescription,
-      renderProjectPickerEnvironments,
-      scratchTargetEnvironmentId,
-      scratchWorkspaceRootFor,
-      startScratchThread,
-    ],
-  );
+          await handleNewThread(
+            contextualRefBelongsToGroup
+              ? contextualProjectRef
+              : scopeProjectRef(project.environmentId, project.id),
+          );
+        },
+      }),
+    );
+    if (scratchTargetEnvironmentId === null) return projectItems;
+
+    // "No project" goes right after the current project: visible without
+    // scrolling past every project, while Enter still starts in the current
+    // one. When the current thread has no project, it is the current entry and
+    // goes first. It keeps its own shortcut, so the projects' mod+1..9 hold.
+    const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
+    return [
+      ...projectItems.slice(0, noProjectIndex),
+      {
+        kind: "action" as const,
+        value: "new-thread-in:no-project",
+        searchTerms: ["no project", "without project", "none"],
+        title: "No project",
+        icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+        shortcutCommand: "chat.newWithoutProject" as const,
+        run: () => startScratchThread(scratchTargetEnvironmentId),
+      },
+      ...projectItems.slice(noProjectIndex),
+    ];
+  }, [
+    contextualProjectRef,
+    handleNewThread,
+    pickerProjects,
+    projectEnvironmentLocationById,
+    projectPickerSearchTerms,
+    renderProjectPickerDescription,
+    renderProjectPickerEnvironments,
+    projectGroupByTargetKey,
+    scratchTargetEnvironmentId,
+    scratchWorkspaceRootFor,
+    startScratchThread,
+  ]);
 
   const allThreadItems = useMemo(
     () =>
@@ -1463,7 +1503,7 @@ function OpenCommandPaletteDialog(props: {
             ? {
                 source: match.source,
                 snippet: match.snippet,
-                query: threadSearchQuery,
+                query: threadSearch.query,
               }
             : undefined;
         },
@@ -1484,7 +1524,7 @@ function OpenCommandPaletteDialog(props: {
       projectTitleById,
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
-      threadSearchQuery,
+      threadSearch.query,
       threads,
     ],
   );
@@ -1501,6 +1541,7 @@ function OpenCommandPaletteDialog(props: {
           ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
         },
       ]);
+      highlightClearedRef.current = true;
       setHighlightedItemValue(null);
       setQuery(view.initialQuery ?? "");
     },
@@ -1532,7 +1573,7 @@ function OpenCommandPaletteDialog(props: {
 
   function handleQueryChange(nextQuery: string): void {
     browseNavigation.invalidate();
-    setHighlightedItemValue(null);
+    clearTypedHighlight();
     setQuery(nextQuery);
     if (nextQuery === "" && currentView?.initialQuery) {
       popView();
@@ -1900,35 +1941,12 @@ function OpenCommandPaletteDialog(props: {
     setNewProjectFlow(null);
     setViewStack([]);
     setQuery("");
-    const currentPrefix =
-      currentProjectEnvironmentId && currentProjectId
-        ? `new-thread-in:${currentProjectEnvironmentId}:${currentProjectId}`
-        : null;
-    const prioritized = currentPrefix
-      ? [
-          ...projectThreadItems.filter((item) => item.value === currentPrefix),
-          ...projectThreadItems.filter((item) => item.value !== currentPrefix),
-        ]
-      : projectThreadItems;
+    // projectThreadItems already lists the current project first.
     pushPaletteView({
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [
-        {
-          value: "projects",
-          label: "Projects",
-          items: enumerateCommandPaletteItems(prioritized),
-        },
-      ],
+      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
-  }, [
-    clearOpenIntent,
-    browseNavigation,
-    currentProjectEnvironmentId,
-    currentProjectId,
-    openIntent,
-    projectThreadItems,
-    pushPaletteView,
-  ]);
+  }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
@@ -1991,6 +2009,20 @@ function OpenCommandPaletteDialog(props: {
       icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.newWithoutProject",
       run: () => startScratchThread(scratchTargetEnvironmentId),
+    });
+  }
+
+  if (activeThreadId && supportsThreadFind) {
+    actionItems.push({
+      kind: "action",
+      value: "find-current-thread",
+      title: "Find in current thread",
+      searchTerms: ["find", "search", "messages", "plans"],
+      icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.find",
+      run: async () => {
+        requestThreadFindOpen();
+      },
     });
   }
 
@@ -2592,6 +2624,16 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Cannot add project",
+            description: "This connection cannot add projects.",
+          }),
+        );
+        return;
+      }
       const projectId = newProjectId();
       const createResult = await createProject({
         environmentId: input.environmentId,
@@ -2781,9 +2823,20 @@ function OpenCommandPaletteDialog(props: {
     }
 
     const rawDestination = (destinationPathInput ?? query).trim();
-    if (rawDestination.length === 0 || isRemoteProjectCloning) {
+    if (
+      !readEnvironmentScope(addProjectCloneFlow.environmentId, AuthSourceControlWriteScope) ||
+      !readEnvironmentScope(addProjectCloneFlow.environmentId, AuthOrchestrationOperateScope)
+    ) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Clone unavailable",
+          description: "This connection needs permission to write source control and add projects.",
+        }),
+      );
       return;
     }
+    if (rawDestination.length === 0 || isRemoteProjectCloning) return;
 
     if (isUnsupportedWindowsProjectPath(rawDestination, browseEnvironmentPlatform)) {
       toastManager.add(
@@ -3111,6 +3164,9 @@ function OpenCommandPaletteDialog(props: {
   } else if (isBrowsing) {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
+  const resultRows = buildCommandPaletteRows(displayedGroups);
+  const autoHighlightsFirstRow =
+    !isBrowsing && !isRemoteProjectCloneFlow && newProjectFlow === null;
 
   const inputPlaceholder =
     newProjectFlow !== null
@@ -3119,19 +3175,31 @@ function OpenCommandPaletteDialog(props: {
         getCommandPaletteInputPlaceholder(paletteMode));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
+  const canWriteSourceControl = useEnvironmentScope(
+    addProjectCloneFlow?.environmentId ?? null,
+    AuthSourceControlWriteScope,
+  );
+  const canCreateClonedProject = useEnvironmentScope(
+    addProjectCloneFlow?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const canCloneProject = canWriteSourceControl && canCreateClonedProject;
+  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
   const canSubmitBrowsePath =
     isBrowsing &&
     !relativePathNeedsActiveProject &&
+    canCreateProject &&
+    (!isCloneDestinationStep || canCloneProject) &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
   const willCreateProjectPath =
     canSubmitBrowsePath &&
     !isBrowsePending &&
+    browseAccessError === null &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
     (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
-  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
   const submitActionLabel = isCloneDestinationStep
     ? willCreateProjectPath
       ? "Create & Clone"
@@ -3216,6 +3284,15 @@ function OpenCommandPaletteDialog(props: {
       void copyActiveThreadReference();
       return;
     }
+    // ChatView ignores shortcuts while the palette is open, so handle find here
+    // instead of letting the browser's own Find open.
+    if (command === "chat.find" && activeThreadId && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      requestThreadFindOpen();
+      return;
+    }
 
     if (addProjectCloneFlow?.step === "repository" && event.key === "Enter") {
       event.preventDefault();
@@ -3256,6 +3333,43 @@ function OpenCommandPaletteDialog(props: {
     if (event.key === "Backspace" && query === "" && isSubmenu) {
       event.preventDefault();
       popView();
+      return;
+    }
+
+    // Base UI ignores navigation keys with modifiers, so these fallbacks do too.
+    if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+    // Base UI only keeps a hidden highlight on the first row when it auto-highlights.
+    const firstItemValue = autoHighlightsFirstRow ? resultRows.itemValues[0] : undefined;
+    if (
+      event.key === "ArrowDown" &&
+      highlightClearedRef.current &&
+      firstItemValue &&
+      !event.nativeEvent.isComposing
+    ) {
+      (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+      event.preventDefault();
+      highlightClearedRef.current = false;
+      setHighlightedItemValue(firstItemValue);
+      scrollCommandPaletteRowIntoView(
+        resultListRef.current,
+        resultRows.rowIndexByItemIndex[0] ?? 0,
+      );
+      return;
+    }
+
+    // Base UI clicks the highlighted row on Enter, which does nothing once the
+    // virtualized list has unmounted it, so run the tracked highlight directly.
+    if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+      const highlightedItem = findHighlightedCommandPaletteItem(
+        displayedGroups,
+        highlightedItemValue ?? firstItemValue ?? null,
+      );
+      if (highlightedItem) {
+        (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+        event.preventDefault();
+        event.stopPropagation();
+        executeItem(highlightedItem);
+      }
     }
   }
 
@@ -3461,9 +3575,10 @@ function OpenCommandPaletteDialog(props: {
               className="absolute inset-e-2.5 top-1/2 -translate-y-1/2"
               aria-label={`${submitActionLabel} (${addShortcutLabel})`}
               disabled={
+                !canCreateProject ||
                 !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
                 relativePathNeedsActiveProject ||
-                (isCloneDestinationStep && isRemoteProjectPending)
+                (isCloneDestinationStep && (!canCloneProject || isRemoteProjectPending))
               }
               onMouseDown={(event) => {
                 event.preventDefault();
@@ -3489,7 +3604,11 @@ function OpenCommandPaletteDialog(props: {
           </KbdGroup>
         </TooltipTrigger>
         <TooltipPopup side="top">
-          {submitActionLabel} ({addShortcutLabel})
+          {isCloneDestinationStep && !canCloneProject
+            ? "This connection needs permission to write source control and add projects."
+            : canCreateProject
+              ? `${submitActionLabel} (${addShortcutLabel})`
+              : "This connection cannot add projects."}
         </TooltipPopup>
       </Tooltip>
     ) : null;
@@ -3522,9 +3641,7 @@ function OpenCommandPaletteDialog(props: {
     <CommandPaletteContent
       key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`}
       aria-label="Command palette"
-      autoHighlight={
-        isBrowsing || isRemoteProjectCloneFlow || newProjectFlow !== null ? false : "always"
-      }
+      autoHighlight={autoHighlightsFirstRow ? "always" : false}
       footerActionLabel={footerActionLabel}
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
@@ -3560,8 +3677,16 @@ function OpenCommandPaletteDialog(props: {
         onKeyDown: handleKeyDown,
       }}
       mode="none"
-      onItemHighlighted={(value) => {
+      items={resultRows.itemValues}
+      virtualized
+      onItemHighlighted={(value, eventDetails) => {
+        if (eventDetails.reason === "none" && highlightClearedRef.current) return;
+        highlightClearedRef.current = false;
         setHighlightedItemValue(typeof value === "string" ? value : null);
+        const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
+        if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
+          scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
+        }
       }}
       onValueChange={handleQueryChange}
       showBackHint={isSubmenu}
@@ -3599,8 +3724,18 @@ function OpenCommandPaletteDialog(props: {
           </div>
         </div>
       ) : null}
-      <CommandPaletteResults
-        groups={displayedGroups}
+      {browseAccessError ? (
+        <div role="alert" className="px-4 py-3 text-sm text-muted-foreground">
+          {browseAccessError}
+        </div>
+      ) : isBrowsePending && browseResult === null ? (
+        <div role="status" className="px-4 py-3 text-sm text-muted-foreground">
+          Loading folders...
+        </div>
+      ) : null}
+      <CommandPaletteVirtualizedResults
+        rows={resultRows.rows}
+        listRef={resultListRef}
         highlightedItemValue={highlightedItemValue}
         isActionsOnly={isActionsOnly}
         keybindings={keybindings}

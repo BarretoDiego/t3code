@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous SHA-256 preserves persisted identifiers and byte digests.
 import * as NodeCrypto from "node:crypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -17,7 +18,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
 import {
   MarketplaceService,

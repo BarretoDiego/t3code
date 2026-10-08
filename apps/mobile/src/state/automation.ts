@@ -6,7 +6,7 @@ import {
   type OrchestratorView,
 } from "@t3tools/client-runtime/state/automation-presentation";
 import type { EnvironmentId, OrchestratorId, ThreadId } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";

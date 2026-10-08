@@ -9,8 +9,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import { automationError } from "../Caller.ts";

@@ -9,7 +9,7 @@ import {
   ModelCapability,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import { ComputeService } from "../../../compute/ComputeService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";

@@ -15,8 +15,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { Fragment } from "effect/unstable/sql/Statement";
+import * as SqlClient from "effect/sql/SqlClient";
+import type { Fragment } from "effect/sql/Statement";
 
 import { type AutomationCaller, automationError } from "./Caller.ts";
 import { filterProblem } from "./events/filter.ts";
@@ -155,7 +155,7 @@ const make = Effect.gen(function* () {
     sql<HookRuntime.HookRow>`
       SELECT * FROM automation_hooks ORDER BY priority DESC, created_at, hook_id
     `.pipe(
-      Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("be listed")),
+      Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("be listed") }),
       Effect.map((rows) => rows.map(HookRuntime.toHook)),
     );
 
@@ -270,7 +270,7 @@ const make = Effect.gen(function* () {
             return result;
           }),
         )
-        .pipe(Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("be saved")));
+        .pipe(Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("be saved") }));
       yield* runtime.wake;
       return hook;
     },
@@ -295,7 +295,7 @@ const make = Effect.gen(function* () {
             return HookRuntime.toHook(stored);
           }),
         )
-        .pipe(Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("be updated")));
+        .pipe(Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("be updated") }));
       yield* runtime.wake;
       return hook;
     },
@@ -314,12 +314,12 @@ const make = Effect.gen(function* () {
           return true;
         }),
       )
-      .pipe(Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("be deleted")));
+      .pipe(Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("be deleted") }));
 
   const test: HookService["Service"]["test"] = Effect.fn("HookService.test")(
     function* (_caller, input) {
       const hook = yield* requireHook(input.hookId).pipe(
-        Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("be read")),
+        Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("be read") }),
       );
       const config = HookRuntime.hookConfigOf(hook);
       const limit = input.limit ?? DEFAULT_TEST_RANGE;
@@ -376,7 +376,7 @@ const make = Effect.gen(function* () {
       ORDER BY created_at DESC, first_cursor DESC
       LIMIT ${Math.min(input.limit ?? DEFAULT_DELIVERIES_LIMIT, MAX_DELIVERIES_LIMIT)}
     `.pipe(
-      Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("list deliveries")),
+      Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("list deliveries") }),
       Effect.map((rows) => rows.map(HookRuntime.toDelivery)),
     );
   };
@@ -413,7 +413,7 @@ const make = Effect.gen(function* () {
             return HookRuntime.toDelivery(yield* requireDelivery(deliveryId));
           }),
         )
-        .pipe(Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("redeliver")));
+        .pipe(Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("redeliver") }));
       yield* runtime.wake;
       return delivery;
     },
@@ -435,7 +435,7 @@ const make = Effect.gen(function* () {
           return HookRuntime.toDelivery(existing);
         }),
       )
-      .pipe(Effect.catchTag("SqlError", HookRuntime.hookStorageFailure("dismiss the delivery")));
+      .pipe(Effect.catchTags({ SqlError: HookRuntime.hookStorageFailure("dismiss the delivery") }));
 
   return HookService.of({
     list,
