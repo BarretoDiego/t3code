@@ -9,6 +9,14 @@ const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const isForkBuild = repoEnv.T3CODE_FORK_BRAND === "1";
+const forkVersionCode = Number(repoEnv.T3CODE_MOBILE_VERSION_CODE ?? "1");
+if (
+  isForkBuild &&
+  (!Number.isInteger(forkVersionCode) || forkVersionCode < 1 || forkVersionCode > 2_100_000_000)
+) {
+  throw new Error("T3CODE_MOBILE_VERSION_CODE must be an integer between 1 and 2100000000.");
+}
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
@@ -109,7 +117,28 @@ function resolveAppVariant(value: string | undefined): AppVariant {
   }
 }
 
-const variant = VARIANT_CONFIG[APP_VARIANT];
+const baseVariant = VARIANT_CONFIG[APP_VARIANT];
+const variant = isForkBuild
+  ? {
+      ...baseVariant,
+      appName: "T3 Code Fork",
+      scheme: "t3code-fork",
+      iosBundleIdentifier: "com.barretodiego.t3code.fork",
+      androidPackage: "com.barretodiego.t3code.fork",
+      assets: {
+        ...baseVariant.assets,
+        appIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
+        iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
+        splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
+        androidAdaptiveForeground: "./assets/android-icon-foreground-fork.png",
+        androidAdaptiveBackgroundColor: "#10182D",
+        androidAdaptiveBackgroundImage: "./assets/android-icon-background-fork.png",
+        androidSplashIcon: "./assets/android-splash-icon-fork.png",
+        androidMonochromeIcon: "./assets/android-icon-mark-fork.png",
+        androidNotificationColor: "#43D9CA",
+      },
+    }
+  : baseVariant;
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -229,7 +258,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "2.0.0",
+  version: isForkBuild ? (repoEnv.T3CODE_MOBILE_VERSION ?? "2.0.0") : "2.0.0",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -240,8 +269,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    enabled: !isForkBuild && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    ...(!isForkBuild ? { url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454" } : {}),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -255,7 +284,7 @@ const config: ExpoConfig = {
     // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
     // does not fall back to a personal team (which cannot sign app groups,
     // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
+    ...(!isForkBuild ? { appleTeamId: "ARK85ZXQ4Z" } : {}),
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
@@ -294,6 +323,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(isForkBuild ? { versionCode: forkVersionCode } : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -455,6 +485,7 @@ const config: ExpoConfig = {
     // target (which must exist before the compile phase can be attached).
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidCleartextTraffic.cjs",
+    ...(isForkBuild ? ["./plugins/withForkAndroidSigning.cjs"] : []),
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
@@ -465,6 +496,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    appBrand: isForkBuild ? "fork" : "upstream",
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,
@@ -487,11 +519,9 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(!isForkBuild ? { eas: { projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454" } } : {}),
   },
-  owner: "pingdotgg",
+  ...(!isForkBuild ? { owner: "pingdotgg" } : {}),
 };
 
 export default config;

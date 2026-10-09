@@ -366,14 +366,20 @@ One-time Vercel dashboard setup:
 
 ## Fork releases
 
-`.github/workflows/fork-release.yml` lets a fork ship its own desktop builds without any of the
+`.github/workflows/fork-release.yml` lets a fork ship its own desktop builds and standalone Android APKs without any of the
 upstream release credentials. It never runs in `pingdotgg/t3code`.
 
 - Every push to the fork's `main` publishes a nightly version (`vX.Y.Z-nightly.YYYYMMDD.<run_number>`)
   as a tag and a prerelease in the fork. The desktop build takes its update feed from
   `GITHUB_REPOSITORY`, so an install of a fork build updates from the fork's releases.
-- It builds macOS arm64 and Linux x64 on GitHub-hosted runners. macOS gates the release; Linux
-  assets are attached only when that job passes.
+- It builds macOS arm64, Linux x64, and a standalone Android APK on GitHub-hosted runners.
+  macOS and Android gate the release; Linux assets are attached only when that job passes.
+- Android signing uses `ANDROID_FORK_KEYSTORE` (base64 PKCS#12), `ANDROID_FORK_STORE_PASSWORD`,
+  `ANDROID_FORK_KEY_ALIAS`, and `ANDROID_FORK_KEY_PASSWORD`. Keep a private backup of the key and
+  its credentials outside the repository and GitHub. Replacing this key prevents an APK from
+  updating existing installs. The release run number supplies the increasing Android version code.
+  The APK embeds JavaScript and disables upstream Expo updates; do not replace this build with a
+  development client or attach an upstream EAS project to the fork.
 - macOS builds are signed with a self-signed certificate from the `MAC_SELF_SIGN_P12` (base64
   PKCS#12) and `MAC_SELF_SIGN_PASSWORD` secrets. Squirrel.Mac installs an update only when it
   satisfies the running app's designated requirement, and an unsigned or ad hoc signed build can

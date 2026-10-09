@@ -2626,7 +2626,17 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
   return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
+export function resolveDesktopBuildIconAssets(
+  version: string,
+  forkBuild = process.env.T3CODE_FORK_BRAND === "1",
+): DesktopBuildIconAssets {
+  if (forkBuild) {
+    return {
+      macIconPng: BRAND_ASSET_PATHS.forkMacIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.forkIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.forkWindowsIconIco,
+    };
+  }
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
@@ -2659,7 +2669,11 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
+export function resolveDesktopProductName(
+  version: string,
+  forkBuild = process.env.T3CODE_FORK_BRAND === "1",
+): string {
+  if (forkBuild) return "T3 Code Fork";
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
