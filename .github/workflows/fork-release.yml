@@ -151,8 +151,8 @@ jobs:
       version: ${{ needs.bundle.outputs.version }}
       version_code: ${{ github.run_number }}
 
-  # macOS is the build this train exists for, so it gates the release. Linux
-  # ships when its job passed and is left out of the release otherwise.
+  # macOS and Android gate the release. Linux ships when its job passed and is
+  # left out of the release otherwise.
   release:
     name: Publish GitHub Release
     needs: [bundle, desktop_mac_arm64, desktop_linux_x64, android]

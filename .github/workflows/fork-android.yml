@@ -74,6 +74,9 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
       - name: Restore private signing key
         env:
@@ -106,7 +109,7 @@ jobs:
           apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$build_tools/apksigner" verify --verbose --print-certs "$apk"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print "$apk" > "$RUNNER_TEMP/manifest.xml"
+          apkanalyzer manifest print "$apk" > "$RUNNER_TEMP/manifest.xml"
           python3 - <<'PY'
           import os, xml.etree.ElementTree as ET
           manifest = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "manifest.xml")).getroot()
