@@ -28,6 +28,7 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "unarchive"
   | "archive"
   | "delete";
 
@@ -72,6 +73,7 @@ export function buildDraftActionMenuItems(options: {
 
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
+  readonly isArchived?: boolean;
   readonly branch: string | null;
   /**
    * Project scoping for the thread list. Null on surfaces with no scoped
@@ -131,6 +133,14 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
+  if (state.isArchived) {
+    return [
+      { id: "unarchive", label: "Restore thread", disabled: !state.canOperate },
+      { id: "copy-thread-id", label: "Copy Thread ID", icon: "copy" },
+      { id: "copy-path", label: "Copy Path", icon: "folder" },
+      { id: "project-settings", label: "Project settings", icon: "settings" },
+    ];
+  }
   const ownsPlacement = state.nested === undefined;
   const writable = state.nested?.readOnly !== true;
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [

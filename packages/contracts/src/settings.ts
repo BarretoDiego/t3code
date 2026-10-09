@@ -590,6 +590,7 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
   ),
+  sidebarShowAllSubthreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
   ),
@@ -986,29 +987,6 @@ export const AntigravitySettings = makeProviderSettingsSchema(
   { order: ["authMethod", "apiKey", "gcpProject", "gcpLocation", "binaryPath"] },
 );
 export type AntigravitySettings = typeof AntigravitySettings.Type;
-
-export const MuseSettings = makeProviderSettingsSchema(
-  {
-    enabled: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-    binaryPath: makeBinaryPathSetting("muse").pipe(
-      Schema.annotateKey({
-        title: "Binary path",
-        description:
-          "Path to the Muse Code binary on this environment. Sign in with muse login on that host.",
-        providerSettingsForm: { placeholder: "muse", clearWhenEmpty: "omit" },
-      }),
-    ),
-    customModels: Schema.Array(CustomModelSetting).pipe(
-      Schema.withDecodingDefault(Effect.succeed([])),
-      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
-    ),
-  },
-  { order: ["binaryPath"] },
-);
-export type MuseSettings = typeof MuseSettings.Type;
 
 export const AcpRegistryDistributionPreference = Schema.Literals(["auto", "binary", "npx", "uvx"]);
 export type AcpRegistryDistributionPreference = typeof AcpRegistryDistributionPreference.Type;
@@ -2026,6 +2004,7 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
+  sidebarShowAllSubthreads: Schema.optionalKey(Schema.Boolean),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarThreadPrimaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
   sidebarThreadSecondaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),

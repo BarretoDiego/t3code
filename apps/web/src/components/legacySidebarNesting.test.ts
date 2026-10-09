@@ -193,3 +193,32 @@ it("keeps settled descendants grouped without adding shelf headers to thread sel
     "done",
   ]);
 });
+
+it("keeps archived subagents under archived parents and expands settled descendants in all-states mode", () => {
+  const parent = thread("parent", { archived: true });
+  const child = {
+    ...thread("child", { parent: "parent", archived: true }),
+    settledOverride: "settled" as const,
+  };
+  const grandchild = thread("deep", { parent: "child" });
+  const { nesting, topLevel } = nestLegacyProjectThreads({
+    sortedThreads: [grandchild],
+    archivedThreads: [parent, child],
+    showAllSubthreads: true,
+  });
+  expect(topLevel.map((thread) => thread.id)).toEqual(["parent"]);
+  const visible = legacyProjectThreadRows({
+    nesting,
+    topLevel,
+    expandedOverrides: { "laptop:parent": false },
+    activePathKeys: new Set(),
+    showAllSubthreads: true,
+  });
+  expect(
+    visible.filter((row) => row.kind === "thread").map((row) => [row.thread.id, row.depth]),
+  ).toEqual([
+    ["parent", 0],
+    ["child", 1],
+    ["deep", 2],
+  ]);
+});

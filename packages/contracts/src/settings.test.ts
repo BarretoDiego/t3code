@@ -1151,3 +1151,16 @@ describe("ServerSettings.removeAgentCreditsOnMerge", () => {
     ).toBe(true);
   });
 });
+
+it("defaults compact subthreads and persists the all-states option in either direction", () => {
+  expect(decodeClientSettings({}).sidebarShowAllSubthreads).toBe(false);
+  for (const sidebarShowAllSubthreads of [true, false]) {
+    expect(encodeClientSettings(decodeClientSettings({ sidebarShowAllSubthreads }))).toMatchObject({
+      sidebarShowAllSubthreads,
+    });
+    expect(decodeClientSettingsPatch({ sidebarShowAllSubthreads })).toEqual({
+      sidebarShowAllSubthreads,
+    });
+  }
+  expect(() => decodeClientSettingsPatch({ sidebarShowAllSubthreads: null })).toThrow();
+});

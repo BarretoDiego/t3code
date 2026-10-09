@@ -406,8 +406,8 @@ function summarizeThreadNestingCounts(counted: ThreadNestingCounts): ThreadNesti
  * A child follows its parent's row wherever that row is. Lists keep the
  * whole family visible while its summary has live work, even when the
  * parent is settled or snoozed. A child takes its own top-level row when
- * the parent is missing, filtered out, or archived. Quiet children of an
- * archived parent leave with it.
+ * the parent is missing or filtered out. Quiet children of an unlisted
+ * archived parent leave with it; explicitly listed archived parents retain their family.
  */
 export function buildThreadNesting<T extends ThreadNestingThread>(input: {
   readonly threads: ReadonlyArray<T>;
@@ -446,10 +446,10 @@ export function buildThreadNesting<T extends ThreadNestingThread>(input: {
     const reason: ThreadNestingDetachReason | null =
       parent === undefined
         ? "missing"
-        : parent.archivedAt !== null
-          ? "archived"
-          : drafts.has(draft.wantedParentKey)
-            ? null
+        : drafts.has(draft.wantedParentKey)
+          ? null
+          : parent.archivedAt !== null
+            ? "archived"
             : "unlisted";
     if (reason !== null) {
       draft.detachReason = reason;
@@ -613,10 +613,12 @@ export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
   readonly activePathKeys: ReadonlySet<string>;
   readonly childLimit: number;
   readonly showAllKeys: ReadonlySet<string>;
+  readonly showAllSubthreads?: boolean;
 }): ThreadNestingDisplay<T> | null {
   if (input.node.summary === null) return null;
   const rows: Array<ThreadNestingRow<T>> = [];
   const isExpanded = (node: ThreadNestingNode<T>) =>
+    (input.showAllSubthreads === true && node.summary !== null) ||
     resolveThreadNestingExpanded(node.summary, input.expandedOverrides[node.key]);
   const reportsSomething = (node: ThreadNestingNode<T>) =>
     input.activePathKeys.has(node.key) ||
@@ -640,7 +642,11 @@ export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
       let shown = children;
       if (!expanded) {
         shown = shown.filter((child) => input.activePathKeys.has(child.key));
-      } else if (shown.length > input.childLimit && !input.showAllKeys.has(groupKey)) {
+      } else if (
+        !input.showAllSubthreads &&
+        shown.length > input.childLimit &&
+        !input.showAllKeys.has(groupKey)
+      ) {
         const kept = new Set(shown.filter(reportsSomething));
         for (let index = shown.length - 1; index >= 0 && kept.size < input.childLimit; index -= 1) {
           kept.add(shown[index]!);
@@ -676,7 +682,7 @@ export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
       (expanded || settled.some((child) => input.activePathKeys.has(child.key)))
     ) {
       const key = `${parent.key}:settled`;
-      const settledExpanded = input.expandedOverrides[key] ?? false;
+      const settledExpanded = input.showAllSubthreads || (input.expandedOverrides[key] ?? false);
       rows.push({
         kind: "settled",
         key,
@@ -742,4 +748,26 @@ export function reuseEqualThreadNestingDisplay<T>(
     }
   }
   return previous;
+}
+
+/** Live shells win restore races; only archived subagents and their parents join the sidebar. */
+export function mergeThreadNestingShells<T extends ThreadNestingThread>(
+  live: ReadonlyArray<T>,
+  archived: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  const byKey = new Map(live.map((thread) => [threadNestingKey(thread), thread]));
+  for (const thread of archived) {
+    const key = threadNestingKey(thread);
+    if (!byKey.has(key)) byKey.set(key, thread);
+  }
+  const familyKeys = new Set<string>();
+  for (const thread of byKey.values()) {
+    const parent = nestingParentKey(thread);
+    if (parent === null) continue;
+    familyKeys.add(threadNestingKey(thread));
+    familyKeys.add(parent);
+  }
+  return [...byKey.values()].filter(
+    (thread) => thread.archivedAt === null || familyKeys.has(threadNestingKey(thread)),
+  );
 }

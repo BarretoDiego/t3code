@@ -43,10 +43,11 @@ const NO_KEYS: ReadonlySet<string> = new Set<string>();
 export function nestLegacyProjectThreads<T extends ThreadNestingThread>(input: {
   readonly sortedThreads: ReadonlyArray<T>;
   readonly archivedThreads?: ReadonlyArray<T>;
+  readonly showAllSubthreads?: boolean;
 }): LegacyProjectNesting<T> {
   const nesting = buildThreadNesting({
     threads: [...input.sortedThreads, ...(input.archivedThreads ?? [])],
-    isListed: (thread) => thread.archivedAt === null,
+    isListed: (thread) => input.showAllSubthreads === true || thread.archivedAt === null,
   });
   return { nesting, topLevel: nesting.roots.map((root) => root.thread) };
 }
@@ -61,6 +62,7 @@ export function legacyProjectThreadRows<T extends ThreadNestingThread>(input: {
   readonly topLevel: ReadonlyArray<T>;
   readonly expandedOverrides: Readonly<Record<string, boolean>>;
   readonly activePathKeys: ReadonlySet<string>;
+  readonly showAllSubthreads?: boolean;
 }): ReadonlyArray<LegacyThreadRow<T>> {
   const rows: Array<LegacyThreadRow<T>> = [];
   for (const thread of input.topLevel) {
@@ -76,6 +78,7 @@ export function legacyProjectThreadRows<T extends ThreadNestingThread>(input: {
             // The project's own "Show more" already bounds the list.
             childLimit: Number.POSITIVE_INFINITY,
             showAllKeys: NO_KEYS,
+            showAllSubthreads: input.showAllSubthreads === true,
           });
     rows.push({
       kind: "thread",

@@ -3,6 +3,7 @@ import { ThreadId } from "@t3tools/contracts";
 
 import {
   buildThreadNesting,
+  mergeThreadNestingShells,
   flattenThreadNesting,
   resolveThreadNestingExpanded,
   reuseEqualThreadNestingDisplay,
@@ -638,5 +639,88 @@ describe("settled subagent groups", () => {
       overrides: { ...overrides, "env:parent:settled": true },
     });
     expect(reuseEqualThreadNestingDisplay(before, opened)).toBe(opened);
+  });
+});
+
+describe("show all subthreads", () => {
+  it("retains archived parents, children and settled grandchildren without unrelated archives or forks", () => {
+    const live = [
+      thread("parent"),
+      thread("deep", { parent: "archived-child", settled: true }),
+      thread("other-env", { environmentId: "remote" }),
+    ];
+    const archived = [
+      thread("archived-child", { parent: "parent", archived: true }),
+      thread("archived-parent", { archived: true }),
+      thread("archived-done", { parent: "archived-parent", archived: true, settled: true }),
+      thread("unrelated", { archived: true }),
+      thread("fork", { parent: "parent", relationship: "fork", archived: true }),
+    ];
+    const merged = mergeThreadNestingShells(live, archived);
+    const nesting = build(merged, () => true);
+    expect(outline(nesting)).toEqual([
+      "parent",
+      "parent > archived-child",
+      "parent > archived-child > deep",
+      "other-env",
+      "archived-parent",
+      "archived-parent > archived-done",
+    ]);
+    const visible = flattenThreadNesting({
+      node: nesting.nodeByKey.get("env:parent")!,
+      expandedOverrides: { "env:parent": false, "env:archived-child:settled": false },
+      activePathKeys: new Set(),
+      childLimit: 0,
+      showAllKeys: new Set(),
+      showAllSubthreads: true,
+    });
+    expect(
+      visible?.rows.filter((row) => row.kind === "thread").map((row) => row.thread.id),
+    ).toEqual(["archived-child", "deep"]);
+    expect(visible?.rows.some((row) => row.kind === "settled" && row.expanded)).toBe(true);
+  });
+
+  it("shows every quiet child beyond the preview limit and restores compact overrides when disabled", () => {
+    const children = Array.from({ length: 10 }, (_, index) =>
+      thread(`child-${index}`, { parent: "parent", settled: index === 9 }),
+    );
+    const nesting = build([thread("parent"), ...children]);
+    const overrides = { "env:parent": false, "env:parent:settled": false };
+    const options = {
+      node: nesting.roots[0]!,
+      expandedOverrides: overrides,
+      activePathKeys: new Set<string>(),
+      childLimit: 8,
+      showAllKeys: new Set<string>(),
+    };
+    const full = flattenThreadNesting({ ...options, showAllSubthreads: true });
+    expect(full?.rows.filter((row) => row.kind === "thread")).toHaveLength(10);
+    expect(full?.rows.some((row) => row.kind === "more")).toBe(false);
+    expect(flattenThreadNesting({ ...options, showAllSubthreads: false })?.rows).toEqual([]);
+    expect(overrides).toEqual({ "env:parent": false, "env:parent:settled": false });
+  });
+
+  it("uses current live shells after restore, respects environment and project scope, and retains missing-parent archives", () => {
+    const restored = thread("child", { parent: "parent", projectId: "one" });
+    const merged = mergeThreadNestingShells(
+      [thread("parent", { projectId: "one" }), restored],
+      [
+        thread("child", { parent: "parent", archived: true }),
+        thread("child", {
+          parent: "parent",
+          environmentId: "remote",
+          archived: true,
+          projectId: "two",
+        }),
+        thread("orphan", { parent: "missing", archived: true, projectId: "one" }),
+      ],
+    );
+    expect(merged.filter((candidate) => candidate.id === "child")).toHaveLength(2);
+    expect(
+      merged.find((candidate) => candidate.id === "child" && candidate.environmentId === "env"),
+    ).toBe(restored);
+    const nesting = build(merged, (candidate) => candidate.projectId === "one");
+    expect(outline(nesting)).toEqual(["parent", "parent > child", "orphan"]);
+    expect(nesting.nodeByKey.get("env:orphan")?.detachedFrom?.reason).toBe("missing");
   });
 });

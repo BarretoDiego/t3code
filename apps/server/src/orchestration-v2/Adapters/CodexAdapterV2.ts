@@ -127,7 +127,7 @@ import {
   type ProviderContinuationRequest,
   ProviderContinuationRequests,
 } from "@t3tools/provider-core/server/continuationRequests";
-import { backgroundWorkNotification } from "../Notification.ts";
+import { backgroundWorkNotification } from "@t3tools/provider-core/server/notification";
 import {
   makeProviderFailure,
   makeProviderFailureTurnItem,
@@ -137,7 +137,7 @@ import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/sel
 import {
   isProviderNativeImageAttachment,
   providerMessageTextWithAttachmentPaths,
-} from "../AttachmentPrompt.ts";
+} from "@t3tools/provider-core/server/attachmentPrompt";
 import {
   ProviderAdapterEnsureThreadError,
   ProviderAdapterForkThreadError,
@@ -3156,7 +3156,8 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             const text = providerMessageTextWithAttachmentPaths({
               text: codexSkillMentionText(turnInput.message.text),
               attachments: turnInput.message.attachments,
-              attachmentsDir: serverConfig.attachmentsDir,
+              resolveAttachmentPath: (attachment) =>
+                resolveAttachmentPath({ attachmentsDir: serverConfig.attachmentsDir, attachment }),
             });
             if (text.length > 0) {
               inputItems.push({
