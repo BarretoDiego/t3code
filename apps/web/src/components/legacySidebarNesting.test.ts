@@ -222,3 +222,26 @@ it("keeps archived subagents under archived parents and expands settled descenda
     ["deep", 2],
   ]);
 });
+
+it("keeps a project containing only an archived family nonempty and its selected child available", () => {
+  const parent = thread("parent", { archived: true });
+  const child = thread("child", { parent: "parent", archived: true });
+  const { nesting, topLevel } = nestLegacyProjectThreads({
+    sortedThreads: [],
+    archivedThreads: [parent, child],
+    showAllSubthreads: true,
+  });
+  expect(topLevel.map((thread) => thread.id)).toEqual(["parent"]);
+  const visible = legacyProjectThreadRows({
+    nesting,
+    topLevel,
+    expandedOverrides: {},
+    activePathKeys: new Set(),
+    showAllSubthreads: true,
+  });
+  expect(visible.filter((row) => row.kind === "thread").map((row) => row.thread.id)).toEqual([
+    "parent",
+    "child",
+  ]);
+  expect(legacyStandaloneRow(child)).toMatchObject({ kind: "thread", thread: child });
+});

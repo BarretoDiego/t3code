@@ -1475,12 +1475,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       return null;
     }
     return (
-      visibleProjectThreads.find(
+      projectThreads.find(
         (thread) =>
           scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === activeThreadKey,
       ) ?? null
     );
-  }, [activeRouteThreadKey, projectExpanded, visibleProjectThreads]);
+  }, [activeRouteThreadKey, projectExpanded, projectThreads]);
 
   const {
     hasOverflowingThreads,
@@ -1548,7 +1548,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         .filter((row) => row.kind === "thread")
         .map((row) => row.key),
       renderedRows,
-      showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
+      showEmptyThreadState: projectExpanded && projectNesting.topLevel.length === 0,
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
