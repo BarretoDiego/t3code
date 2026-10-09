@@ -1,7 +1,7 @@
 import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { SidebarSubthreadVisibilityItem } from "./sidebar/SidebarSubthreadVisibilityMenu";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
-import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
+import { ThreadSubagentMarker, ThreadSubagentStatus } from "./sidebar/ThreadSubagentMarker";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { Spinner } from "~/components/ui/spinner";
@@ -826,7 +826,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               <PullRequestGlyph.pullRequest className="size-3" />
             </a>
           ) : null}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {thread.lineage.relationshipToParent !== "subagent" && threadStatus && (
+            <ThreadStatusLabel status={threadStatus} />
+          )}
           {canOperateThread && renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
@@ -886,7 +888,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {thread.archivedAt !== null ? (
+          {thread.lineage.relationshipToParent === "subagent" ? (
+            <ThreadSubagentStatus thread={thread} />
+          ) : thread.archivedAt !== null ? (
             <span role="status" className="text-xs text-secondary-label">
               Archived
             </span>

@@ -18,6 +18,8 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+import { effectiveSnoozed } from "./threadSettled.ts";
+
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
 
 export interface EnvironmentProject extends OrchestrationProjectShell {
@@ -335,4 +337,60 @@ export function resolveThreadWorkingStartedAt(input: {
     return valid(run.startedAt) ?? valid(run.requestedAt);
   }
   return null;
+}
+
+const SUBTHREAD_RUN_LABEL = {
+  idle: "Idle",
+  preparing: "Preparing",
+  queued: "Queued",
+  starting: "Starting",
+  running: "Working",
+  waiting: "Waiting",
+  completed: "Completed",
+  interrupted: "Interrupted",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  rolled_back: "Rolled back",
+} as const;
+
+/** Subthreads keep their execution result visible after reading or parking them. */
+export function resolveSubthreadStatusLabel(
+  thread: Pick<
+    EnvironmentThreadShell,
+    | "runtime"
+    | "latestRun"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "pendingBackgroundTasks"
+    | "archivedAt"
+    | "settledOverride"
+    | "snoozedAt"
+    | "snoozedUntil"
+  >,
+  now: string,
+): string {
+  const runtimeStatus = thread.runtime?.status;
+  const runStatus =
+    runtimeStatus === "idle"
+      ? thread.latestRun !== null && !threadRunStatusIsActive(thread.latestRun.status)
+        ? thread.latestRun.status
+        : "idle"
+      : (runtimeStatus ?? thread.latestRun?.status ?? "idle");
+  const execution = thread.hasPendingApprovals
+    ? "Pending Approval"
+    : thread.hasPendingUserInput
+      ? "Awaiting Input"
+      : (runStatus === "idle" || runStatus === "completed") &&
+          backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks)
+        ? "Waiting"
+        : SUBTHREAD_RUN_LABEL[runStatus];
+  const lifecycle =
+    thread.archivedAt !== null
+      ? "Archived"
+      : effectiveSnoozed(thread, { now })
+        ? "Snoozed"
+        : thread.settledOverride === "settled"
+          ? "Settled"
+          : null;
+  return lifecycle === null ? execution : `${execution} · ${lifecycle}`;
 }
