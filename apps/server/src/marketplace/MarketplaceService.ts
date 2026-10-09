@@ -48,7 +48,7 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { ServerConfig } from "../config.ts";
 import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
