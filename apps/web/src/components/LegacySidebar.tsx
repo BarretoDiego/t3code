@@ -1,3 +1,5 @@
+import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
+import { SidebarSubthreadVisibilityItem } from "./sidebar/SidebarSubthreadVisibilityMenu";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
@@ -94,12 +96,7 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform } from "../lib/utils";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
-import {
-  readThreadShell,
-  useProjects,
-  useThreadShells,
-  useThreadShellsForProjectRefs,
-} from "../state/entities";
+import { readThreadShell, useProjects, useThreadShells } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
@@ -434,6 +431,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const canOperatePreview = useEnvironmentScope(thread.environmentId, AuthPreviewOperateScope);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+  const showAllSubthreads = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
   const threadKey = scopedThreadKey(threadRef);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const fileDropHandlers = useMemo(
@@ -865,7 +863,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               type="button"
               data-testid="sidebar-nested-toggle"
               aria-expanded={nestedExpanded}
-              aria-label={`${nestedExpanded ? "Hide" : "Show"} ${nestedCount} ${
+              disabled={showAllSubthreads}
+              aria-label={`${showAllSubthreads ? "Showing" : nestedExpanded ? "Hide" : "Show"} ${nestedCount} ${
                 nestedCount === 1 ? "subagent" : "subagents"
               }`}
               onPointerDown={(event) => event.stopPropagation()}
@@ -887,6 +886,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {thread.archivedAt !== null ? (
+            <span role="status" className="text-xs text-secondary-label">
+              Archived
+            </span>
+          ) : null}
           {canOperatePreview && discoveredPorts.length > 0 && (
             <Tooltip>
               <TooltipTrigger
@@ -945,7 +949,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               >
                 Confirm
               </button>
-            ) : canOperateThread && !isThreadRunning ? (
+            ) : canOperateThread && thread.archivedAt === null && !isThreadRunning ? (
               appSettingsConfirmThreadArchive ? (
                 <div className="pointer-events-none absolute top-1/2 right-0.5 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
                   <button
@@ -1348,7 +1352,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
   });
   const openPrLink = useOpenPrLink();
-  const sidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const { unarchiveThread } = useThreadActions();
+  const sidebarThreads = useSidebarThreadShells(project.memberProjectRefs);
+  const showAllSubthreads = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
   const sidebarThreadByKey = useMemo(
     () =>
       new Map(
@@ -1457,11 +1463,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       projectNesting: nestLegacyProjectThreads({
         sortedThreads: visibleProjectThreads,
         archivedThreads: projectThreads.filter((thread) => thread.archivedAt !== null),
+        showAllSubthreads,
       }),
       projectStatus,
       visibleProjectThreads,
     };
-  }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  }, [projectThreads, threadLastVisitedAts, threadSortOrder, showAllSubthreads]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -1522,6 +1529,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           topLevel: previewThreads,
           expandedOverrides: nestedExpandedById,
           activePathKeys,
+          showAllSubthreads,
         });
     const renderedThreadKeys = new Set(
       renderedRows.filter((row) => row.kind === "thread").map((row) => row.key),
@@ -1550,6 +1558,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     pinnedCollapsedThread,
     projectExpanded,
     projectNesting,
+    showAllSubthreads,
     projectThreads,
     sidebarThreadPreviewCount,
     threadLastVisitedAts,
@@ -2418,6 +2427,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       );
       const clicked = await api.contextMenu.show(
         [
+          ...(thread.archivedAt !== null
+            ? [{ id: "unarchive", label: "Restore thread", disabled: !canOperateThread }]
+            : []),
           ...(thread.branch
             ? [{ id: "new-thread-on-branch", label: `New thread on ${thread.branch}` }]
             : []),
@@ -2437,6 +2449,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         position,
       );
 
+      if (clicked === "unarchive") {
+        const result = await unarchiveThread(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to restore thread",
+              description: String(squashAtomCommandFailure(result)),
+            }),
+          );
+        }
+        return;
+      }
       if (clicked === "project-settings") {
         if (isMobile) setOpenMobile(false);
         void router.navigate({
@@ -2529,6 +2554,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
+      unarchiveThread,
       handleNewThread,
       isMobile,
       markThreadUnread,
@@ -2924,6 +2950,7 @@ function ProjectSortMenu({
         <TooltipPopup side="right">Sidebar options</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="bottom">
+        <SidebarSubthreadVisibilityItem />
         <MenuGroup>
           <div className="px-2 py-1 sm:text-xs font-medium text-muted-foreground">
             Sort projects

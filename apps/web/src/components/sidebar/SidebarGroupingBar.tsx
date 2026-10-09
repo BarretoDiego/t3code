@@ -1,3 +1,4 @@
+import { SidebarSubthreadVisibilityItem } from "./SidebarSubthreadVisibilityMenu";
 import { ArrowUpDownIcon, CheckIcon, FunnelIcon, GroupIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import type {
@@ -252,6 +253,8 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
               ))}
             </MenuRadioGroup>
           </MenuGroup>
+          <MenuSeparator />
+          <SidebarSubthreadVisibilityItem />
         </MenuPopup>
       </Menu>
 

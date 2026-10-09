@@ -269,3 +269,25 @@ describe("buildDraftActionMenuItems", () => {
     expect(items.at(-1)).toMatchObject({ label: "Discard draft", destructive: true });
   });
 });
+
+it.each([true, false])(
+  "offers restore and consultation for archived subthreads (can operate: %s)",
+  (canOperate) => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      canOperate,
+      isArchived: true,
+      nested: { readOnly: true },
+    });
+    expect(items.map((item) => item.id)).toEqual([
+      "unarchive",
+      "copy-thread-id",
+      "copy-path",
+      "project-settings",
+    ]);
+    expect(items.find((item) => item.id === "unarchive")?.disabled).toBe(!canOperate);
+    expect(
+      items.filter((item) => item.id !== "unarchive").every((item) => item.disabled !== true),
+    ).toBe(true);
+  },
+);

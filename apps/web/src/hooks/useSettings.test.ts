@@ -451,3 +451,32 @@ describe("onboarding completion persistence", () => {
     expect(persist).toHaveBeenLastCalledWith(completedSettings);
   });
 });
+
+it("saves subthread visibility without losing other preferences and rehydrates it", async () => {
+  const saved = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
+  persistenceMocks.getClientSettings.mockResolvedValue(saved);
+  await persistClientSettingsUpdate((settings) => ({
+    ...settings,
+    sidebarShowAllSubthreads: true,
+  }));
+  const next = { ...saved, sidebarShowAllSubthreads: true };
+  expect(persistenceMocks.setClientSettings).toHaveBeenCalledExactlyOnceWith(next);
+  __resetClientSettingsPersistenceForTests();
+  persistenceMocks.getClientSettings.mockResolvedValue(next);
+  await ensureClientSettingsHydrated();
+  expect(getClientSettings()).toEqual(next);
+  await persistClientSettingsUpdate((settings) => ({
+    ...settings,
+    sidebarShowAllSubthreads: false,
+  }));
+  expect(getClientSettings()).toEqual(saved);
+});
+
+it("keeps the previous subthread choice if saving it fails", async () => {
+  await ensureClientSettingsHydrated();
+  persistenceMocks.setClientSettings.mockRejectedValue(new Error("storage unavailable"));
+  await expect(
+    persistClientSettingsUpdate((settings) => ({ ...settings, sidebarShowAllSubthreads: true })),
+  ).rejects.toThrow("storage unavailable");
+  expect(getClientSettings().sidebarShowAllSubthreads).toBe(false);
+});

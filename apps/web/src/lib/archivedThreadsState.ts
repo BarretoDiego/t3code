@@ -48,3 +48,23 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
     refresh,
   };
 }
+
+const sidebarArchivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
+  getSnapshotAtom: (environmentId) =>
+    orchestrationEnvironment.archivedShell({ environmentId, input: {} }),
+  labelPrefix: "web:sidebar-archived-thread-snapshots",
+});
+
+export function useSidebarArchivedThreadSnapshots(environmentIds: ReadonlyArray<EnvironmentId>) {
+  const environmentKey = useMemo(
+    () => makeArchivedThreadsEnvironmentKey(environmentIds),
+    [environmentIds],
+  );
+  const result = useAtomValue(sidebarArchivedSnapshotsAtom(environmentKey));
+  const refresh = useCallback(() => {
+    for (const environmentId of environmentIds) {
+      appAtomRegistry.refresh(orchestrationEnvironment.archivedShell({ environmentId, input: {} }));
+    }
+  }, [environmentIds]);
+  return { ...result, refresh };
+}

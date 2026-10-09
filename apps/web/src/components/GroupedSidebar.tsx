@@ -1,3 +1,4 @@
+import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -142,7 +143,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import { useProjects } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { projectEnvironment } from "../state/projects";
@@ -879,6 +880,7 @@ const SidebarNestedToggle = memo(function SidebarNestedToggle(props: {
   onToggle: (threadKey: string, expanded: boolean) => void;
 }) {
   const { expanded, onToggle, summary, threadKey } = props;
+  const showAllSubthreads = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
   const label = nestedSummaryLabel(summary);
   const handleClick = useCallback(
     (event: ReactMouseEvent) => {
@@ -896,7 +898,8 @@ const SidebarNestedToggle = memo(function SidebarNestedToggle(props: {
             type="button"
             data-testid="sidebar-nested-toggle"
             aria-expanded={expanded}
-            aria-label={`${expanded ? "Hide" : "Show"} ${label}`}
+            disabled={showAllSubthreads}
+            aria-label={showAllSubthreads ? label : `${expanded ? "Hide" : "Show"} ${label}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={handleClick}
             onDoubleClick={(event) => event.stopPropagation()}
@@ -1088,7 +1091,9 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
           />
         ) : null}
         <span className="shrink-0 tabular-nums text-secondary-label">
-          {signal !== null ? (
+          {thread.archivedAt !== null ? (
+            <span role="status">Archived</span>
+          ) : signal !== null ? (
             <span role="status">{NESTED_SIGNAL_LABEL[signal]}</span>
           ) : isUnread ? (
             <span role="status">Done</span>
@@ -1696,6 +1701,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         onShowAllNested={props.onShowAllNested}
       />
     ) : null;
+  const archivedMarker =
+    thread.archivedAt !== null ? (
+      <span role="status" className="text-xs text-secondary-label">
+        Archived
+      </span>
+    ) : null;
   const subagentMarker =
     thread.lineage.relationshipToParent === "subagent" ? (
       <ThreadSubagentMarker parentTitle={props.subagentParentTitle} />
@@ -1742,6 +1753,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               />
             </span>
             {subagentMarker}
+            {archivedMarker}
             {title}
             {nestedToggle}
             {pinIndicator}
@@ -1910,7 +1922,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           threadTimeLabel(thread)
         )}
       </span>
-      {props.settlementSupported || showSnoozeButton ? (
+      {thread.archivedAt === null && (props.settlementSupported || showSnoozeButton) ? (
         <span
           className={cn(
             // focus-visible, not focus-within: a mouse click leaves
@@ -2062,6 +2074,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     </span>
                   ) : null}
                   {subagentMarker}
+                  {archivedMarker}
                   {title}
                   {nestedToggle}
                   {isRegeneratingTitle ? (
@@ -2106,6 +2119,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <div className="mt-1 flex min-w-0 items-center gap-1.5">
                   {isUnread && !isWoke ? <UnreadDot /> : null}
                   {subagentMarker}
+                  {archivedMarker}
                   {title}
                   {nestedToggle}
                   {isRegeneratingTitle ? (
@@ -2302,7 +2316,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useThreadShells();
+  const threads = useSidebarThreadShells();
+  const showAllSubthreads = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2329,6 +2344,7 @@ export default function Sidebar() {
     reorderPinnedThread,
     setThreadAutoSettle,
     archiveThread,
+    unarchiveThread,
     deleteThread,
   } = useThreadActions();
   const deleteProject = useAtomCommand(projectEnvironment.delete, {
@@ -2803,7 +2819,6 @@ export default function Sidebar() {
     const nesting = buildThreadNesting({
       threads,
       isListed: (thread) =>
-        thread.archivedAt === null &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)) &&
         (threadProviderFilter === null ||
@@ -2815,8 +2830,11 @@ export default function Sidebar() {
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
     for (const { thread, summary } of nesting.roots) {
-      // Keep a live family visible together without changing its saved shelf.
-      const carriesLiveWork = summary?.live === true;
+      // Showing every subthread keeps quiet families visible too, without changing their saved shelf.
+      const carriesLiveWork =
+        summary?.live === true ||
+        (showAllSubthreads &&
+          (summary !== null || thread.lineage.relationshipToParent === "subagent"));
       if (!carriesLiveWork && isSnoozedThread(thread)) {
         snoozed.push(thread);
       } else if (!carriesLiveWork && isSettledThread(thread)) {
@@ -2862,6 +2880,7 @@ export default function Sidebar() {
     snoozeWakeTick,
     threadProviderFilter,
     threads,
+    showAllSubthreads,
   ]);
 
   // Provider options come from the unfiltered thread set: deriving them from
@@ -2921,13 +2940,14 @@ export default function Sidebar() {
           activePathKeys: routeNestingPath,
           childLimit: THREAD_NESTING_CHILD_LIMIT,
           showAllKeys: fullNestedKeys,
+          showAllSubthreads,
         }),
       );
       if (display !== null) next.set(root.key, display);
     }
     nestingDisplayCacheRef.current = next;
     return next;
-  }, [fullNestedKeys, nestedExpandedById, routeNestingPath, threadNesting]);
+  }, [fullNestedKeys, nestedExpandedById, routeNestingPath, threadNesting, showAllSubthreads]);
   const nestedThreads = useMemo(
     () =>
       [...threadNesting.nodeByKey.values()].flatMap((node) =>
@@ -4233,6 +4253,7 @@ export default function Sidebar() {
           api.contextMenu.show(
             buildThreadActionMenuItems({
               canOperate: readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
+              isArchived: thread.archivedAt !== null,
               branch: thread.branch ?? null,
               projectFilter: threadProjectGroup
                 ? {
@@ -4272,6 +4293,20 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "unarchive": {
+            const result = await unarchiveThread(threadRef);
+            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Failed to restore thread",
+                  description: String(squashAtomCommandFailure(result)),
+                }),
+              );
+            }
+            return;
+          }
+
           case "continue-on":
             openThreadHandoff(threadRef);
             return;
@@ -4458,6 +4493,7 @@ export default function Sidebar() {
     },
     [
       archiveThread,
+      unarchiveThread,
       attemptPin,
       attemptSettle,
       attemptSnooze,
