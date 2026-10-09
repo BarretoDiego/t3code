@@ -5,9 +5,15 @@ import { View } from "react-native";
 import { AppText as Text } from "./AppText";
 import { T3_CODE_BRAND_MARK_SOURCE } from "./brandAssets";
 
+const isForkBuild = Constants.expoConfig?.extra?.appBrand === "fork";
 const appVariant = Constants.expoConfig?.extra?.appVariant;
-const DEFAULT_STAGE_LABEL =
-  appVariant === "development" ? "Dev" : appVariant === "preview" ? "Preview" : "Alpha";
+const DEFAULT_STAGE_LABEL = isForkBuild
+  ? "Fork"
+  : appVariant === "development"
+    ? "Dev"
+    : appVariant === "preview"
+      ? "Preview"
+      : "Alpha";
 
 export function BrandMark(props: { readonly compact?: boolean; readonly stageLabel?: string }) {
   const compact = props.compact ?? false;

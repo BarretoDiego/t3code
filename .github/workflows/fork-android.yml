@@ -1,0 +1,139 @@
+name: Fork Android APK
+
+on:
+  pull_request:
+    paths:
+      - apps/mobile/**
+      - assets/fork/**
+      - packages/client-runtime/**
+      - packages/contracts/**
+      - packages/shared/**
+      - .github/workflows/fork-android.yml
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      version_code:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: APK version name
+        default: "2.0.0"
+        required: true
+        type: string
+      version_code:
+        description: Increasing Android version code
+        default: "1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Signed standalone APK
+    if: github.repository != 'pingdotgg/t3code' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      APP_VARIANT: production
+      T3CODE_FORK_BRAND: "1"
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      T3CODE_MOBILE_VERSION: ${{ inputs.version || '2.0.0' }}
+      T3CODE_MOBILE_VERSION_CODE: ${{ inputs.version_code || github.run_number }}
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - name: Checkout
+        env:
+          CHECKOUT_REF: ${{ inputs.ref || github.sha }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+      - name: Install mobile dependencies
+        run: vp install --frozen-lockfile --filter=@t3tools/mobile... --filter=@t3tools/scripts...
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore private signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_FORK_KEYSTORE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_FORK_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_FORK_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_FORK_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/t3-fork.keystore"
+          {
+            echo "T3CODE_ANDROID_KEYSTORE=$RUNNER_TEMP/t3-fork.keystore"
+            echo "T3CODE_ANDROID_STORE_PASSWORD=$STORE_PASSWORD"
+            echo "T3CODE_ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "T3CODE_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        run: node_modules/.bin/expo prebuild --platform android --no-install
+      - name: Build release with embedded JavaScript
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon --max-workers=2
+      - name: Verify APK signature, identity and embedded bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk"
+          apkanalyzer manifest print "$apk" > "$RUNNER_TEMP/manifest.xml"
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          manifest = ET.parse(os.path.join(os.environ["RUNNER_TEMP"], "manifest.xml")).getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          app = manifest.find("application")
+          assert manifest.get("package") == "com.barretodiego.t3code.fork"
+          assert manifest.get(android + "versionCode") == os.environ["T3CODE_MOBILE_VERSION_CODE"]
+          assert app is not None and app.get(android + "debuggable", "false") == "false"
+          metadata = {item.get(android + "name"): item.get(android + "value") for item in app.findall("meta-data")}
+          assert metadata.get("expo.modules.updates.ENABLED") == "false"
+          PY
+          unzip -l "$apk" > "$RUNNER_TEMP/apk-files.txt"
+          grep -q 'assets/index.android.bundle' "$RUNNER_TEMP/apk-files.txt"
+          mkdir -p release-assets
+          cp "$apk" "release-assets/T3-Code-Fork-${T3CODE_MOBILE_VERSION}.apk"
+          cd release-assets
+          sha256sum *.apk > android-sha256.txt
+      - name: Upload installable APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: android-apk
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/t3-fork.keystore"

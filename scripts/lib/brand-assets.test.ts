@@ -10,6 +10,16 @@ import {
 } from "./brand-assets.ts";
 
 describe("brand-assets", () => {
+  it("uses fork favicons for both release channels only when opted in", () => {
+    for (const channel of ["latest", "nightly"] as const) {
+      expect(resolveWebAssetBrandForChannel(channel, true)).toBe("fork");
+    }
+    expect(resolveWebAssetBrandForPackageVersion("0.0.46", true)).toBe("fork");
+    expect(resolveWebIconOverrides("fork", "dist/client")).toContainEqual({
+      sourceRelativePath: BRAND_ASSET_PATHS.forkWebFaviconIco,
+      targetRelativePath: "dist/client/favicon.ico",
+    });
+  });
   it("maps production web assets into the server package", () => {
     expect(resolveWebIconOverrides("production", "dist/client")).toEqual([
       {

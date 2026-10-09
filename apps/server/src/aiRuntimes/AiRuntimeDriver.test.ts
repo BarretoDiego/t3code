@@ -6,9 +6,9 @@ import {
   type AiRuntimeConfig,
   CodexSettings,
   ClaudeSettings,
-  OpenCodeSettings,
   ProviderInstanceId,
 } from "@t3tools/contracts";
+import { OpenCodeSettings } from "@t3tools/provider-opencode/settings";
 import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import { makeEndpointDriver, normalizeRuntimeUrl, ollamaCapabilities } from "./AiRuntimeDriver.ts";
 import { runtimeProviderConfig } from "./runtimeBinding.ts";

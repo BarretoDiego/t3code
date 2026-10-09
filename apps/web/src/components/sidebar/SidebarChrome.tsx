@@ -145,7 +145,7 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Code
+        {import.meta.env.VITE_T3CODE_FORK_BRAND === "1" ? "Code Fork" : "Code"}
       </span>
     </span>
   );

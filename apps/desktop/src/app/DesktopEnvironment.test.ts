@@ -39,6 +39,23 @@ const makeEnvironment = (
 ) => DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(layerEnvironment(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it("keeps upstream identity unless fork branding is selected", () => {
+    const input = { isDevelopment: false, appVersion: "0.0.46-nightly.20261009.18" };
+    assert.equal(DesktopEnvironment.resolveDesktopAppBranding(input).baseName, "T3 Code");
+    assert.equal(
+      DesktopEnvironment.resolveDesktopAppBranding({ ...input, forkBuild: true }).baseName,
+      "T3 Code",
+    );
+    assert.equal(
+      DesktopEnvironment.resolveDesktopAppBranding({ ...input, forkBuild: true }).displayName,
+      "T3 Code Fork (Nightly)",
+    );
+    assert.equal(
+      DesktopEnvironment.resolveDesktopAppBranding({ ...input, forkBuild: false }).displayName,
+      "T3 Code (Nightly)",
+    );
+  });
+
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

@@ -96,6 +96,9 @@ export class DesktopEnvironment extends Context.Service<
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
 const APP_BASE_NAME = "T3 Code";
+declare const __T3CODE_BUILD_FORK_BRAND__: boolean | undefined;
+const FORK_BUILD =
+  typeof __T3CODE_BUILD_FORK_BRAND__ !== "undefined" && __T3CODE_BUILD_FORK_BRAND__;
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -111,12 +114,15 @@ function resolveDesktopAppStageLabel(input: {
 export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
+  readonly forkBuild?: boolean;
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
+  const displayBaseName = (input.forkBuild ?? FORK_BUILD) ? `${APP_BASE_NAME} Fork` : APP_BASE_NAME;
   return {
+    // Keep Electron's runtime identity stable for the existing encrypted profile.
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: `${displayBaseName} (${stageLabel})`,
   };
 }
 

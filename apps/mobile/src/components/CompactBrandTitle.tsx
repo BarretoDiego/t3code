@@ -26,7 +26,10 @@ export function CompactBrandTitle(
     readonly allowFontScaling?: boolean;
   } = {},
 ) {
-  const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
+  const stageLabel = resolveMobileStageLabel(
+    Constants.expoConfig?.extra?.appVariant,
+    Constants.expoConfig?.extra?.appBrand,
+  );
   const titleOffset = brandTitleOffset();
   const { scale } = useAndroidControlSizing();
 

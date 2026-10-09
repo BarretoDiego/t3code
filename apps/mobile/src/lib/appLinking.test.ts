@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { shouldHandleAppLink } from "./appLinking";
 
 describe("shouldHandleAppLink", () => {
-  it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://"])(
+  it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://", "t3code-fork://"])(
     "ignores scheme-only URL %s",
     (url) => {
       expect(shouldHandleAppLink(url)).toBe(false);
