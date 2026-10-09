@@ -1,3 +1,4 @@
+import { resolveSubthreadStatusLabel } from "@t3tools/client-runtime/state/models";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
   THREAD_LIST_V2_MONO_FONT as MONO_FONT,
@@ -565,6 +566,7 @@ export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: 
     (status === "ready" && threadHasUnseenCompletion(thread)
       ? { label: "Done", className: "text-adaptive-emerald-700-300" }
       : undefined);
+  const subthreadStatus = resolveSubthreadStatusLabel(thread, new Date().toISOString());
   const indent =
     (sidebarPane ? 16 : 24) +
     (Math.min(props.depth, NESTED_ROW_MAX_INDENT_DEPTH) - 1) * NESTED_ROW_INDENT_STEP;
@@ -575,7 +577,7 @@ export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: 
       className={rowAppearance.className}
       style={rowAppearance.style}
       accessibilityRole="button"
-      accessibilityLabel={`Subagent: ${thread.title}${statusLabel ? `, ${statusLabel.label}` : ""}`}
+      accessibilityLabel={`Subagent: ${thread.title}, ${subthreadStatus}`}
       accessibilityState={{ selected }}
       onPress={() => props.onSelectThread(thread)}
     >
@@ -625,7 +627,7 @@ export const ThreadListV2NestedRow = memo(function ThreadListV2NestedRow(props: 
                   : rowAppearance.tertiaryForegroundClassName),
             )}
           >
-            {statusLabel?.label ?? props.timeLabel}
+            {subthreadStatus}
           </Text>
         </View>
       </View>
@@ -858,11 +860,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   // so checking a thread on any device clears it everywhere.
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
-  const statusLabel =
+  const baseStatusLabel =
     // A native /goal keeps the agent going across turns until it is met.
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
       : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
+  const statusLabel =
+    thread.lineage.relationshipToParent === "subagent"
+      ? {
+          ...(baseStatusLabel ?? {
+            icon: "circle" as const,
+            className: rowAppearance.tertiaryForegroundClassName,
+            iconTintClassName: rowAppearance.mutedIconTintClassName,
+          }),
+          label: resolveSubthreadStatusLabel(thread, new Date().toISOString()),
+        }
+      : baseStatusLabel;
   const recede = shouldRecedeThreadRow({ status, selected });
   // The timestamp is precomputed on the list item (same stamps the settled
   // tail sorts by) so a minute tick only re-renders rows that draw it.

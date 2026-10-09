@@ -1,6 +1,7 @@
 import { CornerDownRightIcon } from "lucide-react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { resolveSubthreadStatusLabel } from "@t3tools/client-runtime/state/models";
 
 /** Stays visible even when a subagent cannot be shown beneath its parent. */
 export function ThreadSubagentMarker({
@@ -25,5 +26,17 @@ export function ThreadSubagentMarker({
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+export function ThreadSubagentStatus({
+  thread,
+}: {
+  readonly thread: Parameters<typeof resolveSubthreadStatusLabel>[0];
+}) {
+  return (
+    <span role="status" className="shrink-0 text-xs text-secondary-label">
+      {resolveSubthreadStatusLabel(thread, new Date().toISOString())}
+    </span>
   );
 }

@@ -1,6 +1,6 @@
 import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
-import { ThreadSubagentMarker } from "./sidebar/ThreadSubagentMarker";
+import { ThreadSubagentMarker, ThreadSubagentStatus } from "./sidebar/ThreadSubagentMarker";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../state/session";
 import { isProviderNativeSubagentThread, resolveEnvironmentMachineKind } from "@t3tools/contracts";
@@ -852,13 +852,6 @@ function nestedDepthClass(depth: number): string {
   return NESTED_DEPTH_CLASS[Math.min(Math.max(depth, 1), NESTED_DEPTH_CLASS.length) - 1]!;
 }
 
-const NESTED_SIGNAL_LABEL = {
-  approval: "Approval",
-  input: "Input",
-  failed: "Failed",
-  working: "Working",
-} as const;
-
 function nestedSummaryLabel(summary: ThreadNestingSummary): string {
   const reported = (["approval", "input", "failed", "working"] as const)
     .filter((signal) => summary.counts[signal] > 0)
@@ -1090,17 +1083,7 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
             onToggle={props.onToggleNested}
           />
         ) : null}
-        <span className="shrink-0 tabular-nums text-secondary-label">
-          {thread.archivedAt !== null ? (
-            <span role="status">Archived</span>
-          ) : signal !== null ? (
-            <span role="status">{NESTED_SIGNAL_LABEL[signal]}</span>
-          ) : isUnread ? (
-            <span role="status">Done</span>
-          ) : (
-            threadTimeLabel(thread)
-          )}
-        </span>
+        <ThreadSubagentStatus thread={thread} />
       </div>
     </li>
   );
@@ -1702,7 +1685,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       />
     ) : null;
   const archivedMarker =
-    thread.archivedAt !== null ? (
+    thread.lineage.relationshipToParent === "subagent" ? (
+      <ThreadSubagentStatus thread={thread} />
+    ) : thread.archivedAt !== null ? (
       <span role="status" className="text-xs text-secondary-label">
         Archived
       </span>
@@ -2291,7 +2276,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           {thread.lineage.relationshipToParent === "subagent" ? <ThreadSubagentMarker /> : null}
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
-            {threadTimeLabel(thread)}
+            {thread.lineage.relationshipToParent === "subagent" ? (
+              <ThreadSubagentStatus thread={thread} />
+            ) : (
+              threadTimeLabel(thread)
+            )}
           </span>
         </TooltipTrigger>
         <SidebarThreadTooltip
