@@ -253,9 +253,12 @@ const make = Effect.gen(function* () {
         .pipe(
           Effect.mapError((cause) =>
             automationError(
-              cause.operation === "resolve-project" ? "INVALID_INPUT" : "INTERNAL",
+              cause._tag === "ThreadManagementProviderInstanceDisabledError" ||
+                cause.operation === "resolve-project"
+                ? "INVALID_INPUT"
+                : "INTERNAL",
               `The orchestrator's main thread could not be created: ${cause.message}`,
-              { operation: cause.operation },
+              { operation: "operation" in cause ? cause.operation : cause._tag },
             ),
           ),
         );

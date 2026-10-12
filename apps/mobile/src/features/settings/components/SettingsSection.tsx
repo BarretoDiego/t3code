@@ -11,6 +11,7 @@ export function SettingsSection(props: {
   readonly headerAction?: ReactNode;
   /** Force the grouped card background; Android otherwise lists options flat. */
   readonly card?: boolean;
+  readonly footer?: string;
 }) {
   return (
     <View className="gap-2">
@@ -57,6 +58,9 @@ export function SettingsSection(props: {
       >
         {props.children}
       </View>
+      {props.footer ? (
+        <Text className="px-4 text-sm text-foreground-muted">{props.footer}</Text>
+      ) : null}
     </View>
   );
 }

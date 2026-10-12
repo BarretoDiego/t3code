@@ -15,7 +15,7 @@ import {
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -684,7 +684,7 @@ it.layer(NodeServices.layer)("jobs on execution nodes", (it) => {
         nodeId: LOCAL,
       });
     }).pipe(
-      Effect.provideService(HostProcessEnvironment, {
+      Effect.provideService(HostProcess.Environment, {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
         T3CODE_SERVER_SECRET: "hunter2",
@@ -731,7 +731,7 @@ it.layer(NodeServices.layer)("jobs on execution nodes", (it) => {
 
       const probed = yield* running.jobs.probeNode(operator, LOCAL);
       assert.strictEqual(probed.availability.status, "available");
-      assert.strictEqual(probed.availability.os, yield* HostProcessPlatform);
+      assert.strictEqual(probed.availability.os, yield* HostProcess.Platform);
       assert.isNotNull(probed.availability.observedAt);
       assert.deepStrictEqual(
         probed.availability.tools.map((tool) => tool.name),

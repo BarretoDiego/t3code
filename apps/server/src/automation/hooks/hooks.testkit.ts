@@ -7,7 +7,7 @@ import {
   InboxEntryId,
   OrchestratorId,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -161,7 +161,7 @@ export const makeHookTestLayerOn = <E>(
           commandExecutables: [],
           ...options.policy,
         }),
-        Layer.succeed(HostProcessEnvironment, options.environment ?? {}),
+        Layer.succeed(HostProcess.Environment, options.environment ?? {}),
       ),
     ),
     Layer.provideMerge(EventJournal.layer),

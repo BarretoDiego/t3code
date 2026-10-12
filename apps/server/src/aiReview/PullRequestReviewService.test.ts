@@ -12,6 +12,7 @@ import {
   SourceControlHubError,
   ProviderInstanceId,
   ProjectId,
+  SourceControlProviderKind,
   type AiReviewRun,
   type RemotePullRequestDetail,
   type PullRequestActivity,
@@ -31,7 +32,7 @@ const base = "a".repeat(40),
   firstHead = "b".repeat(40),
   secondHead = "c".repeat(40);
 const reference = {
-  provider: "github" as const,
+  provider: SourceControlProviderKind.make("github"),
   host: "github.com",
   repository: "owner/repo",
   number: 1,

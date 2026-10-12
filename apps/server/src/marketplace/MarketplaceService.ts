@@ -30,7 +30,7 @@ import {
   type ServerSettingsError,
 } from "@t3tools/contracts";
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
@@ -489,7 +489,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   const httpClient = yield* HttpClient.HttpClient;
   const config = yield* ServerConfig;
   const serverSettings = yield* ServerSettingsService;

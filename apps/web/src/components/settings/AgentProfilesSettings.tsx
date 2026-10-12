@@ -49,7 +49,11 @@ export function AgentProfilesSettingsPanel() {
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(serverProviders),
+          settings,
+          null,
+        ),
       ),
     [serverProviders, settings],
   );

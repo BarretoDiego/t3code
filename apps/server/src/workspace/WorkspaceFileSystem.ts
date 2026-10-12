@@ -15,11 +15,16 @@ import * as NodeFSP from "node:fs/promises";
 import type {
   ProjectDiscoverScriptsInput,
   ProjectDiscoverScriptsResult,
+  FilesystemEntryMetadata,
+  FilesystemGetMetadataInput,
+  FilesystemGetMetadataResult,
   ProjectReadFileInput,
   ProjectReadFileResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "@t3tools/contracts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -30,13 +35,13 @@ import * as Schema from "effect/Schema";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   SCRIPT_MANIFEST_NAMES,
   PACKAGE_MANAGER_LOCKS,
   packageManagerFromManifest,
   scriptsFromManifest,
 } from "./projectScriptDiscovery.ts";
+import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
@@ -123,6 +128,10 @@ export class WorkspaceFileSystem extends Context.Service<
       ProjectDiscoverScriptsResult,
       WorkspacePaths.WorkspacePathsError | WorkspaceFileSystemOperationError
     >;
+    readonly getMetadata: (
+      input: FilesystemGetMetadataInput,
+    ) => Effect.Effect<FilesystemGetMetadataResult>;
+
     /**
      * Read a UTF-8 text file relative to the workspace root, or any host file by
      * absolute path.
@@ -154,7 +163,52 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
+
+  const metadataForPath = Effect.fnUntraced(function* (requestedPath: string) {
+    const expandedPath = expandHomePath(requestedPath, yield* HostProcess.HomeDirectory);
+    if (!path.isAbsolute(expandedPath)) return null;
+    const stat = yield* fileSystem.stat(expandedPath).pipe(Effect.option);
+    if (stat._tag === "None") return null;
+    if (stat.value.type === "Directory") return { kind: "directory" } as const;
+    if (stat.value.type !== "File") return { kind: "other" } as const;
+    let mimeType: string | undefined;
+    // Named extensions already choose the icon without a content read. For an
+    // extensionless regular file, read at most 512 bytes, never the whole file.
+    if (path.extname(expandedPath) === "" && stat.value.size > 0) {
+      mimeType = yield* Effect.tryPromise({
+        try: async () => {
+          const handle = await NodeFSP.open(
+            expandedPath,
+            NodeFS.constants.O_RDONLY | NodeFS.constants.O_NONBLOCK,
+          );
+          try {
+            if (!(await handle.stat()).isFile()) return undefined;
+            const buffer = Buffer.alloc(512);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            return fileHeaderMimeType(buffer.subarray(0, bytesRead));
+          } finally {
+            await handle.close();
+          }
+        },
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    }
+    return {
+      kind: "file",
+      byteLength: Number(stat.value.size),
+      ...(mimeType === undefined ? {} : { mimeType }),
+    } satisfies FilesystemEntryMetadata;
+  });
+
+  const getMetadata: WorkspaceFileSystem["Service"]["getMetadata"] = Effect.fn(
+    "WorkspaceFileSystem.getMetadata",
+  )(function* (input) {
+    const paths = [...new Set(input.paths)];
+    const entries = yield* Effect.forEach(paths, metadataForPath, { concurrency: 8 });
+    const byPath = new Map(paths.map((value, index) => [value, entries[index] ?? null]));
+    return { entries: input.paths.map((value) => byPath.get(value) ?? null) };
+  });
 
   /**
    * Resolves the file a read targets. Workspace-relative paths must stay inside the
@@ -472,7 +526,7 @@ export const make = Effect.gen(function* () {
     return { scripts, truncated, unreadablePaths };
   });
 
-  return WorkspaceFileSystem.of({ readFile, writeFile, discoverScripts });
+  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile, discoverScripts });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

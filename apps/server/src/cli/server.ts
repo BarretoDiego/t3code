@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -33,7 +33,9 @@ export const rejectUnknownCommand = Effect.fn("cli.rejectUnknownCommand")(functi
 ) {
   if (Option.isNone(cwd)) return;
   const word = cwd.value.trim();
-  if (word.length === 0 || /[\\/~]/.test(word) || word.startsWith(".")) return;
+  // A drive prefix (`C:name`) is a Windows path, relative to that drive's directory.
+  if (word.length === 0 || /[\\/~]/.test(word) || word.startsWith(".") || /^[A-Za-z]:/.test(word))
+    return;
   const fs = yield* FileSystem.FileSystem;
   const exists = yield* fs.exists(word).pipe(Effect.orElseSucceed(() => false));
   if (!exists) return yield* new UnknownCommandError({ word });
@@ -60,7 +62,7 @@ export const runDefaultServerCommand = (flags: CliServerFlags) =>
     if (Option.isSome(flags.cwd)) {
       const cwd = flags.cwd.value.trim();
       const fs = yield* FileSystem.FileSystem;
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const explicitPath =
         cwd === "." ||
         cwd === ".." ||

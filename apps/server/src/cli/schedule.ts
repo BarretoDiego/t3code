@@ -13,7 +13,7 @@ import {
   type ScheduledTaskUpsertSchedule,
   WS_METHODS,
 } from "@t3tools/contracts";
-import { HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -423,7 +423,9 @@ const addCommand = Command.make("add", {
           const shell = yield* loadShell(client);
           const project = yield* resolveProject(
             shell,
-            Option.isSome(flags.project) ? flags.project.value : yield* HostProcessWorkingDirectory,
+            Option.isSome(flags.project)
+              ? flags.project.value
+              : yield* HostProcess.WorkingDirectory,
           );
           const defaults = yield* resolveNewThreadDefaults(client, shell, project, flags.model);
           input = {

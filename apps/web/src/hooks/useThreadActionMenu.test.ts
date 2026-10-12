@@ -66,6 +66,11 @@ vi.mock("../state/entities", () => ({
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => "primary" }));
 vi.mock("../state/threads", () => ({ threadEnvironment: { updateMetadata: "metadata" } }));
+// The fork's handoff entry pulls UI modules this hook test does not render.
+vi.mock("../state/threadHandoff", () => ({
+  canHandoffThread: () => false,
+  openThreadHandoff: vi.fn(),
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => {
     recordEffect("metadata");

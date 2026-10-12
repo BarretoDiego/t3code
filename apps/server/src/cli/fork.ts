@@ -14,7 +14,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { WS_METHODS } from "@t3tools/contracts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
@@ -91,8 +91,8 @@ const loadConfig = Effect.fn("cli.fork.loadConfig")(function* (configDir: Option
     }),
     baseDir,
     home,
-    platform: yield* HostProcessPlatform,
-    arch: yield* HostProcessArchitecture,
+    platform: yield* HostProcess.Platform,
+    arch: yield* HostProcess.Architecture,
   });
   if (config.repo === "" || !NodeFS.existsSync(NodePath.join(config.repo, ".git"))) {
     return yield* new ForkSyncError({

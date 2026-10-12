@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Config from "../config.ts";
 import * as Secrets from "../auth/ServerSecretStore.ts";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { make } from "./SourceControlAccounts.ts";
 
 const dependencies = Secrets.layer.pipe(
@@ -47,7 +47,11 @@ it.effect(
       const mapping = {
         projectId: ProjectId.make("mapping-project"),
         remoteName: "origin",
-        reference: { provider: "github" as const, host: "github.com", repository: "owner/repo" },
+        reference: {
+          provider: SourceControlProviderKind.make("github"),
+          host: "github.com",
+          repository: "owner/repo",
+        },
       };
       yield* accounts.saveMapping(mapping);
       yield* accounts.saveMapping({

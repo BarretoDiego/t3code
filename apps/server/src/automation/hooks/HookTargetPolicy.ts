@@ -1,4 +1,4 @@
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -37,7 +37,7 @@ const origins = (value: string | undefined) =>
 
 export const layer = Layer.effect(
   HookTargetPolicy,
-  Effect.map(HostProcessEnvironment, (environment) => ({
+  Effect.map(HostProcess.Environment, (environment) => ({
     webhookOrigins: origins(environment.T3CODE_HOOK_WEBHOOK_ORIGINS),
     privateWebhookOrigins: origins(environment.T3CODE_HOOK_WEBHOOK_PRIVATE_ORIGINS),
     commandExecutables: list(environment.T3CODE_HOOK_COMMANDS),

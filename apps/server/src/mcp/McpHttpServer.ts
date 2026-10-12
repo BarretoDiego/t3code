@@ -19,6 +19,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
+import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
@@ -36,7 +37,7 @@ import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-import { ComputeToolkitHandlersLive } from "./toolkits/compute/handlers.ts";
+import * as ComputeHandlers from "./toolkits/compute/handlers.ts";
 import { ComputeToolkit } from "./toolkits/compute/tools.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
@@ -764,11 +765,25 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
 /**
  * `McpServer.toolkit` for handlers that declared their access (see
  * `McpToolAccess`). Every toolkit on `/mcp` registers through this.
+ *
+ * `McpServer.toolkit` asks for every service its tools declare when it
+ * registers them, but the auth middleware provides `McpInvocationContext` to
+ * each request instead. Registration must not get one: the services it
+ * captures would replace the request's.
  */
 export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, RX>(
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
-) => McpServer.toolkit(toolkit).pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
+) => {
+  const registration = McpServer.toolkit(toolkit);
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
+  const registered = registration as Layer.Layer<
+    never,
+    never,
+    Exclude<Layer.Services<typeof registration>, McpInvocationContext.McpInvocationContext>
+  >;
+  return registered.pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
+};
 
 /** A hand-registered tool, also only with handlers that declared their access. */
 const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, EX, RX>(
@@ -813,10 +828,10 @@ const layerPreviewControlsRegistration = toolkitRegistration(
   PreviewControlsHandlers.layer,
 );
 
-const layerEnvironmentRegistration = toolkitRegistration(
+export const layerEnvironmentToolkit = toolkitRegistration(
   EnvironmentToolkit,
   EnvironmentHandlers.layer,
-);
+).pipe(Layer.provide(ThreadCommandExecutor.layer));
 
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
@@ -845,15 +860,14 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
-const ComputeToolkitRegistrationLive = McpServer.toolkit(ComputeToolkit).pipe(
-  Layer.provide(ComputeToolkitHandlersLive),
-);
+const ComputeToolkitRegistrationLive = toolkitRegistration(ComputeToolkit, ComputeHandlers.layer);
 
 export const layerMcpTransport = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
+  allowSessionTermination: true,
 }).pipe(Layer.provide(layerMcpAuthMiddleware));
 
 export const layer = Layer.mergeAll(
@@ -863,7 +877,7 @@ export const layer = Layer.mergeAll(
   layerThreadToolkit,
   layerAttachmentToolkit,
   layerProjectRegistration,
-  layerEnvironmentRegistration,
+  layerEnvironmentToolkit,
   layerPreviewControlsRegistration,
   layerWorktreeToolkitRegistration,
   layerPullRequestsToolkit,

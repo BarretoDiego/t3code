@@ -1,17 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { makeGitHubRepositoryBrowser } from "./GitHubRepositoryBrowser.ts";
 import { bitbucketPagePath, makeBitbucketRepositoryBrowser } from "./BitbucketRepositoryBrowser.ts";
-import type { GitHubApi } from "./GitHubApi.ts";
-import type { BitbucketApi } from "./BitbucketApi.ts";
+import type { GitHubApi } from "@t3tools/source-control-github/server/GitHubApi";
+import type { BitbucketApi } from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const sha = "a".repeat(40);
 const head = "b".repeat(40);
-const githubRef = { provider: "github" as const, host: "github.com", repository: "owner/repo" };
+const githubRef = {
+  provider: SourceControlProviderKind.make("github"),
+  host: "github.com",
+  repository: "owner/repo",
+};
 const bitbucketRef = {
-  provider: "bitbucket" as const,
+  provider: SourceControlProviderKind.make("bitbucket"),
   host: "bitbucket.org",
   repository: "team/repo",
 };
@@ -51,7 +56,7 @@ describe("source control repository adapters", () => {
       const browser = makeGitHubRepositoryBrowser(
         gh(encodeJson(Array.from({ length: 50 }, () => repository))),
       );
-      const page = yield* browser.listRepositories({ provider: "github" });
+      const page = yield* browser.listRepositories({ provider: githubRef.provider });
       expect(page.nextCursor).toBe("2");
       expect(page.items[0]).toMatchObject({
         nameWithOwner: "owner/repo",
@@ -70,7 +75,7 @@ describe("source control repository adapters", () => {
       expect(refs.items[0]).toMatchObject({ name: "main", sha: "abc", kind: "branch" });
       const invalid = makeGitHubRepositoryBrowser(gh("[]", true));
       expect(
-        yield* invalid.listRepositories({ provider: "github" }).pipe(Effect.flip),
+        yield* invalid.listRepositories({ provider: githubRef.provider }).pipe(Effect.flip),
       ).toBeDefined();
     }),
   );
@@ -146,7 +151,7 @@ it.effect("lists workspace integration repositories without a user role filter",
     yield* makeBitbucketRepositoryBrowser(
       bb('{"values":[]}', paths),
       Effect.succeed("team"),
-    ).listRepositories({ provider: "bitbucket" });
+    ).listRepositories({ provider: bitbucketRef.provider });
     expect(paths[0]).not.toContain("role=");
     expect(paths[0]).toContain("/repositories/team");
   }),
@@ -165,7 +170,7 @@ it.effect("discovers a repository-scoped integration without requiring workspace
       bb(encodeJson(repository), paths),
       Effect.succeed("team"),
       Effect.succeed("repo"),
-    ).listRepositories({ provider: "bitbucket" });
+    ).listRepositories({ provider: bitbucketRef.provider });
     expect(paths).toEqual(["/repositories/team/repo"]);
     expect(page.items[0]?.nameWithOwner).toBe("team/repo");
     expect(page.nextCursor).toBeNull();

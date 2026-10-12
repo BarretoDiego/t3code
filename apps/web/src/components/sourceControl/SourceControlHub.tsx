@@ -11,13 +11,13 @@ import { useDebouncedValue } from "../../state/queries";
 import { RepositoryMappingDialog } from "./RepositoryMappingDialog";
 import { LocalCloneActions } from "./LocalCloneActions";
 import { useState } from "react";
-import type {
-  EnvironmentId,
-  ProjectId,
-  RemoteRepository,
-  RemoteRepositoryRef,
+import {
+  type EnvironmentId,
+  type ProjectId,
+  type RemoteRepository,
+  type RemoteRepositoryRef,
   SourceControlProviderKind,
-  RemotePullRequestRef,
+  type RemotePullRequestRef,
 } from "@t3tools/contracts";
 import { GitBranchIcon, GitForkIcon, RefreshCwIcon, FolderGit2Icon } from "lucide-react";
 import { useEnvironments } from "../../state/environments";
@@ -636,7 +636,7 @@ function RemoteRepositoryHub({
                       <RepositoryTree
                         key={`${key}:${sentSearch}:${revision}`}
                         environmentId={environment.environmentId}
-                        provider={provider}
+                        provider={SourceControlProviderKind.make(provider)}
                         search={sentSearch}
                         onSelect={(repository) => {
                           setLocalSelection(null);

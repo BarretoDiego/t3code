@@ -44,6 +44,8 @@ vi.mock("./ui/popover", () => ({
   PopoverPopup: "div",
   PopoverTrigger: "button",
 }));
+// The fork's script suggestions build RPC atoms at import; the editor works without them.
+vi.mock("./ProjectScriptSuggestions", () => ({ ProjectScriptSuggestions: () => null }));
 vi.mock("./ui/button", () => ({ Button: "button" }));
 vi.mock("./ui/input", () => ({ Input: "input" }));
 vi.mock("./ui/label", () => ({ Label: "label" }));

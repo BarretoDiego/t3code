@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { HostProcessPlatform, HostProcessArchitecture } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveLocalNightlyVersion } from "./build-local-desktop.ts";
 import { validatePackagedDirectory } from "./lib/packaged-directory.ts";
 import desktopPackage from "../apps/desktop/package.json" with { type: "json" };
@@ -89,7 +89,7 @@ export async function inspectInstallation(
 }
 
 export async function discoverInstallations(
-  platform = Effect.runSync(HostProcessPlatform),
+  platform = Effect.runSync(HostProcess.Platform),
 ): Promise<Installation[]> {
   const candidates = new Map<string, string | undefined>();
   const registered = new Set<string>();
@@ -300,8 +300,8 @@ async function findPayload(directory: string, platform: NodeJS.Platform): Promis
 }
 
 export async function main(args: string[]) {
-  const platform = Effect.runSync(HostProcessPlatform);
-  const architecture = Effect.runSync(HostProcessArchitecture);
+  const platform = Effect.runSync(HostProcess.Platform);
+  const architecture = Effect.runSync(HostProcess.Architecture);
   const { values } = NodeUtil.parseArgs({
     args: args.filter((arg) => arg !== "--"),
     options: {

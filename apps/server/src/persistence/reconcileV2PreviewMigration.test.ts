@@ -21,6 +21,7 @@ describe("V2 migration ledger", () => {
         [65, "WebhookRelayDeliveries"],
         [66, "McpAppModelContext"],
         [67, "ThreadSnapshotWindowIndexes"],
+        [68, "PullRequestReviewGuides"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`

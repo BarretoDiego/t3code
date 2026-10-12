@@ -22,7 +22,7 @@ export function CommitMessageAssistant({
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? [];
-  const defaultModel = resolveSourceControlWriterModelSelection(settings, providers);
+  const defaultModel = resolveSourceControlWriterModelSelection(settings, providers, null);
   const [instanceId, setInstanceId] = useState(defaultModel.instanceId);
   const [model, setModel] = useState(defaultModel.model);
   const [profileId, setProfileId] = useState("");

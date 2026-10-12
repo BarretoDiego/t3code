@@ -6,7 +6,7 @@ import {
   type OrchestratorId,
   type ThreadId,
 } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -47,7 +47,7 @@ export const makeAgentCredentials = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const self = yield* resolveSelfInvocation();
   const root = path.join(config.stateDir, "orchestrator-agents");
   const binDirectory = path.join(root, "bin");

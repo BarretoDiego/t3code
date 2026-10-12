@@ -1,6 +1,6 @@
 import { readTailscaleStatus } from "@t3tools/tailscale";
 import { AiRuntimeError, type AiRuntime, type AiRuntimeActionInput } from "@t3tools/contracts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -28,8 +28,8 @@ export const makeOllamaRuntime = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const platform = yield* HostProcessPlatform;
-  const architecture = yield* HostProcessArchitecture;
+  const platform = yield* HostProcess.Platform;
+  const architecture = yield* HostProcess.Architecture;
   const scope = yield* Effect.scope;
   const http = yield* HttpClient.HttpClient;
   const directory = path.join(config.baseDir, "ai-runtimes");
@@ -124,7 +124,7 @@ export const makeOllamaRuntime = Effect.gen(function* () {
           const address = new URL(runtime.networkBaseUrl);
           const tailnet = yield* readTailscaleStatus.pipe(
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-            Effect.provideService(HostProcessPlatform, platform),
+            Effect.provideService(HostProcess.Platform, platform),
           );
           if (
             address.protocol !== "http:" ||

@@ -5,7 +5,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   parseTailscaleNetworkStatus,
@@ -45,7 +45,7 @@ function tailscaleLayer(
         );
       }),
     ),
-    Layer.succeed(HostProcessPlatform, "linux"),
+    Layer.succeed(HostProcess.Platform, "linux"),
   );
 }
 
@@ -227,7 +227,7 @@ describe("tailscale diagnostics", () => {
                 ),
               ),
             ),
-            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcess.Platform, "linux"),
           ),
         ),
       );

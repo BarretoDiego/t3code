@@ -46,7 +46,7 @@ import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import type {
   ProviderAdapterV2Event,
-  ProviderAdapterV2Shape,
+  ProviderAdapterV2,
   ProviderAdapterV2TurnInput,
 } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
@@ -126,7 +126,7 @@ function makeScriptedAdapter(
   probe: ProviderProbe,
   adapterInstanceId: ProviderInstanceId,
   driver = ProviderDriverKind.make("codex"),
-): ProviderAdapterV2Shape {
+): ProviderAdapterV2["Service"] {
   return {
     instanceId: adapterInstanceId,
     driver,
@@ -550,8 +550,18 @@ export function makeEngineLayer(input: {
     registry,
     { databaseLayer: database },
   );
-  const threadManagement = ThreadManagement.layer.pipe(Layer.provide(engine));
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
+  // A custom instance id is only enabled once settings name it.
+  const settings = ServerSettings.layerTest({
+    ...input.settings,
+    providerInstances: {
+      [unsupportedInstanceId]: { driver: unsupportedDriver, enabled: true },
+      ...input.settings?.providerInstances,
+    },
+  });
+  const threadManagement = ThreadManagement.layer.pipe(
+    Layer.provide(Layer.mergeAll(engine, receipts, settings)),
+  );
   const externalServices = Layer.mergeAll(
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
@@ -569,7 +579,7 @@ export function makeEngineLayer(input: {
       runForThread: () => Effect.succeed({ status: "no-script" as const }),
     }),
     Layer.mock(TextGeneration.TextGeneration)({}),
-    ServerSettings.layerTest(input.settings ?? {}),
+    settings,
     layerProviderRegistryMock([
       providerSnapshot(instanceId),
       providerSnapshot(otherInstanceId),

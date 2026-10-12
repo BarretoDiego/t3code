@@ -1,9 +1,5 @@
 import type { ExecutionNode, ExecutionNodeTransport, JobAction } from "@t3tools/contracts";
-import {
-  HostProcessArchitecture,
-  HostProcessEnvironment,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { baseSshArgs, resolveSshCommand, runSshCommand } from "@t3tools/ssh/command";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -125,9 +121,9 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcessPlatform;
-  const architecture = yield* HostProcessArchitecture;
-  const hostEnvironment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const architecture = yield* HostProcess.Architecture;
+  const hostEnvironment = yield* HostProcess.Environment;
   const sshCommand = yield* resolveSshCommand;
   const provideSsh = <A, E>(
     effect: Effect.Effect<

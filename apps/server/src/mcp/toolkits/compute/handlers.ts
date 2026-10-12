@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 
 import { ComputeService } from "../../../compute/ComputeService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { ComputeToolkit } from "./tools.ts";
 
 export const handlers = {
@@ -66,4 +67,13 @@ export const handlers = {
     }),
 } satisfies Parameters<typeof ComputeToolkit.toLayer>[0];
 
-export const ComputeToolkitHandlersLive = ComputeToolkit.toLayer(handlers);
+// Every compute handler gates itself on the thread's compute capability, so the
+// declarations add no caller check of their own.
+export const layer = McpToolAccess.toLayer(ComputeToolkit, {
+  "compute.listProviders": McpToolAccess.reads(handlers["compute.listProviders"]),
+  "compute.listCapabilities": McpToolAccess.reads(handlers["compute.listCapabilities"]),
+  "compute.listModels": McpToolAccess.reads(handlers["compute.listModels"]),
+  "compute.submit": McpToolAccess.reads(handlers["compute.submit"]),
+  "compute.getJob": McpToolAccess.reads(handlers["compute.getJob"]),
+  "compute.cancelJob": McpToolAccess.reads(handlers["compute.cancelJob"]),
+});

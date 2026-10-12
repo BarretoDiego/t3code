@@ -122,6 +122,8 @@ vi.mock("~/composerDraftStore", () => ({
 }));
 vi.mock("~/lib/composerDraftUploads", () => ({ releaseProjectDraftUploads: state.releaseUploads }));
 vi.mock("~/env", () => ({ isElectron: true }));
+// The fork's sync dialog builds RPC atoms at import, which needs a real connection runtime.
+vi.mock("../SyncProjectDialog", () => ({ SyncProjectDialog: () => null }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
   useLocation: () => "/settings/projects",
@@ -211,7 +213,10 @@ const environments = [primaryId, remoteId].map((environmentId) => ({
   environmentId,
   label: environmentId,
   connection: { phase: "connected" },
-  serverConfig: { keybindings: DEFAULT_RESOLVED_KEYBINDINGS },
+  serverConfig: {
+    keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    environment: { capabilities: { projectSync: false } },
+  },
 }));
 const session = (scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState => ({
   authenticated: true,

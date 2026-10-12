@@ -1,4 +1,7 @@
-import type { ProviderChangeRequest, ProviderListCursor } from "./PullRequestProvider.ts";
+import type {
+  ProviderChangeRequest,
+  ProviderListCursor,
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 
 export interface ListCursor extends ProviderListCursor {
   /**

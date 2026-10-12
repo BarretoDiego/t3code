@@ -434,7 +434,7 @@ function OrchestratorEditorDialog({
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
       ),
     [providers, settings],
   );
@@ -632,6 +632,7 @@ function OrchestratorEditorDialog({
 
             <Field label="Model">
               <ProviderModelPicker
+                environmentId={environmentId}
                 disabled={saving || !connected}
                 activeInstanceId={activeInstanceId}
                 model={activeModel}

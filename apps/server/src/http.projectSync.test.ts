@@ -328,9 +328,14 @@ describe("project sync HTTP routes", () => {
           fileCount: 1,
           totalBytes: 1024,
         });
-        const response = yield* client.post(importUrl.url, { body: HttpBody.uint8Array(body) });
+        // The decoder rejects the header before reading the rest of the body, and the
+        // server may drop the connection instead of answering once it stops reading.
+        const status = yield* client.post(importUrl.url, { body: HttpBody.uint8Array(body) }).pipe(
+          Effect.map((response) => response.status),
+          Effect.orElseSucceed(() => 500),
+        );
 
-        expect(response.status).toBe(500);
+        expect(status).toBe(500);
         expect(yield* exists(destination, "planted.txt")).toBe(false);
       }),
     ).pipe(Effect.provide(testLayer)),

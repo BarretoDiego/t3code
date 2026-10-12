@@ -82,6 +82,7 @@ import Migration0064 from "./Migrations/057_ScheduledTaskWebhooks.ts";
 import Migration0065 from "./Migrations/058_WebhookRelayDeliveries.ts";
 import Migration0066 from "./Migrations/059_McpAppModelContext.ts";
 import Migration0067 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
+import Migration0068 from "./Migrations/061_PullRequestReviewGuides.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -175,6 +176,7 @@ export const migrationEntries = [
   [65, "WebhookRelayDeliveries", Migration0065],
   [66, "McpAppModelContext", Migration0066],
   [67, "ThreadSnapshotWindowIndexes", Migration0067],
+  [68, "PullRequestReviewGuides", Migration0068],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

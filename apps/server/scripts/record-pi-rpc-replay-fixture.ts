@@ -250,7 +250,7 @@ const record = Effect.gen(function* () {
     version: piVersion,
     scenario: fixture.name,
     entries: [],
-  } satisfies ProviderReplayTranscript;
+  };
   const layerRecordingSpawner = Layer.effect(
     ChildProcessSpawner.ChildProcessSpawner,
     Effect.map(Effect.service(ChildProcessSpawner.ChildProcessSpawner), (live) =>

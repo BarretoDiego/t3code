@@ -6,7 +6,7 @@ import * as NodeAssert from "node:assert/strict";
 import { createPackage } from "@electron/asar";
 import { afterEach, assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { copyRelocatableDirectory } from "./lib/packaged-directory.ts";
 import {
@@ -59,7 +59,7 @@ it("uses packaged metadata to distinguish nightly, stable, preview and unrelated
 
 it.effect("resolves symlinked AppImages without replacing the launcher symlink", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcessPlatform) === "win32") return;
+    if ((yield* HostProcess.Platform) === "win32") return;
     yield* Effect.promise(async () => {
       const directory = await fixture();
       const image = NodePath.join(directory, "T3-Code-nightly.AppImage");

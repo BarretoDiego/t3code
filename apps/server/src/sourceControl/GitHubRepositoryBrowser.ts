@@ -1,8 +1,12 @@
 import { encodeRepositoryFilePath } from "./SourceControlRepositoryBrowser.ts";
-import { SourceControlHubError, type RemoteRepositoryRef } from "@t3tools/contracts";
+import {
+  SourceControlHubError,
+  SourceControlProviderKind,
+  type RemoteRepositoryRef,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { GitHubApi } from "./GitHubApi.ts";
+import type { GitHubApi } from "@t3tools/source-control-github/server/GitHubApi";
 import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 
 const Repository = Schema.Struct({
@@ -86,7 +90,7 @@ export function makeGitHubRepositoryBrowser(
                 !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
             )
             .map((row) => ({
-              provider: "github" as const,
+              provider: SourceControlProviderKind.make("github"),
               nameWithOwner: row.full_name,
               url: row.html_url,
               sshUrl: row.ssh_url,

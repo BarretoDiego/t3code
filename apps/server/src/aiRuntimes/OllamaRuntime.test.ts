@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, type AiRuntime } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -100,7 +100,7 @@ const harness = Effect.fn("test.ollamaLifecycle")(function* (managed: boolean) {
   });
   const lifecycle = yield* makeOllamaRuntime.pipe(
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    Effect.provideService(HostProcessPlatform, "linux"),
+    Effect.provideService(HostProcess.Platform, "linux"),
     Effect.provideService(
       HttpClient.HttpClient,
       HttpClient.make((request) =>

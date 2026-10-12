@@ -20,9 +20,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ServerConfig } from "../config.ts";
 import { PullRequestProviderRegistry } from "../pullRequest/PullRequestProviderRegistry.ts";
-import type { PullRequestProviderError } from "../pullRequest/PullRequestProvider.ts";
+import type { PullRequestProviderError } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { SourceControlHubService } from "./SourceControlHubService.ts";
-import { SourceControlRateLimit } from "./SourceControlRateLimit.ts";
+import { SourceControlRateLimit } from "@t3tools/source-control-core/server/SourceControlRateLimit";
 
 const decodeRemoteDetail = Schema.decodeUnknownEffect(RemotePullRequestDetail);
 

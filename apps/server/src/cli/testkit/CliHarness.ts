@@ -82,7 +82,7 @@ import { CodexProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/Cod
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import type { ProviderAdapterV2Shape } from "@t3tools/provider-core/server/ProviderAdapter";
+import type { ProviderAdapterV2 } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import {
   buildActiveShellSnapshot,
@@ -154,7 +154,7 @@ const adapter = {
   getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
   planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" as const }),
   openSession: () => Effect.die("provider execution is disabled in the CLI harness"),
-} as ProviderAdapterV2Shape;
+} as ProviderAdapterV2["Service"];
 
 // ---------------------------------------------------------------------------
 // Recording doubles for what other parts of the automation layer own
@@ -580,13 +580,12 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
     threadManagement,
     launch,
     database,
-    externalServices,
     serverConfig,
     identity,
     NodeServices.layer,
     NetService.layer,
     Scheduler.layer,
-  );
+  ).pipe(Layer.provideMerge(Layer.mergeAll(externalServices, receipts)));
   const journal = recordedJournalLayer.pipe(Layer.provide(database));
   const peers: Layer.Layer<PeerService.PeerService | RecordedPeers> =
     options.peers === "unsupported"

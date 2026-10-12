@@ -1,8 +1,12 @@
 import { encodeRepositoryFilePath } from "./SourceControlRepositoryBrowser.ts";
-import { SourceControlHubError, type RemoteRepositoryRef } from "@t3tools/contracts";
+import {
+  SourceControlHubError,
+  SourceControlProviderKind,
+  type RemoteRepositoryRef,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { BitbucketApi } from "./BitbucketApi.ts";
+import type { BitbucketApi } from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 
 const Link = Schema.Struct({ href: Schema.String });
@@ -123,7 +127,7 @@ export function makeBitbucketRepositoryBrowser(
                 !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
             )
             .map((row) => ({
-              provider: "bitbucket" as const,
+              provider: SourceControlProviderKind.make("bitbucket"),
               nameWithOwner: row.full_name,
               url: row.links.html.href,
               sshUrl: row.links.clone.find((link) => link.name === "ssh")?.href ?? "",

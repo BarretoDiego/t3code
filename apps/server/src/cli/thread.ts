@@ -24,7 +24,7 @@ import {
 } from "@t3tools/contracts";
 import { resolveThreadAwarenessPhaseV2 } from "@t3tools/shared/agentAwareness";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
-import { HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { topOfPinnedOrderKey } from "@t3tools/shared/pinOrderKey";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Console from "effect/Console";
@@ -1157,7 +1157,7 @@ const newCommand = Command.make("new", {
         const shell = yield* loadShell(client);
         const project = yield* resolveProject(
           shell,
-          Option.isSome(flags.project) ? flags.project.value : yield* HostProcessWorkingDirectory,
+          Option.isSome(flags.project) ? flags.project.value : yield* HostProcess.WorkingDirectory,
         );
         const defaults = yield* resolveNewThreadDefaults(client, shell, project, flags.model);
         const library = yield* resolveTurnLibrary(client, {

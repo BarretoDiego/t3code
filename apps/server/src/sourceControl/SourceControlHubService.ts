@@ -13,7 +13,10 @@ import {
   normalizeGitRemoteUrl,
   detectSourceControlProviderFromGitRemoteUrl,
 } from "@t3tools/shared/git";
+import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
 import * as Cache from "effect/Cache";
+import * as Config from "effect/Config";
 import * as Exit from "effect/Exit";
 import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
@@ -26,6 +29,8 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 import { parseWorktreeInventory } from "../git/worktreeInventory.ts";
 import { SourceControlProviderRegistry } from "./SourceControlProviderRegistry.ts";
+import { makeBitbucketRepositoryBrowser } from "./BitbucketRepositoryBrowser.ts";
+import { makeGitHubRepositoryBrowser } from "./GitHubRepositoryBrowser.ts";
 import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 
 const decodeRepositoryList = Schema.decodeUnknownEffect(
@@ -68,13 +73,31 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const git = yield* GitVcsDriver;
   const vcs = yield* VcsDriverRegistry;
+  const github = yield* GitHubApi.GitHubApi;
+  const bitbucket = yield* BitbucketApi.BitbucketApi;
+  const environmentWorkspace = yield* Config.String("T3CODE_BITBUCKET_WORKSPACE").pipe(
+    Config.withDefault(""),
+  );
+  // Repository browsing is a hub capability, so the browsers are built here from the host
+  // packages' API services rather than carried on their source control providers.
+  const browsers: Record<string, SourceControlRepositoryBrowser> = {
+    github: makeGitHubRepositoryBrowser(github),
+    bitbucket: makeBitbucketRepositoryBrowser(
+      bitbucket,
+      accounts
+        .credential("bitbucket")
+        .pipe(Effect.map((account) => account?.workspace || environmentWorkspace)),
+      accounts.credential("bitbucket").pipe(Effect.map((account) => account?.repository ?? "")),
+    ),
+  };
   const browser = Effect.fn(function* (provider: SourceControlProviderKind) {
-    const selected = yield* registry.get(provider).pipe(Effect.mapError(failure));
-    if (!selected.repositories)
+    yield* registry.get(provider).pipe(Effect.mapError(failure));
+    const selected = browsers[provider];
+    if (!selected)
       return yield* new SourceControlHubError({
         message: "Repository browsing is not supported by this provider.",
       });
-    return selected.repositories;
+    return selected;
   });
   const repositories = yield* Cache.makeWith(
     (key: string) =>

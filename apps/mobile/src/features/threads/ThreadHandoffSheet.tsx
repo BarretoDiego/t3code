@@ -186,7 +186,7 @@ export function ThreadHandoffSheet(props: {
   const selectedProjects = projects.filter(
     (project) => project.environmentId === selectedEnvironmentId,
   );
-  const modelOptions = buildModelOptions(selectedConfig, null).filter((option) =>
+  const modelOptions = buildModelOptions(selectedConfig, null, undefined, null).filter((option) =>
     selectedConfig?.providers.some(
       (provider) =>
         provider.instanceId === option.selection.instanceId && provider.supportsContextHandoff,

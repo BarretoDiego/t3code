@@ -1,7 +1,7 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 import { CheckCircle2Icon, ChevronRightIcon, KeyRoundIcon, ShieldCheckIcon } from "lucide-react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { SourceControlProviderKind, type EnvironmentId } from "@t3tools/contracts";
 import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -177,7 +177,7 @@ export function SourceControlAuthWizard({
                       await refresh({ environmentId: environment.environmentId, input: {} });
                       const result = await verifyExisting({
                         environmentId: environment.environmentId,
-                        input: { provider },
+                        input: { provider: SourceControlProviderKind.make(provider) },
                       });
                       if (result._tag === "Success") done("Existing environment credentials");
                       else

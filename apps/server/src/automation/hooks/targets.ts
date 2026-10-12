@@ -3,7 +3,7 @@ import {
   type HookDeliveryPayload,
   type HookTarget,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -91,7 +91,7 @@ export const makeHookTargets = Effect.gen(function* () {
   const transport = yield* WebhookTransport.WebhookTransport;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const hostEnvironment = yield* HostProcessEnvironment;
+  const hostEnvironment = yield* HostProcess.Environment;
 
   const webhookUrl = (target: Extract<HookTarget, { type: "webhook" }>) => {
     if (!URL.canParse(target.url)) return "The webhook URL is not a valid URL.";

@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -7,12 +8,12 @@ import {
   PullRequestProviderRegistry,
   fromProviders,
 } from "../pullRequest/PullRequestProviderRegistry.ts";
-import type { PullRequestProviderApi } from "../pullRequest/PullRequestProvider.ts";
+import type { PullRequestProviderApi } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { SourceControlHubService } from "./SourceControlHubService.ts";
-import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import { make } from "./RemotePullRequestService.ts";
 const ref = {
-  provider: "github" as const,
+  provider: SourceControlProviderKind.make("github"),
   host: "github.com",
   repository: "owner/repo",
   number: 1,
@@ -24,7 +25,7 @@ function dependencies(input: {
   publish: PullRequestProviderApi["submitReview"];
 }) {
   const provider: PullRequestProviderApi = {
-    kind: "github",
+    kind: SourceControlProviderKind.make("github"),
     capabilities: {
       diff: true,
       comment: true,
