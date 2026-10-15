@@ -3,7 +3,6 @@ import { ArrowUpIcon, CalendarClockIcon, ClockIcon } from "lucide-react";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
 import { MarkdownFindContext, useFindRevealRef } from "./markdownFindContext";
-import { ComputerUseAppIcon } from "~/components/Icons";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock, WorkLogButton, WorkLogDetails, WorkLogList, WorkLogRow } from "./WorkLog";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -71,7 +70,7 @@ import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
-import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
+import { claudeSkillInvocation, isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   createContext,
@@ -152,6 +151,7 @@ import {
   Undo2Icon,
   HammerIcon,
   WrenchIcon,
+  Code2Icon,
   XIcon,
   ZapIcon,
   RotateCcwIcon,
@@ -3246,6 +3246,11 @@ function ProposedPlanTimelineRow({
 
 function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "html-render" }> }) {
   const ctx = use(TimelineRowCtx);
+  const { onAppFullscreenChange } = ctx;
+  const onFullscreenChange = useCallback(
+    (fullscreen: boolean) => onAppFullscreenChange(row.id, fullscreen),
+    [onAppFullscreenChange, row.id],
+  );
 
   return (
     <div className="min-w-0 px-1">
@@ -3254,7 +3259,8 @@ function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "htm
         key={row.htmlRender.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
         htmlRender={row.htmlRender}
-        onOpen={ctx.onFileOpen}
+        threadRef={ctx.threadRef ?? undefined}
+        onFullscreenChange={onFullscreenChange}
       />
     </div>
   );
@@ -3981,13 +3987,9 @@ function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
 
 const failedToolIconClassName = "text-tool-error-icon/40";
 
-/** Image icons and the gradient computer-use mark cannot take a currentColor
- *  tint, so failed rows using them get a trailing x instead. */
-function toolIconAcceptsTint(
-  iconName: WorkEntryIconName,
-  toolIcon: ToolActivityIcon | undefined,
-): boolean {
-  return toolIcon === undefined && iconName !== "computer";
+/** Image icons cannot take a currentColor tint, so failed rows get a trailing x. */
+function toolIconAcceptsTint(toolIcon: ToolActivityIcon | undefined): boolean {
+  return toolIcon === undefined;
 }
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
@@ -4153,7 +4155,7 @@ function LiveActivityContent({
   highlighted?: boolean;
 }) {
   const showTrailingFailureMark =
-    failed && iconName !== undefined && !toolIconAcceptsTint(iconName, toolIcon);
+    failed && iconName !== undefined && !toolIconAcceptsTint(toolIcon);
 
   return (
     <WorkLogRow
@@ -5232,6 +5234,7 @@ type WorkEntryIconName =
   | "check"
   | "circle-alert"
   | "computer"
+  | "code"
   | "device"
   | "eye"
   | "globe"
@@ -5428,9 +5431,10 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
     case "brain":
       return <BrainIcon className={className} aria-hidden />;
     case "browser":
-      return <BrowserAppIcon className={className} />;
     case "computer":
-      return <ComputerUseAppIcon className={className} />;
+      return <BrowserAppIcon className={className} />;
+    case "code":
+      return <Code2Icon className={className} aria-hidden />;
     case "device":
       return <SmartphoneIcon className={className} aria-hidden />;
     case "t3-code":
@@ -5584,6 +5588,11 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
     return "message-circle";
   }
   if (workEntry.toolSurface) return workEntry.toolSurface;
+  if (
+    workEntry.structuredPayload?.type === "dynamic_tool" &&
+    isJavaScriptReplTool(workEntry.structuredPayload.toolName)
+  )
+    return "code";
   const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
   if (toolPresentation) return toolPresentation.icon;
   const action = toolGroupAction(workEntry);
@@ -5626,8 +5635,10 @@ function remarkThoughtPreview(fallback: string) {
 function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWorkEntry> }) {
   const ctx = use(TimelineRowCtx);
   const { isWorking, latestRunId } = use(TimelineRowActivityCtx);
+  const isStreaming = (entry: TimelineWorkEntry) =>
+    isWorking && entry.runId === latestRunId && entry.toolLifecycleStatus === "inProgress";
   return (
-    <WorkLogDetails>
+    <WorkLogDetails followLive={entries.some(isStreaming)}>
       {entries.map((entry) => (
         <ChatMarkdown
           key={entry.id}
@@ -5636,9 +5647,7 @@ function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWor
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
           skills={ctx.skills}
-          isStreaming={
-            isWorking && entry.runId === latestRunId && entry.toolLifecycleStatus === "inProgress"
-          }
+          isStreaming={isStreaming(entry)}
           headingLevelOffset={MESSAGE_HEADING_LEVEL}
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
@@ -5996,7 +6005,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           ) : null}
           {showFailedIndicator &&
           !showDestructiveRowStyle &&
-          !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
+          !toolIconAcceptsTint(entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />

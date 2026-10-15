@@ -19,7 +19,7 @@ const tailscaleCommandForPlatform = (platform: NodeJS.Platform): "tailscale" | "
 
 const TailscaleCommandContext = {
   executable: Schema.Literals(["tailscale", "tailscale.exe"]),
-  subcommand: Schema.Literals(["status", "serve", "ping"]),
+  subcommand: Schema.Literals(["status", "serve", "ping", "debug"]),
   argumentCount: Schema.Number,
 };
 
@@ -298,6 +298,32 @@ export const readTailscaleStatus = runTailscale(
   ["status", "--json"],
   TAILSCALE_STATUS_TIMEOUT,
 ).pipe(Effect.flatMap(parseTailscaleStatus));
+
+const TailscalePrefsJson = Schema.Struct({
+  RunSSH: Schema.optional(Schema.Unknown),
+  WantRunning: Schema.optional(Schema.Unknown),
+});
+
+const decodeTailscalePrefsJson = Schema.decodeEffect(Schema.fromJsonString(TailscalePrefsJson));
+
+/**
+ * Whether this node serves Tailscale SSH (`tailscale up --ssh`), read from its
+ * prefs. `tailscale status --json` does not report this for the local node.
+ * `tailscale down` clears WantRunning but keeps RunSSH, so check both.
+ */
+export const parseTailscaleSshEnabled = (
+  rawPrefsJson: string,
+): Effect.Effect<boolean, TailscaleStatusParseError> =>
+  decodeTailscalePrefsJson(rawPrefsJson).pipe(
+    Effect.mapError((cause) => new TailscaleStatusParseError({ cause })),
+    Effect.map((prefs) => prefs.RunSSH === true && prefs.WantRunning !== false),
+  );
+
+export const readTailscaleSshEnabled = runTailscale(
+  "debug",
+  ["debug", "prefs"],
+  TAILSCALE_STATUS_TIMEOUT,
+).pipe(Effect.flatMap(parseTailscaleSshEnabled));
 
 export function buildTailscaleHttpsBaseUrl(input: {
   readonly magicDnsName: string;
