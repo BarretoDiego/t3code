@@ -1239,7 +1239,7 @@ const make = Effect.gen(function* () {
           });
         }
         const installationId = MarketplaceInstallationId.make(
-          yield* crypto.randomUUIDv4.pipe(
+          yield* crypto.randomUUIDv4().pipe(
             Effect.mapError((cause) =>
               error({
                 operation: "install",

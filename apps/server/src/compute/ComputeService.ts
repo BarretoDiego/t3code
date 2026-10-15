@@ -158,7 +158,7 @@ export const makeComputeService = Effect.gen(function* () {
     function* (next: readonly ComputeProviderConfig[]) {
       const stored = next;
       yield* fs.makeDirectory(directory, { recursive: true });
-      const temporary = path.join(directory, `${yield* crypto.randomUUIDv4}.tmp`);
+      const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.tmp`);
       yield* fs.writeFileString(temporary, yield* encodeProviderConfigs(stored), { mode: 0o600 });
       yield* fs.rename(temporary, configPath);
       configured = stored;
@@ -470,11 +470,13 @@ export const makeComputeService = Effect.gen(function* () {
       const adapter = adapters.get(destination.provider.type);
       if (!adapter) return yield* error("Provider adapter is unavailable.", "adapter-unavailable");
       const createdAt = yield* now;
-      const id = yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError(() =>
-          error("Could not allocate a compute job id.", "id-allocation-failed"),
-        ),
-      );
+      const id = yield* crypto
+        .randomUUIDv4()
+        .pipe(
+          Effect.mapError(() =>
+            error("Could not allocate a compute job id.", "id-allocation-failed"),
+          ),
+        );
       const job: GenerationJob = {
         id,
         request: { ...request, providerId: destination.provider.id },

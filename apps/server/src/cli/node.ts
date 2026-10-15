@@ -324,7 +324,7 @@ const execCommand = Command.make("exec", {
           nodeId: ExecutionNodeId.make(node.id),
           idempotencyKey:
             idempotencyKey ??
-            IdempotencyKey.make(`cli-${yield* (yield* Crypto.Crypto).randomUUIDv4}`),
+            IdempotencyKey.make(`cli-${yield* (yield* Crypto.Crypto).randomUUIDv4()}`),
         });
         if (flags.wait) {
           return yield* reportWaited(yield* waitForJob(client, job.id, flags.timeout), flags.json);

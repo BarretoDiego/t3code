@@ -1,4 +1,8 @@
-import { type DesktopPetAction, type RuntimeRequestId } from "@t3tools/contracts";
+import {
+  type DesktopPetAction,
+  type RuntimeRequestId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { BellRingIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -19,6 +23,8 @@ export const PetCompanion = memo(function PetCompanion(props: {
   readonly questionIndex: number;
   readonly onToggleOption: (questionId: string, optionLabel: string) => void;
   readonly onAdvance: () => void;
+  readonly cwd: string | undefined;
+  readonly threadRef: ScopedThreadRef;
   readonly threadId: string | null;
   readonly threadTitle: string | null;
   readonly isWorking: boolean;
@@ -164,6 +170,8 @@ export const PetCompanion = memo(function PetCompanion(props: {
           {needsAttention ? (
             <ComposerPendingUserInputPanel
               pendingUserInputs={props.pendingUserInputs}
+              cwd={props.cwd}
+              threadRef={props.threadRef}
               respondingRequestIds={props.respondingRequestIds}
               answers={props.answers}
               questionIndex={props.questionIndex}
