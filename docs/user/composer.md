@@ -141,19 +141,6 @@ The quoted text and comment count toward the message limit.
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.
 
-## Pet companion
-
-The pet companion is a small visual shortcut for agent questions. Choose **In app** in
-**Settings → Integrations → Pet companion** to add a movable pixel-art pet to a
-conversation. Drag it to a useful place; it remembers that position on this client. A badge
-and speech bubble appear when the agent needs an answer. Open the companion to read the
-question and choose an option directly.
-
-On desktop, choose **Always on top** to show the companion in a separate compact window.
-It stays above other windows, shows the active question and its options, and returns your
-choice to the same conversation. Drag the window to reposition it, and select its title to
-reveal T3 Code. Close the companion window or choose **Off** in Settings to stop it.
-
 ## Recall a sent prompt
 
 Press `ArrowUp` in an empty composer to bring back the last prompt you sent in this thread. Press

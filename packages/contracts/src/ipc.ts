@@ -1116,54 +1116,6 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
 });
 
 /**
- * The compact, serializable view of the active companion. The desktop shell
- * deliberately receives this derived state rather than subscribing to the
- * server itself, so the always-on-top window never owns a second WebSocket.
- */
-export const DesktopPetStateSchema = Schema.Literals([
-  "idle",
-  "working",
-  "attention",
-  "complete",
-  "error",
-]);
-export type DesktopPetState = typeof DesktopPetStateSchema.Type;
-
-export const DesktopPetOptionSchema = Schema.Struct({
-  label: Schema.String.check(Schema.isMaxLength(240)),
-});
-export type DesktopPetOption = typeof DesktopPetOptionSchema.Type;
-
-export const DesktopPetSnapshotSchema = Schema.Struct({
-  enabled: Schema.Boolean,
-  state: DesktopPetStateSchema,
-  petId: Schema.String.check(Schema.isMaxLength(64)),
-  threadId: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
-  threadTitle: Schema.NullOr(Schema.String.check(Schema.isMaxLength(240))),
-  requestId: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
-  questionId: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
-  question: Schema.NullOr(Schema.String.check(Schema.isMaxLength(1_000))),
-  options: Schema.Array(DesktopPetOptionSchema).check(Schema.isMaxLength(12)),
-});
-export type DesktopPetSnapshot = typeof DesktopPetSnapshotSchema.Type;
-
-export const DesktopPetActionSchema = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("open") }),
-  Schema.Struct({ type: Schema.Literal("close") }),
-  Schema.Struct({
-    type: Schema.Literal("open-thread"),
-    threadId: Schema.String.check(Schema.isMaxLength(256)),
-  }),
-  Schema.Struct({
-    type: Schema.Literal("select-option"),
-    requestId: Schema.String.check(Schema.isMaxLength(256)),
-    questionId: Schema.String.check(Schema.isMaxLength(256)),
-    optionLabel: Schema.String.check(Schema.isMaxLength(240)),
-  }),
-]);
-export type DesktopPetAction = typeof DesktopPetActionSchema.Type;
-
-/**
  * A System Settings pane the app can deep-link to. The identifier crosses IPC
  * rather than a URL, so the renderer can only reach these known destinations.
  */
@@ -1294,13 +1246,6 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
-  /**
-   * Synchronizes the desktop companion's derived state. This is optional so a
-   * newer web client remains compatible with an older desktop shell.
-   */
-  setPetSnapshot?: (snapshot: DesktopPetSnapshot) => Promise<void>;
-  /** Actions from the desktop companion, forwarded to the main renderer. */
-  onPetAction?: (listener: (action: DesktopPetAction) => void) => () => void;
   /** Settings → `t3` command. Optional: older desktop builds lack it. */
   cliCommand?: {
     getState: () => Promise<DesktopCliCommandState>;

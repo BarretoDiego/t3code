@@ -54,8 +54,6 @@ const clientSettings: ClientSettings = {
   onboardingCompletedAt: null,
   panelAnimationDurationMs: 0,
   planModeEnabled: false,
-  petCompanionMode: "in-app",
-  petCompanionPosition: { x: 1, y: 1 },
   proactivePanelsEnabled: true,
   showSkillsInSlashMenu: false,
   persistComposerContextStrip: true,

@@ -70,7 +70,6 @@ import {
 } from "./methods/snapShot.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
-import * as PetIpc from "./methods/pet.ts";
 import * as WebLinksIpc from "./methods/webLinks.ts";
 import {
   completeLegacyLocalStorage,
@@ -90,9 +89,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);
-  yield* ipc.handle(PetIpc.setPetSnapshot);
-  yield* ipc.handle(PetIpc.getPetSnapshot);
-  yield* ipc.handle(PetIpc.dispatchPetAction);
   yield* ipc.handle(WebLinksIpc.setReady);
 
   yield* ipc.handleSync(takeLegacyLocalStorage);
