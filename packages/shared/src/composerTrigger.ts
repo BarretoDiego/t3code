@@ -101,6 +101,14 @@ export function detectComposerTrigger(
   const tokenStart = tokenIdx + 1;
 
   const token = text.slice(tokenStart, cursor);
+  if (token.startsWith("/")) {
+    return {
+      kind: "slash-command",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   // "#profile-slug" only triggers at the very start of the message, and only
   // with a letter after '#': issue references like "Fix #123" and mid-text
   // hashtags never open the profile menu.

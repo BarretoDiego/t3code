@@ -18,7 +18,6 @@ import { environmentServerConfigsAtom } from "./server";
 import {
   allEnvironmentProjectSnapshotsReadyAtom,
   allEnvironmentShellsBootstrappedAtom,
-  threadWorkspacePruneScopeAtom,
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 import { waitForAtomValue } from "./waitForAtomValue";
@@ -96,13 +95,6 @@ export function useThreadShells(enabled = true): ReadonlyArray<EnvironmentThread
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
-}
-
-export function useThreadWorkspacePruneScope(): {
-  readonly known: ReadonlySet<EnvironmentId>;
-  readonly loaded: ReadonlySet<EnvironmentId>;
-} | null {
-  return useAtomValue(threadWorkspacePruneScopeAtom);
 }
 
 export function useAllEnvironmentProjectSnapshotsReady(): boolean {
@@ -199,6 +191,20 @@ export function waitForProject(
     };
     unsubscribe = appAtomRegistry.subscribe(environmentProjects.projectAtom(ref), finish);
     finish(readProject(ref));
+  });
+}
+
+/**
+ * Resolves once a deleted project leaves the live client store. The delete
+ * command returns before the shell stream does, so anything that picks a
+ * project in between (the index route's draft landing) still sees it.
+ */
+export function waitForProjectRemoval(ref: ScopedProjectRef, timeoutMs = 5_000): Promise<boolean> {
+  return waitForAtomValue({
+    registry: appAtomRegistry,
+    atom: environmentProjects.projectAtom(ref),
+    predicate: (project) => project === null,
+    timeoutMs,
   });
 }
 

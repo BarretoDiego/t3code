@@ -93,7 +93,7 @@ export const makeAiRuntimeService = Effect.gen(function* () {
     next: readonly AiRuntimeConfig[],
   ) {
     yield* fs.makeDirectory(directory, { recursive: true });
-    const temporary = path.join(directory, `${yield* crypto.randomUUIDv4}.tmp`);
+    const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.tmp`);
     yield* fs.writeFileString(temporary, yield* encodeConfigs(next), { mode: 0o600 });
     yield* fs.rename(temporary, configPath);
     configs = next;
@@ -350,7 +350,7 @@ export const makeAiRuntimeService = Effect.gen(function* () {
             (item) => item.id === input.runtimeId,
           );
           if (!runtime) return yield* new AiRuntimeError({ message: "Runtime not found." });
-          const id = yield* crypto.randomUUIDv4;
+          const id = yield* crypto.randomUUIDv4();
           let operation: AiRuntimeOperation = {
             id,
             action: input.action,

@@ -15,7 +15,6 @@
 - [Project settings](./user/project-settings.md)
 - [Appearance and themes](./user/appearance.md)
 - [Keyboard shortcuts](./user/keybindings.md)
-- [Working with multiple threads](./user/thread-workspace.md)
 - [Sync projects between environments](./user/project-sync.md)
 - [SnapShots](./user/snap-shot.md)
 - [Visual replies](./user/html-renders.md)

@@ -72,24 +72,6 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
-/**
- * Locates the run a timeline message belongs to, so "Fork conversation here"
- * can fork the thread through that run (`thread.fork`). Inherited rows fork
- * from the thread that owns their run.
- */
-export function resolveConversationForkPoint(
-  visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
-  messageId: MessageId,
-): { readonly sourceThreadId: ThreadId; readonly runId: RunId } | null {
-  const row = visibleTurnItems.find(
-    ({ item }) =>
-      (item.type === "user_message" || item.type === "assistant_message") &&
-      item.messageId === messageId,
-  );
-  if (!row || row.item.runId === null) return null;
-  return { sourceThreadId: row.sourceThreadId, runId: row.item.runId };
-}
-
 export function agentControlledBrowserCloseConfirmation(
   surfaces: readonly RightPanelSurface[],
   desktopByTabId: Readonly<Record<string, Pick<DesktopPreviewOverlay, "controller"> | undefined>>,

@@ -21,7 +21,6 @@ import {
 import { useEnvironments } from "../state/environments";
 import { useProjects, useThreadShell } from "../state/entities";
 import { THREAD_HANDOFF_EVENT, useThreadHandoffDeps } from "../state/threadHandoff";
-import { useThreadWorkspaceStore } from "../threadWorkspaceStore";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -216,7 +215,6 @@ export function ThreadHandoffDialog({
           : null;
   const complete = useCallback(
     (recovery: Recovery) => {
-      useThreadWorkspaceStore.getState().remapThreadEnvironment(recovery);
       setRun({ status: "completed", destinationEnvironmentId: recovery.destinationEnvironmentId });
       const destinationRef = {
         threadId: recovery.threadId,

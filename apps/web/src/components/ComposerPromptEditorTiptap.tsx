@@ -1,5 +1,12 @@
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
-import { Extension, InputRule, Node, wrappingInputRule, type JSONContent } from "@tiptap/core";
+import {
+  Extension,
+  findChildren,
+  InputRule,
+  Node,
+  wrappingInputRule,
+  type JSONContent,
+} from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -31,6 +38,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useEffectEvent,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -108,6 +116,7 @@ import {
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerCodeBlockNodeView } from "./chat/ComposerCodeBlockNodeView";
+import { resolveAssistantCitationCommentDismissal } from "./chat/assistantCitationCommentDismissal";
 import { composerCodeBlockHighlight } from "./composerCodeBlockHighlight";
 import { importPastedComposerText } from "./composerInlineTokenPaste";
 import { didComposerSelectionChangeVisibly } from "./composerSelection";
@@ -181,6 +190,12 @@ export interface ComposerPromptEditorProps {
   onPageScrollKeyUp?: (key: string) => void;
   onPageScrollRelease?: () => void;
   onCitationSubmitAndSend?: () => void;
+  /**
+   * Called when a new controlled value replaces the document while a citation
+   * comment is unsaved. The comment is saved into `replacedValue`, giving
+   * `savedValue`, so the owner of `replacedValue` can keep it.
+   */
+  onCitationDraftSave?: (replacedValue: string, savedValue: string) => void;
   onPaste: React.ClipboardEventHandler<HTMLElement>;
   editorRef: React.RefObject<ComposerPromptEditorHandle | null>;
 }
@@ -205,8 +220,14 @@ type OpenCitationComment = {
 const ComposerCitationCommentContext = createContext<{
   openComment: OpenCitationComment | null;
   onOpenChange: (citeKey: string, open: boolean) => void;
+  onDraftChange: (citeKey: string, comment: string) => void;
   onSubmitAndSend: () => void;
-}>({ openComment: null, onOpenChange: () => {}, onSubmitAndSend: () => {} });
+}>({
+  openComment: null,
+  onOpenChange: () => {},
+  onDraftChange: () => {},
+  onSubmitAndSend: () => {},
+});
 
 const RichComposerSkillsContext = createContext<ReadonlyArray<ServerProviderSkill>>([]);
 
@@ -473,6 +494,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
           },
           ...(removeOnCancel ? { onCancel: onRemove } : {}),
           onSave: onSaveComment,
+          onDraftChange: (comment) => commentContext.onDraftChange(citeKey, comment),
           onSaveAndSend: (comment) => {
             if (!onSaveComment(comment)) return false;
             commentContext.onSubmitAndSend();
@@ -844,6 +866,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     onPageScrollKeyUp,
     onPageScrollRelease,
     onCitationSubmitAndSend,
+    onCitationDraftSave,
     onPaste,
     editorRef,
   } = props;
@@ -929,12 +952,15 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   const hasAppliedControlledSelectionRef = useRef(false);
   const citationRequestRef = useRef<ComposerCitationCommentRequest | null>(null);
   const [openCitation, setOpenCitation] = useState<OpenCitationComment | null>(null);
+  // The open citation's unsaved comment, saved before a new value replaces the document.
+  const citationDraftRef = useRef<{ key: string; comment: string } | null>(null);
   const [isEmpty, setIsEmpty] = useState(value.length === 0);
 
   const citationCommentActions = useMemo(
     () => ({
       openComment: openCitation,
       onOpenChange: (nodeKey: string, open: boolean) => {
+        if (!open && citationDraftRef.current?.key === nodeKey) citationDraftRef.current = null;
         setOpenCitation((current) => {
           if (open) {
             if (current?.key === nodeKey) return current;
@@ -942,6 +968,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           }
           return current?.key === nodeKey ? null : current;
         });
+      },
+      onDraftChange: (nodeKey: string, comment: string) => {
+        citationDraftRef.current = { key: nodeKey, comment };
       },
       onSubmitAndSend: onCitationSubmitAndSend ?? (() => {}),
     }),
@@ -1210,7 +1239,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
             }
           }
           if (
-            (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+            ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) &&
             !event.shiftKey &&
             !event.altKey &&
             !event.metaKey &&
@@ -1219,10 +1248,22 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
             view.state.selection.empty
           ) {
             const { $from } = view.state.selection;
-            const direction = event.key === "ArrowLeft" ? -1 : 1;
+            const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+            const horizontal = event.key === "ArrowLeft" || event.key === "ArrowRight";
+            // At the document's ends, native Up/Down can cross a marker without
+            // changing the document position. Record the stop so DOM selection
+            // synchronization does not put the caret back inside the styling.
+            const atDocumentEdge =
+              $from.pos ===
+              (direction === -1
+                ? TextSelection.atStart(view.state.doc).from
+                : TextSelection.atEnd(view.state.doc).to);
             // Take the other stop of a styled edge before skipping a chip, so
             // the plain stop between styled text and a chip stays reachable.
-            const step = stepCaretAcrossStyledEdge(view.state, direction);
+            const step =
+              horizontal || atDocumentEdge
+                ? stepCaretAcrossStyledEdge(view.state, direction)
+                : null;
             if (step) {
               event.preventDefault();
               event.stopPropagation();
@@ -1230,7 +1271,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
               return true;
             }
             const adjacent = direction === -1 ? $from.nodeBefore : $from.nodeAfter;
-            if (adjacent?.type.name.startsWith("composer-")) {
+            if (horizontal && adjacent?.type.name.startsWith("composer-")) {
               event.preventDefault();
               event.stopPropagation();
               view.dispatch(
@@ -1530,6 +1571,39 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     return next;
   }, [clampEditorCursor, editor, literalText]);
 
+  // A question or approval swaps the controlled value while a citation comment
+  // is open. Its node view unmounts with the old document, so save the comment
+  // the way dismissing the popover would, and hand the saved value back.
+  const saveCitationDraft = useEffectEvent((current: TiptapEditor, replacedValue: string) => {
+    const draft = citationDraftRef.current;
+    citationDraftRef.current = null;
+    if (!draft || !onCitationDraftSave) return;
+    const [target] = findChildren(
+      current.state.doc,
+      (node) => node.type.name === "composer-citation" && node.attrs.citeKey === draft.key,
+    );
+    if (!target) return;
+    const { node, pos } = target;
+    const citation = node.attrs.citation as AssistantCitation;
+    const dismissal = resolveAssistantCitationCommentDismissal({
+      reason: "none",
+      draft: draft.comment,
+      savedComment: citation.comment,
+    });
+    if (dismissal.kind !== "commit") return;
+    const next = withAssistantCitationComment(citation, dismissal.comment);
+    current.view.dispatch(
+      current.state.tr
+        .setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          citation: next,
+          source: serializeAssistantCitation(next),
+        })
+        .setMeta("addToHistory", false),
+    );
+    onCitationDraftSave(replacedValue, serializeEditorDoc(current.state.doc).value);
+  });
+
   // Controlled value/cursor from the store (history recall, chip insertion…).
   useLayoutEffect(() => {
     if (!editor) return;
@@ -1564,6 +1638,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     const pendingCitation =
       citationRequestRef.current?.value === value ? citationRequestRef.current : null;
     if (previousSnapshot.value !== value) {
+      saveCitationDraft(editor, previousSnapshot.value);
       editor.commands.setContent(
         buildDocJson(value, skillLabelFor, { styling: richText, literalText }),
         {

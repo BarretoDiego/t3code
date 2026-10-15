@@ -7,7 +7,10 @@ import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
-import { filterComposerPullRequestMatches } from "@t3tools/shared/composerPullRequestMatches";
+import {
+  composerPullRequestsFromLinks,
+  filterComposerPullRequestMatches,
+} from "@t3tools/shared/composerPullRequestMatches";
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import { elementContextToPreviewAnnotation } from "../../lib/elementContext";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -255,7 +258,11 @@ import { THREAD_CONTEXT_DROP_EVENT, threadContextDropTargetProps } from "./threa
 import { readThreadShell, useThreadShells } from "~/state/entities";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import type { ComposerContextClipboardFragment, ComposerContextRecord } from "@t3tools/contracts";
+import type {
+  ComposerContextClipboardFragment,
+  ComposerContextRecord,
+  ThreadPullRequestLink,
+} from "@t3tools/contracts";
 import { resolveAssetUrl } from "~/assets/assetUrls";
 import { assetEnvironment } from "~/state/assets";
 import { readPreparedConnection } from "~/state/session";
@@ -1656,6 +1663,8 @@ export interface ChatComposerProps {
   gitCwd: string | null;
   pullRequestProjectId: ProjectId | null;
   pullRequestRepository: string | null;
+  /** The thread's linked pull requests, offered in `#` suggestions from any repository. */
+  threadPullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined;
   restingControlsHost: HTMLDivElement | null;
   restingControlsHaveLeadingContext: boolean;
   onRestingControlsVisibilityChange: (visible: boolean) => void;
@@ -1804,6 +1813,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     gitCwd,
     pullRequestProjectId,
     pullRequestRepository,
+    threadPullRequests,
     restingControlsHost,
     restingControlsHaveLeadingContext,
     onRestingControlsVisibilityChange,
@@ -1927,7 +1937,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
-  const composerThreadContexts = composerDraft.threadContexts;
+  const composerThreadContexts = attachmentDraft.threadContexts;
   const pendingSnapShotAnimations = useSyncExternalStore(
     subscribeToPendingSnapShotAnimations,
     getPendingSnapShotAnimations,
@@ -2781,6 +2791,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }),
   );
 
+  const linkedPullRequests = useMemo(
+    () =>
+      pullRequestProjectId === null
+        ? []
+        : composerPullRequestsFromLinks(threadPullRequests ?? [], pullRequestProjectId),
+    [pullRequestProjectId, threadPullRequests],
+  );
+
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -2903,6 +2921,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const matches = /^\d*$/u.test(composerTrigger.query)
         ? filterComposerPullRequestMatches({
             entries: [...exactPullRequest, ...(pullRequestLookup.data?.entries ?? [])],
+            linked: linkedPullRequests,
             projectId: pullRequestProjectId,
             repository: pullRequestRepository,
             query: composerTrigger.query,
@@ -2939,7 +2958,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           isDraft: pullRequest.isDraft,
         },
         label: `#${pullRequest.number}`,
-        description: pullRequest.title,
+        description:
+          pullRequest.repository.trim().toLowerCase() === pullRequestRepository.trim().toLowerCase()
+            ? pullRequest.title
+            : `${pullRequest.repository} · ${pullRequest.title}`,
       }));
     }
     return [];
@@ -2950,6 +2972,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     environmentThreadShells,
     exactPullRequestLookup.data,
+    linkedPullRequests,
     planModeUiEnabled,
     pullRequestLookup.data,
     pullRequestProjectId,
@@ -3272,6 +3295,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ...composerTerminalContexts
           .filter((c) => wanted.has(terminalContextReference(c).contextId))
           .map(terminalContextRecord),
+        ...composerThreadContexts.filter((record) => wanted.has(record.contextId)),
         ...composerReviewComments
           .filter((c) => wanted.has(reviewCommentContextId(c.id)))
           .map(reviewCommentContextRecord),
@@ -3310,6 +3334,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerPreviewAnnotations,
       composerReviewComments,
       composerTerminalContexts,
+      composerThreadContexts,
       environmentId,
       uploadsByImageId,
     ],
@@ -3503,7 +3528,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           case "thread": {
             // The agent can only read threads on its own server; a pasted foreign one is dropped.
             if (record.environmentId !== environmentId) break;
-            addComposerDraftThreadContexts(composerDraftTarget, [record], {
+            addComposerDraftThreadContexts(attachmentDraftTarget, [record], {
               appendReference: false,
             });
             rewritten.set(record.contextId, record.contextId);
@@ -3536,6 +3561,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       addComposerDraftTerminalContexts,
       addComposerDraftThreadContexts,
       composerContextRecords,
+      attachmentDraftTarget,
       composerDraftTarget,
       environmentId,
       importAttachmentRecord,
@@ -4278,7 +4304,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
         );
         if (applied) {
-          addComposerDraftThreadContexts(composerDraftTarget, [record], {
+          addComposerDraftThreadContexts(attachmentDraftTarget, [record], {
             appendReference: false,
           });
           setComposerHighlightedItemId(null);
@@ -4290,6 +4316,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       addComposerDraftReviewComment,
       addComposerDraftThreadContexts,
       applyPromptReplacement,
+      attachmentDraftTarget,
       composerDraftTarget,
       handleInteractionModeChange,
       planModeUiEnabled,
@@ -4477,6 +4504,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }),
     );
   }, [phase, settings.followUpBehavior, submitComposer]);
+  // A question or approval took the editor while a citation comment was
+  // unsaved. Keep the comment in the prompt that comes back afterward.
+  const saveCitationDraftToPrompt = useCallback(
+    (replacedValue: string, savedValue: string) => {
+      if (replacedValue !== prompt) return;
+      if (promptRef.current === replacedValue) promptRef.current = savedValue;
+      setPrompt(savedValue);
+    },
+    [prompt, promptRef, setPrompt],
+  );
   const compactThreadContext = useCallback(() => {
     if (
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
@@ -5780,7 +5817,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               activeProviderIconClassName: cn(
                 composerProviderState.modelPickerIconClassName,
                 composerControlsCollapsed &&
-                  "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-icon-detail]]:fill-transparent!",
+                  // Package glyphs get opaque fills and one opacity, so overlapping paths don't band.
+                  "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-icon-detail]]:fill-transparent! [&[data-provider-package-icon]]:opacity-70 [&[data-provider-package-icon]_path:not([data-icon-detail])]:fill-muted-foreground!",
               ),
             }
           : {})}
@@ -6480,11 +6518,60 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const shell = readThreadShell(ref);
         return shell ? [threadContextRecord(ref, shell.title)] : [];
       });
-      if (records.length > 0) addComposerDraftThreadContexts(composerDraftTarget, records);
+      if (records.length === 0) return;
+      if (questionAttachmentTarget !== null) {
+        const canAnswer =
+          canOperateThread &&
+          !isConnecting &&
+          !isComposerApprovalState &&
+          !activePendingIsResponding &&
+          activePendingProgress?.activeQuestion?.allowCustomAnswer !== false;
+        const text = `${records
+          .map((record) => formatInlineContextReference(threadContextReference(record)))
+          .join(" ")} `;
+        const snapshot = readComposerSnapshot();
+        const cursor = snapshot.expandedCursor;
+        const leadingSpace = cursor > 0 && !/\s/.test(snapshot.value[cursor - 1] ?? "");
+        const inserted =
+          canAnswer &&
+          applyPromptReplacement(
+            cursor,
+            extendReplacementRangeForTrailingSpace(snapshot.value, cursor, text),
+            leadingSpace ? ` ${text}` : text,
+          );
+        if (!inserted) {
+          toastManager.add({
+            type: "error",
+            title: "Unable to add thread",
+            description: "The composer is busy; try again once it is ready.",
+          });
+          return;
+        }
+        addComposerDraftThreadContexts(questionAttachmentTarget, records, {
+          appendReference: false,
+        });
+        if (isComposerCollapsedMobile) expandMobileComposer();
+      } else {
+        addComposerDraftThreadContexts(composerDraftTarget, records);
+      }
     };
     form.addEventListener(THREAD_CONTEXT_DROP_EVENT, onThreadDrop);
     return () => form.removeEventListener(THREAD_CONTEXT_DROP_EVENT, onThreadDrop);
-  }, [addComposerDraftThreadContexts, composerDraftTarget, environmentId]);
+  }, [
+    activePendingIsResponding,
+    activePendingProgress?.activeQuestion?.allowCustomAnswer,
+    addComposerDraftThreadContexts,
+    applyPromptReplacement,
+    canOperateThread,
+    composerDraftTarget,
+    environmentId,
+    expandMobileComposer,
+    isComposerApprovalState,
+    isComposerCollapsedMobile,
+    isConnecting,
+    questionAttachmentTarget,
+    readComposerSnapshot,
+  ]);
 
   const onComposerMentionDragLeaveCapture = (event: React.DragEvent<HTMLFormElement>) => {
     if (!dataTransferHasComposerMention(event.dataTransfer.types)) return;
@@ -7030,8 +7117,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     ) : null}
                     <ComposerPendingUserInputPanel
-                      disabled={!canOperateThread}
                       pendingUserInputs={pendingUserInputs}
+                      cwd={gitCwd ?? undefined}
+                      threadRef={routeThreadRef}
+                      disabled={!canOperateThread}
                       respondingRequestIds={
                         activePendingIsResponding && activePendingUserInput
                           ? [...respondingRequestIds, activePendingUserInput.requestId]
@@ -7060,6 +7149,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ) : null}
                     <ComposerPendingUserInputPanel
                       pendingUserInputs={pendingUserInputs}
+                      cwd={gitCwd ?? undefined}
+                      threadRef={routeThreadRef}
                       disabled={!canOperateThread}
                       respondingRequestIds={
                         activePendingIsResponding && activePendingUserInput
@@ -7757,6 +7848,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPageScrollKeyUp={onPageScrollKeyUp}
                     onPageScrollRelease={onPageScrollRelease}
                     onCitationSubmitAndSend={submitCitationAndSend}
+                    onCitationDraftSave={saveCitationDraftToPrompt}
                     onPaste={onComposerPaste}
                     placeholder={
                       isComposerApprovalState

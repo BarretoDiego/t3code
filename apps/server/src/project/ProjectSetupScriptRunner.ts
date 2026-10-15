@@ -381,7 +381,7 @@ export const make = Effect.gen(function* () {
     const terminalId =
       input.preferredTerminalId ??
       (trigger === "settle"
-        ? `settle-${script.id}-${(yield* crypto.randomUUIDv4.pipe(Effect.orDie)).slice(0, 8)}`
+        ? `settle-${script.id}-${(yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8)}`
         : `setup-${script.id}`);
     const cwd = projectScriptCwd({
       project: { cwd: project.workspaceRoot },
@@ -400,7 +400,7 @@ export const make = Effect.gen(function* () {
     };
     const observe = input.observeCompletion;
     const completionToken = observe
-      ? (yield* crypto.randomUUIDv4.pipe(Effect.orDie)).replaceAll("-", "")
+      ? (yield* crypto.randomUUIDv4().pipe(Effect.orDie)).replaceAll("-", "")
       : null;
     const commandLine =
       observe && completionToken

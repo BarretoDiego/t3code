@@ -88,7 +88,7 @@ export const make = Effect.gen(function* () {
           if (!instance?.enabled)
             return yield* new SourceControlHubError({ message: "Selected agent is unavailable." });
           const adapter = instance.orchestrationAdapter;
-          const id = yield* crypto.randomUUIDv4;
+          const id = yield* crypto.randomUUIDv4();
           const threadId = ThreadId.make(`ai-review-${id}`);
           const emit = input.onActivity ?? (() => Effect.void);
           // Supervised mode is each provider's read-only sandbox: Codex runs
