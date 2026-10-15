@@ -369,19 +369,6 @@ export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
 export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
 
-/** Where the optional companion is shown. Native always-on-top is desktop-only. */
-export const PetCompanionMode = Schema.Literals(["off", "in-app", "always-on-top"]);
-export type PetCompanionMode = typeof PetCompanionMode.Type;
-export const DEFAULT_PET_COMPANION_MODE: PetCompanionMode = "in-app";
-
-/** A viewport-relative resting place for the in-app pet, persisted per client. */
-export const PetCompanionPosition = Schema.Struct({
-  x: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  y: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-});
-export type PetCompanionPosition = typeof PetCompanionPosition.Type;
-export const DEFAULT_PET_COMPANION_POSITION: PetCompanionPosition = { x: 1, y: 1 };
-
 export const LoadBalancingWeights = Schema.Record(
   TrimmedNonEmptyString,
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
@@ -539,12 +526,6 @@ export const ClientSettingsSchema = Schema.Struct({
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  petCompanionMode: PetCompanionMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PET_COMPANION_MODE)),
-  ),
-  petCompanionPosition: PetCompanionPosition.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PET_COMPANION_POSITION)),
-  ),
   // Legacy context window meter. The composer hides it by default; users who
   // still want the old usage indicator can restore it from Settings.
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1938,8 +1919,6 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
-  petCompanionMode: Schema.optionalKey(PetCompanionMode),
-  petCompanionPosition: Schema.optionalKey(PetCompanionPosition),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
