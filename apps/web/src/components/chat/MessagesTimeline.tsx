@@ -334,7 +334,6 @@ interface TimelineRowSharedState {
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
-  onForkConversation: ((messageId: MessageId) => void) | null;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   /** Sends text an MCP App asked to post, after the user approved it. */
   onSendAppMessage: ((text: string) => Promise<void>) | undefined;
@@ -510,7 +509,6 @@ interface MessagesTimelineProps {
   }) => void;
   supportsConversationRollback: boolean;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
-  onForkConversation?: (messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   onSendAppMessage?: (text: string) => Promise<void>;
   onRunShellCommand?: (command: string) => void;
@@ -626,7 +624,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onRollbackCheckpoint,
   supportsConversationRollback,
   onRevertToTurnCount,
-  onForkConversation,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   onSendAppMessage,
   onRunShellCommand,
@@ -1389,7 +1386,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
       runs,
       activeThreadEnvironmentId,
       onRevertToTurnCount,
-      onForkConversation: onForkConversation ?? null,
       onRunShellCommand,
       findActive,
       onImageExpand,
@@ -1454,7 +1450,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
       workGroupViewState,
-      onForkConversation,
       onSendScheduledMessageNow,
       onRescheduleScheduledMessage,
       onCancelScheduledMessage,
@@ -2785,23 +2780,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {ctx.onForkConversation && !row.message.streaming && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-xs"
-                      variant="ghost-muted"
-                      aria-label="Fork conversation from this message"
-                      onClick={() => ctx.onForkConversation?.(row.message.id)}
-                    />
-                  }
-                >
-                  <GitForkIcon />
-                </TooltipTrigger>
-                <TooltipPopup>Fork conversation here</TooltipPopup>
-              </Tooltip>
-            )}
             {resolvedContext.text && (
               <MessageCopyButton
                 // Structured paste needs the canonical links to retain their positions.
@@ -3165,25 +3143,6 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      {ctx.onForkConversation && !message.streaming && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost-muted"
-                aria-label="Fork conversation from this message"
-                onClick={() => ctx.onForkConversation?.(message.id)}
-              />
-            }
-          >
-            <GitForkIcon />
-          </TooltipTrigger>
-          {/* Sits beside the provider-native "Fork from this response"; this one
-              opens a draft on any provider/model with the recent exchanges. */}
-          <TooltipPopup>Fork conversation here (any model)</TooltipPopup>
-        </Tooltip>
-      )}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}

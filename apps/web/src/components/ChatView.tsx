@@ -3,7 +3,6 @@ import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import {
   resolveBackgroundDraftWorkspaceOptions,
-  resolveConversationForkPoint,
   resolveDraftHeroState,
   shouldDockDraftHeroForSubmission,
   resolveVisibleWorktreeSetup,
@@ -1561,9 +1560,6 @@ function chatActionErrorMessage(error: unknown): string {
 }
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
-// Thread a "Fork conversation here" just created. Its view opens the model
-// picker once, so the fork can continue on any model.
-let pendingForkModelPickerThreadKey: string | null = null;
 const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
 const noopHeldTurnDiff = (_turnId: RunId, _filePath?: string) => {};
 const noopHeldRevert = (_targetTurnCount: number) => {};
@@ -8718,10 +8714,7 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const onForkFromRun = useCallback(
-    async (
-      input: { readonly sourceThreadId: ThreadId; readonly runId: RunId },
-      options?: { readonly chooseModel?: boolean },
-    ) => {
+    async (input: { readonly sourceThreadId: ThreadId; readonly runId: RunId }) => {
       if (!activeThread || activeEnvironmentUnavailable) return;
       const targetThreadId = newThreadId();
       const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
@@ -8752,7 +8745,6 @@ export default function ChatView(props: ChatViewProps) {
         );
         return;
       }
-      if (options?.chooseModel) pendingForkModelPickerThreadKey = scopedThreadKey(targetThreadRef);
       await navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(targetThreadRef),
@@ -8767,35 +8759,6 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError,
     ],
   );
-  // "Fork conversation here": forks through the run holding the message. The
-  // new thread opens with the model picker, and switching models there hands
-  // the copied history to the chosen provider.
-  const handleForkConversation = useCallback(
-    (messageId: MessageId) => {
-      const forkPoint = resolveConversationForkPoint(serverVisibleTurnItems, messageId);
-      if (!forkPoint) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "warning",
-            title: "This message cannot be forked yet",
-            description: "Wait for its turn to start, then try again.",
-          }),
-        );
-        return;
-      }
-      void onForkFromRun(forkPoint, { chooseModel: true });
-    },
-    [onForkFromRun, serverVisibleTurnItems],
-  );
-  useEffect(() => {
-    if (pendingForkModelPickerThreadKey !== routeThreadKey || !composerMounted) return;
-    const frame = window.requestAnimationFrame(() => {
-      if (pendingForkModelPickerThreadKey !== routeThreadKey) return;
-      pendingForkModelPickerThreadKey = null;
-      composerRef.current?.openModelPicker();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [composerMounted, routeThreadKey]);
   const onCompactContext = () => {
     if (compactDisabled) return;
     void sendStandaloneCommand("/compact", "Failed to compact context.");
@@ -11806,9 +11769,6 @@ export default function ChatView(props: ChatViewProps) {
                 {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined
                   ? {}
                   : { historyControls: threadHistoryControls })}
-                {...(!paintOnlyDisplayedTimeline && isServerThread
-                  ? { onForkConversation: handleForkConversation }
-                  : {})}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}

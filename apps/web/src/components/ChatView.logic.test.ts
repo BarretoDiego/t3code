@@ -51,7 +51,6 @@ import {
   rememberReadyThreadTimeline,
   resetHeldThreadTimeline,
   resolveThreadSwitchTimeline,
-  resolveConversationForkPoint,
   threadKeysShareEnvironment,
   timelineHasEphemeralPreviewUrls,
   scheduleEnvironmentReconnectWarning,
@@ -843,94 +842,6 @@ describe("deriveCommittedServerUserMessageIds", () => {
     expect(deriveCommittedServerUserMessageIds(visibleTurnItems)).toEqual(
       new Set([turnStartId, steerId]),
     );
-  });
-});
-
-describe("resolveConversationForkPoint", () => {
-  const committedAt = DateTime.makeUnsafe("2026-06-26T17:50:15.180Z");
-  const parentThreadId = ThreadId.make("thread-parent");
-  const parentRunId = RunId.make("run:thread:thread-parent:ordinal:1");
-  const runId = RunId.make("run:thread:thread-1:ordinal:2");
-  const itemFields = (id: string, itemRunId: RunId | null, ordinal: number) =>
-    ({
-      id: TurnItemId.make(id),
-      threadId,
-      runId: itemRunId,
-      nodeId: null,
-      providerThreadId: null,
-      providerTurnId: null,
-      nativeItemRef: null,
-      parentItemId: null,
-      ordinal,
-      status: "completed",
-      title: null,
-      startedAt: committedAt,
-      completedAt: committedAt,
-      updatedAt: committedAt,
-    }) as const;
-  const visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem> = [
-    {
-      position: 0,
-      visibility: "inherited",
-      sourceThreadId: parentThreadId,
-      sourceItemId: TurnItemId.make("turn-item:inherited"),
-      item: {
-        ...itemFields("turn-item:inherited", parentRunId, 1),
-        type: "assistant_message",
-        messageId: MessageId.make("message-inherited"),
-        text: "from the parent",
-        streaming: false,
-      },
-    },
-    {
-      position: 1,
-      visibility: "local",
-      sourceThreadId: threadId,
-      sourceItemId: TurnItemId.make("turn-item:user"),
-      item: {
-        ...itemFields("turn-item:user", runId, 2),
-        createdBy: "user",
-        creationSource: "web",
-        type: "user_message",
-        messageId: MessageId.make("message-user"),
-        inputIntent: "turn_start",
-        text: "fork from here",
-        attachments: [],
-      },
-    },
-    {
-      position: 2,
-      visibility: "local",
-      sourceThreadId: threadId,
-      sourceItemId: TurnItemId.make("turn-item:runless"),
-      item: {
-        ...itemFields("turn-item:runless", null, 3),
-        type: "assistant_message",
-        messageId: MessageId.make("message-runless"),
-        text: "no run",
-        streaming: false,
-      },
-    },
-  ];
-
-  it("forks through the run that holds the selected message", () => {
-    expect(resolveConversationForkPoint(visibleTurnItems, MessageId.make("message-user"))).toEqual({
-      sourceThreadId: threadId,
-      runId,
-    });
-  });
-
-  it("forks inherited messages from the thread that owns their run", () => {
-    expect(
-      resolveConversationForkPoint(visibleTurnItems, MessageId.make("message-inherited")),
-    ).toEqual({ sourceThreadId: parentThreadId, runId: parentRunId });
-  });
-
-  it("returns null for unknown or run-less messages", () => {
-    expect(resolveConversationForkPoint(visibleTurnItems, MessageId.make("missing"))).toBeNull();
-    expect(
-      resolveConversationForkPoint(visibleTurnItems, MessageId.make("message-runless")),
-    ).toBeNull();
   });
 });
 
