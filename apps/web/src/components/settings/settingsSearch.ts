@@ -438,6 +438,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "confirm-before-interrupt",
+    title: "Confirm before interrupting",
+    to: "/settings/general",
+    searchTerms: ["stop interrupt cancel confirmation running task command escape"],
+  },
+  {
     id: "send-shortcut",
     title: "Send shortcut",
     to: "/settings/general",

@@ -1028,6 +1028,32 @@ describe("resolveChatShortcutCommand", () => {
 });
 
 describe("resolveShortcutCommand", () => {
+  it.each(["MacIntel", "Win32", "Linux"])(
+    "resolves deliberate Stop on %s without taking plain Escape",
+    (platform) => {
+      const shortcut = event({
+        key: "Escape",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+      });
+      assert.strictEqual(
+        resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, { platform }),
+        "thread.stop",
+      );
+      assert.isNull(
+        resolveShortcutCommand(event({ key: "Escape" }), DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+        }),
+      );
+      for (const context of [{ terminalFocus: true }, { previewFocus: true }]) {
+        assert.notStrictEqual(
+          resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, { platform, context }),
+          "thread.stop",
+        );
+      }
+    },
+  );
+
   it("resolves a custom stop-thread shortcut", () => {
     const keybindings = compile([{ shortcut: modShortcut("escape"), command: "thread.stop" }]);
 

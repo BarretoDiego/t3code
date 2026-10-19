@@ -1384,7 +1384,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onSubmitMessage: React.MouseEventHandler<HTMLButtonElement>;
   onResume: () => void;
   onPreviousPendingQuestion: () => void;
-  onInterrupt: () => void;
+  onInterrupt: (bypassConfirmation?: boolean) => void;
   onImplementPlanInNewThread: () => void;
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
@@ -1644,7 +1644,7 @@ export interface ChatComposerProps {
   /** Opens the schedule dialog for the current draft. Hidden when absent. */
   onScheduleSend?: (() => void) | undefined;
   onResume: () => void;
-  onInterrupt: () => void;
+  onInterrupt: (bypassConfirmation?: boolean) => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
     requestId: RuntimeRequestId,
@@ -6090,8 +6090,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     window.addEventListener("dragend", onWindowDragEnd);
     return () => window.removeEventListener("dragend", onWindowDragEnd);
   }, [isDragOverComposer]);
-  const handleInterruptPrimaryAction = () => {
-    void onInterrupt();
+  const handleInterruptPrimaryAction = (bypassConfirmation = false) => {
+    void onInterrupt(bypassConfirmation);
   };
   const handleInterruptPrimaryActionStable = useStableCallback(handleInterruptPrimaryAction);
   const handleImplementPlanInNewThreadPrimaryAction = () => {

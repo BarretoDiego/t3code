@@ -99,6 +99,16 @@ async function render(element: ReactElement) {
 // The mocked hooks read `state` while rendering, so a new element picks up changes.
 const update = () => act(async () => root.render(cloneElement(current)));
 const click = (element: HTMLElement) => act(async () => element.click());
+const clickStop = (element: HTMLElement) =>
+  act(async () => {
+    element.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        metaKey: navigator.platform.startsWith("Mac"),
+        ctrlKey: !navigator.platform.startsWith("Mac"),
+      }),
+    );
+  });
 const buttons = () => [...container.querySelectorAll("button")];
 const allByLabel = (label: string) =>
   buttons().filter((button) => button.getAttribute("aria-label") === label);
@@ -218,7 +228,7 @@ it("stops the entire native workflow through its parent without changing state b
         acknowledge = resolve;
       }),
   );
-  await click(stopButton());
+  await clickStop(stopButton());
   expect(state.workflowCommand).toHaveBeenCalledExactlyOnceWith({
     environmentId: "remote",
     input: { threadId: "parent", subagentId: "workflow" },
@@ -235,7 +245,7 @@ it("stops the entire native workflow through its parent without changing state b
   expect(stopButton().disabled).toBe(false);
   expect(heading()).toBe("Lineage · 2 running");
   state.workflowCommand.mockResolvedValueOnce({ _tag: "Failure" });
-  await click(stopButton());
+  await clickStop(stopButton());
   expect(state.toast).toHaveBeenCalledExactlyOnceWith({
     type: "error",
     title: "Could not stop workflow",
@@ -550,7 +560,7 @@ it.each([
       return;
     }
     const stopButton = () => byLabel("Stop subagent Worker");
-    await click(stopButton());
+    await clickStop(stopButton());
     expect(state.command).toHaveBeenCalledWith({
       environmentId: "test",
       input:
@@ -584,7 +594,7 @@ it.each([
         expect(allByLabel("Stop subagent Worker")).toHaveLength(0);
         continue;
       }
-      await click(stopButton());
+      await clickStop(stopButton());
       expect(state.command).toHaveBeenCalledTimes(1);
       expect(state.command).toHaveBeenLastCalledWith({
         environmentId: "test",

@@ -1,3 +1,4 @@
+import { confirmThreadInterruption, isIntentionalInterruption } from "../lib/threadInterruption";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
@@ -3309,15 +3310,24 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposerStable = useStableCallback(focusComposer);
   const canInterruptRunningThread =
     canOperateThread && deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
-  const onInterrupt = async () => {
+  const onInterrupt = async (bypassConfirmation = false) => {
     if (
       !activeThread ||
       !readEnvironmentScope(activeThread.environmentId, AuthOrchestrationOperateScope)
     )
       return;
+    const runId = activeRuntime?.activeRunId;
+    if (
+      !(await confirmThreadInterruption(
+        `${environmentId}:${activeThread.id}`,
+        activeThread.title,
+        settings.confirmBeforeInterrupt && !bypassConfirmation,
+      ))
+    )
+      return;
     const result = await interruptThreadTurn({
       environmentId,
-      input: { threadId: activeThread.id },
+      input: { threadId: activeThread.id, ...(runId ? { runId } : {}) },
     });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
@@ -5018,10 +5028,18 @@ export default function ChatView(props: ChatViewProps) {
   const [stoppingBackgroundWorkKey, setStoppingBackgroundWorkKey] = useState<string | null>(null);
   const isStoppingBackgroundWork =
     stoppingBackgroundWorkKey === `${environmentId}:${activeThreadId}`;
-  const handleStopBackgroundWork = async () => {
+  const handleStopBackgroundWork = async (bypassConfirmation = false) => {
     if (!activeThread || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
       return;
     const requestKey = `${environmentId}:${activeThread.id}`;
+    if (
+      !(await confirmThreadInterruption(
+        requestKey,
+        activeThread.title,
+        settings.confirmBeforeInterrupt && !bypassConfirmation,
+      ))
+    )
+      return;
     setStoppingBackgroundWorkKey(requestKey);
     const result = await interruptThreadTurn({
       environmentId,
@@ -5232,7 +5250,11 @@ export default function ChatView(props: ChatViewProps) {
           size="xs"
           variant="ghost"
           disabled={!canOperateThread || isStoppingBackgroundWork}
-          onClick={() => void handleStopBackgroundWorkStable()}
+          onClick={(event) =>
+            void handleStopBackgroundWorkStable(
+              isIntentionalInterruption(event, navigator.platform),
+            )
+          }
         >
           {isStoppingBackgroundWork ? "Stopping..." : "Stop"}
         </Button>
@@ -5639,7 +5661,10 @@ export default function ChatView(props: ChatViewProps) {
         queuedRunsControlRef.current?.editLatest(event.repeat) === true,
       "thread.stop": ({ event }) => {
         if (!canInterruptRunningThread) return false;
-        if (!event.repeat) void onInterruptStable();
+        if (!event.repeat)
+          void onInterruptStable(
+            event.key === "Escape" && isIntentionalInterruption(event, navigator.platform),
+          );
       },
     },
     fallback: (command) => {

@@ -1,3 +1,5 @@
+import { useClientSettings } from "../../hooks/useSettings";
+import { confirmThreadInterruption, isIntentionalInterruption } from "../../lib/threadInterruption";
 import { useAtomValue } from "@effect/atom-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
@@ -217,6 +219,7 @@ export function ThreadRelationshipsPanel(props: {
   const navigate = useNavigate();
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack);
   const stopSession = useAtomCommand(threadEnvironment.stopSession);
+  const confirmBeforeInterrupt = useClientSettings((settings) => settings.confirmBeforeInterrupt);
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn);
   const stopWorkflowCommand = useAtomCommand(orchestrationEnvironment.stopWorkflow);
   const canOperateWorkflow = useAtomValue(
@@ -345,8 +348,17 @@ export function ThreadRelationshipsPanel(props: {
   const stopSubagent = async (
     childThreadId: ThreadId,
     agent: Pick<OrchestrationV2Subagent, "id" | "origin" | "threadId">,
+    bypassConfirmation = false,
   ) => {
     if (stoppingId !== null) return;
+    if (
+      !(await confirmThreadInterruption(
+        `${props.environmentId}:${childThreadId}`,
+        "subagent",
+        confirmBeforeInterrupt && !bypassConfirmation,
+      ))
+    )
+      return;
     setStoppingId(childThreadId);
     const result = await interruptTurn({
       environmentId: props.environmentId,
@@ -361,8 +373,16 @@ export function ThreadRelationshipsPanel(props: {
     }
   };
 
-  const stopWorkflow = async (subagentId: string) => {
+  const stopWorkflow = async (subagentId: string, bypassConfirmation = false) => {
     if (stoppingId !== null) return;
+    if (
+      !(await confirmThreadInterruption(
+        `${props.environmentId}:${props.threadId}:${subagentId}`,
+        "workflow",
+        confirmBeforeInterrupt && !bypassConfirmation,
+      ))
+    )
+      return;
     setStoppingId(subagentId);
     const result = await stopWorkflowCommand({
       environmentId: props.environmentId,
@@ -564,7 +584,15 @@ export function ThreadRelationshipsPanel(props: {
                     isThreadAvailable={(memberThreadId) =>
                       graph.nodes.get(memberThreadId as ThreadId)?.missing === false
                     }
-                    onStop={canStopWorkflow ? () => void stopWorkflow(agent.id) : undefined}
+                    onStop={
+                      canStopWorkflow
+                        ? (event) =>
+                            void stopWorkflow(
+                              agent.id,
+                              isIntentionalInterruption(event, navigator.platform),
+                            )
+                        : undefined
+                    }
                     stopping={stoppingId === agent.id}
                     stopDisabled={stoppingId !== null}
                     header={relationshipLink}
@@ -647,7 +675,13 @@ export function ThreadRelationshipsPanel(props: {
                               tone="destructive"
                               aria-label={`Stop subagent ${threadTitle}`}
                               disabled={stoppingId !== null}
-                              onClick={() => void stopSubagent(threadId, agent)}
+                              onClick={(event) =>
+                                void stopSubagent(
+                                  threadId,
+                                  agent,
+                                  isIntentionalInterruption(event, navigator.platform),
+                                )
+                              }
                             />
                           }
                         >

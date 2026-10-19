@@ -120,6 +120,7 @@ describe("searchSettings", () => {
       "unpin-confirmation",
       "archive-confirmation",
       "delete-confirmation",
+      "confirm-before-interrupt",
     ]);
   });
 
@@ -300,11 +301,11 @@ describe("searchSettings", () => {
     );
   });
 
-  it("sends commands without a default binding to the section", () => {
+  it("links the stop command to its default shortcut row", () => {
     expect(searchSettings("thread.stop")[0]).toMatchObject({
       id: "keybinding-thread.stop",
-      targetId: "keybindings",
     });
+    expect(searchSettings("thread.stop")[0]?.targetId).toBeUndefined();
     expect(searchSettings("sidebar.toggle")[0]?.targetId).toBeUndefined();
   });
 

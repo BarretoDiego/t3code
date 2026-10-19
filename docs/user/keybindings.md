@@ -143,8 +143,10 @@ a shortcut.
 
 ## Commands with special behavior
 
-`thread.stop` interrupts the running turn in the focused thread. It has no default
-shortcut; assign one in **Settings → Keybindings**.
+`thread.stop` interrupts the running turn in the focused thread. `mod+escape`
+stops immediately. Clicking Stop normally asks for confirmation; hold `mod` while
+clicking to stop immediately. Disable **Settings → General → Confirm before
+interrupting** to skip confirmation for other Stop actions as well.
 
 `thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
 bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
