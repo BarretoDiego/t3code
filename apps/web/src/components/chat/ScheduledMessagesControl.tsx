@@ -64,7 +64,7 @@ export function ScheduledMessagesControl(props: {
     sendAt?: string,
   ): Promise<void> => {
     setBusyCommandId(entry.command.commandId);
-    try {
+    return await (async () => {
       const result = await updateScheduledMessage({
         environmentId: props.environmentId,
         input: {
@@ -82,9 +82,9 @@ export function ScheduledMessagesControl(props: {
           description: error instanceof Error ? error.message : undefined,
         });
       }
-    } finally {
+    })().finally(() => {
       setBusyCommandId(null);
-    }
+    });
   };
 
   const reschedule = async (entry: ScheduledMessage) => {

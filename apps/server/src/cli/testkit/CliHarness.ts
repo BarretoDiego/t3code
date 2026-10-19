@@ -156,7 +156,6 @@ const adapter = {
   openSession: () => Effect.die("provider execution is disabled in the CLI harness"),
 } as ProviderAdapterV2["Service"];
 
-// ---------------------------------------------------------------------------
 // Recording doubles for what other parts of the automation layer own
 
 /**
@@ -360,7 +359,6 @@ export class TerminalCloses extends Context.Service<
   Ref.Ref<ReadonlyArray<{ readonly threadId: string; readonly deleteHistory?: boolean }>>
 >()("t3/cli/testkit/CliHarness/TerminalCloses") {}
 
-// ---------------------------------------------------------------------------
 // The in-process RPC client
 
 const encodeDispatchError = Schema.encodeUnknownEffect(OrchestrationV2DispatchCommandError);
@@ -507,7 +505,6 @@ const makeClient = Effect.gen(function* () {
   return client as unknown as EnvironmentRpcClient;
 });
 
-// ---------------------------------------------------------------------------
 // Layers
 
 export interface CliHarnessOptions {
@@ -566,7 +563,9 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
     }),
   );
   const launch = ThreadLaunch.layer.pipe(
-    Layer.provide(Layer.mergeAll(externalServices, threadManagement, receipts, IdAllocator.layer)),
+    Layer.provide(threadManagement),
+    Layer.provide(IdAllocator.layer),
+    Layer.provide(Layer.mergeAll(externalServices, receipts)),
   );
   const serverConfig = Layer.effect(
     ServerConfig.ServerConfig,
@@ -630,7 +629,6 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // Running commands
 
 export interface CliRun {
@@ -677,7 +675,6 @@ export const runCli = Effect.fn("CliHarness.runCli")(function* <
   return run;
 });
 
-// ---------------------------------------------------------------------------
 // Provider facts
 
 let eventCounter = 0;

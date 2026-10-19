@@ -1,11 +1,6 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
-/**
- * Ids for the per-thread action menu. Snooze presets are dispatched as
- * `snooze:<presetId>` so the union stays closed while the preset list
- * remains data-driven.
- */
 export type ThreadActionMenuId =
   | "continue-on"
   | "new-thread-on-branch"
@@ -39,7 +34,6 @@ export type DraftActionMenuId =
   | "project-settings"
   | "discard";
 
-/** Right-click menu for an unsent draft row in the sidebar. */
 export function buildDraftActionMenuItems(options: {
   readonly hasPath: boolean;
   readonly hasBranch: boolean;
@@ -75,18 +69,12 @@ export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly isArchived?: boolean;
   readonly branch: string | null;
-  /**
-   * Project scoping for the thread list. Null on surfaces with no scoped
-   * list behind the menu (the chat header), where the item must not show.
-   */
   readonly projectFilter: {
     readonly label: string;
-    /** True when the list is already scoped to this thread's project. */
     readonly isActive: boolean;
   } | null;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
-  /** False while the user has turned automatic settlement off for this thread. */
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
@@ -95,7 +83,6 @@ export interface ThreadActionMenuState {
   readonly isRunning: boolean;
   readonly supports: {
     readonly settlement: boolean;
-    /** Server understands thread.auto-settle.set. */
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
     readonly pinning: boolean;
@@ -125,11 +112,6 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   ].includes(action);
 }
 
-/**
- * Single source for the per-thread action menu: the sidebar row's right-click
- * menu and the chat header menu share labels, ordering, and capability gating.
- * Each surface supplies state for the actions it supports.
- */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
@@ -256,11 +238,6 @@ export function buildThreadActionMenuItems(
       ],
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
-    // Archive removes the thread from the sidebar while keeping its
-    // conversation under Settings > Archived threads — distinct from Settle
-    // (stays visible in the Settled shelf) and Delete (clears history for
-    // good), so it sits beside Delete without borrowing its destructive
-    // styling.
     {
       id: "archive",
       label: "Archive thread",

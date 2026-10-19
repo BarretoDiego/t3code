@@ -33,8 +33,7 @@ import {
   RotateCcwIcon,
   SquareIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-
+import { useEffect, useState, type ReactNode } from "react";
 import {
   encodeAgentBoardFilterList,
   filtersFromAgentBoardSearch,
@@ -47,7 +46,7 @@ import {
   useServerConfigs,
   useThreadShells,
 } from "../../state/entities";
-import { useEnvironments } from "../../state/environments";
+import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -70,7 +69,6 @@ import {
   resolveAgentBoardActionAvailability,
   resolveAgentBoardPageState,
 } from "./AgentBoardPage.logic";
-
 const COLUMN_DEFINITIONS = [
   {
     key: "needsYou",
@@ -93,14 +91,12 @@ const COLUMN_DEFINITIONS = [
   },
   { key: "issue", label: "Issue", icon: OctagonXIcon, tone: "text-rose-600 dark:text-rose-300" },
 ] as const;
-
 type FilterDimension =
   | "environmentIds"
   | "projectKeys"
   | "providerDrivers"
   | "providerInstanceKeys"
   | "models";
-
 function connectivityFor(phase: string, hasCachedCards: boolean): BoardConnectivity {
   if (phase === "connected") return "connected";
   if (hasCachedCards) return "cached";
@@ -108,52 +104,40 @@ function connectivityFor(phase: string, hasCachedCards: boolean): BoardConnectiv
   if (phase === "connecting" || phase === "reconnecting") return "loading";
   return "disconnected";
 }
-
 function useBoardSources() {
   const threads = useThreadShells();
   const projects = useProjects();
   const configs = useServerConfigs();
+  const providersByEnvironment = useEnvironmentProviders();
   const { environments } = useEnvironments();
-  const environmentIdsWithShells = useMemo(
-    () => new Set(threads.map((thread) => thread.environmentId)),
-    [threads],
-  );
-  const boardEnvironments = useMemo<readonly BoardEnvironmentSource[]>(
-    () =>
-      environments.map((environment) => ({
-        environmentId: environment.environmentId,
-        label: environment.label || null,
-        platform:
-          environment.serverConfig === null
-            ? null
-            : `${environment.serverConfig.environment.platform.os} ${environment.serverConfig.environment.platform.arch}`,
-        connectivity: connectivityFor(
-          environment.connection.phase,
-          environmentIdsWithShells.has(environment.environmentId),
-        ),
-        cachedAt: null,
-      })),
-    [environmentIdsWithShells, environments],
-  );
-  const providers = useMemo<readonly BoardProviderSource[]>(
-    () =>
-      [...configs].flatMap(([environmentId, config]) =>
-        config.providers.map((provider) => ({
-          environmentId,
-          instanceId: provider.instanceId,
-          driver: provider.driver,
-          label: provider.displayName ?? provider.badgeLabel ?? null,
-        })),
+  const environmentIdsWithShells = (() => new Set(threads.map((thread) => thread.environmentId)))();
+  const boardEnvironments = ((): readonly BoardEnvironmentSource[] =>
+    environments.map((environment) => ({
+      environmentId: environment.environmentId,
+      label: environment.label || null,
+      platform:
+        environment.serverConfig === null
+          ? null
+          : `${environment.serverConfig.environment.platform.os} ${environment.serverConfig.environment.platform.arch}`,
+      connectivity: connectivityFor(
+        environment.connection.phase,
+        environmentIdsWithShells.has(environment.environmentId),
       ),
-    [configs],
-  );
-  const shellsByKey = useMemo(
-    () => new Map(threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread])),
-    [threads],
-  );
+      cachedAt: null,
+    })))();
+  const providers = ((): readonly BoardProviderSource[] =>
+    [...providersByEnvironment].flatMap(([environmentId, providers]) =>
+      providers.map((provider) => ({
+        environmentId,
+        instanceId: provider.instanceId,
+        driver: provider.driver,
+        label: provider.displayName ?? provider.badgeLabel ?? null,
+      })),
+    ))();
+  const shellsByKey = (() =>
+    new Map(threads.map((thread) => [`${thread.environmentId}:${thread.id}`, thread])))();
   return { threads, projects, configs, environments: boardEnvironments, providers, shellsByKey };
 }
-
 function updateSearchForFilters(filters: AgentBoardFilters): AgentBoardSearch {
   const environments = encodeAgentBoardFilterList(filters.environmentIds);
   const projects = encodeAgentBoardFilterList(filters.projectKeys);
@@ -169,79 +153,59 @@ function updateSearchForFilters(filters: AgentBoardFilters): AgentBoardSearch {
     ...(filters.onlyActive ? {} : { active: false }),
   };
 }
-
 function useCoarseNow(enabled: boolean): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!enabled) return;
-    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    const id = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(id);
   }, [enabled]);
   return now;
 }
-
 function useSnoozeWakeTick(threads: Parameters<typeof nextAgentBoardSnoozeWakeAt>[0]): number {
-  const [tick, bumpTick] = useState(0);
-  const nextWakeAt = useMemo(() => {
-    void tick;
-    return nextAgentBoardSnoozeWakeAt(threads, Date.now());
-  }, [threads, tick]);
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
+    const nextWakeAt = nextAgentBoardSnoozeWakeAt(threads, now);
     if (nextWakeAt === null) return;
-    const delayMs = Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2_147_483_647);
-    const id = window.setTimeout(() => bumpTick((current) => current + 1), delayMs);
+    const delayMs = Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2147483647);
+    const id = window.setTimeout(() => setNow(Date.now()), delayMs);
     return () => window.clearTimeout(id);
-  }, [nextWakeAt, tick]);
-  return tick;
+  }, [threads, now]);
+  return now;
 }
-
 function formatElapsed(since: string | null, now: number): string | null {
   if (since === null) return null;
   const start = Date.parse(since);
   if (!Number.isFinite(start)) return null;
-  const seconds = Math.max(0, Math.floor((now - start) / 1_000));
+  const seconds = Math.max(0, Math.floor((now - start) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours}h ${minutes % 60}m` : `${Math.floor(hours / 24)}d`;
 }
-
 export function AgentBoardPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const sources = useBoardSources();
   const actions = useBoardActionController(sources);
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
-  const filters = useMemo(() => filtersFromAgentBoardSearch(search), [search]);
+  const filters = (() => filtersFromAgentBoardSearch(search))();
   const snoozeWakeTick = useSnoozeWakeTick(sources.threads);
-  const classificationNow = useMemo(() => {
-    void snoozeWakeTick;
-    return new Date().toISOString();
-  }, [sources.threads, filters, snoozeWakeTick]);
-  const model = useMemo(
-    () =>
-      buildAgentBoard({
-        threads: sources.threads,
-        projects: sources.projects,
-        environments: sources.environments,
-        providers: sources.providers,
-        filters,
-        now: classificationNow,
-      }),
-    [
-      classificationNow,
+  const classificationNow = new Date(snoozeWakeTick).toISOString();
+  const model = (() =>
+    buildAgentBoard({
+      threads: sources.threads,
+      projects: sources.projects,
+      environments: sources.environments,
+      providers: sources.providers,
       filters,
-      sources.environments,
-      sources.projects,
-      sources.providers,
-      sources.threads,
-    ],
-  );
-  const visibleCards = useMemo(
-    () => [...COLUMN_DEFINITIONS.flatMap(({ key }) => model.columns[key]), ...model.columns.idle],
-    [model.columns],
-  );
+      now: classificationNow,
+    }))();
+  const visibleCards = (() => [
+    ...COLUMN_DEFINITIONS.flatMap(({ key }) => model.columns[key]),
+    ...model.columns.idle,
+  ])();
   const elapsedNow = useCoarseNow(
     visibleCards.some(
       (card) => card.runtime.kind === "working" || card.runtime.kind === "needs-you",
@@ -255,38 +219,27 @@ export function AgentBoardPage() {
     shellCount: sources.threads.length,
     visibleCount: model.totalVisible,
   });
-
-  const setFilters = useCallback(
-    (next: AgentBoardFilters) => {
-      void navigate({ search: updateSearchForFilters(next), replace: true });
-    },
-    [navigate],
-  );
-  const toggleFilter = useCallback(
-    (dimension: FilterDimension, value: string) => {
-      const selected = filters[dimension];
-      setFilters({
-        ...filters,
-        [dimension]: selected.includes(value)
-          ? selected.filter((entry) => entry !== value)
-          : [...selected, value],
-      });
-    },
-    [filters, setFilters],
-  );
-  const clearFilters = useCallback(
-    () =>
-      setFilters({
-        ...filters,
-        environmentIds: [],
-        projectKeys: [],
-        providerDrivers: [],
-        providerInstanceKeys: [],
-        models: [],
-      }),
-    [filters, setFilters],
-  );
-
+  const setFilters = (next: AgentBoardFilters) => {
+    void navigate({ search: updateSearchForFilters(next), replace: true });
+  };
+  const toggleFilter = (dimension: FilterDimension, value: string) => {
+    const selected = filters[dimension];
+    setFilters({
+      ...filters,
+      [dimension]: selected.includes(value)
+        ? selected.filter((entry) => entry !== value)
+        : [...selected, value],
+    });
+  };
+  const clearFilters = () =>
+    setFilters({
+      ...filters,
+      environmentIds: [],
+      projectKeys: [],
+      providerDrivers: [],
+      providerInstanceKeys: [],
+      models: [],
+    });
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -422,7 +375,6 @@ export function AgentBoardPage() {
     </SidebarInset>
   );
 }
-
 function BoardFilter(props: {
   readonly label: string;
   readonly options: readonly AgentBoardFilterOption[];
@@ -459,7 +411,6 @@ function BoardFilter(props: {
     </Menu>
   );
 }
-
 function BoardLoading() {
   return (
     <div
@@ -475,7 +426,6 @@ function BoardLoading() {
     </div>
   );
 }
-
 function BoardColumn(props: {
   readonly definition: (typeof COLUMN_DEFINITIONS)[number];
   readonly cards: readonly AgentBoardCard[];
@@ -515,7 +465,6 @@ function BoardColumn(props: {
     </section>
   );
 }
-
 const STATE_LABELS: Record<AgentBoardCard["runtime"]["kind"], string> = {
   "needs-you": "Needs you",
   working: "Working",
@@ -524,7 +473,6 @@ const STATE_LABELS: Record<AgentBoardCard["runtime"]["kind"], string> = {
   issue: "Issue",
   idle: "Idle",
 };
-
 function BoardCard(props: {
   readonly card: AgentBoardCard;
   readonly elapsedNow: number;
@@ -534,7 +482,7 @@ function BoardCard(props: {
   const { card } = props;
   const elapsed = formatElapsed(card.runtime.since, props.elapsedNow);
   return (
-    <article className="group rounded-lg border border-border bg-card p-3 shadow-sm/5 focus-within:ring-2 focus-within:ring-ring">
+    <article className="group rounded-lg border border-border bg-card p-3 shadow-sm/5 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring">
       <div className="flex min-w-0 items-start gap-2">
         <Link
           to="/$environmentId/$threadId"
@@ -617,7 +565,6 @@ function BoardCard(props: {
     </article>
   );
 }
-
 function CardMeta({ icon, children }: { readonly icon: ReactNode; readonly children: ReactNode }) {
   return (
     <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground [&>svg]:size-3 [&>svg]:shrink-0">
@@ -626,7 +573,6 @@ function CardMeta({ icon, children }: { readonly icon: ReactNode; readonly child
     </div>
   );
 }
-
 function ConnectivityBadge({ connectivity }: { readonly connectivity: BoardConnectivity }) {
   if (connectivity === "connected")
     return (
@@ -650,18 +596,14 @@ function ConnectivityBadge({ connectivity }: { readonly connectivity: BoardConne
     </span>
   );
 }
-
 type CardAction = "interrupt" | "archive" | "settle" | "unsettle";
-
 interface BoardActionController {
   readonly errors: ReadonlyMap<string, string>;
   readonly run: (card: AgentBoardCard, action: CardAction) => Promise<void>;
 }
-
 function cardKey(card: AgentBoardCard): string {
   return `${card.ref.environmentId}:${card.ref.threadId}`;
 }
-
 function useBoardActionController(
   sources: ReturnType<typeof useBoardSources>,
 ): BoardActionController {
@@ -670,53 +612,49 @@ function useBoardActionController(
   const settle = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
   const unsettle = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
-  const run = useCallback(
-    async (card: AgentBoardCard, action: CardAction) => {
-      const key = cardKey(card);
-      const shell = sources.shellsByKey.get(key) ?? null;
-      if (shell === null) return;
-      setErrors((current) => {
-        if (!current.has(key)) return current;
-        const next = new Map(current);
-        next.delete(key);
-        return next;
-      });
-      const scoped = {
-        environmentId: card.ref.environmentId,
-        input: { threadId: card.ref.threadId },
-      };
-      const result =
-        action === "interrupt"
-          ? await interrupt({
-              environmentId: scoped.environmentId,
-              input: {
-                ...scoped.input,
-                ...(shell.runtime?.activeRunId != null ? { runId: shell.runtime.activeRunId } : {}),
-              },
-            })
-          : action === "archive"
-            ? await archive(scoped)
-            : action === "settle"
-              ? await settle(scoped)
-              : await unsettle({
-                  environmentId: scoped.environmentId,
-                  input: { ...scoped.input, reason: "user" },
-                });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const cause = squashAtomCommandFailure(result);
-        setErrors((current) =>
-          new Map(current).set(
-            key,
-            cause instanceof Error ? cause.message : `Could not ${action} thread.`,
-          ),
-        );
-      }
-    },
-    [archive, interrupt, settle, sources.shellsByKey, unsettle],
-  );
+  const run = async (card: AgentBoardCard, action: CardAction) => {
+    const key = cardKey(card);
+    const shell = sources.shellsByKey.get(key) ?? null;
+    if (shell === null) return;
+    setErrors((current) => {
+      if (!current.has(key)) return current;
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+    const scoped = {
+      environmentId: card.ref.environmentId,
+      input: { threadId: card.ref.threadId },
+    };
+    const result =
+      action === "interrupt"
+        ? await interrupt({
+            environmentId: scoped.environmentId,
+            input: {
+              ...scoped.input,
+              ...(shell.runtime?.activeRunId != null ? { runId: shell.runtime.activeRunId } : {}),
+            },
+          })
+        : action === "archive"
+          ? await archive(scoped)
+          : action === "settle"
+            ? await settle(scoped)
+            : await unsettle({
+                environmentId: scoped.environmentId,
+                input: { ...scoped.input, reason: "user" },
+              });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const cause = squashAtomCommandFailure(result);
+      setErrors((current) =>
+        new Map(current).set(
+          key,
+          cause instanceof Error ? cause.message : `Could not ${action} thread.`,
+        ),
+      );
+    }
+  };
   return { errors, run };
 }
-
 function CardActions(props: {
   readonly card: AgentBoardCard;
   readonly sources: ReturnType<typeof useBoardSources>;
@@ -736,7 +674,6 @@ function CardActions(props: {
     canSettle: shell !== null && !hasQueuedTurnStart(shell, { now: new Date().toISOString() }),
   });
   const hasMutatingAction = Object.values(availability).some(Boolean);
-
   return (
     <div className="shrink-0">
       <Menu>

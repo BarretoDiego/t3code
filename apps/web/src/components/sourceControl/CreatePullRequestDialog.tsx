@@ -59,7 +59,7 @@ export function CreatePullRequestDialog({
             }
             if (pending) return;
             setPending(true);
-            try {
+            return await (async () => {
               const result = await create({
                 environmentId,
                 input: {
@@ -84,9 +84,9 @@ export function CreatePullRequestDialog({
                 setError(
                   "Could not create the pull request. Check branches, reviewers, and repository access.",
                 );
-            } finally {
+            })().finally(() => {
               setPending(false);
-            }
+            });
           }}
         >
           <DialogPanel>

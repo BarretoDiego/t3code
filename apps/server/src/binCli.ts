@@ -1,3 +1,4 @@
+import { doctorCommand } from "./cli/doctor.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,7 @@ import { peerCommand } from "./cli/peer.ts";
 import { nodeCommand } from "./cli/node.ts";
 import { jobCommand } from "./cli/job.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
+import { keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
 import { runDefaultServerCommand, serveCommand, startCommand } from "./cli/server.ts";
@@ -32,7 +34,6 @@ import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { threadCommand } from "./cli/thread.ts";
-import { doctorCommand } from "./cli/doctor.ts";
 import { envCommand } from "./cli/env.ts";
 import { eventsCommand } from "./cli/events.ts";
 import { forkCommand } from "./cli/fork.ts";
@@ -110,7 +111,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       profileCommand,
       makeGuideCommand((): Command.Command.Any => command),
       envCommand,
-      doctorCommand,
+
       forkCommand,
       serviceCommand,
       updateCommand,
@@ -122,6 +123,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       servicePreflightCommand,
       themeCommand,
       traceCommand,
+      doctorCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
@@ -132,6 +134,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
 export const cli = makeCli();
 
 export function runCli() {
+  keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provide(layerCliRuntime),

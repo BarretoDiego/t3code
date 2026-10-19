@@ -11,7 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
-import { AiError, McpProtocol, McpSchema, McpServer, Tool, type Toolkit } from "effect/ai";
+import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { OrchestratorMcpFailure, PreviewAutomationError } from "@t3tools/contracts";
 
@@ -61,17 +61,15 @@ import {
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
-/** Where an MCP client discovers how to sign in (RFC 9728), at this request's own origin. */
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
     Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
   );
 
 /**
- * Agents T3 Code launched carry a registry token and must never be sent into
- * an OAuth flow when it dies: they cannot open a browser, and a sign-in
- * would mint a credential that outlives their session. Only a request that
- * does not look like a provider token is pointed at the OAuth metadata.
+ * Agents T3 Code launched carry a registry token and must never be sent into an
+ * OAuth flow when it dies: they cannot open a browser, and a sign-in would mint
+ * a credential that outlives their session.
  */
 const unauthorized = (input: {
   readonly request: HttpServerRequest.HttpServerRequest;
@@ -105,10 +103,6 @@ const unauthorized = (input: {
   );
 };
 
-/**
- * Resolves a bearer token that is not a provider-session token: an OAuth
- * client signed in from outside T3. Undefined when the token is not one.
- */
 export class McpClientAuthenticator extends Context.Service<
   McpClientAuthenticator,
   {
@@ -163,9 +157,6 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         ? yield* clients.value.authenticate(request)
         : undefined);
     if (!invocation) {
-      // Without this the only symptom of a dead credential is the agent
-      // quietly losing the whole `t3-code` toolkit for the rest of its
-      // session, with nothing on the server to explain why.
       yield* Effect.logWarning("rejected MCP request with an unusable credential", {
         reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
       });
@@ -188,12 +179,10 @@ const layerMcpAuthMiddleware = HttpRouter.middleware<{
 
 /**
  * Claude Code moves an MCP result above its output limit to a file and hands
- * the agent a notice instead, so a snapshot that carries the full
- * accessibility tree and page text loses its locators too. Claude Code also
- * shows the model `structuredContent` in place of the text blocks when a
- * result has both, so both carry the same bounded snapshot. Keep it near
- * 20 KB and tell the agent what was cut. The short `omitted` notes may go a
- * little over; the provider limit is far above this.
+ * the agent a notice instead, so a snapshot that carries the full accessibility
+ * tree and page text loses its locators too. Claude Code also shows the model
+ * `structuredContent` in place of the text blocks when a result has both, so
+ * both carry the same bounded snapshot.
  */
 export const MAX_SNAPSHOT_TEXT_BYTES = 20_000;
 const MAX_SNAPSHOT_VISIBLE_TEXT_CHARS = 8_000;
@@ -207,7 +196,6 @@ const utf8Length = (text: string) => Buffer.byteLength(text, "utf8");
 const cutText = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max)}…` : text;
 
-/** Shortens every string field of a log entry; other fields pass through. */
 const cutEntryStrings = <A>(entry: A): A =>
   typeof entry === "object" && entry !== null
     ? (Object.fromEntries(
@@ -237,13 +225,6 @@ type SnapshotMetadata = {
   readonly [key: string]: unknown;
 };
 
-/**
- * Keeps server ARIA refs, drops legacy object trees, shortens page text, names, identifiers,
- * and log strings, keeps only the newest log entries, and finally sheds
- * interactive elements until the JSON fits. Returns the bounded value, its
- * text, and notes on what is missing so the agent can reach for
- * preview_evaluate.
- */
 const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
   const omitted: Array<string> = [];
   const { accessibilityTree, ...withoutTree } = metadata;
@@ -289,9 +270,6 @@ const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
 
   // Per-field caps do not sum below the ceiling: three log arrays of 40 capped
   // entries alone can pass 60 KB, and the caps count characters, not bytes.
-  // Halve one thing per round until the JSON fits: logs first, then page
-  // text, then the locators. The identifier caps bound the rest, so this
-  // terminates.
   const shedOrder = [
     "actionTimeline",
     "networkEntries",
@@ -377,7 +355,6 @@ export class PreviewScreenshotSaveError extends Schema.TaggedError<PreviewScreen
 
 const MAX_SCREENSHOT_SITE_SLUG_LENGTH = 40;
 
-/** Hostname reduced to a filename-safe slug, matching the desktop's own screenshot names. */
 const screenshotSiteSlug = (rawUrl: string): string => {
   try {
     const slug = new URL(rawUrl).hostname
@@ -392,7 +369,6 @@ const screenshotSiteSlug = (rawUrl: string): string => {
   }
 };
 
-/** Writes the snapshot PNG under the browser artifacts directory and returns its path. */
 const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   pageUrl: string,
   data: Uint8Array,
@@ -402,7 +378,6 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   const path = yield* Path.Path;
   const millis = yield* Clock.currentTimeMillis;
   const crypto = yield* Crypto.Crypto;
-  // Two saves in the same millisecond must not overwrite each other.
   const unique = (yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8);
   const fileName = `browser-screenshot-${screenshotSiteSlug(pageUrl)}-${millis.toString(36)}-${unique}.png`;
   const screenshotPath = path.join(config.browserArtifactsDir, fileName);
@@ -412,6 +387,22 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   );
   return screenshotPath;
 });
+
+/**
+ * Tool input schemas are advertised through each schema's JSON codec, which
+ * offers `null` for every `Schema.optional` field, but Toolkit decodes with the
+ * schema itself and rejects that `null`. Decoding through the same codec makes
+ * a tool accept what it advertises.
+ */
+const decodeAsAdvertised = <Tools extends Record<string, Tool.Any>>(
+  toolkit: Toolkit.Toolkit<Tools>,
+): Toolkit.Toolkit<Tools> =>
+  // The clones keep each tool's id, name and decoded parameter type, so handlers still match.
+  Toolkit.make(
+    ...Object.values(toolkit.tools).map((tool) =>
+      tool.setParameters(Schema.toCodecJson(tool.parametersSchema)),
+    ),
+  ) as unknown as Toolkit.Toolkit<Tools>;
 
 const isPreviewAutomationError = Schema.is(PreviewAutomationError);
 
@@ -455,11 +446,10 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
   const server = yield* McpServer.McpServer;
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  // The MCP tool runner only supplies the client, so hand the save path its services here.
   const saveServices = yield* Effect.context<
     ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path | Crypto.Crypto
   >();
-  const built = yield* PreviewSnapshotToolkit;
+  const built = yield* decodeAsAdvertised(PreviewSnapshotToolkit);
   const tool = PreviewSnapshotTool;
   yield* server.addTool({
     tool: new McpSchema.Tool({
@@ -510,7 +500,6 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               // later request, and some reject inline images outright.
               const includeImage = payload?.includeImage === true;
               if (screenshotPath !== undefined && !includeImage) {
-                // The agent only wants a file to show the user. The url keeps the site icon on the tool row.
                 const saved = {
                   url: cutText(snapshot.url, MAX_SNAPSHOT_IDENTIFIER_CHARS),
                   screenshotPath,
@@ -538,7 +527,6 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                     ? bounded.value
                     : { ...bounded.value, omitted: bounded.omitted },
                 content: [
-                  // Keep the page identity readable even if a provider truncates the snapshot.
                   {
                     type: "text",
                     text: encodeJsonText({
@@ -583,8 +571,8 @@ interface ImageToolResult {
 
 /**
  * Failures surface only their tag unless the tool describes them: the remote
- * message may carry renderer or device output the agent should not see, and
- * the tag is what it can act on. A describer returns a server-built message.
+ * message may carry renderer or device output the agent should not see, and the
+ * tag is what it can act on.
  */
 const imageToolFailure =
   <E>(toolName: string, operation: string, failureText: string | ((error: E) => string)) =>
@@ -631,10 +619,8 @@ const imageToolFailure =
   };
 
 /**
- * `McpServer.toolkit` serializes every result as JSON text, which is the
- * wrong shape for a screenshot: the model needs image content. Tools whose
- * result carries a `screenshot` field are registered by hand so the PNG goes
- * out as an image block and the rest of the payload as JSON metadata.
+ * `McpServer.toolkit` serializes every result as JSON text, which is the wrong
+ * shape for a screenshot: the model needs image content.
  */
 const registerImageTool = <T extends Tool.Any, E, R>(
   tool: T,
@@ -719,7 +705,7 @@ const registerImageTool = <T extends Tool.Any, E, R>(
 const registerDeviceScreenshot = Effect.fn("McpHttpServer.registerDeviceScreenshot")(function* () {
   const devices = yield* DeviceService.DeviceService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  const built = yield* DeviceScreenshotToolkit;
+  const built = yield* decodeAsAdvertised(DeviceScreenshotToolkit);
   yield* registerImageTool(
     DeviceScreenshotTool,
     (payload) =>
@@ -741,7 +727,7 @@ const isOrchestratorMcpFailure = Schema.is(OrchestratorMcpFailure);
 const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(function* () {
   const htmlRender = yield* HtmlRender.HtmlRender;
   const threads = yield* ThreadManagementService.ThreadManagementService;
-  const built = yield* HtmlPreviewToolkit;
+  const built = yield* decodeAsAdvertised(HtmlPreviewToolkit);
   yield* registerImageTool(
     HtmlPreviewTool,
     (payload) =>
@@ -754,7 +740,7 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
         Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
       ),
     "preview",
-    // Parameter errors and HTML render errors are both written by the server for the agent.
+
     (error) =>
       isOrchestratorMcpFailure(error) || AiError.isAiError(error)
         ? error.message
@@ -763,9 +749,6 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
 });
 
 /**
- * `McpServer.toolkit` for handlers that declared their access (see
- * `McpToolAccess`). Every toolkit on `/mcp` registers through this.
- *
  * `McpServer.toolkit` asks for every service its tools declare when it
  * registers them, but the auth middleware provides `McpInvocationContext` to
  * each request instead. Registration must not get one: the services it
@@ -775,7 +758,7 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) => {
-  const registration = McpServer.toolkit(toolkit);
+  const registration = McpServer.toolkit(decodeAsAdvertised(toolkit));
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
   const registered = registration as Layer.Layer<
     never,
@@ -785,7 +768,6 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   return registered.pipe(Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)));
 };
 
-/** A hand-registered tool, also only with handlers that declared their access. */
 const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, EX, RX>(
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,

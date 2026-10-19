@@ -11,7 +11,7 @@ import {
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { ProjectLinkKey } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -50,24 +50,18 @@ export function ProjectLinksSettings({
   const projects = useProjects();
   const groups = useSettingsProjectGroups();
   const { environments } = useEnvironments();
-  const environmentById = useMemo(
-    () => new Map(environments.map((environment) => [environment.environmentId, environment])),
-    [environments],
+  const environmentById = new Map(
+    environments.map((environment) => [environment.environmentId, environment]),
   );
-  const allMembers = useMemo(
-    () =>
-      projects.map((project) => ({
-        ...project,
-        physicalProjectKey: derivePhysicalProjectKey(project),
-        environmentLabel:
-          environmentById.get(project.environmentId)?.label ?? project.environmentId,
-      })),
-    [projects, environmentById],
-  );
-  const candidates = useMemo(
-    () => selectProjectLinkCandidates({ projects: allMembers, members: group.memberProjects }),
-    [allMembers, group.memberProjects],
-  );
+  const allMembers = projects.map((project) => ({
+    ...project,
+    physicalProjectKey: derivePhysicalProjectKey(project),
+    environmentLabel: environmentById.get(project.environmentId)?.label ?? project.environmentId,
+  }));
+  const candidates = selectProjectLinkCandidates({
+    projects: allMembers,
+    members: group.memberProjects,
+  });
   const [query, setQuery] = useState("");
   const [targetKey, setTargetKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,12 +96,12 @@ export function ProjectLinksSettings({
     }
     busyRef.current = true;
     setBusy(true);
-    try {
-      return await updateMembers(members, { linkKey }, "Failed to update project links");
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
+    return await updateMembers(members, { linkKey }, "Failed to update project links").finally(
+      () => {
+        busyRef.current = false;
+        setBusy(false);
+      },
+    );
   };
   const applyPlan = (plan: ReturnType<typeof planProjectGroupLink>) => {
     const refs = new Set(plan.updates.map((ref) => scopedProjectKey(ref)));

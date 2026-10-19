@@ -137,11 +137,11 @@ function RuntimeEditor({
               event.preventDefault();
               if (pending) return;
               setPending(true);
-              try {
-                if (await onSave(draft, changeKey ? key : undefined)) onClose();
-              } finally {
-                setPending(false);
-              }
+              await onSave(draft, changeKey ? key : undefined)
+                .then((saved) => {
+                  if (saved) onClose();
+                })
+                .finally(() => setPending(false));
             }}
           >
             <fieldset disabled={pending} className="grid min-w-0 gap-4">
@@ -332,15 +332,11 @@ function RuntimeCard({
   const act = async (action: AiRuntimeActionInput["action"], selectedModel?: string) => {
     if (busy) return;
     setSubmitting(true);
-    try {
-      await onAction({
-        runtimeId: runtime.id,
-        action,
-        ...(selectedModel ? { model: selectedModel } : {}),
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    await onAction({
+      runtimeId: runtime.id,
+      action,
+      ...(selectedModel ? { model: selectedModel } : {}),
+    }).finally(() => setSubmitting(false));
   };
   const access = runtimeAvailability(runtime, online);
   const status = !online
@@ -564,17 +560,11 @@ function RuntimeCard({
             e.preventDefault();
             if (busy || !effectiveDriver || !effectiveModel) return;
             setBinding(true);
-            try {
-              if (
-                effectiveDriver &&
-                effectiveModel &&
-                (await onBind(effectiveDriver, effectiveModel, instanceId))
-              ) {
-                setInstanceId("");
-              }
-            } finally {
-              setBinding(false);
-            }
+            await onBind(effectiveDriver, effectiveModel, instanceId)
+              .then((bound) => {
+                if (bound) setInstanceId("");
+              })
+              .finally(() => setBinding(false));
           }}
         >
           <p className="text-xs text-muted-foreground">
@@ -717,11 +707,9 @@ function EnvironmentRuntimes({
             onClick={async () => {
               if (refreshing) return;
               setRefreshing(true);
-              try {
-                result(await refresh({ ...target, input: { refresh: true } }));
-              } finally {
-                setRefreshing(false);
-              }
+              await refresh({ ...target, input: { refresh: true } })
+                .then(result)
+                .finally(() => setRefreshing(false));
             }}
           >
             <RefreshCwIcon className="size-3.5" />

@@ -154,14 +154,15 @@ export function AiReviewPanel({
   ]);
   const saveFinding = async (next: AiReviewRun) => {
     if (!next.analysis) return;
+    const analysis = next.analysis;
     setPending(true);
-    try {
+    return await (async () => {
       const result = await edit({
         environmentId,
         input: {
           id: next.id,
-          findings: next.analysis.findings,
-          summary: next.analysis.summary,
+          findings: analysis.findings,
+          summary: analysis.summary,
           dismissedIds: next.dismissedIds,
         },
       });
@@ -169,9 +170,9 @@ export function AiReviewPanel({
         setEditing(null);
         history.refresh();
       } else setError("Could not save this draft.");
-    } finally {
+    })().finally(() => {
       setPending(false);
-    }
+    });
   };
   const findings = run?.analysis?.findings ?? [];
   const publishable = findings.filter(
@@ -357,7 +358,7 @@ export function AiReviewPanel({
               if (!provider || !selectedModel || pending) return;
               setPending(true);
               setError(null);
-              try {
+              return await (async () => {
                 const profile = settings.agentProfiles.find((profile) => profile.id === profileId);
                 const result = await start({
                   environmentId,
@@ -387,9 +388,9 @@ export function AiReviewPanel({
                   setSelected([]);
                   history.refresh();
                 } else setError("Could not start this review.");
-              } finally {
+              })().finally(() => {
                 setPending(false);
-              }
+              });
             }}
           >
             Run AI review
@@ -721,7 +722,7 @@ export function AiReviewPanel({
                 disabled={pending}
                 onClick={async () => {
                   setPending(true);
-                  try {
+                  return await (async () => {
                     const result = await publish({
                       environmentId,
                       input: { id: run.id, findingIds: selected, includeSummary: summary },
@@ -736,9 +737,9 @@ export function AiReviewPanel({
                         "Publication failed. The PR may have changed or your account may lack permission. Refresh before retrying.",
                       );
                     }
-                  } finally {
+                  })().finally(() => {
                     setPending(false);
-                  }
+                  });
                 }}
               >
                 Confirm publication

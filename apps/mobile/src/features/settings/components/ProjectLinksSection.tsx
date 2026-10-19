@@ -13,8 +13,8 @@ import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 
-import { AppText as Text, AppTextInput } from "../../../components/AppText";
-import { ControlPillMenu } from "../../../components/ControlPillMenu";
+import { AppText as Text, AppTextInput } from "../../../components/ui/AppText";
+import { Menu as ControlPillMenu } from "../../../components/ui/Menu";
 import { uuidv4 } from "../../../lib/uuid";
 import { useProjects } from "../../../state/entities";
 import { useEnvironments } from "../../../state/environments";
@@ -79,7 +79,7 @@ export function ProjectLinksSection({ members }: { members: ReadonlyArray<Enviro
     }
     busyRef.current = true;
     setBusy(true);
-    try {
+    return await (async () => {
       for (const member of selected) {
         const result = await updateProject({
           environmentId: member.environmentId,
@@ -88,10 +88,10 @@ export function ProjectLinksSection({ members }: { members: ReadonlyArray<Enviro
         if (result._tag !== "Success") return false;
       }
       return true;
-    } finally {
+    })().finally(() => {
       busyRef.current = false;
       setBusy(false);
-    }
+    });
   };
   const applyPlan = (plan: ReturnType<typeof planProjectGroupLink>) => {
     const refs = new Set(plan.updates.map((ref) => scopedProjectKey(ref)));

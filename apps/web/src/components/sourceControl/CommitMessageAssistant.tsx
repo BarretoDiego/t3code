@@ -104,7 +104,7 @@ export function CommitMessageAssistant({
             if (!selectedModel || pending) return;
             setPending(true);
             setError(null);
-            try {
+            return await (async () => {
               const profile = settings.agentProfiles.find((profile) => profile.id === profileId);
               const result = await generate({
                 environmentId,
@@ -120,9 +120,9 @@ export function CommitMessageAssistant({
               });
               if (result._tag === "Success") onGenerated(result.value.message);
               else setError("Could not generate a message. Check the agent and selected files.");
-            } finally {
+            })().finally(() => {
               setPending(false);
-            }
+            });
           }}
         >
           {pending ? "Generating…" : "Generate preview"}

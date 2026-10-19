@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
-  AuthAdministrativeScopes,
+  AuthStandardClientScopes,
   AuthAutomationExecuteScope,
   DelegatedTaskId,
   EnvironmentId,
@@ -44,12 +44,12 @@ import * as JobExecutor from "./JobExecutor.ts";
 const operator: AutomationCaller = {
   kind: "client",
   subject: "operator",
-  scopes: AuthAdministrativeScopes,
+  scopes: AuthStandardClientScopes,
 };
 const shellOperator: AutomationCaller = {
   kind: "client",
   subject: "shell-operator",
-  scopes: [...AuthAdministrativeScopes, AuthAutomationExecuteScope],
+  scopes: [...AuthStandardClientScopes, AuthAutomationExecuteScope],
 };
 
 const ORCHESTRATOR = OrchestratorId.make("orch-1");
@@ -668,7 +668,7 @@ it.layer(NodeServices.layer)("jobs on execution nodes", (it) => {
       // What a process on the node publishes is attributed by the server, from
       // the session it used; the request has no field that could say otherwise.
       const emitted = yield* running.journal.emit(
-        { kind: "client", subject: "ci-runner", scopes: AuthAdministrativeScopes },
+        { kind: "client", subject: "ci-runner", scopes: AuthStandardClientScopes },
         {
           idempotencyKey: IdempotencyKey.make("ci-1"),
           type: "custom.ci.finished",

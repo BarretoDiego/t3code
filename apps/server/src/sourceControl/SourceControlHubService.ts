@@ -14,7 +14,7 @@ import {
   detectSourceControlProviderFromGitRemoteUrl,
 } from "@t3tools/shared/git";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
-import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as Cache from "effect/Cache";
 import * as Config from "effect/Config";
 import * as Exit from "effect/Exit";
@@ -73,7 +73,7 @@ export const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const git = yield* GitVcsDriver;
   const vcs = yield* VcsDriverRegistry;
-  const github = yield* GitHubApi.GitHubApi;
+  const github = yield* GitHubRest.GitHubRest;
   const bitbucket = yield* BitbucketApi.BitbucketApi;
   const environmentWorkspace = yield* Config.String("T3CODE_BITBUCKET_WORKSPACE").pipe(
     Config.withDefault(""),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { randomUUID } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -18,7 +18,7 @@ import {
   recoverThreadHandoff,
   type ThreadHandoffProgress,
 } from "@t3tools/client-runtime/operations/thread-handoff";
-import { useEnvironments } from "../state/environments";
+import { useEnvironmentProviders, useEnvironments } from "../state/environments";
 import { useProjects, useThreadShell } from "../state/entities";
 import { THREAD_HANDOFF_EVENT, useThreadHandoffDeps } from "../state/threadHandoff";
 import { Button } from "./ui/button";
@@ -32,7 +32,6 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "./ui/select";
-
 const Recovery = Schema.Struct({
   handoffId: ThreadHandoffId,
   threadId: ThreadId,
@@ -69,18 +68,28 @@ const phaseLabels: Record<ThreadHandoffProgress["phase"], string> = {
   cancelled: "Transfer cancelled; source retained",
 };
 type RunState =
-  | { status: "idle" }
-  | { status: "running"; progress: ThreadHandoffProgress | null }
-  | { status: "completed"; destinationEnvironmentId: EnvironmentId }
-  | { status: "error"; message: string; recovery: Recovery | null };
-
+  | {
+      status: "idle";
+    }
+  | {
+      status: "running";
+      progress: ThreadHandoffProgress | null;
+    }
+  | {
+      status: "completed";
+      destinationEnvironmentId: EnvironmentId;
+    }
+  | {
+      status: "error";
+      message: string;
+      recovery: Recovery | null;
+    };
 export interface ThreadHandoffDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly threadRef: ScopedThreadRef;
   readonly onTransferred?: (destination: ScopedThreadRef) => void;
 }
-
 export function ThreadHandoffDialog({
   open,
   onOpenChange,
@@ -90,6 +99,7 @@ export function ThreadHandoffDialog({
   const router = useRouter();
   const deps = useThreadHandoffDeps();
   const { environments } = useEnvironments();
+  const providersByEnvironment = useEnvironmentProviders();
   const projects = useProjects();
   const thread = useThreadShell(threadRef);
   const [source, setSource] = useState<ThreadHandoffSource | null>(null);
@@ -109,7 +119,11 @@ export function ThreadHandoffDialog({
         recovery.threadId !== threadRef.threadId ||
         recovery.sourceEnvironmentId !== threadRef.environmentId
       )
-        throw new Error("Saved recovery belongs to another thread.");
+        return {
+          status: "error",
+          message: "Saved recovery belongs to another thread.",
+          recovery: null,
+        };
       return {
         status: "error",
         message: "A previous transfer needs its ownership checked before continuing.",
@@ -134,11 +148,13 @@ export function ThreadHandoffDialog({
   const supportsNative =
     source?.supportsNativeHandoff ??
     (!!source?.sessionId &&
-      sourceEnvironment?.serverConfig?.providers.some(
-        (provider) =>
-          provider.instanceId === source.providerInstanceId &&
-          provider.supportsSessionHandoff === true,
-      )) ??
+      providersByEnvironment
+        .get(threadRef.environmentId)
+        ?.some(
+          (provider) =>
+            provider.instanceId === source.providerInstanceId &&
+            provider.supportsSessionHandoff === true,
+        )) ??
     false;
   useEffect(() => {
     if (!source || initializedTransferMode.current) return;
@@ -149,7 +165,7 @@ export function ThreadHandoffDialog({
   const selectedEnvironment = environments.find((entry) => entry.environmentId === destinationId);
   const destinationProjects = projects.filter((project) => project.environmentId === destinationId);
   const providers =
-    selectedEnvironment?.serverConfig?.providers.filter(
+    (destinationId === null ? undefined : providersByEnvironment.get(destinationId))?.filter(
       (provider) =>
         provider.enabled &&
         (transferMode === "native"
@@ -157,21 +173,18 @@ export function ThreadHandoffDialog({
           : provider.supportsContextHandoff === true),
     ) ?? [];
   const selectedProvider = providers.find((provider) => provider.instanceId === providerId);
-  const destination = useMemo<Omit<ThreadHandoffDestination, "source"> | null>(
-    () =>
-      source && destinationId && providerId && projectId && (transferMode === "native" || model)
-        ? {
-            transferMode,
-            ...(transferMode === "context" && model
-              ? { modelSelection: { instanceId: providerId, model } }
-              : {}),
-            environmentId: destinationId,
-            providerInstanceId: providerId,
-            projects: [{ sourceProjectId: source.projectId, destinationProjectId: projectId }],
-          }
-        : null,
-    [source, destinationId, providerId, projectId, transferMode, model],
-  );
+  const destination = ((): Omit<ThreadHandoffDestination, "source"> | null =>
+    source && destinationId && providerId && projectId && (transferMode === "native" || model)
+      ? {
+          transferMode,
+          ...(transferMode === "context" && model
+            ? { modelSelection: { instanceId: providerId, model } }
+            : {}),
+          environmentId: destinationId,
+          providerInstanceId: providerId,
+          projects: [{ sourceProjectId: source.projectId, destinationProjectId: projectId }],
+        }
+      : null)();
   const selectionKey = JSON.stringify([destinationId, providerId, projectId, transferMode, model]);
   const busy = run.status === "running";
   const destinationOnline = selectedEnvironment?.connection.phase === "connected";
@@ -213,32 +226,28 @@ export function ThreadHandoffDialog({
         : destination
           ? { key: selectionKey, status: "checking" as const }
           : null;
-  const complete = useCallback(
-    (recovery: Recovery) => {
-      setRun({ status: "completed", destinationEnvironmentId: recovery.destinationEnvironmentId });
-      const destinationRef = {
+  const complete = (recovery: Recovery) => {
+    setRun({ status: "completed", destinationEnvironmentId: recovery.destinationEnvironmentId });
+    const destinationRef = {
+      threadId: recovery.threadId,
+      environmentId: recovery.destinationEnvironmentId,
+    };
+    const sourcePath = router.buildLocation({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams({
         threadId: recovery.threadId,
-        environmentId: recovery.destinationEnvironmentId,
-      };
-      const sourcePath = router.buildLocation({
+        environmentId: recovery.sourceEnvironmentId,
+      }),
+    }).pathname;
+    if (router.state.location.pathname === sourcePath) {
+      void router.navigate({
         to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams({
-          threadId: recovery.threadId,
-          environmentId: recovery.sourceEnvironmentId,
-        }),
-      }).pathname;
-      if (router.state.location.pathname === sourcePath) {
-        void router.navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(destinationRef),
-          replace: true,
-        });
-      }
-      onTransferred?.(destinationRef);
-    },
-    [onTransferred, router],
-  );
-
+        params: buildThreadRouteParams(destinationRef),
+        replace: true,
+      });
+    }
+    onTransferred?.(destinationRef);
+  };
   useEffect(() => {
     if (!open || inFlight.current) return;
     let active = true;
@@ -257,7 +266,6 @@ export function ThreadHandoffDialog({
       active = false;
     };
   }, [open, deps, threadRef.environmentId, threadRef.threadId]);
-
   useEffect(() => {
     if (!open || busy || !source || !destination || !eligible) return;
     let active = true;
@@ -277,7 +285,6 @@ export function ThreadHandoffDialog({
       active = false;
     };
   }, [open, busy, source, destination, eligible, selectionKey, deps]);
-
   const execute = async (recovery?: Recovery) => {
     if (
       inFlight.current ||
@@ -330,10 +337,9 @@ export function ThreadHandoffDialog({
         message: message(error),
         recovery: needsRecovery ? descriptor : null,
       });
-    } finally {
-      abort.current = null;
-      inFlight.current = false;
     }
+    abort.current = null;
+    inFlight.current = false;
   };
   const recovery = run.status === "error" ? run.recovery : null;
   const canCancel =
@@ -693,7 +699,6 @@ export function ThreadHandoffDialog({
     </Dialog>
   );
 }
-
 export function ThreadHandoffDialogHost() {
   const [threadRef, setThreadRef] = useState<ScopedThreadRef | null>(null);
   const [open, setOpen] = useState(false);

@@ -58,7 +58,7 @@ export function RepositoryMappingDialog({
               if (!projectId || !remoteName.trim() || pending) return;
               setPending(true);
               setError(false);
-              try {
+              return await (async () => {
                 const result = await save({
                   environmentId,
                   input: { projectId, remoteName: remoteName.trim(), reference },
@@ -67,9 +67,9 @@ export function RepositoryMappingDialog({
                   onChanged();
                   setOpen(false);
                 } else setError(true);
-              } finally {
+              })().finally(() => {
                 setPending(false);
-              }
+              });
             }}
           >
             <DialogPanel>

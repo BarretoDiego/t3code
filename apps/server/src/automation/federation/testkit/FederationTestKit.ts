@@ -13,7 +13,7 @@
  */
 import {
   AUTOMATION_WS_METHODS,
-  AuthAdministrativeScopes,
+  AuthStandardClientScopes,
   AuthFederationPeerScope,
   type AutomationError,
   type AutomationJournalEntry,
@@ -140,7 +140,7 @@ export const makeNetwork = (): Network => ({
 export const operator: AutomationCaller = {
   kind: "client",
   subject: "test-operator",
-  scopes: AuthAdministrativeScopes,
+  scopes: AuthStandardClientScopes,
 };
 
 export const makeWorld = Effect.fn("makeWorld")(function* (name: string) {

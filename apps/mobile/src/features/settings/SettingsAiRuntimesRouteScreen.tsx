@@ -27,7 +27,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -237,7 +237,7 @@ function RuntimeEditor({
             disabled={busy || !isRuntimeConfig(draft)}
             onPress={async () => {
               setBusy(true);
-              try {
+              return await (async () => {
                 if (
                   check(
                     await save({
@@ -247,9 +247,9 @@ function RuntimeEditor({
                   )
                 )
                   onClose();
-              } finally {
+              })().finally(() => {
                 setBusy(false);
-              }
+              });
             }}
           />
           <Button label="Cancel" disabled={busy} onPress={onClose} />
@@ -501,7 +501,7 @@ function RuntimeRow({
             onPress={async () => {
               if (busy || !effectiveDriver || !effectiveModel) return;
               setBinding(true);
-              try {
+              return await (async () => {
                 if (
                   check(
                     await bind({
@@ -519,9 +519,9 @@ function RuntimeRow({
                     "Agent binding created",
                     "Choose the new provider and model in the chat selector.",
                   );
-              } finally {
+              })().finally(() => {
                 setBinding(false);
-              }
+              });
             }}
           />
         </View>
@@ -548,7 +548,7 @@ function EnvironmentRuntimes({
   );
   const refresh = useAtomCommand(serverEnvironment.aiRuntimesList);
   return (
-    <SettingsSection title={`${environment.label} · ${online ? "Online" : "Offline"}`} card>
+    <SettingsSection title={`${environment.label} · ${online ? "Online" : "Offline"}`}>
       <View className="p-4 gap-3">
         <View className="flex-row flex-wrap gap-2">
           <Button

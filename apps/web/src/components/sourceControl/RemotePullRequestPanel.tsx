@@ -1,6 +1,6 @@
 import ChatMarkdown from "../ChatMarkdown";
 import type { CodeViewHandle } from "@pierre/diffs/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import type {
   EnvironmentId,
@@ -39,7 +39,6 @@ import {
 import { HubSelect } from "./HubSelect";
 import { AiReviewPanel } from "./AiReviewPanel";
 import { useHubQuery } from "./useHubQuery";
-
 export function RemotePullRequestPanel({
   environmentId,
   reference,
@@ -434,17 +433,18 @@ export function RemotePullRequestPanel({
               <Button
                 disabled={pending || !revisions.data}
                 onClick={async () => {
-                  if (!revisions.data) return;
+                  const revision = revisions.data;
+                  if (!revision) return;
                   setPending(true);
                   setError(null);
-                  try {
+                  return await (async () => {
                     const result =
                       confirmation === "merge" && effectiveMethod
                         ? await merge({
                             environmentId,
                             input: {
                               ...reference,
-                              expectedHeadSha: revisions.data.headSha,
+                              expectedHeadSha: revision.headSha,
                               method: effectiveMethod,
                             },
                           })
@@ -452,7 +452,7 @@ export function RemotePullRequestPanel({
                             environmentId,
                             input: {
                               ...reference,
-                              expectedHeadSha: draftHeadSha ?? revisions.data.headSha,
+                              expectedHeadSha: draftHeadSha ?? revision.headSha,
                               verdict,
                               body,
                               comments,
@@ -470,9 +470,9 @@ export function RemotePullRequestPanel({
                         "Operation failed. Refresh to check permissions, checks, and whether the PR head changed.",
                       );
                     }
-                  } finally {
+                  })().finally(() => {
                     setPending(false);
-                  }
+                  });
                 }}
               >
                 Confirm {confirmation === "merge" ? "merge" : "publication"}
@@ -484,7 +484,6 @@ export function RemotePullRequestPanel({
     </section>
   );
 }
-
 function RemoteDiff({
   environmentId,
   reference,
@@ -513,14 +512,11 @@ function RemoteDiff({
   const [draft, setDraft] = useState<Omit<PullRequestReviewCommentDraft, "body"> | null>(null);
   const [body, setBody] = useState("");
   const { resolvedTheme } = useTheme();
-  const parsed = useMemo(
-    () =>
-      getRenderablePatch(
-        query.data?.patch,
-        `hub:${reference.repository}:${reference.number}:${cursor ?? "first"}`,
-      ),
-    [query.data?.patch, reference.repository, reference.number, cursor],
-  );
+  const parsed = (() =>
+    getRenderablePatch(
+      query.data?.patch,
+      `hub:${reference.repository}:${reference.number}:${cursor ?? "first"}`,
+    ))();
   const files = parsed?.kind === "files" ? parsed.files : [];
   const selected = selectedPath
     ? files.find((file) => resolveFileDiffPath(file) === selectedPath)
@@ -542,35 +538,34 @@ function RemoteDiff({
         side: "additions",
         align: "center",
       });
-  }, [selectedId, selectedLine]);
-  const items = useMemo(
-    () =>
-      selected
-        ? [
-            {
-              id: buildFileDiffRenderKey(selected),
-              type: "diff" as const,
-              fileDiff: selected,
-              annotations: threads
-                .filter(
-                  (thread) =>
-                    !thread.isOutdated &&
-                    thread.line &&
-                    thread.path === resolveFileDiffPath(selected),
-                )
-                .map((thread) => ({
-                  lineNumber: thread.line!,
-                  side: thread.side === "right" ? ("additions" as const) : ("deletions" as const),
-                  metadata: thread,
-                })),
-            },
-          ]
-        : [],
-    [selected, threads],
-  );
+  }, [selectedId, selectedLine, viewer]);
+  const items = (() =>
+    selected
+      ? [
+          {
+            id: buildFileDiffRenderKey(selected),
+            type: "diff" as const,
+            fileDiff: selected,
+            annotations: threads
+              .filter(
+                (thread) =>
+                  !thread.isOutdated &&
+                  thread.line &&
+                  thread.path === resolveFileDiffPath(selected),
+              )
+              .map((thread) => ({
+                lineNumber: thread.line!,
+                side: thread.side === "right" ? ("additions" as const) : ("deletions" as const),
+                metadata: thread,
+              })),
+          },
+        ]
+      : [])();
   const beginComment = (
     range: SelectedLineRange | null,
-    context: { item: CodeViewItem<PullRequestReviewThread> },
+    context: {
+      item: CodeViewItem<PullRequestReviewThread>;
+    },
   ) => {
     if (!range || !selected || context.item.type !== "diff" || !canComment) return;
     const position = resolveDiffReviewPosition(selected, range.end, range.endSide ?? range.side);

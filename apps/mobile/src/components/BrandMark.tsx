@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import { Image } from "expo-image";
 import { View } from "react-native";
 
-import { AppText as Text } from "./AppText";
+import { AppText as Text } from "./ui/AppText";
 import { T3_CODE_BRAND_MARK_SOURCE } from "./brandAssets";
 
 const isForkBuild = Constants.expoConfig?.extra?.appBrand === "fork";
@@ -13,7 +13,7 @@ const DEFAULT_STAGE_LABEL = isForkBuild
     ? "Dev"
     : appVariant === "preview"
       ? "Preview"
-      : "Alpha";
+      : "Beta";
 
 export function BrandMark(props: { readonly compact?: boolean; readonly stageLabel?: string }) {
   const compact = props.compact ?? false;

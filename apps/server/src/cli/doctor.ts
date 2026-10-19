@@ -25,6 +25,9 @@ import { Command, Flag } from "effect/cli";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
+import { databaseDoctorCommand } from "./databaseDoctor.ts";
+export { runDoctor } from "./databaseDoctor.ts";
+
 import packageJson from "../../package.json" with { type: "json" };
 import { jsonFlag, printJson, printJsonLine } from "./common.ts";
 import { DurationFromString } from "./config.ts";
@@ -494,4 +497,5 @@ export const doctorCommand = Command.make("doctor", {
       }),
     ),
   ),
+  Command.withSubcommands([databaseDoctorCommand]),
 );

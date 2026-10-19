@@ -88,15 +88,14 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                     disabled={pending}
                     onClick={async () => {
                       setPending(true);
-                      try {
-                        const result = await remove({ ...target, input: { provider } });
-                        if (result._tag === "Success") {
-                          await refresh({ ...target, input: {} });
-                          query.refresh();
-                        } else setError("Could not remove this account.");
-                      } finally {
-                        setPending(false);
-                      }
+                      await remove({ ...target, input: { provider } })
+                        .then(async (result) => {
+                          if (result._tag === "Success") {
+                            await refresh({ ...target, input: {} });
+                            query.refresh();
+                          } else setError("Could not remove this account.");
+                        })
+                        .finally(() => setPending(false));
                     }}
                   >
                     Use environment credentials
@@ -134,19 +133,18 @@ function EnvironmentAccounts({ environment }: { environment: EnvironmentPresenta
                 event.preventDefault();
                 if (pending) return;
                 setPending(true);
-                try {
-                  const result = await save({
-                    ...target,
-                    input: { account: draft, ...(token ? { token } : {}) },
-                  });
-                  if (result._tag === "Success") {
-                    await refresh({ ...target, input: {} });
-                    query.refresh();
-                    close();
-                  } else setError("Could not save this account.");
-                } finally {
-                  setPending(false);
-                }
+                await save({
+                  ...target,
+                  input: { account: draft, ...(token ? { token } : {}) },
+                })
+                  .then(async (result) => {
+                    if (result._tag === "Success") {
+                      await refresh({ ...target, input: {} });
+                      query.refresh();
+                      close();
+                    } else setError("Could not save this account.");
+                  })
+                  .finally(() => setPending(false));
               }}
             >
               <DialogPanel>

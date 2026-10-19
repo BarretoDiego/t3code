@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { makeGitHubRepositoryBrowser } from "./GitHubRepositoryBrowser.ts";
 import { bitbucketPagePath, makeBitbucketRepositoryBrowser } from "./BitbucketRepositoryBrowser.ts";
-import type { GitHubApi } from "@t3tools/source-control-github/server/GitHubApi";
+import type { GitHubRest } from "@t3tools/source-control-github/server/GitHubRest";
 import type { BitbucketApi } from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -33,7 +33,7 @@ const gh = (response: string, truncated = false) =>
         truncated,
         stderrTruncated: false,
       }),
-  }) as unknown as GitHubApi["Service"];
+  }) as unknown as GitHubRest["Service"];
 const bb = (response: string, paths: string[]) =>
   ({
     request: (input: { url: string }) => {

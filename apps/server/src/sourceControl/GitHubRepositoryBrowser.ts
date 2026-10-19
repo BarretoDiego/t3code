@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { GitHubApi } from "@t3tools/source-control-github/server/GitHubApi";
+import type { GitHubRest } from "@t3tools/source-control-github/server/GitHubRest";
 import type { SourceControlRepositoryBrowser } from "./SourceControlRepositoryBrowser.ts";
 
 const Repository = Schema.Struct({
@@ -40,7 +40,7 @@ export const pageNumber = (cursor?: string) =>
   cursor && /^[1-9]\d{0,6}$/.test(cursor) ? Number(cursor) : 1;
 
 export function makeGitHubRepositoryBrowser(
-  github: Pick<GitHubApi["Service"], "rest">,
+  github: Pick<GitHubRest["Service"], "rest">,
 ): SourceControlRepositoryBrowser {
   const rawRequest = (path: string, body?: unknown, patch = false) =>
     github

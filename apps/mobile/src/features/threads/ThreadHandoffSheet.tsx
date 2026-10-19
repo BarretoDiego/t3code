@@ -26,7 +26,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentSession } from "../../state/session";
@@ -298,7 +298,7 @@ export function ThreadHandoffSheet(props: {
     if (!operation) return;
     setBusy(true);
     setError(null);
-    try {
+    return await (async () => {
       const file = await recoveryFile(props.environmentId, props.threadId);
       await writeFileAtomically(file, JSON.stringify(operation));
       setPending(operation);
@@ -316,30 +316,32 @@ export function ThreadHandoffSheet(props: {
       file.delete();
       setPending(null);
       if (result.phase === "completed") props.onComplete(operation.destinationEnvironmentId);
-    } catch (cause) {
-      if (
-        !recover &&
-        !(
-          typeof cause === "object" &&
-          cause !== null &&
-          "code" in cause &&
-          cause.code === "recoveryRequired"
-        )
-      ) {
-        try {
-          const saved = await recoveryFile(props.environmentId, props.threadId);
-          if (saved.exists) saved.delete();
-          setPending(null);
-        } catch {
-          /* Keep the durable record if local cleanup fails. */
+    })()
+      .catch(async (cause: unknown) => {
+        if (
+          !recover &&
+          !(
+            typeof cause === "object" &&
+            cause !== null &&
+            "code" in cause &&
+            cause.code === "recoveryRequired"
+          )
+        ) {
+          try {
+            const saved = await recoveryFile(props.environmentId, props.threadId);
+            if (saved.exists) saved.delete();
+            setPending(null);
+          } catch {
+            /* Keep the durable record if local cleanup fails. */
+          }
         }
-      }
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-      abort.current = null;
-      setCancellable(false);
-    }
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        setBusy(false);
+        abort.current = null;
+        setCancellable(false);
+      });
   };
   return (
     <Modal

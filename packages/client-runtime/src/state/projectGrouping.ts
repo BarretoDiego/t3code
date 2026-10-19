@@ -174,7 +174,6 @@ export function deriveLogicalProjectKeyFromSettings(
   });
 }
 
-/** Resolves a scratch filter selected before its environment config identified the project. */
 export function resolveScratchProjectScopeKey(
   key: string | null,
   projects: ReadonlyArray<
@@ -296,19 +295,10 @@ function selectProjectIdentitySource<TProject extends EnvironmentProject>(
   return freshestIdentifiedProject ?? winner;
 }
 
-/**
- * Builds logical project groups without losing the physical projects that
- * remain the actual navigation and task-creation targets.
- *
- * Presentation-specific metadata, filtering, and activity sorting stay in
- * each client. Grouping modes, overrides, physical deduplication, labels, and
- * member preservation live here so web and mobile cannot drift.
- */
 export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
   readonly projects: ReadonlyArray<TProject>;
   readonly settings: ProjectGroupingSettings;
   readonly preferredEnvironmentId?: EnvironmentId | null;
-  /** Filter equivalence does not change the default ownership of mutable project settings. */
   readonly groupScratchProjects?: boolean;
 }): ReadonlyArray<ProjectGroup<TProject>> {
   const projectsByPhysicalKey = new Map<string, TProject[]>();

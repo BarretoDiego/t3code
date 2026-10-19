@@ -60,7 +60,7 @@ export function LocalCloneActions({
               if (pending) return;
               setPending(true);
               setError(null);
-              try {
+              return await (async () => {
                 const result =
                   action === "push"
                     ? await push.run({ actionId: randomUUID(), action: "push" })
@@ -84,9 +84,9 @@ export function LocalCloneActions({
                   setError(
                     "Git could not complete this action. Check local changes, branch state and remote access.",
                   );
-              } finally {
+              })().finally(() => {
                 setPending(false);
-              }
+              });
             }}
           >
             <DialogPanel>

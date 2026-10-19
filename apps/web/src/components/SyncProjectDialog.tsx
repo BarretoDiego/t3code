@@ -37,8 +37,7 @@ import {
   CircleXIcon,
   FolderSyncIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { useEffect, useRef, useState } from "react";
 import { useUpdateEnvironmentSettings } from "../hooks/useSettings";
 import { cn, newProjectId, randomUUID } from "../lib/utils";
 import { useEnvironments } from "../state/environments";
@@ -60,27 +59,23 @@ import {
 import { Input } from "./ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Spinner } from "./ui/spinner";
-
 // Used only to satisfy `useUpdateEnvironmentSettings`'s non-null signature
 // before a destination environment is chosen; the update it drives is only
 // ever invoked once a real destination is selected, so this value is never
 // actually persisted against.
 const UNSET_ENVIRONMENT_ID = EnvironmentId.make("__sync-dialog-unset__");
-
 export interface SyncProjectDialogSource {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
 }
-
 export interface SyncProjectDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /** Preselected source project. When set, the origin step is skipped —
-      the caller already knows the answer (a project's own settings page, or
-      the command palette's project-scoped entry). */
+        the caller already knows the answer (a project's own settings page, or
+        the command palette's project-scoped entry). */
   readonly initialSource?: SyncProjectDialogSource;
 }
-
 /**
  * The progress step's whole story in one value: a run is either untouched,
  * in flight (with its latest progress snapshot), finished (with the summary
@@ -89,29 +84,33 @@ export interface SyncProjectDialogProps {
  * still holding the previous attempt's error, say.
  */
 type SyncRunState =
-  | { readonly status: "idle" }
-  | { readonly status: "running"; readonly progress: ProjectSyncProgress | null }
-  | { readonly status: "done"; readonly summary: ProjectSyncPlanSummary }
+  | {
+      readonly status: "idle";
+    }
+  | {
+      readonly status: "running";
+      readonly progress: ProjectSyncProgress | null;
+    }
+  | {
+      readonly status: "done";
+      readonly summary: ProjectSyncPlanSummary;
+    }
   | {
       readonly status: "failed";
       readonly error: SyncProjectErrorDescription;
       /** The user aborted this run rather than it breaking on its own, so
-          there is nothing to retry — they can simply start again. */
+        there is nothing to retry — they can simply start again. */
       readonly cancelled: boolean;
     };
-
 const IDLE_RUN_STATE: SyncRunState = { status: "idle" };
-
 export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncProjectDialogProps) {
   const { environments } = useEnvironments();
   const allProjects = useProjects();
   const deps = useProjectSyncDeps();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-
   const hasFixedSource = initialSource !== undefined;
-  const steps = useMemo(() => buildSyncProjectDialogSteps({ hasFixedSource }), [hasFixedSource]);
-
+  const steps = (() => buildSyncProjectDialogSteps({ hasFixedSource }))();
   const [stepIndex, setStepIndex] = useState(0);
   const [originEnvironmentId, setOriginEnvironmentId] = useState<EnvironmentId | null>(null);
   const [originProjectId, setOriginProjectId] = useState<ProjectId | null>(null);
@@ -134,32 +133,32 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
   const [runState, setRunState] = useState<SyncRunState>(IDLE_RUN_STATE);
   const abortControllerRef = useRef<AbortController | null>(null);
   const planSummary = planResult?.summary ?? null;
-
-  // Reset every field whenever the dialog opens, so a previous run's choices
-  // never leak into the next one.
-  useEffect(() => {
-    if (!open) {
-      return;
+  // Opening a fresh dialog resets its local form before rendering the next step.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setStepIndex(0);
+      setOriginEnvironmentId(null);
+      setOriginProjectId(null);
+      setDestEnvironmentId(null);
+      setMode(null);
+      setSendDestinationPath("");
+      setSendDestinationPathTouched(false);
+      setSetAsDefaultFolder(false);
+      setExistingDestProjectId(null);
+      setIncludeGit(true);
+      setPlanResult(null);
+      setIsLoadingPlan(false);
+      setPlanError(null);
+      setPlanRetryToken(0);
+      setDeleteConfirmed(false);
+      setRunState(IDLE_RUN_STATE);
     }
-    setStepIndex(0);
-    setOriginEnvironmentId(null);
-    setOriginProjectId(null);
-    setDestEnvironmentId(null);
-    setMode(null);
-    setSendDestinationPath("");
-    setSendDestinationPathTouched(false);
-    setSetAsDefaultFolder(false);
-    setExistingDestProjectId(null);
-    setIncludeGit(true);
-    setPlanResult(null);
-    setIsLoadingPlan(false);
-    setPlanError(null);
-    setPlanRetryToken(0);
-    setDeleteConfirmed(false);
-    setRunState(IDLE_RUN_STATE);
-    abortControllerRef.current = null;
+  }
+  useEffect(() => {
+    if (open) abortControllerRef.current = null;
   }, [open]);
-
   // Derived from primitive fields (not the `initialSource` object itself) so
   // its identity stays stable across renders even when a caller passes a
   // freshly-literal `initialSource` prop every render (as
@@ -167,7 +166,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
   // `source` would re-run on every unrelated parent re-render.
   const fixedSourceEnvironmentId = initialSource?.environmentId ?? null;
   const fixedSourceProjectId = initialSource?.projectId ?? null;
-  const source: SyncProjectDialogSource | null = useMemo(() => {
+  const source: SyncProjectDialogSource | null = (() => {
     if (hasFixedSource) {
       return fixedSourceEnvironmentId !== null && fixedSourceProjectId !== null
         ? { environmentId: fixedSourceEnvironmentId, projectId: fixedSourceProjectId }
@@ -176,95 +175,75 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     return originEnvironmentId !== null && originProjectId !== null
       ? { environmentId: originEnvironmentId, projectId: originProjectId }
       : null;
-  }, [
-    hasFixedSource,
-    fixedSourceEnvironmentId,
-    fixedSourceProjectId,
-    originEnvironmentId,
-    originProjectId,
-  ]);
-
-  const sourceProject = useMemo(
-    () =>
-      source
-        ? (allProjects.find(
-            (project) =>
-              project.environmentId === source.environmentId && project.id === source.projectId,
-          ) ?? null)
-        : null,
-    [allProjects, source],
-  );
-
-  const environmentCandidates: SyncEnvironmentCandidate[] = useMemo(
-    () =>
-      environments.map((environment) => ({
-        environmentId: environment.environmentId,
-        label: environment.label,
-        connected: environment.connection.phase === "connected",
-        projectSyncCapable: environment.serverConfig?.environment.capabilities.projectSync === true,
-      })),
-    [environments],
-  );
-  const eligibleEnvironments = useMemo(
-    () => selectProjectSyncEnvironmentOptions(environmentCandidates),
-    [environmentCandidates],
-  );
-
+  })();
+  const sourceProject = (() =>
+    source
+      ? (allProjects.find(
+          (project) =>
+            project.environmentId === source.environmentId && project.id === source.projectId,
+        ) ?? null)
+      : null)();
+  const environmentCandidates: SyncEnvironmentCandidate[] = (() =>
+    environments.map((environment) => ({
+      environmentId: environment.environmentId,
+      label: environment.label,
+      connected: environment.connection.phase === "connected",
+      projectSyncCapable: environment.serverConfig?.environment.capabilities.projectSync === true,
+    })))();
+  const eligibleEnvironments = (() => selectProjectSyncEnvironmentOptions(environmentCandidates))();
   // A fixed source bypasses the origin picker, so its environment is the one
   // end of the sync nothing else has vetted.
   const sourceEnvironmentEligible = isProjectSyncEnvironmentEligible(
     environmentCandidates,
     source?.environmentId ?? null,
   );
-
-  const originEnvironmentProjects = useMemo(
-    () =>
-      originEnvironmentId === null
-        ? []
-        : allProjects.filter((project) => project.environmentId === originEnvironmentId),
-    [allProjects, originEnvironmentId],
-  );
-
-  const destEnvironment = useMemo(
-    () =>
-      environments.find((environment) => environment.environmentId === destEnvironmentId) ?? null,
-    [environments, destEnvironmentId],
-  );
+  const originEnvironmentProjects = (() =>
+    originEnvironmentId === null
+      ? []
+      : allProjects.filter((project) => project.environmentId === originEnvironmentId))();
+  const destEnvironment = (() =>
+    environments.find((environment) => environment.environmentId === destEnvironmentId) ?? null)();
   const destBaseDirectory = destEnvironment?.serverConfig?.settings.addProjectBaseDirectory ?? "";
-
-  const defaultSendDestinationPath = useMemo(
-    () =>
-      sourceProject
-        ? buildDefaultSendDestinationPath({
-            baseDirectory: destBaseDirectory,
-            sourceProjectTitle: sourceProject.title,
-          })
-        : "",
-    [destBaseDirectory, sourceProject],
-  );
-
-  useEffect(() => {
-    if (mode === "send" && !sendDestinationPathTouched) {
-      setSendDestinationPath(defaultSendDestinationPath);
-    }
-  }, [mode, defaultSendDestinationPath, sendDestinationPathTouched]);
-
-  // A previously picked existing project may not even exist on a different
-  // destination environment, and means nothing in "send" mode.
-  useEffect(() => {
+  const defaultSendDestinationPath = (() =>
+    sourceProject
+      ? buildDefaultSendDestinationPath({
+          baseDirectory: destBaseDirectory,
+          sourceProjectTitle: sourceProject.title,
+        })
+      : "")();
+  if (
+    mode === "send" &&
+    !sendDestinationPathTouched &&
+    sendDestinationPath !== defaultSendDestinationPath
+  ) {
+    setSendDestinationPath(defaultSendDestinationPath);
+  }
+  // A destination selection cannot carry over to another environment or mode.
+  const [previousDestination, setPreviousDestination] = useState({ destEnvironmentId, mode });
+  if (
+    previousDestination.destEnvironmentId !== destEnvironmentId ||
+    previousDestination.mode !== mode
+  ) {
+    setPreviousDestination({ destEnvironmentId, mode });
     setExistingDestProjectId(null);
-  }, [destEnvironmentId, mode]);
-
-  // Every input the plan was computed from. Change any of them and the stored
-  // plan no longer describes what would happen, so it is dropped (and the
-  // review step recomputes it) rather than being handed to `runProjectSync`.
-  useEffect(() => {
+  }
+  // A plan and its deletion confirmation describe exactly these inputs.
+  const planInputsKey = JSON.stringify([
+    destEnvironmentId,
+    mode,
+    existingDestProjectId,
+    includeGit,
+    source?.environmentId,
+    source?.projectId,
+  ]);
+  const [previousPlanInputsKey, setPreviousPlanInputsKey] = useState(planInputsKey);
+  if (previousPlanInputsKey !== planInputsKey) {
+    setPreviousPlanInputsKey(planInputsKey);
     setPlanResult(null);
     setPlanError(null);
     setDeleteConfirmed(false);
-  }, [destEnvironmentId, mode, existingDestProjectId, includeGit, source]);
-
-  const destProjectCandidates: SyncProjectCandidate[] = useMemo(() => {
+  }
+  const destProjectCandidates: SyncProjectCandidate[] = (() => {
     if (source === null || destEnvironmentId === null) {
       return [];
     }
@@ -284,8 +263,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       candidates: filtered,
       sourceIdentityKey: sourceProject ? projectSyncIdentityKey(sourceProject) : null,
     });
-  }, [allProjects, destEnvironmentId, source, sourceProject]);
-
+  })();
   // A fixed source whose environment cannot sync replaces the whole flow with
   // an explanation: none of the steps below could do anything useful, and the
   // manifest RPC would only fail later with a much worse message.
@@ -293,28 +271,33 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
   const currentStep = sourceBlocked
     ? ("unavailable" as const)
     : steps[Math.min(stepIndex, steps.length - 1)]!;
-
-  // Fetch both manifests and compute the plan once the user reaches the
-  // review step in "sync" mode — this is what surfaces the delete warning
-  // before anything on the destination is touched.
-  useEffect(() => {
-    if (
-      currentStep !== "review" ||
-      mode !== "sync" ||
-      source === null ||
-      destEnvironmentId === null
-    ) {
-      return;
-    }
-    if (existingDestProjectId === null) {
-      return;
-    }
-    let cancelled = false;
-    setIsLoadingPlan(true);
+  // The request key advances when review inputs change or Retry starts a new attempt.
+  const planRequestKey =
+    currentStep === "review" &&
+    mode === "sync" &&
+    source !== null &&
+    destEnvironmentId !== null &&
+    existingDestProjectId !== null
+      ? `${planInputsKey}:${planRetryToken}`
+      : null;
+  const [previousPlanRequestKey, setPreviousPlanRequestKey] = useState(planRequestKey);
+  if (previousPlanRequestKey !== planRequestKey) {
+    setPreviousPlanRequestKey(planRequestKey);
+    setIsLoadingPlan(planRequestKey !== null);
     setPlanError(null);
     setPlanResult(null);
+  }
+  useEffect(() => {
+    if (
+      planRequestKey === null ||
+      source === null ||
+      destEnvironmentId === null ||
+      existingDestProjectId === null
+    )
+      return;
+    let cancelled = false;
     (async () => {
-      try {
+      return await (async () => {
         const result = await planProjectSync(deps, {
           source: { environmentId: source.environmentId, projectId: source.projectId },
           dest: { environmentId: destEnvironmentId, projectId: existingDestProjectId },
@@ -322,34 +305,23 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
         });
         if (cancelled) return;
         setPlanResult(result);
-      } catch (error) {
-        if (cancelled) return;
-        setPlanError(describeProjectSyncError(error).message);
-      } finally {
-        if (!cancelled) setIsLoadingPlan(false);
-      }
+      })()
+        .catch(async (error: unknown) => {
+          if (cancelled) return;
+          setPlanError(describeProjectSyncError(error).message);
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingPlan(false);
+        });
     })();
     return () => {
       cancelled = true;
     };
-    // `planRetryToken` has no direct use inside the effect body — bumping it
-    // is how the review step's "Retry" button re-triggers this same fetch.
-  }, [
-    currentStep,
-    mode,
-    source,
-    destEnvironmentId,
-    existingDestProjectId,
-    includeGit,
-    deps,
-    planRetryToken,
-  ]);
-
+  }, [planRequestKey, source, destEnvironmentId, existingDestProjectId, includeGit, deps]);
   const updateDestSettings = useUpdateEnvironmentSettings(
     destEnvironmentId ?? UNSET_ENVIRONMENT_ID,
   );
-
-  const handleStart = useCallback(async () => {
+  const handleStart = async () => {
     if (source === null || destEnvironmentId === null || mode === null) {
       return;
     }
@@ -357,7 +329,6 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     setRunState({ status: "running", progress: null });
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
     let destProjectId: ProjectId;
     if (mode === "send" && existingDestProjectId !== null) {
       // Retrying a send that failed after its project was created must reuse
@@ -414,8 +385,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       }
       destProjectId = existingDestProjectId;
     }
-
-    try {
+    return await (async () => {
       const summary = await runProjectSync(deps, {
         source: { environmentId: source.environmentId, projectId: source.projectId },
         dest: { environmentId: destEnvironmentId, projectId: destProjectId },
@@ -429,46 +399,26 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
         ...(mode === "sync" && planResult !== null ? { precomputedPlan: planResult } : {}),
       });
       setRunState({ status: "done", summary });
-    } catch (error) {
-      setRunState({
-        status: "failed",
-        error: describeProjectSyncError(error),
-        cancelled: controller.signal.aborted,
+    })()
+      .catch(async (error: unknown) => {
+        setRunState({
+          status: "failed",
+          error: describeProjectSyncError(error),
+          cancelled: controller.signal.aborted,
+        });
+      })
+      .finally(() => {
+        abortControllerRef.current = null;
       });
-    } finally {
-      abortControllerRef.current = null;
-    }
-  }, [
-    createProject,
-    updateProject,
-    deps,
-    destEnvironmentId,
-    existingDestProjectId,
-    includeGit,
-    mode,
-    planResult,
-    sendDestinationPath,
-    setAsDefaultFolder,
-    source,
-    sourceProject,
-    steps.length,
-    updateDestSettings,
-  ]);
-
-  const handleCancel = useCallback(() => {
+  };
+  const handleCancel = () => {
     abortControllerRef.current?.abort();
-  }, []);
-
-  const handleRetry = useCallback(() => {
+  };
+  const handleRetry = () => {
     void handleStart();
-  }, [handleStart]);
-
-  const goBack = useCallback(() => setStepIndex((index) => Math.max(0, index - 1)), []);
-  const goNext = useCallback(
-    () => setStepIndex((index) => Math.min(steps.length - 1, index + 1)),
-    [steps.length],
-  );
-
+  };
+  const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
+  const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   const canProceedOrigin = source !== null;
   const canProceedDestination = destEnvironmentId !== null;
   const canProceedMode =
@@ -485,9 +435,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       planSummary: mode === "sync" ? planSummary : { deleteCount: 0 },
       deleteConfirmed,
     });
-
   const busy = runState.status === "running";
-
   return (
     <Dialog
       open={open}
@@ -671,12 +619,14 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     </Dialog>
   );
 }
-
 function OriginStep(props: {
   readonly eligibleEnvironments: ReadonlyArray<SyncEnvironmentCandidate>;
   readonly originEnvironmentId: EnvironmentId | null;
   readonly onOriginEnvironmentChange: (environmentId: EnvironmentId) => void;
-  readonly originProjects: ReadonlyArray<{ readonly id: ProjectId; readonly title: string }>;
+  readonly originProjects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly title: string;
+  }>;
   readonly originProjectId: ProjectId | null;
   readonly onOriginProjectChange: (projectId: ProjectId) => void;
 }) {
@@ -730,7 +680,6 @@ function OriginStep(props: {
     </div>
   );
 }
-
 function DestinationStep(props: {
   readonly eligibleEnvironments: ReadonlyArray<SyncEnvironmentCandidate>;
   readonly destEnvironmentId: EnvironmentId | null;
@@ -770,7 +719,6 @@ function DestinationStep(props: {
     </div>
   );
 }
-
 function ModeStep(props: {
   readonly mode: SyncProjectDialogMode | null;
   readonly onModeChange: (mode: SyncProjectDialogMode) => void;
@@ -890,7 +838,6 @@ function ModeStep(props: {
     </div>
   );
 }
-
 function ReviewStep(props: {
   readonly mode: SyncProjectDialogMode | null;
   readonly source: SyncProjectDialogSource | null;
@@ -979,7 +926,6 @@ function ReviewStep(props: {
     </div>
   );
 }
-
 function ProgressStep({ runState }: { readonly runState: SyncRunState }) {
   if (runState.status === "done") {
     return (
@@ -994,7 +940,6 @@ function ProgressStep({ runState }: { readonly runState: SyncRunState }) {
       </div>
     );
   }
-
   if (runState.status === "failed") {
     return (
       <div className="grid gap-2 rounded-lg border border-destructive/24 bg-destructive/6 p-3">
@@ -1006,11 +951,9 @@ function ProgressStep({ runState }: { readonly runState: SyncRunState }) {
       </div>
     );
   }
-
   const progress = runState.status === "running" ? runState.progress : null;
   const percent = progress ? deriveProjectSyncProgressPercent(progress) : 0;
   const stageLabel = progress ? describeProjectSyncStage(progress.stage) : "Starting…";
-
   return (
     <div className="grid gap-3">
       <div className="flex items-center gap-2 text-sm text-foreground">

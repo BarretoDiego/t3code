@@ -27,8 +27,8 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -505,7 +505,7 @@ export function SettingsMarketplaceRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         {environments.length > 1 ? (
-          <SettingsSection title="Environment" card>
+          <SettingsSection title="Environment">
             {environments.map((environment) => (
               <Pressable
                 key={environment.environmentId}
@@ -540,7 +540,7 @@ export function SettingsMarketplaceRouteScreen() {
           </View>
         ) : null}
 
-        <SettingsSection title="Repositories" card>
+        <SettingsSection title="Repositories">
           <View className="gap-3 p-4">
             <TextInput
               className="h-12 min-h-12 rounded-[20px] px-4 py-0 text-base"
@@ -599,7 +599,7 @@ export function SettingsMarketplaceRouteScreen() {
           </Text>
         ))}
 
-        <SettingsSection title="Packages" card>
+        <SettingsSection title="Packages">
           {marketplace.isPending && !snapshot ? (
             <View className="p-8">
               <ActivityIndicator />

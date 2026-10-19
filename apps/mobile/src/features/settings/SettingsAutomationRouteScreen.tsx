@@ -36,10 +36,10 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { automationEnvironment, useOrchestratorView } from "../../state/automation";
 import { useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";

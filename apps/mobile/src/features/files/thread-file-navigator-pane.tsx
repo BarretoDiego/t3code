@@ -1,9 +1,9 @@
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import { environmentSession } from "../../state/session";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { SymbolView } from "../../components/AppSymbol";
-import { MaterialScreenContent } from "../../components/MaterialScreenContent";
-import { useCallback, useMemo, useState, type ComponentProps } from "react";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { ScreenContent } from "../../components/ui/ScreenContent";
+import { useState, type ComponentProps } from "react";
 import { Platform, Pressable, View, type NativeSyntheticEvent } from "react-native";
 import {
   Screen,
@@ -13,8 +13,8 @@ import {
   SearchBar,
 } from "react-native-screens";
 
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { MaterialFilesHeader } from "./MaterialFilesHeader";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { FilesHeader } from "./FilesHeader";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentQuery } from "../../state/query";
@@ -58,32 +58,25 @@ export function ThreadFileNavigatorPane(props: {
     cwd: canReadFiles ? props.cwd : null,
     searchQuery,
   });
-  const handlePreviewFile = useCallback(
-    (relativePath: string) => {
-      preloadWorkspaceFileContents({
-        cwd: props.cwd,
-        environmentId: props.environmentId,
-        relativePath,
-        theme: highlightTheme,
-      });
+  const handlePreviewFile = (relativePath: string) => {
+    preloadWorkspaceFileContents({
+      cwd: props.cwd,
+      environmentId: props.environmentId,
+      relativePath,
+      theme: highlightTheme,
+    });
+  };
+  const nativeHeaderRightBarButtonItems = [
+    {
+      accessibilityLabel: "Close files",
+      icon: { name: "xmark", type: "sfSymbol" as const },
+      identifier: "thread-file-navigator-close",
+      onPress: toggleAuxiliaryPane,
+      sharesBackground: false,
+      tintColor: foregroundColor,
+      type: "button" as const,
     },
-    [highlightTheme, props.cwd, props.environmentId],
-  );
-  const nativeHeaderRightBarButtonItems = useMemo(
-    () =>
-      [
-        {
-          accessibilityLabel: "Close files",
-          icon: { name: "xmark", type: "sfSymbol" as const },
-          identifier: "thread-file-navigator-close",
-          onPress: toggleAuxiliaryPane,
-          sharesBackground: false,
-          tintColor: foregroundColor,
-          type: "button" as const,
-        },
-      ] as ComponentProps<typeof ScreenStackHeaderConfig>["headerRightBarButtonItems"],
-    [foregroundColor, toggleAuxiliaryPane],
-  );
+  ] as ComponentProps<typeof ScreenStackHeaderConfig>["headerRightBarButtonItems"];
 
   const fileTree = (
     <>
@@ -109,6 +102,7 @@ export function ThreadFileNavigatorPane(props: {
         isPending={fileAccess.isPending || entriesQuery.isPending}
         isRefreshing={entriesQuery.isRefreshing}
         searchQuery={searchQuery}
+        searchResultPaths={entriesQuery.searchResultPaths}
         searchTruncated={entriesQuery.searchTruncated}
         selectedPath={props.selectedPath}
         onPreviewFile={handlePreviewFile}
@@ -183,7 +177,7 @@ export function ThreadFileNavigatorPane(props: {
         style={{ paddingTop: Platform.OS === "android" ? 0 : props.headerInset }}
       >
         {Platform.OS === "android" ? (
-          <MaterialFilesHeader
+          <FilesHeader
             projectName={props.projectName}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
@@ -234,7 +228,7 @@ export function ThreadFileNavigatorPane(props: {
           </View>
         ) : null}
       </View>
-      <MaterialScreenContent insetHorizontal>{fileTree}</MaterialScreenContent>
+      <ScreenContent insetHorizontal>{fileTree}</ScreenContent>
     </View>
   );
 }

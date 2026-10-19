@@ -1,5 +1,6 @@
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { type RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
@@ -32,15 +33,7 @@ import {
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, RefreshControl, View } from "react-native";
 import Animated, {
   FadeIn,
@@ -52,8 +45,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SegmentedControl } from "../../components/SegmentedControl";
-import { AppText as Text } from "../../components/AppText";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
@@ -65,8 +58,8 @@ import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
-import { ControlPillMenu } from "../../components/ControlPill";
-import { SymbolView } from "../../components/AppSymbol";
+import { Menu } from "../../components/ui/Menu";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
 
@@ -76,8 +69,6 @@ const TAB_OPTIONS = [
   { value: "limits", label: "Limits" },
 ] as const satisfies readonly { value: UsageTab; label: string }[];
 
-// Labels are abbreviated to share a row with the metric toggle; screen
-// readers get the full phrase.
 const WINDOW_OPTIONS = [
   { value: 1, label: "24h", accessibilityLabel: "Past 24 hours" },
   { value: 7, label: "7d", accessibilityLabel: "Past 7 days" },
@@ -94,16 +85,10 @@ const CHART_HEIGHT = 180;
 const providerLabel = (provider: UsageProviderKind) => PROVIDER_LABEL[provider];
 const CURSOR_KEYCHAIN_COPY = "Requires access to your Cursor login in macOS Keychain.";
 
-/**
- * Two tabs over one screen. Usage is the transcript-derived spend for a
- * period; Limits is the live subscription quota, which has no period. Both
- * pull to refresh, each refreshing its own data.
- */
 export function UsageRouteScreen() {
   const route = useRoute<RouteProp<{ Usage: { tab?: string } | undefined }, "Usage">>();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  // Preserve the Limits default while honoring explicit widget/navigation links.
   const [selection, setSelection] = useState(() => ({
     params: route.params,
     tab: (route.params?.tab === "usage" ? "usage" : "limits") as UsageTab,
@@ -138,24 +123,19 @@ export function UsageRouteScreen() {
   const refreshingPlanLimitsRef = useRef(false);
   const [isRefreshingPlanLimits, setIsRefreshingPlanLimits] = useState(false);
   const [planLimitsRefreshFailed, setPlanLimitsRefreshFailed] = useState(false);
-  const rateLimitEnvironments = useMemo(
-    () =>
-      selectedEnvironments.map((environment) => ({
-        environmentId: environment.environmentId,
-        label: environment.label,
-        providers: serverConfigs.get(environment.environmentId)?.providers ?? [],
-      })),
-    [selectedEnvironments, serverConfigs],
-  );
+  const rateLimitEnvironments = selectedEnvironments.map((environment) => ({
+    environmentId: environment.environmentId,
+    label: environment.label,
+    providers: serverConfigs.get(environment.environmentId)?.providers ?? [],
+  }));
   const hasRateLimitSnapshots = rateLimitEnvironments.some((environment) =>
     environment.providers.some((provider) => (provider.rateLimits?.windows.length ?? 0) > 0),
   );
   const [rateLimitsNowMs, setRateLimitsNowMs] = useState(() => Date.now());
-  const planLimits = useMemo(
-    () =>
-      buildProviderRateLimitsView({ environments: rateLimitEnvironments, nowMs: rateLimitsNowMs }),
-    [rateLimitEnvironments, rateLimitsNowMs],
-  );
+  const planLimits = buildProviderRateLimitsView({
+    environments: rateLimitEnvironments,
+    nowMs: rateLimitsNowMs,
+  });
   const hasActiveRateLimitCountdown = planLimits.providers.some((provider) =>
     provider.windows.some((window) => window.resetCountdownLabel !== null),
   );
@@ -168,12 +148,12 @@ export function UsageRouteScreen() {
     );
     return () => clearInterval(intervalId);
   }, [hasActiveRateLimitCountdown, hasRateLimitSnapshots]);
-  const refreshPlanLimits = useCallback(async () => {
+  const refreshPlanLimits = async () => {
     if (refreshingPlanLimitsRef.current || planLimits.refreshTargets.length === 0) return;
     refreshingPlanLimitsRef.current = true;
     setIsRefreshingPlanLimits(true);
     setPlanLimitsRefreshFailed(false);
-    try {
+    return await (async () => {
       const results = await Promise.all(
         planLimits.refreshTargets.map((target) =>
           refreshProviderRateLimits({
@@ -183,14 +163,14 @@ export function UsageRouteScreen() {
         ),
       );
       setPlanLimitsRefreshFailed(results.some((result) => result._tag === "Failure"));
-    } finally {
+    })().finally(() => {
       refreshingPlanLimitsRef.current = false;
       setIsRefreshingPlanLimits(false);
-    }
-  }, [planLimits.refreshTargets, refreshProviderRateLimits]);
-  const refreshLimits = useCallback(async () => {
+    });
+  };
+  const refreshLimits = async () => {
     await Promise.all([limits.refresh(), refreshPlanLimits()]);
-  }, [limits, refreshPlanLimits]);
+  };
   const cursorAccessEnvironments = cursorKeychainAccessEnvironments(selectedEnvironments);
   const refreshAfterCursorEnable = () => {
     void refresh();
@@ -216,29 +196,19 @@ export function UsageRouteScreen() {
     (environment) => environment.canReadDiagnostics,
   );
 
-  const days = useMemo(
-    () => enumerateDays(window.sinceDay, window.untilDay),
-    [window.sinceDay, window.untilDay],
-  );
-  const chartDays = useMemo(
-    () =>
-      isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
-        ? enumerateHourStarts(window.sinceTime, window.untilTime)
-        : days,
-    [days, isPast24Hours, window.sinceTime, window.untilTime],
-  );
-  const chartTotals = useMemo(
-    (): readonly DailyTotals[] =>
-      isPast24Hours
-        ? merged.hourly.map((hour) => ({
-            day: hour.hourStart,
-            costUsd: hour.costUsd,
-            totalTokens: hour.totalTokens,
-            byProvider: hour.byProvider,
-          }))
-        : merged.daily,
-    [isPast24Hours, merged.daily, merged.hourly],
-  );
+  const days = enumerateDays(window.sinceDay, window.untilDay);
+  const chartDays =
+    isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
+      ? enumerateHourStarts(window.sinceTime, window.untilTime)
+      : days;
+  const chartTotals: readonly DailyTotals[] = isPast24Hours
+    ? merged.hourly.map((hour) => ({
+        day: hour.hourStart,
+        costUsd: hour.costUsd,
+        totalTokens: hour.totalTokens,
+        byProvider: hour.byProvider,
+      }))
+    : merged.daily;
 
   const [refreshingUsage, setRefreshingUsage] = useState(false);
   const refreshingRef = useRef(false);
@@ -277,62 +247,52 @@ export function UsageRouteScreen() {
     selectedEnvironmentIds === null
       ? "line.3.horizontal.decrease"
       : "line.3.horizontal.decrease.circle.fill";
-  const environmentActions = useMemo(
-    () => [
-      {
-        id: "all",
-        title: "All environments",
-        subtitle: undefined,
-        state: selectedEnvironmentIds === null ? ("on" as const) : ("off" as const),
-      },
-      ...environments.map((environment) => ({
-        id: environment.environmentId,
-        title: environment.label,
-        subtitle: usageEnvironmentStatus(environment, refreshingUsage),
-        state:
-          selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId)
-            ? ("on" as const)
-            : ("off" as const),
-      })),
-    ],
-    [environments, refreshingUsage, selectedEnvironmentIds],
-  );
-  const selectEnvironment = useCallback(
-    (value: string) => {
-      if (value === "all") {
-        setSelectedEnvironmentIds(null);
-        return;
-      }
-      const id = EnvironmentId.make(value);
-      setSelectedEnvironmentIds((selected) => toggleUsageEnvironment(selected, environments, id));
+  const environmentActions = [
+    {
+      id: "all",
+      title: "All environments",
+      subtitle: undefined,
+      state: selectedEnvironmentIds === null ? ("on" as const) : ("off" as const),
     },
-    [environments],
-  );
-  const environmentFilter = useMemo(
-    () =>
-      showEnvironmentFilter ? (
-        <ControlPillMenu
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel="Filter usage environments"
-          title="Environments"
-          actions={environmentActions}
-          onPressAction={({ nativeEvent }) => selectEnvironment(nativeEvent.event)}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Filter usage environments"
-            className={cn(
-              "items-center justify-center rounded-full",
-              Platform.OS === "ios" ? "size-[28px]" : "size-[44px]",
-            )}
-          >
-            <SymbolView name={filterIcon} size={22} tintColorClassName="accent-icon" />
-          </Pressable>
-        </ControlPillMenu>
-      ) : null,
-    [showEnvironmentFilter, environmentActions, selectEnvironment, filterIcon],
-  );
+    ...environments.map((environment) => ({
+      id: environment.environmentId,
+      title: environment.label,
+      subtitle: usageEnvironmentStatus(environment, refreshingUsage),
+      state:
+        selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId)
+          ? ("on" as const)
+          : ("off" as const),
+    })),
+  ];
+  const selectEnvironment = (value: string) => {
+    if (value === "all") {
+      setSelectedEnvironmentIds(null);
+      return;
+    }
+    const id = EnvironmentId.make(value);
+    setSelectedEnvironmentIds((selected) => toggleUsageEnvironment(selected, environments, id));
+  };
+  const environmentFilter = showEnvironmentFilter ? (
+    <Menu
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel="Filter usage environments"
+      title="Environments"
+      actions={environmentActions}
+      onPressAction={({ nativeEvent }) => selectEnvironment(nativeEvent.event)}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Filter usage environments"
+        className={cn(
+          "items-center justify-center rounded-full",
+          Platform.OS === "ios" ? "size-[28px]" : "size-[44px]",
+        )}
+      >
+        <SymbolView name={filterIcon} size={22} tintColorClassName="accent-icon" />
+      </Pressable>
+    </Menu>
+  ) : null;
 
   useLayoutEffect(() => {
     if (Platform.OS === "ios") {
@@ -387,8 +347,6 @@ export function UsageRouteScreen() {
             </>
           ) : (
             <>
-              {/* Period and metric together: neither applies to Limits, and
-                both change every number below, so they share one bar. */}
               <View className="gap-3 ios:flex-row ios:items-center">
                 <SegmentedControl
                   options={WINDOW_OPTIONS}
@@ -422,8 +380,6 @@ export function UsageRouteScreen() {
                     : "Select an environment to see usage."}
                 </Text>
               ) : !canReadDiagnostics ? (
-                // Each environment explains itself: a denied grant and a failed
-                // access check are different problems.
                 <View className="gap-2 py-16">
                   {selectedEnvironments.map((environment) => (
                     <Text
@@ -486,8 +442,7 @@ function PlanLimitsSection(props: {
   return (
     <SettingsSection
       title="Provider rate limits"
-      card
-      headerAction={
+      trailing={
         props.view.refreshTargets.length > 0 ? (
           <Pressable
             accessibilityLabel="Refresh provider rate limits"
@@ -617,7 +572,6 @@ function UsageUpdating({
 }) {
   const opacity = useSharedValue(1);
   useLayoutEffect(() => {
-    // The delay keeps a quick cached answer from flashing the dim.
     opacity.set(
       dimmed
         ? withDelay(150, withTiming(0.5, { duration: 150, reduceMotion: ReduceMotion.System }))
@@ -638,7 +592,7 @@ function UsageUpdating({
           pointerEvents="none"
           className="absolute right-4 top-4 h-5 max-w-[55%] flex-row items-center gap-1.5"
         >
-          <ActivityIndicator size="small" colorClassName="accent-adaptive-sky-600-400" />
+          <AppActivityIndicator size="small" colorClassName="accent-adaptive-sky-600-400" />
           <Text className="shrink text-sm text-adaptive-sky-600-400" numberOfLines={1}>
             {label}
           </Text>
@@ -665,15 +619,11 @@ function CursorEnableAction({
   const [pending, setPending] = useState(false);
   const enable = async () => {
     setPending(true);
-    try {
-      const result = await updateSettings({
-        environmentId,
-        input: { patch: { cursorKeychainUsageEnabled: true } },
-      });
-      if (result._tag === "Success") onEnabled();
-    } finally {
-      setPending(false);
-    }
+    const result = await updateSettings({
+      environmentId,
+      input: { patch: { cursorKeychainUsageEnabled: true } },
+    }).finally(() => setPending(false));
+    if (result._tag === "Success") onEnabled();
   };
   return (
     <Pressable
@@ -752,7 +702,6 @@ function CursorEnableLimits({
   );
 }
 
-/** Headline figure, the animated daily chart, and its legend, in one card. */
 function ChartCard(props: {
   readonly merged: MergedUsage;
   readonly days: readonly string[];
@@ -796,13 +745,20 @@ function ChartCard(props: {
         </View>
       )}
 
-      <View className="flex-row items-center justify-between">
-        <Text className="text-xs text-foreground-tertiary">
-          {props.isPast24Hours
-            ? formatHourShort(props.days[0] ?? "", props.timeZone)
-            : formatDayShort(props.sinceDay)}
-        </Text>
-        <View className="flex-row items-center gap-4">
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-xs text-foreground-tertiary">
+            {props.isPast24Hours
+              ? formatHourShort(props.days[0] ?? "", props.timeZone)
+              : formatDayShort(props.sinceDay)}
+          </Text>
+          <Text className="text-xs text-foreground-tertiary">
+            {props.isPast24Hours
+              ? formatHourShort(props.days[props.days.length - 1] ?? "", props.timeZone)
+              : formatDayShort(props.untilDay)}
+          </Text>
+        </View>
+        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
           {merged.providers.map((provider) => (
             <View key={provider.provider} className="flex-row items-center gap-1.5">
               <View
@@ -815,11 +771,6 @@ function ChartCard(props: {
             </View>
           ))}
         </View>
-        <Text className="text-xs text-foreground-tertiary">
-          {props.isPast24Hours
-            ? formatHourShort(props.days[props.days.length - 1] ?? "", props.timeZone)
-            : formatDayShort(props.untilDay)}
-        </Text>
       </View>
     </View>
   );
@@ -836,7 +787,6 @@ function ProviderSection(props: {
   const colors = useProviderColors();
   if (merged.providers.length === 0 && props.cursorAccessEnvironments.length === 0) return null;
 
-  // Ranked by whatever the toggle is showing, so the rows always descend.
   // .sort() on a copy, not .toSorted(): Hermes doesn't ship the ES2023 method.
   const ordered = [...merged.providers].sort((a, b) =>
     metric === "cost" ? b.costUsd - a.costUsd : b.totalTokens - a.totalTokens,
@@ -1004,7 +954,6 @@ function CostSection(props: { readonly merged: MergedUsage }) {
   );
 }
 
-/** One part-to-whole cost bar with its legend. Empty segments are left out. */
 function ShareBar(props: {
   readonly label: string;
   readonly segments: readonly { label: string; value: number; color: string }[];
@@ -1062,8 +1011,7 @@ function ModelsSection(props: { readonly merged: MergedUsage; readonly metric: U
   const colors = useProviderColors();
   if (merged.models.length === 0) return null;
 
-  // Ranked like the provider rows. .sort() on a copy, not .toSorted(): Hermes
-  // doesn't ship the ES2023 method.
+  // .sort() on a copy, not .toSorted(): Hermes doesn't ship the ES2023 method.
   const ordered = [...merged.models].sort((a, b) =>
     metric === "cost"
       ? b.costUsd - a.costUsd || b.totalTokens - a.totalTokens
@@ -1163,10 +1111,6 @@ function UsageCoverageNotice(props: {
   );
 }
 
-function isUsageLoading(environment: EnvironmentUsageStatus) {
-  return environment.isPending || (environment.summary === null && environment.error === null);
-}
-
 /**
  * Says plainly when the totals are incomplete: an environment still answering,
  * one that failed, or one whose transcripts another environment already
@@ -1184,7 +1128,6 @@ function usageEnvironmentStatus(environment: EnvironmentUsageStatus, refreshing:
           : "clientBehind",
     });
   }
-  // The reason matters: a denied grant and a failed scan need different fixes.
   if (environment.error)
     return environment.summary ? `${environment.error} Showing saved totals.` : environment.error;
   if (!environment.isConnected)

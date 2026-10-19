@@ -3,7 +3,7 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";

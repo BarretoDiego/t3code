@@ -173,7 +173,7 @@ export function SourceControlAuthWizard({
                     if (!environment) return;
                     setPending(true);
                     setError(null);
-                    try {
+                    return await (async () => {
                       await refresh({ environmentId: environment.environmentId, input: {} });
                       const result = await verifyExisting({
                         environmentId: environment.environmentId,
@@ -184,9 +184,9 @@ export function SourceControlAuthWizard({
                         setError(
                           "Existing credentials could not access repositories. Connect with a token below.",
                         );
-                    } finally {
+                    })().finally(() => {
                       setPending(false);
-                    }
+                    });
                   }}
                 >
                   Use existing environment credentials
@@ -327,7 +327,7 @@ export function SourceControlAuthWizard({
                   if (!environment) return;
                   setPending(true);
                   setError(null);
-                  try {
+                  return await (async () => {
                     const result = await connect({
                       environmentId: environment.environmentId,
                       input: {
@@ -353,9 +353,9 @@ export function SourceControlAuthWizard({
                           : "Could not verify this account. Check the token type and repository permissions.",
                       );
                     }
-                  } finally {
+                  })().finally(() => {
                     setPending(false);
-                  }
+                  });
                 }}
               >
                 {pending ? "Verifying…" : "Verify and connect"}
