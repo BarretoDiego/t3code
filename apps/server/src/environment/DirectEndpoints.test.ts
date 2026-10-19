@@ -142,8 +142,34 @@ describe("resolveBoundEndpoints", () => {
       { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
       { kind: "tailnet", httpBaseUrl: "http://100.70.1.2:3773/" },
       { kind: "lan", httpBaseUrl: "http://100.96.0.1:3773/" },
-      { kind: "lan", httpBaseUrl: "http://100.85.0.1:3773/" },
     ]);
+  });
+
+  it("does not advertise local VPN gateways as routes to the server", () => {
+    const interfaces = {
+      "nc-tun0": vpnInterface("172.16.254.1"),
+      utun0: vpnInterface("172.16.254.1"),
+      tun0: vpnInterface("10.8.0.1"),
+      ...INTERFACES,
+      br0: virtualInterface("192.168.1.30"),
+      "vEthernet (External)": virtualInterface("192.168.1.40"),
+    };
+    expect(resolveBoundEndpoints({ host: "0.0.0.0", port: 3774, interfaces })).toEqual([
+      { kind: "lan", httpBaseUrl: "http://192.168.1.10:3774/" },
+      { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3774/" },
+      { kind: "lan", httpBaseUrl: "http://192.168.1.30:3774/" },
+      { kind: "lan", httpBaseUrl: "http://192.168.1.40:3774/" },
+    ]);
+  });
+
+  it("honors a specific bind to a tunnel address", () => {
+    expect(
+      resolveBoundEndpoints({
+        host: "172.16.254.1",
+        port: 3774,
+        interfaces: { "nc-tun0": vpnInterface("172.16.254.1") },
+      }),
+    ).toEqual([{ kind: "lan", httpBaseUrl: "http://172.16.254.1:3774/" }]);
   });
 
   it("lists only the bound address for a specific bind", () => {

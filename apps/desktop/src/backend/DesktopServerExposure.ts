@@ -9,6 +9,7 @@ import {
   type DesktopServerExposureMode,
   type DesktopServerExposureState,
 } from "@t3tools/contracts";
+import { isHostOnlyNetworkInterface } from "@t3tools/shared/networkInterfaces";
 import { isTailscaleIpv4Address, readTailscaleStatus } from "@t3tools/tailscale";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -100,12 +101,16 @@ const resolveLanAdvertisedHost = (
   }
 
   const lanAddresses = Object.entries(networkInterfaces).flatMap(([name, addresses]) =>
-    (addresses ?? [])
-      .filter(
-        (address) =>
-          !address.internal && address.family === "IPv4" && isUsableLanIpv4Address(address.address),
-      )
-      .map((address) => ({ name, address: address.address })),
+    isHostOnlyNetworkInterface(name, addresses ?? [])
+      ? []
+      : (addresses ?? [])
+          .filter(
+            (address) =>
+              !address.internal &&
+              address.family === "IPv4" &&
+              isUsableLanIpv4Address(address.address),
+          )
+          .map((address) => ({ name, address: address.address })),
   );
   const preferred =
     lanAddresses.find(({ name }) => !HOST_ONLY_INTERFACE.test(name)) ?? lanAddresses[0];

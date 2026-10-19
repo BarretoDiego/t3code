@@ -174,6 +174,52 @@ describe("DesktopServerExposure", () => {
       }),
     );
   });
+  it.effect("ignores VPN gateways when advertising network access", () =>
+    withHarness(
+      {
+        "nc-tun0": [{ address: "172.16.254.1", family: "IPv4", internal: false }],
+        utun0: [{ address: "172.16.254.1", family: "IPv4", internal: false }],
+        docker0: [{ address: "172.17.0.1", family: "IPv4", internal: false }],
+        vmbr0: lanNetworkInterfaces.en0,
+      },
+      Effect.gen(function* () {
+        const exposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* exposure.configureFromSettings({ port: 4173 });
+        const change = yield* exposure.setMode("network-accessible");
+        assert.equal(change.state.endpointUrl, "http://192.168.1.20:4173");
+        const endpoints = yield* exposure.getAdvertisedEndpoints;
+        assert.equal(
+          endpoints.find((endpoint) => endpoint.reachability === "lan")?.httpBaseUrl,
+          "http://192.168.1.20:4173/",
+        );
+      }),
+    ),
+  );
+
+  it.effect("honors an explicit tunnel address override", () =>
+    withHarness(
+      { "nc-tun0": [{ address: "172.16.254.1", family: "IPv4", internal: false }] },
+      Effect.gen(function* () {
+        const exposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* exposure.configureFromSettings({ port: 4173 });
+        const change = yield* exposure.setMode("network-accessible");
+        assert.equal(change.state.endpointUrl, "http://172.16.254.1:4173");
+      }),
+      { T3CODE_DESKTOP_LAN_HOST: "172.16.254.1" },
+    ),
+  );
+
+  it.effect("treats a machine with only a local VPN gateway as unavailable", () =>
+    withHarness(
+      { "nc-tun0": [{ address: "172.16.254.1", family: "IPv4", internal: false }] },
+      Effect.gen(function* () {
+        const exposure = yield* DesktopServerExposure.DesktopServerExposure;
+        yield* exposure.configureFromSettings({ port: 4173 });
+        const error = yield* exposure.setMode("network-accessible").pipe(Effect.flip);
+        assert.equal(error._tag, "DesktopServerExposureNoNetworkAddressError");
+      }),
+    ),
+  );
 
   it.effect("falls back to local-only without losing the requested network preference", () =>
     withHarness(

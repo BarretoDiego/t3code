@@ -14,7 +14,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
-import { isPrivateNetworkHost, isTailnetHost } from "@t3tools/shared/hostClassification";
+import { isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
+import {
+  isHostOnlyNetworkInterface,
+  isTailscaleNetworkInterface,
+} from "@t3tools/shared/networkInterfaces";
 
 import * as ServerConfig from "../config.ts";
 import { formatHostForUrl, isLoopbackHost, isWildcardHost } from "../startupAccess.ts";
@@ -46,27 +50,10 @@ const isAdvertisableAddress = (address: string): boolean =>
   isPrivateNetworkHost(address);
 
 /**
- * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
- * macOS's `bridge100`+) have private addresses only this machine reaches. A
- * host bridge such as `br0` or Proxmox's `vmbr0` carries the LAN address, so
- * it stays listed.
+ * Plain HTTP endpoints for the private addresses a server bound to `host`
+ * accepts. IPv4 only: link-local and temporary IPv6 addresses change too
+ * often to be worth saving.
  */
-const VIRTUAL_INTERFACE =
-  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge1\d\d)/;
-
-/**
- * Tailscale's own interface: `tailscale0` on Linux, "Tailscale" on Windows.
- * macOS names every tunnel `utunN`, so there it is the one that also carries
- * an address in Tailscale's IPv6 range. Cloudflare WARP and other VPNs assign
- * from the same IPv4 range, so the IPv4 address alone proves nothing.
- */
-const isTailscaleInterface = (
-  name: string,
-  entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
-): boolean =>
-  /^tailscale/i.test(name) ||
-  entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
-
 export function resolveBoundEndpoints(input: {
   readonly host: string | undefined;
   readonly port: number;
@@ -75,12 +62,14 @@ export function resolveBoundEndpoints(input: {
   if (isLoopbackHost(input.host)) return [];
   const tailscaleAddresses = new Set(
     Object.entries(input.interfaces).flatMap(([name, entries = []]) =>
-      isTailscaleInterface(name, entries) ? entries.map((entry) => entry.address) : [],
+      isTailscaleNetworkInterface(name, entries) ? entries.map((entry) => entry.address) : [],
     ),
   );
   const addresses = isWildcardHost(input.host)
     ? Object.entries(input.interfaces)
-        .flatMap(([name, entries]) => (VIRTUAL_INTERFACE.test(name) ? [] : (entries ?? [])))
+        .flatMap(([name, entries = []]) =>
+          isHostOnlyNetworkInterface(name, entries) ? [] : entries,
+        )
         .filter(
           (entry) =>
             !entry.internal && entry.family === "IPv4" && isAdvertisableAddress(entry.address),

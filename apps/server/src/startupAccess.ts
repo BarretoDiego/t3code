@@ -1,5 +1,6 @@
 import * as NodeOS from "node:os";
 
+import { isHostOnlyNetworkInterface } from "@t3tools/shared/networkInterfaces";
 import { QrCode } from "@t3tools/shared/qrCode";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
@@ -54,7 +55,9 @@ export const resolveHeadlessConnectionHost = (
     return normalizeHost(host);
   }
 
-  const interfaceEntries = Object.values(interfaces).flatMap((entries) => entries ?? []);
+  const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries = []]) =>
+    isHostOnlyNetworkInterface(name, entries) ? [] : entries,
+  );
   const externalIpv4 = interfaceEntries.find(
     (entry) => !entry.internal && isIpv4Family(entry.family),
   );
