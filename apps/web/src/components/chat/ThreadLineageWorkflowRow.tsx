@@ -129,7 +129,7 @@ export function ThreadLineageWorkflowRow({
   readonly driver: ProviderDriverKind | undefined;
   readonly onOpenThread: (threadId: string) => void;
   readonly isThreadAvailable: (threadId: string) => boolean;
-  readonly onStop?: (() => void) | undefined;
+  readonly onStop?: React.MouseEventHandler<HTMLButtonElement> | undefined;
   readonly stopping: boolean;
   readonly stopDisabled: boolean;
 }) {

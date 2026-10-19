@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/ui/Dialog";
 import {
   buildAgentBoard,
   nextAgentBoardSnoozeWakeAt,
@@ -153,6 +154,19 @@ export function AgentBoardRouteScreen() {
         environmentId: card.ref.environmentId,
         input: { threadId: card.ref.threadId },
       };
+      if (action === "stop") {
+        const confirmed = await new Promise<boolean>((resolve) =>
+          Dialog.confirm({
+            title: "Stop running work?",
+            message: "This interrupts the running work in this thread.",
+            confirmText: "Stop",
+            destructive: true,
+            onConfirm: () => resolve(true),
+            onCancel: () => resolve(false),
+          }),
+        );
+        if (!confirmed) return;
+      }
       const result =
         action === "stop"
           ? await stop({

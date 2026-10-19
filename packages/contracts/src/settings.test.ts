@@ -1299,3 +1299,18 @@ describe("server model preferences", () => {
     });
   });
 });
+
+describe("ClientSettings interruption confirmation", () => {
+  it("protects existing installs by default and preserves explicit opt-out", () => {
+    expect(decodeClientSettings({}).confirmBeforeInterrupt).toBe(true);
+    for (const confirmBeforeInterrupt of [true, false]) {
+      expect(decodeClientSettings({ confirmBeforeInterrupt }).confirmBeforeInterrupt).toBe(
+        confirmBeforeInterrupt,
+      );
+      expect(decodeClientSettingsPatch({ confirmBeforeInterrupt })).toEqual({
+        confirmBeforeInterrupt,
+      });
+    }
+    expect(() => decodeClientSettingsPatch({ confirmBeforeInterrupt: "false" })).toThrow();
+  });
+});

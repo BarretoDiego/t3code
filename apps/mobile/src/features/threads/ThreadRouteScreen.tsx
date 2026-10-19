@@ -606,11 +606,16 @@ function ThreadRouteContent(
     ) {
       return;
     }
-    return interruptThreadTurn({
-      environmentId: selectedThread.environmentId,
-      input: {
-        threadId: selectedThread.id,
-        runId: composer.interruptibleRunId,
+    const environmentId = selectedThread.environmentId;
+    const threadId = selectedThread.id;
+    const runId = composer.interruptibleRunId;
+    Dialog.confirm({
+      title: "Stop running work?",
+      message: "This interrupts the running work in this thread.",
+      confirmText: "Stop",
+      destructive: true,
+      onConfirm: () => {
+        void interruptThreadTurn({ environmentId, input: { threadId, runId } });
       },
     });
   };

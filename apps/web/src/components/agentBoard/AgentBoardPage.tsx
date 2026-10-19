@@ -1,3 +1,5 @@
+import { useClientSettings } from "../../hooks/useSettings";
+import { confirmThreadInterruption, isIntentionalInterruption } from "../../lib/threadInterruption";
 import {
   buildAgentBoard,
   nextAgentBoardSnoozeWakeAt,
@@ -599,7 +601,11 @@ function ConnectivityBadge({ connectivity }: { readonly connectivity: BoardConne
 type CardAction = "interrupt" | "archive" | "settle" | "unsettle";
 interface BoardActionController {
   readonly errors: ReadonlyMap<string, string>;
-  readonly run: (card: AgentBoardCard, action: CardAction) => Promise<void>;
+  readonly run: (
+    card: AgentBoardCard,
+    action: CardAction,
+    bypassConfirmation?: boolean,
+  ) => Promise<void>;
 }
 function cardKey(card: AgentBoardCard): string {
   return `${card.ref.environmentId}:${card.ref.threadId}`;
@@ -607,15 +613,25 @@ function cardKey(card: AgentBoardCard): string {
 function useBoardActionController(
   sources: ReturnType<typeof useBoardSources>,
 ): BoardActionController {
+  const confirmBeforeInterrupt = useClientSettings((settings) => settings.confirmBeforeInterrupt);
   const interrupt = useAtomCommand(threadEnvironment.interruptTurn, { reportFailure: false });
   const archive = useAtomCommand(threadEnvironment.archive, { reportFailure: false });
   const settle = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
   const unsettle = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
-  const run = async (card: AgentBoardCard, action: CardAction) => {
+  const run = async (card: AgentBoardCard, action: CardAction, bypassConfirmation = false) => {
     const key = cardKey(card);
     const shell = sources.shellsByKey.get(key) ?? null;
     if (shell === null) return;
+    if (
+      action === "interrupt" &&
+      !(await confirmThreadInterruption(
+        key,
+        shell.title,
+        confirmBeforeInterrupt && !bypassConfirmation,
+      ))
+    )
+      return;
     setErrors((current) => {
       if (!current.has(key)) return current;
       const next = new Map(current);
@@ -725,7 +741,15 @@ function CardActions(props: {
           </MenuItem>
           {hasMutatingAction ? <MenuSeparator /> : null}
           {availability.interrupt ? (
-            <MenuItem onClick={() => void actions.run(card, "interrupt")}>
+            <MenuItem
+              onClick={(event) =>
+                void actions.run(
+                  card,
+                  "interrupt",
+                  isIntentionalInterruption(event, navigator.platform),
+                )
+              }
+            >
               <SquareIcon />
               Stop
             </MenuItem>

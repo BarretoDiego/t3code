@@ -1,3 +1,4 @@
+import { isIntentionalInterruption } from "../../lib/threadInterruption";
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
@@ -51,7 +52,7 @@ interface ComposerPrimaryActionsProps {
   onSubmitMessage?: MouseEventHandler<HTMLButtonElement>;
   onResume?: () => void;
   onPreviousPendingQuestion: () => void;
-  onInterrupt: () => void;
+  onInterrupt: (bypassConfirmation?: boolean) => void;
   onImplementPlanInNewThread: () => void;
   compactBeforeSendTokens?: number | null;
   keepFullHistory?: boolean;
@@ -144,8 +145,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             )}
             {...pointerFocusProps}
             disabled={!canOperateThread}
-            onClick={() => {
-              if (canOperateThread) onInterrupt();
+            onClick={(event) => {
+              if (canOperateThread)
+                onInterrupt(isIntentionalInterruption(event, navigator.platform));
             }}
             aria-label="Stop generation"
           />
@@ -155,7 +157,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <rect x="2" y="2" width="8" height="8" rx="1.5" />
         </svg>
       </TooltipTrigger>
-      <TooltipPopup>Interrupt</TooltipPopup>
+      <TooltipPopup>
+        Interrupt (hold {navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl"} to skip confirmation)
+      </TooltipPopup>
     </Tooltip>
   );
 

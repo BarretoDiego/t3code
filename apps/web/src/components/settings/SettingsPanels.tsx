@@ -618,6 +618,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
       ? ["Rich text composer"]
       : []),
+    ...(settings.confirmBeforeInterrupt !== DEFAULT_UNIFIED_SETTINGS.confirmBeforeInterrupt
+      ? ["Confirm before interrupting"]
+      : []),
     ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
     ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
       ? ["Follow-up behavior"]
@@ -735,6 +738,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+      confirmBeforeInterrupt: DEFAULT_UNIFIED_SETTINGS.confirmBeforeInterrupt,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
@@ -2747,6 +2751,20 @@ export function GeneralSettingsPanel() {
                 updateSettings({ composerCollapseOnScroll: Boolean(checked) })
               }
               aria-label="Collapse composer when scrolling"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("confirm-before-interrupt")}
+          description={`Ask before stopping running work. ${modifierLabel} + click or ${modifierLabel} + Escape stops immediately.`}
+          control={
+            <Switch
+              checked={settings.confirmBeforeInterrupt}
+              onCheckedChange={(checked) =>
+                updateSettings({ confirmBeforeInterrupt: Boolean(checked) })
+              }
+              aria-label="Confirm before interrupting"
             />
           }
         />
