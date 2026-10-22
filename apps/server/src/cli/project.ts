@@ -172,7 +172,7 @@ export const ProjectCommandError = Schema.Union([
 ]);
 export type ProjectCommandError = typeof ProjectCommandError.Type;
 
-export function projectCommandErrorFromLiveServerRequest(cause: unknown): ProjectCommandError {
+function projectCommandErrorFromLiveServerRequest(cause: unknown): ProjectCommandError {
   if (isEnvironmentHttpCommonError(cause)) {
     return new ProjectLiveServerDeclaredResponseError({
       operation: "callLiveServer",
@@ -323,31 +323,37 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
   } satisfies ProjectMutationTarget;
 });
 
-const fetchLiveOrchestrationSnapshot = (
-  origin: string,
-  bearerToken: string,
-  timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
-) =>
-  Effect.gen(function* () {
+const fetchLiveOrchestrationSnapshot = Effect.fn("project.fetchLiveOrchestrationSnapshot")(
+  function* (
+    origin: string,
+    bearerToken: string,
+    timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+  ) {
     const client = yield* makeLiveServerClient(origin);
     return yield* client.projects.snapshot({
       headers: { authorization: `Bearer ${bearerToken}` },
     });
-  }).pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest));
+  },
+  (effect, _origin, _bearerToken, timeout = PROJECT_CLI_LIVE_SERVER_TIMEOUT) =>
+    effect.pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest)),
+);
 
-const dispatchLiveOrchestrationCommand = (
-  origin: string,
-  bearerToken: string,
-  command: ProjectCliDispatchCommand,
-  timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
-) =>
-  Effect.gen(function* () {
+const dispatchLiveOrchestrationCommand = Effect.fn("project.dispatchLiveOrchestrationCommand")(
+  function* (
+    origin: string,
+    bearerToken: string,
+    command: ProjectCliDispatchCommand,
+    timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+  ) {
     const client = yield* makeLiveServerClient(origin);
     yield* client.projects.mutate({
       headers: { authorization: `Bearer ${bearerToken}` },
       payload: command,
     } as Parameters<typeof client.projects.mutate>[0]);
-  }).pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest));
+  },
+  (effect, _origin, _bearerToken, _command, timeout = PROJECT_CLI_LIVE_SERVER_TIMEOUT) =>
+    effect.pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest)),
+);
 
 const getOfflineSnapshot = Effect.fn("getOfflineSnapshot")(function* () {
   const projects = yield* ProjectService.ProjectService;

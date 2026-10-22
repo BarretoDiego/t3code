@@ -257,6 +257,7 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       serverResolvedCommandContext: true,
+      threadStop: true,
       environmentIcon: true,
       projectSync: true,
       threadHandoff: true,
@@ -266,6 +267,7 @@ export const make = Effect.gen(function* () {
       projectCloneTracking: true,
       automation: true,
       federationProtocolVersions: [FEDERATION_PROTOCOL_VERSION],
+      ignoredFileListing: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate

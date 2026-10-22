@@ -82,9 +82,9 @@ export function listCursorAt(
   fetched: ReadonlyArray<ProviderChangeRequest>,
   deliveredCount: number,
 ): string {
-  const seenAt = [
+  const seenAt = new Set([
     ...(previous?.updatedBefore === boundary ? previous.seenAt : []),
     ...fetched.filter((item) => item.updatedAt === boundary).map((item) => item.number),
-  ];
-  return `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${seenAt.join(",")}`;
+  ]);
+  return `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
 }

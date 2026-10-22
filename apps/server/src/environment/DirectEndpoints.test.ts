@@ -98,15 +98,6 @@ const virtualInterface = (address: string) => [
 ];
 
 describe("resolveBoundEndpoints", () => {
-  it("lists nothing for a loopback-only server", () => {
-    expect(resolveBoundEndpoints({ host: undefined, port: 3773, interfaces: INTERFACES })).toEqual(
-      [],
-    );
-    expect(
-      resolveBoundEndpoints({ host: "127.0.0.1", port: 3773, interfaces: INTERFACES }),
-    ).toEqual([]);
-  });
-
   it("lists every external IPv4 address for a wildcard bind, tagging the tailnet one", () => {
     expect(resolveBoundEndpoints({ host: "0.0.0.0", port: 3773, interfaces: INTERFACES })).toEqual([
       { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },

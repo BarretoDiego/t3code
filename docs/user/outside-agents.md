@@ -19,9 +19,13 @@ https://<environment-address>/mcp
 The copied URL uses the route this device is connected over, so an agent on the
 same device can reach it.
 
-- **An agent on your own computers** can use any address that computer reaches
-  the environment at: a LAN or Tailscale address, T3 Connect, or `localhost` on
-  the host. See [remote access](./remote-access.md).
+- **An agent on your own computers** can use `localhost` on the host, T3
+  Connect, or any `https` address, such as
+  [Tailscale HTTPS](./remote-access.md#tailscale-https). Signing in sends the
+  agent's credentials to the environment, and agents only do that over `https`
+  or to `localhost`. A plain-`http` LAN or Tailscale address, like
+  `http://100.x.y.z:3773`, lets an agent find the environment but not finish
+  signing in.
 - **A hosted agent**, such as ChatGPT or a bot running in the cloud, must reach
   the environment from the internet. Use the T3 Connect address. A Tailscale
   address only works from your own tailnet.
@@ -87,6 +91,28 @@ Add the environment as a custom MCP app in ChatGPT's apps settings:
 Any agent that supports remote MCP servers over HTTP with OAuth can connect. Give
 it the MCP URL and choose OAuth, and the agent finds the sign-in settings itself.
 Agents without OAuth support cannot connect.
+
+## Scripts on the host
+
+On the machine that runs the environment, `t3 thread` uses the same tools
+without a sign-in:
+
+```sh
+id=$(t3 thread new "Find why the tests are slow" --project .)
+t3 thread send "$id" "Now fix it" --queue --wait
+t3 thread show "$id"
+t3 thread list
+```
+
+`--project .` selects the project that contains the current folder; a project id
+or unique title also works. A new thread uses the project's default model and permission mode, and
+runs in the project folder unless you pass `--worktree <base-branch>`. `send --queue`
+places the message after the active turn. Pass `-` as
+the message to read it from stdin.
+
+`--wait` prints the thread status and latest reply once work stops or needs
+input. Add `--json` to read the thread summary and pending requests in a script;
+check the status before continuing with another step.
 
 ## Remove an agent
 

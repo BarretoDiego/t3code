@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./BarrierStream": {
-      "types": "./src/BarrierStream.ts",
-      "import": "./src/BarrierStream.ts"
+    "./changedFileKind": {
+      "types": "./src/changedFileKind.ts",
+      "import": "./src/changedFileKind.ts"
     },
     "./githubMarkdownLinks": {
       "types": "./src/githubMarkdownLinks.ts",
@@ -47,17 +47,9 @@
       "types": "./src/advertisedEndpoint.ts",
       "import": "./src/advertisedEndpoint.ts"
     },
-    "./pendingRequests": {
-      "types": "./src/pendingRequests.ts",
-      "import": "./src/pendingRequests.ts"
-    },
     "./agentAwareness": {
       "types": "./src/agentAwareness.ts",
       "import": "./src/agentAwareness.ts"
-    },
-    "./pinOrderKey": {
-      "types": "./src/pinOrderKey.ts",
-      "import": "./src/pinOrderKey.ts"
     },
     "./git": {
       "types": "./src/git.ts",
@@ -151,14 +143,6 @@
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"
     },
-    "./miniSkills": {
-      "types": "./src/miniSkills.ts",
-      "import": "./src/miniSkills.ts"
-    },
-    "./agentProfiles": {
-      "types": "./src/agentProfiles.ts",
-      "import": "./src/agentProfiles.ts"
-    },
     "./backgroundActivitySettings": {
       "types": "./src/backgroundActivitySettings.ts",
       "import": "./src/backgroundActivitySettings.ts"
@@ -202,6 +186,10 @@
     "./dpopCommon": {
       "types": "./src/dpopCommon.ts",
       "import": "./src/dpopCommon.ts"
+    },
+    "./telemetryId": {
+      "types": "./src/telemetryId.ts",
+      "import": "./src/telemetryId.ts"
     },
     "./relayAuth": {
       "types": "./src/relayAuth.ts",
@@ -379,10 +367,6 @@
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
     },
-    "./providerRateLimits": {
-      "types": "./src/providerRateLimits.ts",
-      "import": "./src/providerRateLimits.ts"
-    },
     "./usageLimits": {
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
@@ -403,10 +387,6 @@
       "types": "./src/nodeSqliteClient.ts",
       "import": "./src/nodeSqliteClient.ts"
     },
-    "./projectSyncFraming": {
-      "types": "./src/projectSyncFraming.ts",
-      "import": "./src/projectSyncFraming.ts"
-    },
     "./orchestrationV2BoundedSnapshot": {
       "types": "./src/orchestrationV2BoundedSnapshot.ts",
       "import": "./src/orchestrationV2BoundedSnapshot.ts"
@@ -426,10 +406,6 @@
     "./orchestrationV2PendingBackgroundWork": {
       "types": "./src/orchestrationV2PendingBackgroundWork.ts",
       "import": "./src/orchestrationV2PendingBackgroundWork.ts"
-    },
-    "./networkInterfaces": {
-      "types": "./src/networkInterfaces.ts",
-      "import": "./src/networkInterfaces.ts"
     },
     "./hostClassification": {
       "types": "./src/hostClassification.ts",
@@ -522,10 +498,46 @@
     "./PtyAdapter": {
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
+    },
+    "./markdownMath": {
+      "types": "./src/markdownMath.ts",
+      "import": "./src/markdownMath.ts"
+    },
+    "./cloneUrl": {
+      "types": "./src/cloneUrl.ts",
+      "import": "./src/cloneUrl.ts"
+    },
+    "./BarrierStream": {
+      "types": "./src/BarrierStream.ts",
+      "import": "./src/BarrierStream.ts"
+    },
+    "./pinOrderKey": {
+      "types": "./src/pinOrderKey.ts",
+      "import": "./src/pinOrderKey.ts"
+    },
+    "./miniSkills": {
+      "types": "./src/miniSkills.ts",
+      "import": "./src/miniSkills.ts"
+    },
+    "./agentProfiles": {
+      "types": "./src/agentProfiles.ts",
+      "import": "./src/agentProfiles.ts"
+    },
+    "./providerRateLimits": {
+      "types": "./src/providerRateLimits.ts",
+      "import": "./src/providerRateLimits.ts"
+    },
+    "./projectSyncFraming": {
+      "types": "./src/projectSyncFraming.ts",
+      "import": "./src/projectSyncFraming.ts"
+    },
+    "./networkInterfaces": {
+      "types": "./src/networkInterfaces.ts",
+      "import": "./src/networkInterfaces.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
@@ -535,12 +547,14 @@
     "effect": "catalog:",
     "jose": "catalog:",
     "mdast-util-directive": "catalog:",
+    "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "catalog:",
     "micromark-util-character": "catalog:",
     "rehype-raw": "catalog:",
     "rehype-sanitize": "catalog:",
     "remark-breaks": "catalog:",
     "remark-gfm": "catalog:",
+    "remark-math": "6.0.0",
     "remark-parse": "catalog:",
     "remark-rehype": "catalog:",
     "unified": "catalog:",
@@ -549,6 +563,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/mdast": "^4.0.4",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "vite-plus": "catalog:"

@@ -1,3 +1,4 @@
+import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
 import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker, ThreadSubagentStatus } from "./sidebar/ThreadSubagentMarker";
@@ -162,7 +163,6 @@ import {
   animatePinnedLayoutChanges,
   buildBulkTitleRegenerationContextMenuItem,
   filterSidebarProjectScopeItems,
-  formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,

@@ -75,8 +75,11 @@ import Migration0068 from "./Migrations/061_PullRequestReviewGuides.ts";
 import Migration0069 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 import Migration0070 from "./Migrations/070_DropUnusedV1Projections.ts";
 import Migration0071 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
+import Migration0072 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
+import Migration0073 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
+import Migration0074 from "./Migrations/067_WebhookDedupe.ts";
 
-export const migrationEntries = [
+const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
   [3, "CheckpointDiffBlobs", Migration0003],
@@ -163,6 +166,9 @@ export const migrationEntries = [
   [69, "ThreadFailureLookupIndex", Migration0069],
   [70, "DropUnusedV1Projections", Migration0070],
   [71, "CanonicalizeThreadPullRequestLinks", Migration0071],
+  [72, "CodexUsageNativeTurnIndex", Migration0072],
+  [73, "RepairClientSettlementTimestamps", Migration0073],
+  [74, "WebhookDedupe", Migration0074],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

@@ -24,6 +24,7 @@ const makeThread = (overrides: Partial<ThreadStatusInput> = {}): ThreadStatusInp
   },
   activityRunStatus: null,
   status: "idle",
+  settledOverride: null,
   pendingRuntimeRequest: null,
   pendingBackgroundTasks: [],
   latestUserMessageAt: null,

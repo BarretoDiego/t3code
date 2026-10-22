@@ -21,9 +21,10 @@ import { peerCommand } from "./cli/peer.ts";
 import { nodeCommand } from "./cli/node.ts";
 import { jobCommand } from "./cli/job.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
-import { keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
+import { extendConnectionAttemptTimeout, keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
+import { threadCommand } from "./cli/thread.ts";
 import { runDefaultServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { updateCommand } from "./cli/update.ts";
 import { uninstallCommand } from "./cli/uninstall.ts";
@@ -33,7 +34,6 @@ import { sshHelperCommand } from "./cli/sshHelper.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
-import { threadCommand } from "./cli/thread.ts";
 import { envCommand } from "./cli/env.ts";
 import { eventsCommand } from "./cli/events.ts";
 import { forkCommand } from "./cli/fork.ts";
@@ -134,6 +134,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
 export const cli = makeCli();
 
 export function runCli() {
+  extendConnectionAttemptTimeout();
   keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,

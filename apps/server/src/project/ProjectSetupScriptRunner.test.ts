@@ -110,7 +110,7 @@ function testSetupScript(directory?: string) {
       NO_COLOR: "1",
       FORCE_COLOR: "0",
     });
-    assert.equal(write.mock.calls[0]?.[0].data, "vp install\r");
+    assert.equal(write.mock.calls[0]?.[0].data, " vp install\r");
     const lines: string[] = [];
     const observed = yield* runner.runForThread({
       threadId: "thread-1",
@@ -142,7 +142,7 @@ function testSetupScript(directory?: string) {
     });
     const settleTerminalId = settle.status === "started" ? settle.terminalId : "";
     assert.match(settleTerminalId, /^settle-clean-/);
-    assert.equal(write.mock.calls.at(-1)?.[0].data, "cargo clean\r");
+    assert.equal(write.mock.calls.at(-1)?.[0].data, " cargo clean\r");
 
     const observedSettle = yield* runner.runForThread({
       threadId: "thread-1",

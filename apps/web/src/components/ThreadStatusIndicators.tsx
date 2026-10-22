@@ -23,18 +23,13 @@ import { useProject } from "../state/entities";
 import {
   pullRequestListLines,
   resolveThreadCurrentPullRequestLink,
+  resolveThreadPullRequestBadge,
   resolveThreadPullRequestChains,
   type ThreadPullRequestBadge,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
 import { useRender } from "@base-ui/react/use-render";
-import {
-  type ReactNode,
-  type AnimationEvent,
-  type MouseEvent,
-  type ReactElement,
-  type ComponentProps,
-} from "react";
+import { type ReactNode, type AnimationEvent, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
 import { revealThreadTerminal } from "../lib/revealThreadTerminal";
 
@@ -164,7 +159,7 @@ export interface ThreadPullRequestBadgePresentation {
   readonly text: string | number;
 }
 
-export function resolveThreadPullRequestBadgePresentation({
+function resolveThreadPullRequestBadgePresentation({
   badge,
   number,
   url,
@@ -298,7 +293,7 @@ function PullRequestBadge({
         variant="glass"
         className="pointer-events-auto w-80 max-w-[calc(100vw-2rem)] text-left whitespace-normal"
       >
-        <div className="-mx-1">
+        <div className="-mx-1 max-h-[calc(var(--available-height)-0.5rem-2px)] overflow-y-auto overscroll-contain">
           {visibleThreadPullRequests(pullRequests).length > 0 ? (
             <ThreadPullRequestsMiniList
               pullRequests={pullRequests}
@@ -364,10 +359,12 @@ export function ThreadPullRequestsMiniList({
 
 /** Hover color for the settled-thread pull-request marker in the alternate sidebar experiences. */
 export function settledPrHoverColorClass(
-  state: NonNullable<ThreadPr>["state"],
+  state: ThreadPullRequestBadge["state"],
   isDraft = false,
 ): string {
   switch (state) {
+    case "draft":
+      return "group-hover/sidebar-row:text-zinc-500 dark:group-hover/sidebar-row:text-zinc-400/80";
     case "open":
       return isDraft
         ? "group-hover/sidebar-row:text-zinc-500 dark:group-hover/sidebar-row:text-zinc-400/80"
@@ -415,7 +412,7 @@ function ThreadPullRequestMiniListItem({
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-1 hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-1 hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => onOpenPullRequest(event, url)}
         >
@@ -732,7 +729,7 @@ export function terminalStatusFromRunningIds(
   };
 }
 
-export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
+function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
   if (event.animationName !== "status-pulse") return;
 
   for (const animation of event.currentTarget.getAnimations()) {
@@ -846,7 +843,7 @@ export function ThreadStatusLabel({
         >
           <span
             className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "animate-status-pulse" : ""
+              status.pulse ? "motion-safe:animate-status-pulse" : ""
             }`}
           />
         </TooltipTrigger>
@@ -868,7 +865,7 @@ export function ThreadStatusLabel({
       >
         <span
           className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
-            status.pulse ? "animate-status-pulse" : ""
+            status.pulse ? "motion-safe:animate-status-pulse" : ""
           }`}
         />
         <span className="hidden md:inline">{status.label}</span>
@@ -1036,18 +1033,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   );
 }
 
-function ThreadPullRequestNumber({
-  number,
-  className,
-  ...props
-}: ComponentProps<"span"> & { number: number }) {
-  return (
-    <span {...props} className={cn("shrink-0 text-xs tabular-nums", className)}>
-      #{number}
-    </span>
-  );
-}
-
+// Search rows are already buttons, so this renders the sidebar badge's look without its controls.
 export function ThreadSearchPullRequestNumber({
   thread,
   query,
@@ -1059,40 +1045,58 @@ export function ThreadSearchPullRequestNumber({
   enabled?: boolean;
   settled?: boolean;
 }) {
-  const matchedLink = visibleThreadPullRequests(thread.pullRequests).find((pr) =>
-    pullRequestMatchesSearchQuery({ pullRequests: [pr] }, query),
-  );
-  const fallbackCandidates =
-    thread.pullRequests.length === 0
-      ? [thread.linkedPullRequest, thread.branchPullRequest]
-      : [thread.branchPullRequest];
-  const legacyReference = matchedLink
-    ? undefined
-    : fallbackCandidates.find(
-        (pr) => pr != null && pullRequestMatchesSearchQuery({ linkedPullRequest: pr }, query),
-      );
-  const legacyStatus = useLinkedThreadPullRequest(
+  const matched = pullRequestMatchesSearchQuery(thread, query);
+  const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
+  const linked = useLinkedThreadPullRequest(
     thread.environmentId,
-    legacyReference,
-    enabled,
-    undefined,
-    legacyReference,
+    thread.linkedPullRequest,
+    enabled && matched,
+    thread.pullRequests,
+    thread.branchPullRequest,
   );
-  const reference = matchedLink ?? legacyReference;
-  const linked = matchedLink ? linkedPullRequestSnapshotStatus(matchedLink) : legacyStatus;
-  const status = prStatusIndicator(linked?.pr ?? null, linked?.sourceControlProvider);
-  return reference ? (
-    <ThreadPullRequestNumber
-      number={reference.number}
-      className={
+  if (!matched) return null;
+  const badge = supportsMultiplePullRequests
+    ? resolveThreadPullRequestBadge(thread.pullRequests)
+    : null;
+  const current = supportsMultiplePullRequests
+    ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
+    : null;
+  const pr = linked?.pr ?? null;
+  // Stored references already carry a number, so the badge shows before PR details load.
+  const stored =
+    current ??
+    [thread.linkedPullRequest, thread.branchPullRequest].find(
+      (reference) =>
+        reference != null && pullRequestMatchesSearchQuery({ linkedPullRequest: reference }, query),
+    );
+  const presentation = resolveThreadPullRequestBadgePresentation({
+    badge,
+    number: pr?.number ?? stored?.number,
+    url: pr?.url ?? stored?.url,
+    status: prStatusIndicator(pr, linked?.sourceControlProvider),
+  });
+  if (presentation === null) return null;
+  const aggregate = badge !== null && (badge.kind === "stack" || badge.others > 0);
+  const state = aggregate
+    ? badge.state
+    : pr === null
+      ? null
+      : pr.state === "open" && pr.isDraft
+        ? "draft"
+        : pr.state;
+  return (
+    <span
+      aria-label={presentation.label}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums",
         settled
-          ? cn(
-              "text-secondary-label transition-colors",
-              linked?.pr && settledPrHoverColorClass(linked.pr.state, linked.pr.isDraft),
-            )
-          : (status?.colorClass ?? "text-secondary-label")
-      }
-      aria-label={status?.tooltip ?? `Pull request #${reference.number}`}
-    />
-  ) : null;
+          ? cn("text-secondary-label transition-colors", state && settledPrHoverColorClass(state))
+          : presentation.toneClassName,
+      )}
+    >
+      {/* text-current opts out of the command palette's muted icon color. */}
+      <presentation.Icon aria-hidden className="size-3 shrink-0 text-current" />
+      <span>{presentation.text}</span>
+    </span>
+  );
 }

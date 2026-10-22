@@ -33,7 +33,7 @@ export function makeArchivedThreadsEnvironmentKey(
   );
 }
 
-export function parseArchivedThreadsEnvironmentKey(key: string): ReadonlyArray<EnvironmentId> {
+function parseArchivedThreadsEnvironmentKey(key: string): ReadonlyArray<EnvironmentId> {
   if (key.length === 0) {
     return [];
   }

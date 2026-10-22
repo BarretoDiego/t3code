@@ -30,11 +30,23 @@ const v2TableCount = Effect.gen(function* () {
 });
 
 describe("runMigrations", () => {
-  it.effect("migrates a fresh database through the whole manifest", () =>
+  it.effect("upgrades the published fork ledger without renumbering existing migrations", () =>
     Effect.gen(function* () {
-      yield* runMigrations();
-      assert.deepStrictEqual(yield* history, migrationManifest);
-      assert.isAbove(yield* v2TableCount, 0);
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 71 });
+      const before = yield* history;
+      assert.deepStrictEqual(yield* runMigrations(), [
+        [72, "CodexUsageNativeTurnIndex"],
+        [73, "RepairClientSettlementTimestamps"],
+        [74, "WebhookDedupe"],
+      ]);
+      assert.deepStrictEqual((yield* history).slice(0, before.length), before);
+      assert.deepStrictEqual(yield* runMigrations(), []);
+      const indexes =
+        yield* sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'orchestration_v2_provider_turns_codex_native_id_idx'`;
+      assert.strictEqual(indexes.length, 1);
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(scheduled_tasks)`;
+      assert.isTrue(columns.some((column) => column.name === "last_run_webhook_delivery_id"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

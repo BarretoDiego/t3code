@@ -4,8 +4,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -35,11 +35,11 @@ const storageLayer = <E>(
     Layer.provide(NodeServices.layer),
   );
 
-const testConfig = ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-" });
-
 const currentStatus = Effect.flatMap(DatabaseStorage.DatabaseStorage, (storage) =>
   storage.status.pipe(Stream.take(1), Stream.runHead),
 );
+
+const testConfig = ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-" });
 
 it.effect("a new database returns freed pages online without losing data", () =>
   Effect.gen(function* () {

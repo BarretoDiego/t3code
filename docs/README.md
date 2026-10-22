@@ -24,6 +24,7 @@
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
+- [T3 Connect troubleshooting](./user/t3-connect-troubleshooting.md)
 - [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)
 - [Controlling T3 Code from the command line](./user/cli.md)

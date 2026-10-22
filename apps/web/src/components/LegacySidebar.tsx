@@ -187,6 +187,7 @@ import {
   archiveSelectedThreadEntries,
   buildMultiSelectThreadContextMenuItems,
   deleteSelectedThreadEntries,
+  filterSidebarV2VisibleThreads,
   getSidebarThreadIdsToPrewarm,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
@@ -1237,7 +1238,7 @@ function useProjectThreads(project: SidebarProjectSnapshot) {
     ]),
   );
   const visibleProjectThreads = sortThreads(
-    sidebarThreads.filter((thread) => thread.archivedAt === null),
+    filterSidebarV2VisibleThreads(sidebarThreads, null),
     threadSortOrder,
   );
   const showAllSubthreads = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
@@ -2398,7 +2399,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 <span className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover/project-header:opacity-0">
                   <span
                     className={`size-[9px] rounded-full ${projectStatus.dotClass} ${
-                      projectStatus.pulse ? "animate-status-pulse" : ""
+                      projectStatus.pulse ? "motion-safe:animate-status-pulse" : ""
                     }`}
                   />
                 </span>
@@ -3224,18 +3225,16 @@ function useSortedLegacySidebarProjects(input: {
     ...project,
     id: project.projectKey,
   }));
-  const sortableThreads = sidebarThreads
-    .filter((thread) => thread.archivedAt === null)
-    .map((thread) => {
-      const physicalKey =
-        projectPhysicalKeyByScopedRef.get(
-          scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
-        ) ?? scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId));
-      return {
-        ...thread,
-        projectId: (physicalToLogicalKey.get(physicalKey) ?? physicalKey) as ProjectId,
-      };
-    });
+  const sortableThreads = filterSidebarV2VisibleThreads(sidebarThreads, null).map((thread) => {
+    const physicalKey =
+      projectPhysicalKeyByScopedRef.get(
+        scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
+      ) ?? scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId));
+    return {
+      ...thread,
+      projectId: (physicalToLogicalKey.get(physicalKey) ?? physicalKey) as ProjectId,
+    };
+  });
   const sortedProjects = sortProjectsForSidebar(
     sortableProjects,
     sortableThreads,
@@ -3300,7 +3299,7 @@ function useLegacySidebarThreads(input: {
   const visibleSidebarThreadKeys = sortedProjects.flatMap((project) => {
     const allProjectThreads = threadsByProjectKey.get(project.projectKey) ?? [];
     const unarchivedProjectThreads = sortThreads(
-      allProjectThreads.filter((thread) => thread.archivedAt === null),
+      filterSidebarV2VisibleThreads(allProjectThreads, null),
       sidebarThreadSortOrder,
     );
     const projectThreads = nestLegacyProjectThreads({

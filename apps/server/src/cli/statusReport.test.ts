@@ -30,6 +30,7 @@ const thread = (overrides: Partial<StatusThread> = {}): StatusThread => ({
     rootThreadId: ThreadId.make("thread-1"),
   },
   status: "completed",
+  settledOverride: null,
   activityRunStatus: null,
   activeRunId: null,
   activityRunStartedAt: null,

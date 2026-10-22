@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { migrationEntries, runMigrations } from "../persistence/Migrations.ts";
+import { migrationManifest, runMigrations } from "../persistence/Migrations.ts";
 import {
   AUTOMATION_MIGRATIONS_TABLE,
   automationMigrationEntries,
@@ -16,7 +16,7 @@ it.layer(SqlitePersistence.layerMemory)("automation migrations", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const main = yield* sql<{ readonly id: number }>`
         SELECT MAX(migration_id) AS id FROM effect_sql_migrations`;
-      assert.strictEqual(main[0]?.id, Math.max(...migrationEntries.map(([id]) => id)));
+      assert.strictEqual(main[0]?.id, Math.max(...migrationManifest.map(([id]) => id)));
 
       const automation = yield* sql<{ readonly migration_id: number }>`
         SELECT migration_id FROM ${sql(AUTOMATION_MIGRATIONS_TABLE)} ORDER BY migration_id`;

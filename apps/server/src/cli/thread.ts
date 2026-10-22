@@ -75,9 +75,6 @@ export class ThreadCliError extends Schema.TaggedError<ThreadCliError>()("Thread
 const fail = (reason: ThreadCliError["reason"], detail: string) =>
   Effect.fail(new ThreadCliError({ reason, detail }));
 
-// ---------------------------------------------------------------------------
-// Status
-
 /** Every value `thread.status` can take, in the order `--status` lists them. */
 export const THREAD_STATUSES = [
   "queued",
@@ -107,6 +104,7 @@ export type ThreadStatusInput = Pick<
   | "modelSelection"
   | "pendingBackgroundTasks"
   | "pendingRuntimeRequest"
+  | "settledOverride"
   | "status"
   | "title"
   | "updatedAt"
@@ -152,9 +150,6 @@ export function isThreadSettledForWait(
   return !BUSY_STATUSES.has(status);
 }
 
-// ---------------------------------------------------------------------------
-// Server reads
-
 const formatTime = (value: DateTime.Utc | null | undefined) =>
   value === null || value === undefined ? null : DateTime.formatIso(value);
 
@@ -182,9 +177,6 @@ const loadArchivedShell = (client: EnvironmentRpcClient) =>
 
 const loadThreadDetail = (client: EnvironmentRpcClient, threadId: ThreadId) =>
   client[ORCHESTRATION_V2_WS_METHODS.getThreadProjection]({ threadId });
-
-// ---------------------------------------------------------------------------
-// Resolution
 
 function matchByIdOrPrefix<T extends { readonly id: string }>(
   items: ReadonlyArray<T>,
@@ -311,9 +303,6 @@ export const resolveNewThreadDefaults = Effect.fn("cli.thread.newDefaults")(func
   }
   return { modelSelection, runtimeMode: resolved.defaultRuntimeMode };
 });
-
-// ---------------------------------------------------------------------------
-// Presentation
 
 export function formatModel(selection: { readonly instanceId: string; readonly model: string }) {
   return `${selection.instanceId}/${selection.model}`;
@@ -551,9 +540,6 @@ function formatAttention(attention: ReturnType<typeof threadAttention>): Readonl
   return lines;
 }
 
-// ---------------------------------------------------------------------------
-// Requests
-
 /**
  * The request a response is for. An explicit id (or unique prefix) may name a
  * request in any state: the server decides whether it can still be answered,
@@ -666,9 +652,6 @@ const resolveAnswer = Effect.fn("cli.thread.resolveAnswer")(function* (
   return [...new Set(selected.filter((value) => value !== undefined))];
 });
 
-// ---------------------------------------------------------------------------
-// Waiting
-
 /**
  * Follows the shell stream until the thread settles (see
  * `isThreadSettledForWait`). Event-driven: every shell update re-evaluates the
@@ -764,9 +747,6 @@ const waitAndReport = Effect.fn("cli.thread.waitAndReport")(function* (
   if (blockers.length > 0) yield* Console.log(`\n${blockers.join("\n")}`);
 });
 
-// ---------------------------------------------------------------------------
-// Input
-
 export const readMessage = Effect.fn("cli.thread.readMessage")(function* (
   parts: ReadonlyArray<string>,
 ) {
@@ -802,9 +782,6 @@ const entityIdFor = (key: Option.Option<string>, part: string) =>
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
     },
   });
-
-// ---------------------------------------------------------------------------
-// Flags
 
 const threadArgument = Argument.String("thread").pipe(
   Argument.withDescription("Thread id or unique id prefix."),
@@ -892,9 +869,6 @@ const applyThreadModes = Effect.fn("cli.thread.applyModes")(function* (
   }
 });
 
-// ---------------------------------------------------------------------------
-// Mutations
-
 /** Flags every command that changes a thread takes. */
 const mutationFlags = {
   ...environmentTargetFlags,
@@ -962,9 +936,6 @@ const runMutation = Effect.fn("cli.thread.runMutation")(function* (
     ...(yield* readThreadState(client, input.threadId)),
   });
 });
-
-// ---------------------------------------------------------------------------
-// Commands
 
 const listCommand = Command.make("list", {
   ...environmentTargetFlags,

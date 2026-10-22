@@ -1,12 +1,12 @@
-import { assert, describe, it } from "@effect/vitest";
 import {
+  ProviderInstanceId,
+  type ModelSelection,
   CommandId,
   EventId,
   ProjectId,
-  ProviderInstanceId,
-  type ModelSelection,
   type ProjectScript,
 } from "@t3tools/contracts";
+import { assert, describe, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 
@@ -187,19 +187,6 @@ describe("planProjectCommand", () => {
     );
   });
 
-  it("limits monograms to two graphemes", () => {
-    for (const text of ["T3", "é", "किखि", "क्ष्म", "각"]) {
-      const monogram = { kind: "monogram", text, color: "violet" } as const;
-      assert.deepEqual(payloadOf(update({ projectIcon: monogram })).projectIcon, monogram);
-    }
-    for (const text of ["ABC", "किखिगि"]) {
-      assert.equal(
-        failureOf(update({ projectIcon: { kind: "monogram", text, color: "violet" } }))._tag,
-        "ProjectCommandInvariantError",
-      );
-    }
-  });
-
   it("rejects a workspace root held by another active project", () => {
     const owner = row({
       projectId: ProjectId.make("project-existing"),
@@ -261,16 +248,5 @@ describe("planProjectCommand", () => {
         );
       }
     }
-  });
-
-  it("deletes with a single project.deleted event", () => {
-    const event = Result.getOrThrow(
-      plan(
-        { type: "project.delete", commandId: CommandId.make("cmd-delete"), projectId },
-        { project: row() },
-      ),
-    );
-    assert.equal(event.type, "project.deleted");
-    assert.deepEqual(event.payload, { projectId, deletedAt: "2026-01-01T00:00:00.000Z" });
   });
 });

@@ -4,7 +4,7 @@ import type { AppBarAction } from "../../components/ui/AppBar.types";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-content-stack";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
-import { useWorkspaceListNavigation } from "../workspace/useAndroidWorkspaceNavigation";
+import { useWorkspaceBackNavigation } from "../workspace/useAndroidWorkspaceNavigation";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 
 export function ThreadHeader(
@@ -21,8 +21,9 @@ export function ThreadHeader(
     readonly onOpenFilesInspector: () => void;
   },
 ) {
-  const returnToList = useWorkspaceListNavigation("threads");
-  const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
+  const goBack = useWorkspaceBackNavigation("threads");
+  const { layout, panes, toggleAuxiliaryPane, composerKeyboardActive } =
+    useAdaptiveWorkspaceLayout();
   const { onOpenTerminal, onMergeBack } = props.gitControls;
   const native = useThreadHeaderOptions({
     ...props,
@@ -103,9 +104,10 @@ export function ThreadHeader(
             />
           ) : null
         }
-        onBack={layout.usesSplitView ? undefined : returnToList}
+        onBack={layout.usesSplitView ? undefined : goBack}
         actions={androidHeaderActions}
         hideBottomBorder
+        compact={composerKeyboardActive}
       />
       {native.fallback}
     </>

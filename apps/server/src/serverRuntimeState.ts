@@ -91,39 +91,41 @@ export const persistServerRuntimeState = (input: {
  * shutting down must not erase the record of the one still running, which is
  * how the CLI finds it.
  */
-export const clearOwnPersistedServerRuntimeState = (path: string, pid: number) =>
-  Effect.gen(function* () {
-    const current = yield* readPersistedServerRuntimeState(path).pipe(
-      Effect.orElseSucceed(() => Option.none<PersistedServerRuntimeState>()),
-    );
-    if (Option.isSome(current) && current.value.pid !== pid) return;
-    yield* clearPersistedServerRuntimeState(path);
-  });
+export const clearOwnPersistedServerRuntimeState = Effect.fn(
+  "serverRuntimeState.clearOwnPersistedServerRuntimeState",
+)(function* (path: string, pid: number) {
+  const current = yield* readPersistedServerRuntimeState(path).pipe(
+    Effect.orElseSucceed(() => Option.none<PersistedServerRuntimeState>()),
+  );
+  if (Option.isSome(current) && current.value.pid !== pid) return;
+  yield* clearPersistedServerRuntimeState(path);
+});
 
-export const clearPersistedServerRuntimeState = (path: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    yield* fs.remove(path, { force: true }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ServerRuntimeStateError({
-            operation: "clear",
-            statePath: path,
-            cause,
+export const clearPersistedServerRuntimeState = Effect.fn(
+  "serverRuntimeState.clearPersistedServerRuntimeState",
+)(function* (path: string) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.remove(path, { force: true }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new ServerRuntimeStateError({
+          operation: "clear",
+          statePath: path,
+          cause,
+        }),
+    ),
+    Effect.catchTags({
+      ServerRuntimeStateError: (error) =>
+        Effect.logWarning(error.message).pipe(
+          Effect.annotateLogs({
+            operation: error.operation,
+            statePath: error.statePath,
+            cause: error,
           }),
-      ),
-      Effect.catchTags({
-        ServerRuntimeStateError: (error) =>
-          Effect.logWarning(error.message).pipe(
-            Effect.annotateLogs({
-              operation: error.operation,
-              statePath: error.statePath,
-              cause: error,
-            }),
-          ),
-      }),
-    );
-  });
+        ),
+    }),
+  );
+});
 
 /**
  * Signal 0 delivers nothing; it only reports whether the pid exists. EPERM
@@ -139,8 +141,10 @@ export const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-export const readPersistedServerRuntimeState = (path: string) =>
-  Effect.gen(function* () {
+export const readPersistedServerRuntimeState = Effect.fn(
+  "serverRuntimeState.readPersistedServerRuntimeState",
+)(
+  function* (path: string) {
     const fs = yield* FileSystem.FileSystem;
     const raw = yield* fs.readFileString(path).pipe(
       Effect.matchEffect({
@@ -177,16 +181,16 @@ export const readPersistedServerRuntimeState = (path: string) =>
           }),
       ),
     );
-  }).pipe(
-    Effect.catchTags({
-      ServerRuntimeStateError: (error) =>
-        Effect.logWarning(error.message).pipe(
-          Effect.annotateLogs({
-            operation: error.operation,
-            statePath: error.statePath,
-            cause: error,
-          }),
-          Effect.as(Option.none<PersistedServerRuntimeState>()),
-        ),
-    }),
-  );
+  },
+  Effect.catchTags({
+    ServerRuntimeStateError: (error) =>
+      Effect.logWarning(error.message).pipe(
+        Effect.annotateLogs({
+          operation: error.operation,
+          statePath: error.statePath,
+          cause: error,
+        }),
+        Effect.as(Option.none<PersistedServerRuntimeState>()),
+      ),
+  }),
+);

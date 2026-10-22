@@ -1,12 +1,6 @@
-import { assert, it as effectIt } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vite-plus/test";
-
-import { ProjectId } from "./baseSchemas.ts";
-import { OrchestrationProjectShell } from "./orchestrationProject.ts";
-
 import {
+  ProjectSearchContentsInput,
+  ProjectSearchEntriesInput,
   ProjectFaviconPath,
   ReceivedProjectIcon,
   StoredProjectIcon,
@@ -15,12 +9,16 @@ import {
   ProjectUpdatePayload,
   ProjectMutation,
   ProjectSearchContentsError,
-  ProjectSearchContentsInput,
   ProjectSearchEntriesError,
-  ProjectSearchEntriesInput,
   ProjectWriteFileError,
   ProjectScriptDirectory,
 } from "./project.ts";
+import { assert, it as effectIt } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vite-plus/test";
+
+import { OrchestrationProjectShell } from "./orchestrationProject.ts";
 
 const decodeProjectCreatePayload = Schema.decodeUnknownSync(ProjectCreatePayload);
 const decodeProjectUpdatePayload = Schema.decodeUnknownSync(ProjectUpdatePayload);
@@ -192,63 +190,9 @@ effectIt.effect("project favicon paths accept only supported image files", () =>
   }),
 );
 
-const decodeProjectUpdateEffect = Schema.decodeUnknownEffect(ProjectUpdatePayload);
-const decodeUpdateIcon = (projectIcon: unknown) =>
-  Effect.map(decodeProjectUpdateEffect({ projectIcon }), (update) => update.projectIcon);
-
-effectIt.effect("project icon overrides accept Lucide icons, colors, and emoji", () =>
-  Effect.gen(function* () {
-    const lucide = { kind: "lucide", name: "alarm-clock", color: "violet" } as const;
-    assert.deepEqual(yield* decodeUpdateIcon(lucide), lucide);
-    const emoji = { kind: "emoji", emoji: "👩🏽‍💻" } as const;
-    assert.deepEqual(yield* decodeUpdateIcon(emoji), emoji);
-    const invalid = yield* Effect.exit(
-      decodeUpdateIcon({ kind: "lucide", name: "Alarm Clock", color: "ultraviolet" }),
-    );
-    assert.strictEqual(invalid._tag, "Failure");
-  }),
-);
-
-effectIt.effect("project monograms validate text and palette colors", () =>
-  Effect.gen(function* () {
-    for (const text of ["A", "T3", "É", "文書", "कि", "किखि", "e\u0301"]) {
-      assert.deepEqual(yield* decodeUpdateIcon({ kind: "monogram", color: "violet", text }), {
-        kind: "monogram",
-        text,
-        color: "violet",
-      });
-    }
-    for (const projectIcon of [
-      { kind: "monogram", text: "", color: "blue" },
-      { kind: "monogram", text: "\u0301", color: "blue" },
-      { kind: "monogram", text: "A B", color: "blue" },
-      { kind: "monogram", text: "🚀", color: "blue" },
-      { kind: "monogram", text: "T3", color: "ultraviolet" },
-    ]) {
-      assert.strictEqual((yield* Effect.exit(decodeUpdateIcon(projectIcon)))._tag, "Failure");
-    }
-  }),
-);
-
 const decodeStoredIcon = Schema.decodeUnknownEffect(StoredProjectIcon);
-const encodeStoredIcon = Schema.encodeEffect(StoredProjectIcon);
 const decodeReceivedIcon = Schema.decodeUnknownEffect(ReceivedProjectIcon);
-const encodeReceivedIcon = Schema.encodeEffect(ReceivedProjectIcon);
 const decodeProjectShell = Schema.decodeUnknownEffect(OrchestrationProjectShell);
-
-effectIt.effect("sends and stores icons in their plain shape", () =>
-  Effect.gen(function* () {
-    for (const icon of [
-      { kind: "monogram", text: "क्ष्म", color: "violet" },
-      { kind: "lucide", name: "alarm-clock", color: "blue" },
-      { kind: "emoji", emoji: "🚀" },
-    ] as const) {
-      assert.deepEqual(yield* encodeReceivedIcon(icon), icon);
-      assert.deepEqual(yield* encodeStoredIcon(icon), icon);
-      assert.deepEqual(yield* decodeReceivedIcon(icon), icon);
-    }
-  }),
-);
 
 effectIt.effect("reads monograms stored in the pre-v2 fallback shape", () =>
   Effect.gen(function* () {

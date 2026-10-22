@@ -1,23 +1,10 @@
 import { assert, expect, it } from "@effect/vitest";
-
 import {
   buildPairingUrl,
   formatHeadlessServeOutput,
   renderTerminalQrCode,
-  resolveHeadlessConnectionHost,
   resolveHeadlessConnectionString,
-  resolveListeningPort,
 } from "./startupAccess.ts";
-
-it("prefers localhost when no explicit host is configured", () => {
-  expect(resolveHeadlessConnectionHost(undefined)).toBe("localhost");
-  expect(resolveHeadlessConnectionString(undefined, 3773)).toBe("http://localhost:3773");
-});
-
-it("keeps explicit bind hosts in the connection string", () => {
-  expect(resolveHeadlessConnectionString("127.0.0.1", 3773)).toBe("http://127.0.0.1:3773");
-  expect(resolveHeadlessConnectionString("::1", 3773)).toBe("http://[::1]:3773");
-});
 
 it("resolves wildcard hosts to a concrete external interface when one is available", () => {
   const connectionString = resolveHeadlessConnectionString("0.0.0.0", 3773, {
@@ -44,12 +31,6 @@ it("resolves wildcard hosts to a concrete external interface when one is availab
   });
 
   expect(connectionString).toBe("http://192.168.1.42:3773");
-});
-
-it("prefers the actual bound port when an http server address is available", () => {
-  expect(resolveListeningPort({ port: 4123 }, 3773)).toBe(4123);
-  expect(resolveListeningPort("pipe", 3773)).toBe(3773);
-  expect(resolveListeningPort(null, 3773)).toBe(3773);
 });
 
 it("builds a pairing URL that embeds the token in the hash", () => {
@@ -106,15 +87,15 @@ it("skips local VPN gateways and container networks when building a pairing URL"
 
 it("does not fall back to a tunnel gateway when no LAN interface exists", () => {
   expect(
-    resolveHeadlessConnectionHost("0.0.0.0", {
+    resolveHeadlessConnectionString("0.0.0.0", 3774, {
       "nc-tun0": networkAddress("172.16.254.1"),
     }),
-  ).toBe("localhost");
+  ).toBe("http://localhost:3774");
 });
 
 it("keeps Tailscale's macOS tunnel usable for pairing", () => {
   expect(
-    resolveHeadlessConnectionHost("0.0.0.0", {
+    resolveHeadlessConnectionString("0.0.0.0", 3774, {
       utun4: [
         ...networkAddress("100.101.102.103"),
         {
@@ -128,5 +109,5 @@ it("keeps Tailscale's macOS tunnel usable for pairing", () => {
         },
       ],
     }),
-  ).toBe("100.101.102.103");
+  ).toBe("http://100.101.102.103:3774");
 });
