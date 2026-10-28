@@ -91,12 +91,9 @@ export function findComposerCodeBlocks(prompt: string): ComposerCodeBlockMatch[]
 }
 
 /**
- * Rebuilds the prompt text for a block, fences included.
- *
- * An empty block is written without a content line, so ```` ```\n``` ```` round
- * trips. That normalizes the one degenerate input where a block holding a
- * single blank line is indistinguishable from an empty one; it collapses to
- * empty rather than growing a line on every edit.
+ * Rebuilds the prompt text for a block, fences included. An empty block is written without a
+ * content line so ```` ```\n``` ```` round trips; a block holding one blank line is
+ * indistinguishable from an empty one and collapses to empty instead of growing on every edit.
  */
 export function serializeComposerCodeBlock(info: string, content: string): string {
   if (content.length === 0) {

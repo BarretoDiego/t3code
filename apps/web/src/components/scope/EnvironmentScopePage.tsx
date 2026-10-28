@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { FolderPlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
 
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
@@ -31,15 +31,12 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
   const serverConfigs = useServerConfigs();
   const environment = environments.find((entry) => entry.environmentId === environmentId) ?? null;
 
-  const openAddProject = useCallback(
-    () => openCommandPalette({ open: "add-project", environmentId }),
-    [environmentId],
-  );
+  const openAddProject = () => openCommandPalette({ open: "add-project", environmentId });
 
   // Quantized to the minute: the shelving rule is clock-derived, and a
   // per-render `now` would rebuild this list on every keystroke elsewhere.
-  const nowMinute = Math.floor(Date.now() / 60_000);
-  const summaries = useMemo(() => {
+  const nowMinute = Math.floor(useNowMinuteMs() / 60_000);
+  const summaries = (() => {
     const now = new Date(nowMinute * 60_000).toISOString();
     const environmentThreads = threads.filter((thread) => thread.environmentId === environmentId);
     const shelves = shelveScopeThreads({
@@ -56,7 +53,7 @@ export function EnvironmentScopePage({ environmentId }: { readonly environmentId
       threads: environmentThreads,
       isActiveThread: (thread) => activeThreadIds.has(thread.id),
     });
-  }, [environmentId, nowMinute, projects, serverConfigs, threads]);
+  })();
 
   if (environment === null) {
     return (

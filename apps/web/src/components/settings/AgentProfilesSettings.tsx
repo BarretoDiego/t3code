@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { CopyIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import {
@@ -46,16 +46,8 @@ export function AgentProfilesSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(serverProviders),
-          settings,
-          null,
-        ),
-      ),
-    [serverProviders, settings],
+  const instanceEntries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings, null),
   );
   const agentProfiles = settings.agentProfiles;
   const [editor, setEditor] = useState<EditorState | null>(null);

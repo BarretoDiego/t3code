@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { squashAtomCommandFailure, type AtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -31,6 +31,7 @@ export function useHubQuery<W, A, E>(command: AtomCommand<W, A, E>, input: W) {
       });
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the hub query over the network and discards superseded responses via the generation counter
   useEffect(() => {
     // State changes only after the remote request resolves; no synchronous render update.
     // eslint-disable-next-line react/set-state-in-effect
@@ -39,7 +40,7 @@ export function useHubQuery<W, A, E>(command: AtomCommand<W, A, E>, input: W) {
       generation.current++;
     };
   }, [key]);
-  const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  const refresh = () => setRevision((value) => value + 1);
   return {
     data: state?.inputKey === inputKey ? state.data : null,
     error: state?.key === key ? state.error : null,

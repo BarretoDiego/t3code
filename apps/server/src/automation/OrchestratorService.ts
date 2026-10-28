@@ -646,8 +646,10 @@ const make = Effect.gen(function* () {
     inbox,
     resolveInbox,
     checkpoints,
-    handoff: () => Effect.fail(handoffUnsupported),
-    handoffStatus: () => Effect.fail(handoffUnsupported),
+    handoff: Effect.fn("OrchestratorService.handoff")(() => Effect.fail(handoffUnsupported)),
+    handoffStatus: Effect.fn("OrchestratorService.handoffStatus")(() =>
+      Effect.fail(handoffUnsupported),
+    ),
     authorizeDelegation,
   });
 });

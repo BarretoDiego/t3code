@@ -48,9 +48,6 @@ export class ScheduleCliError extends Schema.TaggedError<ScheduleCliError>()("Sc
 
 const fail = (detail: string) => Effect.fail(new ScheduleCliError({ detail }));
 
-// ---------------------------------------------------------------------------
-// Schedules
-
 const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const TIME_OF_DAY_PATTERN = /^([01]?\d|2[0-3]):([0-5]\d)$/;
@@ -172,9 +169,6 @@ const scheduleFlags = {
   ),
 } as const;
 
-// ---------------------------------------------------------------------------
-// Where a task runs
-
 interface WorkspaceFlags {
   readonly worktree: Option.Option<string>;
   readonly root: boolean;
@@ -213,9 +207,6 @@ const newThreadWorkspace = Effect.fn("cli.schedule.newThreadWorkspace")(function
         startFromOrigin: true,
       } as const);
 });
-
-// ---------------------------------------------------------------------------
-// Tasks
 
 const loadTasks = (client: EnvironmentRpcClient) =>
   Effect.map(client[WS_METHODS.scheduledTasksList]({}), (result) => result.tasks);
@@ -285,19 +276,18 @@ function formatTaskDetail(task: ScheduledTask, shell: OrchestrationV2ShellSnapsh
   ].join("\n");
 }
 
-const printTask = (
+const printTask = Effect.fn("printTask")(function* (
   client: EnvironmentRpcClient,
   task: ScheduledTask,
   json: boolean,
   headline?: string,
-) =>
-  Effect.gen(function* () {
-    if (json) return yield* printJson(task);
-    const shell = yield* loadShell(client);
-    yield* Console.log(
-      [...(headline === undefined ? [] : [headline, ""]), formatTaskDetail(task, shell)].join("\n"),
-    );
-  });
+) {
+  if (json) return yield* printJson(task);
+  const shell = yield* loadShell(client);
+  yield* Console.log(
+    [...(headline === undefined ? [] : [headline, ""]), formatTaskDetail(task, shell)].join("\n"),
+  );
+});
 
 const taskArgument = Argument.String("task").pipe(
   Argument.withDescription("Scheduled task id, unique id prefix, or exact title."),
@@ -305,9 +295,6 @@ const taskArgument = Argument.String("task").pipe(
 
 const titleFromPrompt = (prompt: string) =>
   prompt.split("\n")[0]?.trim().slice(0, 80) || "Scheduled task";
-
-// ---------------------------------------------------------------------------
-// Commands
 
 const listCommand = Command.make("list", {
   ...environmentTargetFlags,

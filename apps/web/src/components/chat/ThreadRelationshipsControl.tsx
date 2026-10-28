@@ -4,7 +4,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
-import { CollapsibleSectionHeader, SectionHeaderStatus } from "../ui/collapsible-section-header";
+import { SectionHeaderStatus } from "../ui/collapsible-section-header";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -34,8 +34,10 @@ import {
   isProviderNativeSubagentThread,
   NodeId,
   type EnvironmentId,
+  type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadShell,
+  type ServerProvider,
   type ThreadId,
 } from "@t3tools/contracts";
 import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
@@ -45,6 +47,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRightIcon,
   BotIcon,
+  ChevronDownIcon,
   CornerLeftUpIcon,
   GitForkIcon,
   LoaderCircleIcon,
@@ -62,7 +65,7 @@ import {
   useThreadProjection,
   useThreadRelationshipShells,
 } from "../../state/entities";
-import { useEnvironmentProviders } from "../../state/environments";
+import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -73,7 +76,11 @@ import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { cn } from "~/lib/utils";
 import {
+  THREAD_DETAILS_PANEL_CHEVRON_CLASS,
+  THREAD_DETAILS_PANEL_ICON_CLASS,
+  THREAD_DETAILS_PANEL_LABEL_CLASS,
   THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
   THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS,
   THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS,
@@ -97,11 +104,7 @@ function ThreadLineageRowList(props: {
 }) {
   return (
     <>
-      {/*
-        Plain overflow, not a ScrollArea
-        component: this sits inside an already scrolling panel, where a
-        max-height-only virtual viewport measures badly.
-      */}
+      {/* ScrollArea's max-height viewport measures badly inside this scrolling panel. */}
       <ul
         aria-label="Related threads"
         className="m-0 max-h-[13.5rem] list-none overflow-y-auto overscroll-contain p-0 has-data-workflow-expanded:max-h-[min(28rem,55dvh)]"
@@ -138,17 +141,26 @@ function ThreadLineageGroup(props: {
   return (
     <div>
       {props.label ? (
-        <CollapsibleSectionHeader
-          variant="panel"
-          expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-          accessory={
-            failedCount > 0 ? <SectionHeaderStatus>{failedCount} failed</SectionHeaderStatus> : null
-          }
-        >
-          {props.label}
-          {!expanded && ` (${props.rows.length})`}
-        </CollapsibleSectionHeader>
+        <ThreadDetailsControl aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          <BotIcon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />
+          <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "min-w-0 flex-1 truncate")}>
+            {props.label}
+          </span>
+          {failedCount > 0 ? <SectionHeaderStatus>{failedCount} failed</SectionHeaderStatus> : null}
+          {expanded ? null : (
+            <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
+              {props.rows.length}
+            </span>
+          )}
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              THREAD_DETAILS_PANEL_CHEVRON_CLASS,
+              "transition-transform",
+              !expanded && "-rotate-90",
+            )}
+          />
+        </ThreadDetailsControl>
       ) : null}
       {expanded ? (
         <ThreadLineageRowList
@@ -209,6 +221,74 @@ function currentSubagent<Agent extends RuntimeSubagent>(
   };
 }
 
+/**
+ * A task delegated to a linked environment. It has no thread here, so it opens
+ * the thread there, when this client is connected to that environment.
+ */
+function RemoteSubagentRow(props: {
+  readonly agent: OrchestrationV2Subagent & {
+    readonly remoteChild: OrchestrationV2RemoteTaskChild;
+  };
+  readonly provider: ServerProvider | undefined;
+}) {
+  const navigate = useNavigate();
+  const environment = useEnvironment(props.agent.remoteChild.environmentId);
+  const { remoteChild } = props.agent;
+  const status = props.agent.status;
+  const failed = status === "failed";
+  const title = relationshipThreadTitle({
+    title: props.agent.title ?? "Subagent",
+    isSubagent: true,
+  });
+  return (
+    <li className="group relative flex h-8 items-center rounded-lg">
+      <Tooltip>
+        <TooltipTrigger
+          delay={200}
+          render={
+            <ThreadDetailsControl
+              size="sm"
+              variant="ghost"
+              part="row"
+              disabled={environment === null}
+              onClick={() =>
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(
+                    scopeThreadRef(remoteChild.environmentId, remoteChild.threadId),
+                  ),
+                })
+              }
+            />
+          }
+        >
+          <ThreadRelationshipIcon
+            driver={props.agent.driver}
+            provider={props.provider}
+            fallbackIcon={BotIcon}
+            status={status}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
+              {title}
+            </span>
+          </span>
+          <span
+            className={`shrink-0 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            on {remoteChild.label} · {threadRelationshipStatusLabel(status)}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup side="left">
+          {environment === null
+            ? `Runs on ${remoteChild.label}. Connect to it to open the thread there.`
+            : `Open on ${remoteChild.label}`}
+        </TooltipPopup>
+      </Tooltip>
+    </li>
+  );
+}
+
 export function ThreadRelationshipsPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -250,8 +330,7 @@ export function ThreadRelationshipsPanel(props: {
   );
   const [busyAction, setBusyAction] = useState<"merge" | "detach" | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
-  // These lookups and the graph walk every subagent and thread, so they sit below
-  // the panel's hooks where the compiler can cache them.
+  // Derive graphs after hooks to preserve their compiler cache.
   const providers = providersByEnvironment.get(props.environmentId);
   const projects = allProjects.filter((project) => project.environmentId === props.environmentId);
   const parentNativeStatus = parentProjection
@@ -326,12 +405,17 @@ export function ThreadRelationshipsPanel(props: {
     { id: "active", label: null, rows: active, expanded: true },
     { id: "previous", label: "Previous agents", rows: previous, expanded: false },
   ];
+  // Tasks running in a linked environment have no thread here; they get their own rows.
+  const remoteSubagents = (projection?.subagents ?? []).filter(
+    (agent): agent is OrchestrationV2Subagent & { remoteChild: OrchestrationV2RemoteTaskChild } =>
+      agent.remoteChild !== undefined,
+  );
   const runningCount =
     (projection?.subagents.filter(
       (agent) => agent.childThreadId === null && agent.status === "running",
     ).length ?? 0) + active.filter(({ edge }) => edge.status === "running").length;
 
-  if (relationshipRows.length === 0 && runningCount === 0) {
+  if (relationshipRows.length === 0 && runningCount === 0 && remoteSubagents.length === 0) {
     return null;
   }
 
@@ -422,6 +506,8 @@ export function ThreadRelationshipsPanel(props: {
     <ThreadDetailsSection
       headingId="thread-details-lineage-heading"
       title={runningCount > 0 ? `Lineage · ${runningCount} running` : "Lineage"}
+      // A lone "Previous agents" row names itself; the heading returns for status or actions.
+      showHeading={runningCount > 0 || canDetach || related.length > 0 || active.length > 0}
       data-thread-relationships-panel
       actions={
         canDetach ? (
@@ -723,6 +809,20 @@ export function ThreadRelationshipsPanel(props: {
           }
         </ThreadLineageGroup>
       ))}
+      {remoteSubagents.length > 0 ? (
+        <ThreadLineageRowList hiddenCount={0} onShowMore={() => {}}>
+          {remoteSubagents.map((agent) => (
+            <RemoteSubagentRow
+              key={agent.id}
+              agent={agent}
+              // Its provider instance belongs to the environment it runs in.
+              provider={providersByEnvironment
+                .get(agent.remoteChild.environmentId)
+                ?.find((entry) => entry.instanceId === agent.providerInstanceId)}
+            />
+          ))}
+        </ThreadLineageRowList>
+      ) : null}
     </ThreadDetailsSection>
   );
 }

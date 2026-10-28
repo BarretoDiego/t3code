@@ -135,6 +135,7 @@ export function AiReviewPanel({
     (tier === "deep" || tier === "exhaustive" || scope === "full-context");
   const ready = run?.stage === "draft";
   const refreshHistory = history.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches review history from the hub when the streamed run reaches a terminal stage for this pull request
   useEffect(() => {
     if (
       update.data?.reference.provider === reference.provider &&

@@ -210,8 +210,10 @@ const make = Effect.gen(function* () {
             ),
             Effect.mapError(() => missing),
           );
-    return Effect.flatMap(resolved, (real) =>
-      real.length > 0 ? Effect.succeed(real) : Effect.fail(missing),
+    return Effect.filterOrFail(
+      resolved,
+      (real) => real.length > 0,
+      () => missing,
     );
   };
 

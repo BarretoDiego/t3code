@@ -67,9 +67,6 @@ export type OrchestratorCliClient = Pick<
   | typeof M.claimsTransfer
 >;
 
-// ---------------------------------------------------------------------------
-// Definition files
-
 const decodeJsonObject = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 );
@@ -142,9 +139,6 @@ const readDefinitionText = Effect.fn("cli.orchestrator.readDefinitionText")(func
     .pipe(Effect.mapError(() => new OrchestratorCliError({ detail: `Cannot read ${file}.` })));
 });
 
-// ---------------------------------------------------------------------------
-// Lookup
-
 /** Finds one orchestrator by id, unique id prefix, or exact name. */
 export const resolveOrchestrator = (
   orchestrators: ReadonlyArray<Orchestrator>,
@@ -197,9 +191,6 @@ export const parseOwner = (
   }
   return fail("--to takes user, thread:<id>, or orchestrator:<id>.");
 };
-
-// ---------------------------------------------------------------------------
-// Formatting
 
 const describeOwner = (owner: ResponsibilityOwner) =>
   owner.kind === "user"
@@ -276,9 +267,6 @@ const formatRequest = (request: PendingRequestSummary) =>
     `thread ${request.threadId}`,
     request.claim === null ? "unclaimed" : `owner ${formatClaim(request.claim)}`,
   ].join("  ");
-
-// ---------------------------------------------------------------------------
-// Operations
 
 const newKey = () => IdempotencyKey.make(NodeCrypto.randomUUID());
 
@@ -438,9 +426,6 @@ export const orchestratorOperations = (client: OrchestratorCliClient) => {
     }),
   };
 };
-
-// ---------------------------------------------------------------------------
-// Commands
 
 const orchestratorArgument = Argument.String("orchestrator").pipe(
   Argument.withDescription("Orchestrator id, unique id prefix, or exact name."),

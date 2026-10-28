@@ -1,5 +1,6 @@
 import { CornerDownRightIcon } from "lucide-react";
 
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolveSubthreadStatusLabel } from "@t3tools/client-runtime/state/models";
 
@@ -34,9 +35,10 @@ export function ThreadSubagentStatus({
 }: {
   readonly thread: Parameters<typeof resolveSubthreadStatusLabel>[0];
 }) {
+  const now = new Date(useNowMinuteMs()).toISOString();
   return (
     <span role="status" className="shrink-0 text-xs text-secondary-label">
-      {resolveSubthreadStatusLabel(thread, new Date().toISOString())}
+      {resolveSubthreadStatusLabel(thread, now)}
     </span>
   );
 }

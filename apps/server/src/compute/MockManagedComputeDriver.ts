@@ -83,7 +83,7 @@ export function makeMockManagedComputeDriver(): ManagedComputeDriver {
             Effect.suspend(() =>
               operations.has(key(`operations/${id}`))
                 ? get(`operations/${id}`)
-                : Effect.succeed(undefined),
+                : Effect.sync(() => undefined),
             ),
           cancel: (id) =>
             Effect.sync(() => {

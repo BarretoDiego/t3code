@@ -138,7 +138,11 @@ export const layer: Layer.Layer<
       const interruptProviderThread = targetsRecordedSession
         ? providerThread
         : { ...providerThread, providerSessionId: input.providerSessionId };
-      if (providerTurn.status !== "running") {
+      const continuingRun =
+        input.operation === "steer" &&
+        context.run?.status === "running" &&
+        context.run.activeAttemptId === providerTurn.runAttemptId;
+      if (providerTurn.status !== "running" && !continuingRun) {
         if (input.operation === "steer") {
           return yield* new ProviderTurnControlError({
             threadId: input.threadId,
@@ -224,16 +228,13 @@ export const layer: Layer.Layer<
                 : { requestedAt: input.subagent.requestedAt }),
             });
           }
-          // A settled turn reaches its adapter too: only the adapter knows
-          // whether it still runs work for the thread, and each one either
-          // stops it or reports there is nothing left to stop.
+          // Settled turns still reach adapters, which alone know whether background work remains.
           yield* session.value.interruptTurn({
             providerThread: loaded.providerThread,
             providerTurnId: loaded.providerTurn.id,
             requestRuntimeRestart: true,
           });
-          // The wait is real time: ingestion runs on other fibers and never
-          // advances a test clock, so a test clock would hold Stop forever.
+          // Use real time; ingestion fibers do not advance TestClock and would leave Stop blocked.
           yield* Effect.gen(function* () {
             const deadline = (yield* Clock.currentTimeMillis) + 2_000;
             while (
@@ -269,9 +270,7 @@ export const layer: Layer.Layer<
         function* (input) {
           const loaded = yield* load({ ...input, operation: "restart" });
           if (Option.isNone(loaded.session)) {
-            // No live adapter: nothing can emit a terminal provider-turn update
-            // from interrupt. Do not poll for projection terminalization or the
-            // restart effect stalls; let detach/start proceed.
+            // Without a live adapter, no terminal event can arrive; proceed to detach/start without polling.
             if (loaded.providerTurn.status === "running") {
               yield* Effect.logWarning(
                 "Provider restart interrupt skipped; no live session for a still-projected running turn",
@@ -307,10 +306,7 @@ export const layer: Layer.Layer<
             ) {
               return;
             }
-            // Provider terminal events are projected on a detached ingestion
-            // fiber. Yield through the Node event loop instead of sleeping on
-            // Effect's clock so deterministic runtimes cannot deadlock a
-            // command that is waiting for that projection.
+            // Yield through Node's event loop; detached ingestion cannot advance a deterministic Effect clock.
             yield* yieldToRuntime;
           }
           return yield* new ProviderTurnControlError({

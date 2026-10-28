@@ -125,8 +125,10 @@ const make = Effect.gen(function* () {
       Effect.mapError(transportError(httpBaseUrl)),
     );
 
-  const exchangePairing: PeerTransport["Service"]["exchangePairing"] = (httpBaseUrl, credential) =>
-    Effect.gen(function* () {
+  const exchangePairing: PeerTransport["Service"]["exchangePairing"] = Effect.fn(
+    "PeerTransport.exchangePairing",
+  )(
+    function* (httpBaseUrl, credential) {
       const http = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: httpBaseUrl });
       const result = yield* http.auth.token({
         headers: {},
@@ -141,11 +143,11 @@ const make = Effect.gen(function* () {
         },
       });
       return result.access_token;
-    }).pipe(
-      provideHttp,
-      // A pairing link that does not grant the federation scope is refused here.
-      Effect.mapError(transportError(httpBaseUrl)),
-    );
+    },
+    provideHttp,
+    // A pairing link that does not grant the federation scope is refused here.
+    (effect, httpBaseUrl) => Effect.mapError(effect, transportError(httpBaseUrl)),
+  );
 
   const open: PeerTransport["Service"]["open"] = (httpBaseUrl, token) =>
     openEnvironmentRpc(httpBaseUrl, token).pipe(

@@ -324,11 +324,12 @@ describe("ResponsibilityService", () => {
           const local = yield* create();
           yield* raise;
           const request = yield* pending;
-          const outcomes = yield* Effect.all(
+          const outcomes = yield* Effect.forEach(
             [
               respond(request, ownerOf(local), { answers: { choice: "orchestrator" } }),
               respond(request, user, { answers: { choice: "user" } }),
-            ].map((attempt) => Effect.result(attempt)),
+            ],
+            (attempt) => Effect.result(attempt),
             { concurrency: 2 },
           );
           assert.strictEqual(outcomes.filter((outcome) => outcome._tag === "Success").length, 1);

@@ -1,10 +1,6 @@
 /**
- * `t3 doctor` - explains why an environment is or is not reachable.
- *
- * It looks at a connection from both ends: what this machine observes from
- * outside (Tailscale path, HTTP, credential, WebSocket) and what the
- * environment's host reports about itself over `server.getNetworkDiagnostics`.
- * The findings and their wording live in `doctorChecks.ts`.
+ * `t3 doctor` explains why an environment is or is not reachable, from both ends: what this machine observes (Tailscale path, HTTP, credential, WebSocket)
+ * and what the host reports via `server.getNetworkDiagnostics`. Findings and wording live in `doctorChecks.ts`.
  */
 import {
   EnvironmentHttpApi,

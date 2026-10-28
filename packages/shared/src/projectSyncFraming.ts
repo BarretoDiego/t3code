@@ -1,33 +1,17 @@
 /**
- * Binary framing for project sync file transfers.
- *
- * Both ends of a project sync transfer are our own code (the sync client
- * streaming a request body, our HTTP handler streaming a response body), so
- * this is a purpose-built framing format rather than a general interchange
- * format. Each record on the wire is:
- *
- *   [ uint32 BE header length ][ UTF-8 JSON header ][ raw content bytes ]
- *
- * `content` is exactly `header.size` bytes, unencoded. Directories and
- * symlinks carry `size: 0` and therefore no content bytes at all. A stream is
- * simply a concatenation of records with no trailing marker; the reader
- * knows it has reached the end when the underlying byte source is exhausted
- * cleanly on a record boundary.
- *
- * @module projectSyncFraming
+ * Binary framing for project sync file transfers. Each record is
+ * [ uint32 BE header length ][ UTF-8 JSON header ][ raw content bytes ], with
+ * `header.size` content bytes (0 for directories and symlinks). A stream is
+ * concatenated records with no trailing marker. @module projectSyncFraming
  */
 import type { ProjectSyncEntryKind } from "@t3tools/contracts";
 
 const HEADER_LENGTH_BYTES = 4;
 
 /**
- * Ceiling on a single record's JSON header.
- *
- * The length prefix is a uint32, so a hostile (or corrupt) stream can claim a
- * 4 GiB header and make the decoder buffer the whole request body waiting for
- * it. Real headers are a path (capped at 1024 characters by the contract)
- * plus a handful of small fields, so anything past 64 KiB is not a header we
- * would ever have written.
+ * Ceiling on a single record's JSON header. The length prefix is a uint32, so a
+ * hostile stream could claim a 4 GiB header and make the decoder buffer the whole
+ * body; real headers are a capped path plus small fields, far under 64 KiB.
  */
 const MAX_HEADER_BYTES = 64 * 1024;
 
@@ -42,14 +26,10 @@ export interface ProjectSyncFrameHeader {
 }
 
 /**
- * Parses and validates one JSON header off the wire.
- *
- * Nothing downstream re-checks these fields: the import route adds
- * `header.size` to the byte budget the signed URL authorized, and the apply
- * pass switches on `header.kind`. A header claiming `size: -1e10` would
- * therefore *credit* the budget and let a token signed for a kilobyte write
- * without bound, and a non-numeric size would turn the content cursor into
- * NaN. So the decoder refuses anything it would not itself have written.
+ * Parses and validates one JSON header off the wire. Nothing downstream
+ * re-checks these fields: a negative `size` would credit the signed URL's byte
+ * budget and a non-numeric one would turn the content cursor into NaN, so refuse
+ * anything the encoder would not have written.
  */
 function parseFrameHeader(json: string): ProjectSyncFrameHeader {
   let parsed: unknown;
@@ -168,14 +148,10 @@ export async function* encodeProjectSyncRecords(
 }
 
 /**
- * Incrementally buffers chunks pulled from an underlying async iterator so
- * callers can ask for "at least N bytes" without caring how the upstream
- * source happened to chunk the data (one byte at a time, one giant buffer,
- * anything in between).
- *
- * Kept as a small chunk queue with an amortized-O(1) `take`/`takeUpTo`
- * instead of repeatedly concatenating into one growing buffer, since project
- * sync payloads can be large and framing is on the hot path of every sync.
+ * Buffers chunks from an underlying async iterator so callers can ask for "at
+ * least N bytes" regardless of upstream chunking. A chunk queue with amortized
+ * O(1) `take`/`takeUpTo` avoids repeated concatenation on the hot path of every
+ * sync.
  */
 class ChunkCursor {
   private readonly source: AsyncIterator<Uint8Array>;
@@ -295,11 +271,9 @@ function createContentIterable(
       return { done: false, value: chunk };
     },
     async return(value?: unknown): Promise<IteratorResult<Uint8Array>> {
-      // `for await...of` calls `return()` when the consumer stops early
-      // (e.g. `break`). The decoder shares one cursor across every record in
-      // the stream, so an early stop must still drain this record's
-      // remaining bytes — otherwise the next record would be parsed starting
-      // from the middle of this one's leftover content.
+      // `for await...of` calls `return()` on early stop. The decoder shares one cursor
+      // across records, so drain this record's remaining bytes or the next record would
+      // parse from the middle of this one's content.
       while (state.consumed < size) {
         const haveByte = await cursor.ensure(1);
         if (!haveByte) break;
@@ -318,13 +292,10 @@ function createContentIterable(
 }
 
 /**
- * Parses a stream of raw chunks (of any, possibly tiny, granularity) into
- * project sync frame records. Yields one `{ header, content }` pair per
- * record; `content` streams exactly `header.size` bytes.
- *
- * Moving to the next record drains unread content to keep the cursor aligned.
- * Stopping the decoder closes its upstream iterator without downloading the
- * remaining transfer, including when parsing or the consumer fails.
+ * Parses raw chunks of any granularity into `{ header, content }` records;
+ * `content` streams exactly `header.size` bytes. Moving to the next record drains
+ * unread content to keep the cursor aligned. Stopping closes the upstream
+ * iterator without downloading the rest, including when parsing or the consumer fails.
  */
 export async function* createProjectSyncFrameDecoder(
   chunks: AsyncIterable<Uint8Array>,

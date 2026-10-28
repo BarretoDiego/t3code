@@ -154,16 +154,18 @@ export const makeEndpointDriver = Effect.gen(function* () {
               capabilities: ollamaCapabilities(show.capabilities),
               capabilitiesKnown: show.capabilities !== undefined,
             })),
-            Effect.catch(() => Effect.succeed({ id, capabilities: [], capabilitiesKnown: false })),
+            Effect.orElseSucceed(() => ({ id, capabilities: [], capabilitiesKnown: false })),
           ),
         { concurrency: 3 },
       );
       return { status: "available" as const, version: version.version, models };
     },
     Effect.timeout("15 seconds"),
-    Effect.catch(() =>
-      Effect.succeed({ status: "unavailable" as const, version: null, models: [] }),
-    ),
+    Effect.orElseSucceed(() => ({
+      status: "unavailable" as const,
+      version: null,
+      models: [],
+    })),
   );
 
   const manageModel: NonNullable<AiRuntimeDriver["manageModel"]> = Effect.fn(

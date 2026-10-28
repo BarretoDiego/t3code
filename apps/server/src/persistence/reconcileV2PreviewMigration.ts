@@ -2,14 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
-// Upstream's published V2 previews recorded `OrchestrationV2` as migration 53,
-// then 54, and upstream main renumbers those ledgers to its own 53–56. This
-// build keeps the fork's durable history for 49–60 (different migrations under
-// the same ids) and records V2 as 61, so renumbering a preview ledger into
-// upstream's ids would collide with fork migrations and replay V2 at 61.
-// Refuse such databases before any migration runs instead of corrupting them.
-// Fork databases never recorded `OrchestrationV2` under 53/54, so this check
-// is a no-op for them.
+// Upstream's V2 previews recorded `OrchestrationV2` as migration 53, then 54, and upstream main renumbers those ledgers to 53-56. This build keeps the fork's history for 49-60
+// (different migrations under the same ids) and records V2 as 61, so renumbering a preview ledger would collide with fork migrations and replay V2 at 61.
+// Refuse such databases before any migration runs instead of corrupting them. Fork databases never recorded `OrchestrationV2` under 53/54, so this is a no-op for them.
 export const reconcileV2PreviewMigration = Effect.fn("reconcileV2PreviewMigration")(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tables = yield* sql`

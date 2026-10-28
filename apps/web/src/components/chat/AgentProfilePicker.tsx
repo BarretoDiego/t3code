@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { CircleAlertIcon, UserCogIcon } from "lucide-react";
 import type { AgentProfile, AgentProfileId, EnvironmentId, MiniSkill } from "@t3tools/contracts";
@@ -44,15 +44,12 @@ function useProfileSelection(props: AgentProfileMenuProps) {
   // A deleted or disabled profile id safely reads as Custom.
   const effectiveValue = selectedProfile?.id ?? "";
 
-  const selectProfile = useCallback(
-    (value: string) => {
-      setSelectedProfileId(
-        props.composerDraftTarget,
-        value === "" ? null : (value as AgentProfileId),
-      );
-    },
-    [props.composerDraftTarget, setSelectedProfileId],
-  );
+  const selectProfile = (value: string) => {
+    setSelectedProfileId(
+      props.composerDraftTarget,
+      value === "" ? null : (value as AgentProfileId),
+    );
+  };
 
   return { enabledProfiles, selectedProfile, effectiveValue, selectProfile, miniSkills };
 }
@@ -198,7 +195,7 @@ function ResolvedProfileSummary(props: {
       ))}
       {resolution.diagnostics.fallbackIndex !== null && resolution.diagnostics.fallbackIndex > 0 ? (
         <div className="max-w-64 text-pretty text-muted-foreground/80 text-xs">
-          Primary model unavailable — using fallback #{resolution.diagnostics.fallbackIndex}.
+          Primary model unavailable, using fallback #{resolution.diagnostics.fallbackIndex}.
         </div>
       ) : null}
     </div>

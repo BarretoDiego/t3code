@@ -4,18 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 /**
- * What hook targets beyond the inbox and CLI consumers this server allows.
- * Both lists are empty unless the operator sets them, so webhooks and commands
- * are off by default and no hook, event or agent can widen them.
- *
- * - `T3CODE_HOOK_WEBHOOK_ORIGINS`: origins a webhook may post to, comma
- *   separated, e.g. `https://hooks.example.com`. The host must resolve to
- *   public addresses.
- * - `T3CODE_HOOK_WEBHOOK_PRIVATE_ORIGINS`: origins allowed even though they
- *   resolve to loopback, link-local or private addresses, e.g.
- *   `http://127.0.0.1:8787`.
- * - `T3CODE_HOOK_COMMANDS`: absolute paths of executables a command hook may
- *   run, comma separated.
+ * Operator allowlists for hook targets beyond the inbox and CLI consumers; empty by default, so no hook, event or agent can widen them.
+ * `T3CODE_HOOK_WEBHOOK_ORIGINS`: comma-separated origins a webhook may post to; the host must resolve to public addresses.
+ * `T3CODE_HOOK_WEBHOOK_PRIVATE_ORIGINS`: origins allowed even when they resolve to loopback, link-local or private addresses.
+ * `T3CODE_HOOK_COMMANDS`: comma-separated absolute paths of executables a command hook may run.
  */
 export class HookTargetPolicy extends Context.Service<
   HookTargetPolicy,

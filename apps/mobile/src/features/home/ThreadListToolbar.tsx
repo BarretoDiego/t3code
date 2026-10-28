@@ -19,7 +19,6 @@ import { WorkspaceListToolbarRow } from "../workspace/WorkspaceListToolbarRow";
 import { useWorkspaceConnectionState } from "../../state/workspace";
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
 
-/** One toolbar height for the compact list and expanded sidebar, including search. */
 export function ThreadListToolbar(props: {
   readonly searchQuery: string;
   readonly onSearchQueryChange: (query: string) => void;
@@ -59,6 +58,7 @@ export function ThreadListToolbar(props: {
     Keyboard.dismiss();
   }, [onSearchQueryChange]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to BackHandler while searching to close search on Android back
   useEffect(() => {
     if (!searching || !listFocused) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {

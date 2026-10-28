@@ -305,8 +305,8 @@ const make = Effect.gen(function* () {
       Effect.catch(storageFailure("get")),
     );
 
-  const insert: PeerStore["Service"]["insert"] = (record) =>
-    Effect.gen(function* () {
+  const insert: PeerStore["Service"]["insert"] = Effect.fn("insert")(
+    function* (record) {
       const detail = yield* encodeDetail(record.detail);
       yield* sql`INSERT INTO automation_peers (
         environment_id, name, enabled, peer_json, inbound_cursor, forwarded_cursor,
@@ -316,7 +316,9 @@ const make = Effect.gen(function* () {
         ${record.environmentId}, ${record.name}, ${record.enabled ? 1 : 0}, ${detail}, 0, 0,
         1, 0, 0, ${record.createdAt}, ${record.createdAt}
       )`;
-    }).pipe(Effect.catch(storageFailure("insert")));
+    },
+    Effect.catch(storageFailure("insert")),
+  );
 
   const update: PeerStore["Service"]["update"] = (environmentId, patch) =>
     sql
@@ -396,8 +398,10 @@ const make = Effect.gen(function* () {
         }),
       )
       .pipe(
-        Effect.catch((cause) =>
-          isAutomationError(cause) ? Effect.fail(cause) : storageFailure("enqueue")(cause),
+        Effect.catchIf(
+          isAutomationError,
+          (cause) => Effect.fail(cause),
+          (cause) => storageFailure("enqueue")(cause),
         ),
       );
 
@@ -585,7 +589,9 @@ const make = Effect.gen(function* () {
     settleInbound,
     takeRejectionsToReport,
     resetUnconfirmedRejections,
-    signal: (signal) => Effect.asVoid(PubSub.publish(signals, signal)),
+    signal: Effect.fn("PeerStore.signal")((signal) =>
+      Effect.asVoid(PubSub.publish(signals, signal)),
+    ),
     signals,
   });
 });

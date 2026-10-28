@@ -31,7 +31,7 @@ export const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   return ThreadExecutionFence.of({
-    assertCanExecute: (threadId) =>
+    assertCanExecute: Effect.fn("ThreadExecutionFence.assertCanExecute")((threadId) =>
       journal.head(threadId).pipe(
         Effect.mapError(unverifiable),
         Effect.flatMap((record) =>
@@ -48,6 +48,7 @@ export const make = Effect.gen(function* () {
               }),
         ),
       ),
+    ),
   });
 });
 

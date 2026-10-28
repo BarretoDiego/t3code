@@ -78,6 +78,11 @@ import Migration0071 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.t
 import Migration0072 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
 import Migration0073 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
 import Migration0074 from "./Migrations/067_WebhookDedupe.ts";
+import Migration0075 from "./Migrations/068_ShellStopRequestIndex.ts";
+import Migration0076 from "./Migrations/069_ThreadMessageSearch.ts";
+import Migration0077 from "./Migrations/070_PeerLinks.ts";
+import Migration0078 from "./Migrations/071_PeerLinkFence.ts";
+import Migration0079 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -147,10 +152,8 @@ const migrationEntries = [
   // history and append upstream's auto-settle switch migration instead.
   [59, "ProjectionThreadsAutoSettleDisabledAt", Migration0059],
   [60, "ProjectionProjectLinkKey", Migration0060],
-  // Upstream published the V2 orchestrator as 55 and its index cleanup as 56;
-  // both ids already belong to fork migrations, so fork databases (at 60)
-  // receive them here. Every upstream migration from 49–54 already ran above
-  // under a fork id (the title-state column as 55's idempotent reconciliation).
+  // Upstream published the V2 orchestrator as 55 and its index cleanup as 56; both ids already belong to fork migrations, so fork databases (at 60) receive them here.
+  // Upstream migrations 49-54 already ran above under fork ids (the title-state column as 55's idempotent reconciliation).
   // Preserve this migration's schema. Future V2 schema changes need new migrations.
   [61, "OrchestrationV2", Migration0061],
   [62, "RemoveRedundantProjectionIndexes", Migration0062],
@@ -169,6 +172,12 @@ const migrationEntries = [
   [72, "CodexUsageNativeTurnIndex", Migration0072],
   [73, "RepairClientSettlementTimestamps", Migration0073],
   [74, "WebhookDedupe", Migration0074],
+  // Upstream published these as 68–72; fork ids through 74 were already taken.
+  [75, "ShellStopRequestIndex", Migration0075],
+  [76, "ThreadMessageSearch", Migration0076],
+  [77, "PeerLinks", Migration0077],
+  [78, "PeerLinkFence", Migration0078],
+  [79, "WaitingLinkRequestIndex", Migration0079],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */
@@ -185,12 +194,7 @@ const makeMigrationLoader = (throughId?: number) =>
     ),
   );
 
-/**
- * Fail before migrating when the migrator would skip one of V2's own
- * migrations. It skips every id up to the highest recorded one, whatever name
- * was recorded, so a database that took a V2 id for another migration would
- * start without V2's schema and fail on first use.
- */
+// Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
 ) {
@@ -262,14 +266,8 @@ export function divergentMigrations(
 }
 
 /**
- * Run all pending migrations.
- *
- * Creates the migrations tracking table (effect_sql_migrations) if it doesn't exist,
- * then runs any migrations with ID greater than the latest recorded migration.
- *
- * Returns array of [id, name] tuples for migrations that were run.
- *
- * @returns Effect containing array of executed migrations
+ * Runs all pending migrations: creates the tracking table (effect_sql_migrations) if missing, then runs migrations with an ID above the latest recorded one.
+ * Returns the [id, name] tuples of the migrations that ran.
  */
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,

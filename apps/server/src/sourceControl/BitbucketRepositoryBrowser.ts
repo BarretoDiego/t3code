@@ -81,7 +81,7 @@ export function makeBitbucketRepositoryBrowser(
       Effect.flatMap((result) =>
         result.truncated
           ? Effect.fail(failure())
-          : Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(result.body).pipe(
+          : Schema.decodeEffect(Schema.fromJsonString(schema))(result.body).pipe(
               Effect.mapError(failure),
             ),
       ),
@@ -104,116 +104,107 @@ export function makeBitbucketRepositoryBrowser(
           }),
         );
   return {
-    listRepositories: (input) =>
-      Effect.gen(function* () {
-        const selectedWorkspace = yield* workspace;
-        const selectedRepository = yield* repository;
-        const path = selectedWorkspace
-          ? `/repositories/${encodeURIComponent(selectedWorkspace)}`
-          : "/repositories?role=member";
-        const page =
-          selectedRepository && selectedWorkspace
-            ? {
-                values: [
-                  yield* json(`${path}/${encodeURIComponent(selectedRepository)}`, Repository),
-                ],
-                next: null,
-              }
-            : yield* json(yield* pagePath(path, input.cursor), pageSchema(Repository));
-        return {
-          items: page.values
-            .filter(
-              (row) =>
-                !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
-            )
-            .map((row) => ({
-              provider: SourceControlProviderKind.make("bitbucket"),
-              nameWithOwner: row.full_name,
-              url: row.links.html.href,
-              sshUrl: row.links.clone.find((link) => link.name === "ssh")?.href ?? "",
-              host: "bitbucket.org",
-              defaultBranch: row.mainbranch?.name ?? null,
-              description: row.description,
-              private: row.is_private,
-            })),
-          nextCursor: page.next ?? null,
-        };
-      }),
-    listRefs: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const page = yield* json(
-          yield* pagePath(
-            `${repositoryPath(input)}/refs/${input.kind === "branch" ? "branches" : "tags"}`,
-            input.cursor,
-          ),
-          pageSchema(GitRef),
-        );
-        return {
-          items: page.values.map((row) => ({
-            name: row.name,
-            sha: row.target.hash,
-            kind: input.kind,
-            author: row.target.author?.raw ?? null,
-            createdAt: row.target.date ?? null,
+    listRepositories: Effect.fn("listRepositories")(function* (input) {
+      const selectedWorkspace = yield* workspace;
+      const selectedRepository = yield* repository;
+      const path = selectedWorkspace
+        ? `/repositories/${encodeURIComponent(selectedWorkspace)}`
+        : "/repositories?role=member";
+      const page =
+        selectedRepository && selectedWorkspace
+          ? {
+              values: [
+                yield* json(`${path}/${encodeURIComponent(selectedRepository)}`, Repository),
+              ],
+              next: null,
+            }
+          : yield* json(yield* pagePath(path, input.cursor), pageSchema(Repository));
+      return {
+        items: page.values
+          .filter(
+            (row) =>
+              !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
+          )
+          .map((row) => ({
+            provider: SourceControlProviderKind.make("bitbucket"),
+            nameWithOwner: row.full_name,
+            url: row.links.html.href,
+            sshUrl: row.links.clone.find((link) => link.name === "ssh")?.href ?? "",
+            host: "bitbucket.org",
+            defaultBranch: row.mainbranch?.name ?? null,
+            description: row.description,
+            private: row.is_private,
           })),
-          nextCursor: page.next ?? null,
-        };
-      }),
-    revisions: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const pr = yield* json(
-          `${repositoryPath(input)}/pullrequests/${input.number}`,
-          PullRequest,
-        );
-        return {
-          baseSha: pr.destination.commit.hash,
-          headSha: pr.source.commit.hash,
-          headRepository: pr.source.repository.full_name,
-        };
-      }),
-    compare: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        // Bitbucket's spec is HEAD..BASE, opposite to git diff BASE HEAD.
-        const result = yield* request(
-          `${repositoryPath(input)}/diff/${encodeURIComponent(input.headSha)}..${encodeURIComponent(input.baseSha)}?topic=${input.mode === "full"}`,
-        );
-        return { patch: result.body, truncated: result.truncated };
-      }),
-    readFile: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const path = yield* Effect.try({
-          try: () => encodeRepositoryFilePath(input.path),
-          catch: failure,
+        nextCursor: page.next ?? null,
+      };
+    }),
+    listRefs: Effect.fn("listRefs")(function* (input) {
+      yield* supported(input);
+      const page = yield* json(
+        yield* pagePath(
+          `${repositoryPath(input)}/refs/${input.kind === "branch" ? "branches" : "tags"}`,
+          input.cursor,
+        ),
+        pageSchema(GitRef),
+      );
+      return {
+        items: page.values.map((row) => ({
+          name: row.name,
+          sha: row.target.hash,
+          kind: input.kind,
+          author: row.target.author?.raw ?? null,
+          createdAt: row.target.date ?? null,
+        })),
+        nextCursor: page.next ?? null,
+      };
+    }),
+    revisions: Effect.fn("revisions")(function* (input) {
+      yield* supported(input);
+      const pr = yield* json(`${repositoryPath(input)}/pullrequests/${input.number}`, PullRequest);
+      return {
+        baseSha: pr.destination.commit.hash,
+        headSha: pr.source.commit.hash,
+        headRepository: pr.source.repository.full_name,
+      };
+    }),
+    compare: Effect.fn("compare")(function* (input) {
+      yield* supported(input);
+      // Bitbucket's spec is HEAD..BASE, opposite to git diff BASE HEAD.
+      const result = yield* request(
+        `${repositoryPath(input)}/diff/${encodeURIComponent(input.headSha)}..${encodeURIComponent(input.baseSha)}?topic=${input.mode === "full"}`,
+      );
+      return { patch: result.body, truncated: result.truncated };
+    }),
+    readFile: Effect.fn("readFile")(function* (input) {
+      yield* supported(input);
+      const path = yield* Effect.try({
+        try: () => encodeRepositoryFilePath(input.path),
+        catch: failure,
+      });
+      const result = yield* bitbucket
+        .request({
+          method: "GET",
+          url: `${repositoryPath(input)}/src/${encodeURIComponent(input.sha)}/${path}`,
+          maxBytes: 64_000,
+        })
+        .pipe(Effect.mapError(failure));
+      if (result.body.includes("\0"))
+        return yield* new SourceControlHubError({
+          message: "Binary file content is omitted from review context.",
         });
-        const result = yield* bitbucket
-          .request({
-            method: "GET",
-            url: `${repositoryPath(input)}/src/${encodeURIComponent(input.sha)}/${path}`,
-            maxBytes: 64_000,
-          })
-          .pipe(Effect.mapError(failure));
-        if (result.body.includes("\0"))
-          return yield* new SourceControlHubError({
-            message: "Binary file content is omitted from review context.",
-          });
-        return { content: result.body, truncated: result.truncated };
-      }),
-    createPullRequest: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const pr = yield* json(`${repositoryPath(input)}/pullrequests`, PullRequest, {
-          title: input.title,
-          description: input.body,
-          source: { branch: { name: input.source } },
-          destination: { branch: { name: input.target } },
-          draft: input.draft,
-          reviewers: input.reviewers.map((uuid) => ({ uuid })),
-        });
-        return { number: pr.id, url: pr.links.html.href, warnings: [] };
-      }),
+      return { content: result.body, truncated: result.truncated };
+    }),
+    createPullRequest: Effect.fn("createPullRequest")(function* (input) {
+      yield* supported(input);
+      const pr = yield* json(`${repositoryPath(input)}/pullrequests`, PullRequest, {
+        title: input.title,
+        description: input.body,
+        source: { branch: { name: input.source } },
+        destination: { branch: { name: input.target } },
+        draft: input.draft,
+        reviewers: input.reviewers.map((uuid) => ({ uuid })),
+      });
+      return { number: pr.id, url: pr.links.html.href, warnings: [] };
+    }),
   };
 }

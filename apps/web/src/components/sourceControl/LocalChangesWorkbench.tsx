@@ -1,5 +1,5 @@
 import { randomUUID } from "../../lib/utils";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   GitBranchIcon,
@@ -111,7 +111,7 @@ function LocalRepositoryChanges({
   message: string;
   setMessage: (message: string) => void;
 }) {
-  const scope = useMemo(() => ({ environmentId, cwd }), [environmentId, cwd]);
+  const scope = { environmentId, cwd };
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
   const diff = useEnvironmentQuery(
     reviewEnvironment.diffPreview({ environmentId, input: { cwd } }),
@@ -127,26 +127,22 @@ function LocalRepositoryChanges({
   const files = status.data?.workingTree.files ?? [];
   const selectedFiles = files.filter((file) => !excluded.includes(file.path));
   const source = diff.data?.sources.find((source) => source.kind === "working-tree");
-  const parsed = useMemo(
-    () => getRenderablePatch(source?.diff, `local:${environmentId}:${cwd}:${source?.diffHash}`),
-    [source?.diff, source?.diffHash, environmentId, cwd],
+  const parsed = getRenderablePatch(
+    source?.diff,
+    `local:${environmentId}:${cwd}:${source?.diffHash}`,
   );
   const diffFiles = parsed?.kind === "files" ? parsed.files : [];
   const selectedPath = files.some((file) => file.path === path) ? path : files[0]?.path;
   const selectedDiff = diffFiles.find((file) => resolveFileDiffPath(file) === selectedPath);
-  const items = useMemo(
-    () =>
-      selectedDiff
-        ? [
-            {
-              id: buildFileDiffRenderKey(selectedDiff),
-              type: "diff" as const,
-              fileDiff: selectedDiff,
-            },
-          ]
-        : [],
-    [selectedDiff],
-  );
+  const items = selectedDiff
+    ? [
+        {
+          id: buildFileDiffRenderKey(selectedDiff),
+          type: "diff" as const,
+          fileDiff: selectedDiff,
+        },
+      ]
+    : [];
   const refresh = async () => {
     await refreshStatus({ environmentId, input: { cwd } });
     status.refresh();

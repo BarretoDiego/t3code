@@ -101,11 +101,8 @@ const threadScope = (threadId: ThreadId, thread: ThreadScope | undefined): Autom
       };
 
 /**
- * Turns committed V2 domain events into the public events the journal keeps.
- * Only facts something can act on are mapped: thread lifecycle and
- * organization, one event per run phase change, and requests opening and
- * closing. Snapshots that repeat a state, and message, node and turn-item
- * deltas, produce nothing.
+ * Turns committed V2 domain events into the public events the journal keeps. Only facts something can act on are mapped: thread lifecycle and organization,
+ * one event per run phase change, and requests opening and closing. Snapshots that repeat a state, and message, node and turn-item deltas, produce nothing.
  */
 export const mapDomainEvents = (
   events: ReadonlyArray<OrchestrationV2DomainEvent>,

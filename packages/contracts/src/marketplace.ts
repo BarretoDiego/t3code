@@ -1,11 +1,8 @@
 /**
- * Open marketplace contracts.
- *
- * A marketplace is a catalog of versioned packages. Package metadata is
- * deliberately generic and package payloads are opaque until a server-side
- * handler for their `type` decodes them. `provider-template` is the first
- * supported type; future skill, tool, and MCP handlers can use the same
- * catalog, source, installation, and RPC lifecycle without changing v1.
+ * Open marketplace contracts: a catalog of versioned packages. Metadata is generic
+ * and payloads are opaque until a server-side handler for their `type` decodes
+ * them. `provider-template` is the first type; future types reuse the same
+ * catalog, source, installation, and RPC lifecycle.
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -341,17 +338,14 @@ export const MarketplaceErrorReason = Schema.Literals([
 ]);
 export type MarketplaceErrorReason = typeof MarketplaceErrorReason.Type;
 
-export class MarketplaceError extends Schema.TaggedError<MarketplaceError>()(
-  "MarketplaceError",
-  {
-    operation: MarketplaceOperation,
-    reason: MarketplaceErrorReason,
-    detail: TrimmedNonEmptyString,
-    sourceId: Schema.optionalKey(MarketplaceId),
-    packageId: Schema.optionalKey(MarketplacePackageId),
-    installationId: Schema.optionalKey(MarketplaceInstallationId),
-  },
-) {
+export class MarketplaceError extends Schema.TaggedError<MarketplaceError>()("MarketplaceError", {
+  operation: MarketplaceOperation,
+  reason: MarketplaceErrorReason,
+  detail: TrimmedNonEmptyString,
+  sourceId: Schema.optionalKey(MarketplaceId),
+  packageId: Schema.optionalKey(MarketplacePackageId),
+  installationId: Schema.optionalKey(MarketplaceInstallationId),
+}) {
   override get message(): string {
     return this.detail;
   }

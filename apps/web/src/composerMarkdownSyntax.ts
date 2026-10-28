@@ -1,13 +1,7 @@
 /**
- * Markdown syntax scanner for the prompt composer.
- *
- * The composer keeps the exact markdown the user typed. This scanner only
- * reports which character ranges deserve paint, so the prompt string, cursor
- * math, drafts, and submission all stay byte-identical to what was typed.
- *
- * It is a highlighter, not a CommonMark parser: staying cheap and stable while
- * a construct is still half-typed matters more here than matching every
- * reference-implementation edge case.
+ * Markdown syntax scanner for the prompt composer. Reports which character ranges deserve paint
+ * so the prompt string, cursor math, and drafts stay byte-identical to what was typed.
+ * A highlighter, not a CommonMark parser: staying cheap and stable on half-typed constructs wins.
  */
 
 export type ComposerMarkdownMark =

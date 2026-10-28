@@ -945,7 +945,7 @@ const make = Effect.gen(function* () {
         ? { ...configRecord, [payload.providerHome!.configField]: providerHome }
         : configRecord;
       const configSchema = driver.configSchema as unknown as Schema.Codec<unknown>;
-      const decodedConfig = yield* Schema.decodeUnknownEffect(configSchema)(configWithHome).pipe(
+      const decodedConfig = yield* Schema.decodeEffect(configSchema)(configWithHome).pipe(
         Effect.mapError((cause) =>
           error({
             operation: "validate",
@@ -1431,122 +1431,123 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const exportProviderTemplate = (input: MarketplaceExportProviderTemplateInput) =>
-    Effect.gen(function* () {
-      const settings = yield* serverSettings.getSettings.pipe(
-        Effect.mapError((cause) =>
-          error({
-            operation: "read-state",
-            reason: "state-failed",
-            detail: `Could not read provider settings: ${errorDetail(cause)}`,
-          }),
-        ),
-      );
-      const instance = settings.providerInstances[input.instanceId];
-      if (!instance) {
-        return yield* error({
-          operation: "export",
-          reason: "instance-not-found",
-          detail: `Provider instance '${input.instanceId}' was not found.`,
-        });
-      }
-      const displayName = instance.displayName?.trim() || String(instance.driver);
-      const packageId = MarketplacePackageId.make(sanitizeMarketplacePackageId(input.instanceId));
-      const environment = instance.environment ?? [];
-      const usedInputIds = new Set<string>();
-      const inputs = environment.map((variable) => {
-        const inputId = nextTemplateInputId(variable.name, usedInputIds);
-        return {
-          id: inputId,
-          label: variable.name,
-          ...(variable.sensitive
-            ? {
-                control: "password",
-                required: true,
-                description: "Secret value; it is never included in an exported template.",
-              }
-            : {
-                control: "text",
-                required: false,
-                ...(variable.value.length > 0 ? { default: variable.value } : {}),
-              }),
-        };
+  const exportProviderTemplate = Effect.fn("exportProviderTemplate")(function* (
+    input: MarketplaceExportProviderTemplateInput,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError((cause) =>
+        error({
+          operation: "read-state",
+          reason: "state-failed",
+          detail: `Could not read provider settings: ${errorDetail(cause)}`,
+        }),
+      ),
+    );
+    const instance = settings.providerInstances[input.instanceId];
+    if (!instance) {
+      return yield* error({
+        operation: "export",
+        reason: "instance-not-found",
+        detail: `Provider instance '${input.instanceId}' was not found.`,
       });
-      const rawConfig =
-        instance.config !== null && typeof instance.config === "object"
-          ? { ...(instance.config as Record<string, unknown>) }
-          : {};
-      // A managed provider home belongs to the source installation and its
-      // files are not portable; exported templates isolate their own home.
-      const hadManagedHome = typeof rawConfig.homePath === "string";
-      delete rawConfig.homePath;
-      const payload = {
-        driver: instance.driver,
-        suggestedInstanceId: `${input.instanceId.slice(0, 56)}_copy`,
-        displayName,
-        ...(instance.accentColor ? { accentColor: instance.accentColor } : {}),
-        ...(instance.icon ? { icon: instance.icon } : {}),
-        inputs,
-        config: rawConfig,
-        environment: environment.map((variable, index) => ({
-          name: variable.name,
-          input: inputs[index]!.id,
-          sensitive: variable.sensitive,
-          required: variable.sensitive,
-        })),
-        ...(hadManagedHome ? { providerHome: { configField: "homePath", files: [] } } : {}),
-      };
-      const permissions = [
-        "provider.configure",
-        ...(environment.length > 0 ? ["provider.environment"] : []),
-        ...(hadManagedHome ? ["provider.files"] : []),
-      ];
-      const manifest = yield* decodePackageManifest({
-        $schema:
-          "https://raw.githubusercontent.com/BarretoDiego/t3code/main/marketplace/schemas/package.schema.json",
-        schemaVersion: 1,
-        id: packageId,
-        type: PROVIDER_TEMPLATE_PACKAGE_TYPE,
-        name: `${displayName} template`,
-        version: "1.0.0",
-        description: `Exported from the '${displayName}' provider instance. Review the generated inputs before publishing.`,
-        permissions,
-        payload,
-      }).pipe(
-        Effect.mapError((cause) =>
-          error({
-            operation: "export",
-            reason: "invalid-manifest",
-            detail: `The exported template is invalid: ${errorDetail(cause)}`,
-          }),
-        ),
-      );
-      yield* validateProviderTemplatePermissions(manifest).pipe(
-        Effect.mapError((cause) =>
-          error({
-            operation: "export",
-            reason: "invalid-manifest",
-            detail: `The exported template is invalid: ${cause.detail}`,
-          }),
-        ),
-      );
-      const manifestJson = yield* Schema.encodeEffect(
-        fromJsonStringPretty(MarketplacePackageManifestSchema),
-      )(manifest).pipe(
-        Effect.mapError((cause) =>
-          error({
-            operation: "export",
-            reason: "invalid-manifest",
-            detail: `The exported template could not be encoded: ${errorDetail(cause)}`,
-          }),
-        ),
-      );
+    }
+    const displayName = instance.displayName?.trim() || String(instance.driver);
+    const packageId = MarketplacePackageId.make(sanitizeMarketplacePackageId(input.instanceId));
+    const environment = instance.environment ?? [];
+    const usedInputIds = new Set<string>();
+    const inputs = environment.map((variable) => {
+      const inputId = nextTemplateInputId(variable.name, usedInputIds);
       return {
-        packageId: manifest.id,
-        fileName: `${manifest.id}.json`,
-        manifestJson: `${manifestJson}\n`,
-      } satisfies MarketplaceExportedTemplate;
+        id: inputId,
+        label: variable.name,
+        ...(variable.sensitive
+          ? {
+              control: "password",
+              required: true,
+              description: "Secret value; it is never included in an exported template.",
+            }
+          : {
+              control: "text",
+              required: false,
+              ...(variable.value.length > 0 ? { default: variable.value } : {}),
+            }),
+      };
     });
+    const rawConfig =
+      instance.config !== null && typeof instance.config === "object"
+        ? { ...(instance.config as Record<string, unknown>) }
+        : {};
+    // A managed provider home belongs to the source installation and its
+    // files are not portable; exported templates isolate their own home.
+    const hadManagedHome = typeof rawConfig.homePath === "string";
+    delete rawConfig.homePath;
+    const payload = {
+      driver: instance.driver,
+      suggestedInstanceId: `${input.instanceId.slice(0, 56)}_copy`,
+      displayName,
+      ...(instance.accentColor ? { accentColor: instance.accentColor } : {}),
+      ...(instance.icon ? { icon: instance.icon } : {}),
+      inputs,
+      config: rawConfig,
+      environment: environment.map((variable, index) => ({
+        name: variable.name,
+        input: inputs[index]!.id,
+        sensitive: variable.sensitive,
+        required: variable.sensitive,
+      })),
+      ...(hadManagedHome ? { providerHome: { configField: "homePath", files: [] } } : {}),
+    };
+    const permissions = [
+      "provider.configure",
+      ...(environment.length > 0 ? ["provider.environment"] : []),
+      ...(hadManagedHome ? ["provider.files"] : []),
+    ];
+    const manifest = yield* decodePackageManifest({
+      $schema:
+        "https://raw.githubusercontent.com/BarretoDiego/t3code/main/marketplace/schemas/package.schema.json",
+      schemaVersion: 1,
+      id: packageId,
+      type: PROVIDER_TEMPLATE_PACKAGE_TYPE,
+      name: `${displayName} template`,
+      version: "1.0.0",
+      description: `Exported from the '${displayName}' provider instance. Review the generated inputs before publishing.`,
+      permissions,
+      payload,
+    }).pipe(
+      Effect.mapError((cause) =>
+        error({
+          operation: "export",
+          reason: "invalid-manifest",
+          detail: `The exported template is invalid: ${errorDetail(cause)}`,
+        }),
+      ),
+    );
+    yield* validateProviderTemplatePermissions(manifest).pipe(
+      Effect.mapError((cause) =>
+        error({
+          operation: "export",
+          reason: "invalid-manifest",
+          detail: `The exported template is invalid: ${cause.detail}`,
+        }),
+      ),
+    );
+    const manifestJson = yield* Schema.encodeEffect(
+      fromJsonStringPretty(MarketplacePackageManifestSchema),
+    )(manifest).pipe(
+      Effect.mapError((cause) =>
+        error({
+          operation: "export",
+          reason: "invalid-manifest",
+          detail: `The exported template could not be encoded: ${errorDetail(cause)}`,
+        }),
+      ),
+    );
+    return {
+      packageId: manifest.id,
+      fileName: `${manifest.id}.json`,
+      manifestJson: `${manifestJson}\n`,
+    } satisfies MarketplaceExportedTemplate;
+  });
 
   return {
     list,

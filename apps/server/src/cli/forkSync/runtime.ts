@@ -118,9 +118,6 @@ export function makeRun(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Child processes
-
 export interface ExecResult {
   /** The exit code; 127 when the command could not be started, 124 when it timed out. */
   readonly code: number;
@@ -218,9 +215,6 @@ export const commandExists = (command: string) =>
     (result) => result.code === 0,
   );
 
-// ---------------------------------------------------------------------------
-// Lock
-
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -262,9 +256,6 @@ export function acquireLock(lockPath: string): boolean {
 export function releaseLock(lockPath: string): void {
   if (lockOwner(lockPath) === process.pid) NodeFS.rmSync(lockPath, { force: true });
 }
-
-// ---------------------------------------------------------------------------
-// State and alerts
 
 export const ForkSyncState = Schema.Struct({
   status: Schema.String,
@@ -339,16 +330,16 @@ export const notifyDone = (run: Run, title: string, body: string) =>
  * night, so a failure only a person can fix must still be there in the
  * morning. `t3 fork status` shows it, and the next good run clears it.
  */
-export const raiseAlert = (run: Run, title: string, body: string) =>
-  Effect.gen(function* () {
-    yield* notify(run, "critical", title, body);
-    yield* Effect.sync(() =>
-      NodeFS.writeFileSync(
-        run.config.alertPath,
-        `${isoNow()}\n${title}\n${body}\n${run.logPath}\n`,
-      ),
-    );
-  });
+export const raiseAlert = Effect.fn("raiseAlert")(function* (
+  run: Run,
+  title: string,
+  body: string,
+) {
+  yield* notify(run, "critical", title, body);
+  yield* Effect.sync(() =>
+    NodeFS.writeFileSync(run.config.alertPath, `${isoNow()}\n${title}\n${body}\n${run.logPath}\n`),
+  );
+});
 
 export const clearAlert = (config: ForkSyncConfig) =>
   Effect.sync(() => NodeFS.rmSync(config.alertPath, { force: true }));

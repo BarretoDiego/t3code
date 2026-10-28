@@ -34,18 +34,18 @@ describe("status CLI output", () => {
       safeToClose: false,
       environments: [{ readiness: "unknown" }],
     });
-  }, 30_000);
+  });
   it("returns a non-zero check with valid JSON, keeping diagnostics on stderr", () => {
     const result = runStatus("--check", "--json");
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ safeToClose: false });
     expect(result.stderr).toContain("Inspect the report before closing");
-  }, 30_000);
+  });
   it("rejects a tight watch loop before opening a connection", () => {
     const result = runStatus("--watch", "0ms");
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("at least 1s");
-  }, 30_000);
+  });
 });

@@ -127,12 +127,8 @@ export function resolveThreadStatus(thread: ThreadStatusInput): ThreadStatus {
 const BUSY_STATUSES: ReadonlySet<ThreadStatus> = new Set(["queued", "starting", "running"]);
 
 /**
- * Whether a waiter can return: the agent stopped or needs a human. When
- * `sentAfter` is given, the thread must first show a user message newer than
- * it (the server's `latestUserMessageAt` read before sending; null when the
- * thread had none), so a wait issued right after a send never returns on the
- * previous turn. Both sides are server timestamps, so client clock skew does
- * not matter.
+ * Whether a waiter can return: the agent stopped or needs a human. With `sentAfter`, the thread must first show a user message newer than it (the server's `latestUserMessageAt`
+ * read before sending; null when the thread had none), so a wait issued right after a send never returns on the previous turn. Both sides are server timestamps, so client clock skew is irrelevant.
  */
 export function isThreadSettledForWait(
   thread: ThreadStatusInput,
@@ -541,11 +537,8 @@ function formatAttention(attention: ReturnType<typeof threadAttention>): Readonl
 }
 
 /**
- * The request a response is for. An explicit id (or unique prefix) may name a
- * request in any state: the server decides whether it can still be answered,
- * so a retry with the same idempotency key reaches its stored result. Without
- * an id there must be exactly one pending request of the kind; more than one
- * is refused instead of answering the oldest.
+ * The request a response is for. An explicit id (or unique prefix) may name a request in any state: the server decides whether it can still be answered,
+ * so a retry with the same idempotency key reaches its stored result. Without an id there must be exactly one pending request of the kind; more than one is refused, never the oldest answered.
  */
 const selectRequest = Effect.fn("cli.thread.selectRequest")(function* (
   projection: OrchestrationV2ThreadProjection,
@@ -1703,7 +1696,7 @@ const deleteCommand = Command.make("delete", mutationFlags).pipe(
         if (resolved._tag === "Failure") {
           // A repeat of a delete that already happened: the thread is gone, so
           // only its full id and key can reach the stored result.
-          if (Option.isNone(flags.idempotencyKey)) return yield* Effect.fail(resolved.failure);
+          if (Option.isNone(flags.idempotencyKey)) return yield* resolved.failure;
           const threadId = ThreadId.make(flags.thread.trim());
           return yield* runMutation(client, {
             operation: "thread.delete",

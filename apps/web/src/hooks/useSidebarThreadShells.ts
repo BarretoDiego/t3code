@@ -8,7 +8,7 @@ import type {
   OrchestrationV2ThreadShell,
   ScopedProjectRef,
 } from "@t3tools/contracts";
-import { useMemo } from "react";
+
 import { useClientSettings } from "./useSettings";
 import { useEnvironments } from "../state/environments";
 import { useThreadShells, useThreadShellsForProjectRefs } from "../state/entities";
@@ -23,15 +23,11 @@ const archivedPresentations = new WeakMap<
 export function useSidebarArchives() {
   const enabled = useClientSettings((settings) => settings.sidebarShowAllSubthreads);
   const { environments } = useEnvironments();
-  const ids = useMemo(
-    () =>
-      enabled
-        ? environments
-            .filter((environment) => environment.entry.enabled)
-            .map((environment) => environment.environmentId)
-        : [],
-    [enabled, environments],
-  );
+  const ids = enabled
+    ? environments
+        .filter((environment) => environment.entry.enabled)
+        .map((environment) => environment.environmentId)
+    : [];
   return useSidebarArchivedThreadSnapshots(ids);
 }
 
@@ -40,7 +36,7 @@ export function useSidebarThreadShells(refs?: ReadonlyArray<ScopedProjectRef>) {
   const live = useThreadShells(refs === undefined);
   const scopedLive = useThreadShellsForProjectRefs(refs ?? NO_PROJECT_REFS);
   const archives = useSidebarArchives();
-  return useMemo(() => {
+  return (() => {
     const threads = refs === undefined ? live : scopedLive;
     const archived = archives.snapshots.flatMap(({ environmentId, snapshot }) =>
       snapshot.threads.map((shell) => {
@@ -67,5 +63,5 @@ export function useSidebarThreadShells(refs?: ReadonlyArray<ScopedProjectRef>) {
               ref.environmentId === thread.environmentId && ref.projectId === thread.projectId,
           ),
         );
-  }, [live, scopedLive, refs, archives.snapshots]);
+  })();
 }

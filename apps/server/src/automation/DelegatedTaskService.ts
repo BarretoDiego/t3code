@@ -63,10 +63,12 @@ export const layerFromEngine = Layer.effect(
     const engine = yield* TaskEngine.DelegatedTaskEngine;
     return DelegatedTaskService.of({
       delegate: engine.delegate,
-      get: (_caller, taskId) => engine.get(taskId),
-      list: (_caller, input) => engine.list(input),
+      get: Effect.fn("DelegatedTaskService.get")((_caller, taskId) => engine.get(taskId)),
+      list: Effect.fn("DelegatedTaskService.list")((_caller, input) => engine.list(input)),
       update: engine.update,
-      threadTree: (_caller, threadId) => engine.threadTree(threadId),
+      threadTree: Effect.fn("DelegatedTaskService.threadTree")((_caller, threadId) =>
+        engine.threadTree(threadId),
+      ),
       acceptRemote: engine.acceptRemote,
       applyRemoteStatus: engine.applyRemoteStatus,
     });

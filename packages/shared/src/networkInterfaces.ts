@@ -14,7 +14,7 @@ export const isTailscaleNetworkInterface = (
 
 // Host bridges such as br0 and Proxmox's vmbr0 carry the real LAN address.
 const VIRTUAL_INTERFACE =
-  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet \((?:WSL|Default Switch)|podman|cni|flannel|cali|lxcbr|lxdbr|bridge1\d\d)/;
+  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet \((?:WSL|Default Switch)|podman|cni|flannel|cali|lxcbr|lxdbr|bridge[1-9]\d\d)/;
 const TUNNEL_INTERFACE = /^(utun|tun|tap|ipsec|ppp|wg)\d*$|(?:^|[-_])(tun|tap)\d*$/i;
 
 /**

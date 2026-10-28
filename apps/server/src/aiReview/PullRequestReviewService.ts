@@ -467,7 +467,7 @@ export const make = Effect.gen(function* () {
   return PullRequestReviewService.of({
     history,
     changes: Stream.fromPubSub(changes),
-    start: (input) =>
+    start: Effect.fn("PullRequestReviewService.start")((input) =>
       gate
         .withPermit(
           Effect.gen(function* () {
@@ -501,25 +501,25 @@ export const make = Effect.gen(function* () {
           }),
         )
         .pipe(Effect.mapError(failure)),
-    cancel: (id) =>
-      Effect.gen(function* () {
-        const fiber = active.get(id);
-        if (!fiber) return;
-        const before = yield* read(id);
-        if (finished(before)) {
-          yield* Fiber.await(fiber);
-          return;
-        }
-        yield* Fiber.interrupt(fiber);
-        const after = yield* read(id);
-        if (!finished(after))
-          yield* write({
-            ...after,
-            stage: "cancelled",
-            progress: "Review cancelled. Nothing has been published.",
-          });
-      }),
-    edit: (input) =>
+    ),
+    cancel: Effect.fn("PullRequestReviewService.cancel")(function* (id) {
+      const fiber = active.get(id);
+      if (!fiber) return;
+      const before = yield* read(id);
+      if (finished(before)) {
+        yield* Fiber.await(fiber);
+        return;
+      }
+      yield* Fiber.interrupt(fiber);
+      const after = yield* read(id);
+      if (!finished(after))
+        yield* write({
+          ...after,
+          stage: "cancelled",
+          progress: "Review cancelled. Nothing has been published.",
+        });
+    }),
+    edit: Effect.fn("PullRequestReviewService.edit")((input) =>
       gate.withPermit(
         Effect.gen(function* () {
           const run = yield* read(input.id);
@@ -534,7 +534,8 @@ export const make = Effect.gen(function* () {
           });
         }),
       ),
-    publish: (input) =>
+    ),
+    publish: Effect.fn("PullRequestReviewService.publish")((input) =>
       gate.withPermit(
         Effect.gen(function* () {
           const run = yield* read(input.id);
@@ -621,6 +622,7 @@ export const make = Effect.gen(function* () {
           });
         }),
       ),
+    ),
   });
 });
 export const layer = Layer.effect(PullRequestReviewService, make);

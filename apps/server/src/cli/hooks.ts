@@ -155,9 +155,6 @@ const printHook = (hook: Hook, json: boolean, headline?: string) =>
         [...(headline === undefined ? [] : [headline, ""]), formatHookDetail(hook)].join("\n"),
       );
 
-// ---------------------------------------------------------------------------
-// Commands
-
 const addCommand = Command.make("add", {
   ...environmentTargetFlags,
   file: bodyFileFlag,

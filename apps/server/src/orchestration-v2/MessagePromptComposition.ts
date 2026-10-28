@@ -21,12 +21,8 @@ export interface ComposedMessagePrompt {
 
 /**
  * Composes mini skills and the agent profile around one user message.
- *
- * Thread skills are passed only for the thread's first user turn: provider
- * sessions carry context forward, so re-injecting them would repeat the block
- * on every message. Request skills resolve against the current library;
- * unknown ids are skipped. Returns null when nothing applies, so callers send
- * the message unchanged.
+ * Thread skills apply only to the thread's first user turn: provider sessions carry context forward, so re-injecting would repeat the block every message.
+ * Request skills resolve against the current library; unknown ids are skipped. Returns null when nothing applies, so callers send the message unchanged.
  */
 export function composeMessagePrompt(input: {
   readonly text: string;
@@ -81,10 +77,10 @@ export function composeMessagePrompt(input: {
  * never rewrite existing threads. A settings read failure degrades to no
  * skills rather than failing thread creation.
  */
-export const defaultThreadMiniSkills = (
-  settings: ServerSettingsService.ServerSettingsService["Service"],
-): Effect.Effect<ReadonlyArray<ThreadMiniSkillSnapshot>> =>
-  Effect.gen(function* () {
+export const defaultThreadMiniSkills = Effect.fn(
+  "MessagePromptComposition.defaultThreadMiniSkills",
+)(
+  function* (settings: ServerSettingsService.ServerSettingsService["Service"]) {
     const current = yield* settings.getSettings;
     const defaults = current.miniSkills.filter((skill) => skill.enabledByDefaultForNewThreads);
     if (defaults.length === 0) return [];
@@ -95,10 +91,10 @@ export const defaultThreadMiniSkills = (
       content: skill.content,
       appliedAt,
     }));
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("failed to resolve default mini skills for new thread", {
-        cause: Cause.pretty(cause),
-      }).pipe(Effect.as([] as ReadonlyArray<ThreadMiniSkillSnapshot>)),
-    ),
-  );
+  },
+  Effect.catchCause((cause) =>
+    Effect.logWarning("failed to resolve default mini skills for new thread", {
+      cause: Cause.pretty(cause),
+    }).pipe(Effect.as([] as ReadonlyArray<ThreadMiniSkillSnapshot>)),
+  ),
+);

@@ -5,6 +5,7 @@ import {
   localSnoozeTime,
   resolveCustomSnooze,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { create } from "zustand";
 import { Button } from "../ui/button";
 import { Calendar } from "../ui/calendar";
@@ -58,6 +59,7 @@ function finish(choice: ScheduleSendChoice | null) {
 
 export function ScheduleSendDialogHost() {
   const request = useRequest((state) => state.request);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resolves the pending schedule-send promise with null if the host unmounts while a request is open
   useEffect(() => () => finish(null), []);
   return request ? <ScheduleSendDialog initialSendAt={request.initialSendAt} /> : null;
 }
@@ -70,6 +72,7 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
   });
   const [date, setDate] = useState(initial);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const todayStart = new Date(useNowMinuteMs()).setHours(0, 0, 0, 0);
   const [time, setTime] = useState(localSnoozeTime(initial));
   const [error, setError] = useState<string | null>(null);
   return (
@@ -146,7 +149,7 @@ function ScheduleSendDialog({ initialSendAt }: { initialSendAt: string | null })
                       required
                       selected={date}
                       defaultMonth={date}
-                      disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
+                      disabled={{ before: new Date(todayStart) }}
                       onSelect={(selected) => {
                         setDate(selected);
                         setCalendarOpen(false);

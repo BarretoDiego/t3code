@@ -15,7 +15,6 @@ import {
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
 import { findComposerCodeBlocks } from "./composerCodeBlocks";
-import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
@@ -351,8 +350,8 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     };
   }
   // "#profile-slug" only triggers at the very start of the message, and only
-  // with a letter after '#': issue references like "Fix #123" and mid-text
-  // hashtags never open the profile menu.
+  // with a letter after '#': numeric references and mid-text hashtags never
+  // open the profile menu.
   if (tokenStart === 0 && /^#(?:[a-z][a-z0-9-]*)?$/i.test(token)) {
     return {
       kind: "profile",

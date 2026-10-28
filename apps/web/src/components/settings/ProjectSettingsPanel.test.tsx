@@ -59,6 +59,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("~/connection/runtime", () => ({ connectionAtomRuntime: undefined }));
+vi.mock("~/state/olderSettledShelf", () => ({ readUnloadedThreadCount: () => 0 }));
 vi.mock("@t3tools/client-runtime/state/session", () => ({
   createEnvironmentSessionAtoms: () => ({
     sessionStateAtom: (id: EnvironmentId) => state.sessions.get(id)!,
@@ -242,6 +243,7 @@ function deferred<T>() {
 let renderer: ReactTestRenderer | undefined;
 
 beforeEach(() => {
+  // oxlint-disable-next-line t3code/require-disposable-render -- react-test-renderer unit test; the render helper needs the browser project, which cannot mount a test renderer tree
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   state.registry = AtomRegistry.make();

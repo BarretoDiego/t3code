@@ -273,7 +273,7 @@ export type StatusReport = ReturnType<typeof buildStatusReport>;
 
 export function formatStatusReport(report: StatusReport): string {
   const lines = [
-    `${report.environment} — ${report.readiness.toUpperCase()} — ${report.at}`,
+    `${report.environment} - ${report.readiness.toUpperCase()} - ${report.at}`,
     report.safeToClose
       ? "No work observed. Ready to close at this snapshot."
       : "Do not close: work is active or readiness could not be confirmed.",
@@ -285,7 +285,7 @@ export function formatStatusReport(report: StatusReport): string {
   for (const thread of report.threads) {
     lines.push(
       "",
-      `Thread ${thread.id} — ${thread.status}${thread.archived ? " (archived)" : ""}`,
+      `Thread ${thread.id}: ${thread.status}${thread.archived ? " (archived)" : ""}`,
       `  ${thread.title}`,
       `  Project: ${thread.project ?? thread.projectId}`,
       `  Workspace: ${thread.worktreePath ?? thread.workspaceRoot ?? "unknown"}`,
@@ -307,29 +307,29 @@ export function formatStatusReport(report: StatusReport): string {
   for (const terminal of report.terminals)
     lines.push(
       "",
-      `Terminal ${terminal.terminalId} — ${terminal.busy ? "BUSY" : terminal.status} — PID ${terminal.pid ?? "none"}`,
+      `Terminal ${terminal.terminalId} - ${terminal.busy ? "BUSY" : terminal.status} - PID ${terminal.pid ?? "none"}`,
       `  Thread: ${terminal.threadId}; command: ${terminal.label}`,
       `  Workspace: ${terminal.cwd}; updated: ${terminal.updatedAt}`,
     );
   for (const task of report.scheduledTasks)
     lines.push(
       "",
-      `Scheduled task ${task.id}: ${task.title} — running since ${task.startedAt ?? "unknown"}; thread ${task.threadId ?? "new thread"}`,
+      `Scheduled task ${task.id}: ${task.title} - running since ${task.startedAt ?? "unknown"}; thread ${task.threadId ?? "new thread"}`,
     );
   for (const job of report.jobs)
     lines.push(
       "",
-      `Job ${job.id}: ${job.operation} — ${job.status}; provider ${job.providerId}; progress ${job.progress ?? "unknown"}; thread ${job.threadId ?? "none"}`,
+      `Job ${job.id}: ${job.operation} - ${job.status}; provider ${job.providerId}; progress ${job.progress ?? "unknown"}; thread ${job.threadId ?? "none"}`,
     );
   for (const work of report.serverWork)
     lines.push(
       "",
-      `Server work ${work.id}: ${work.type} — ${work.status}; thread ${work.threadId}; updated ${work.updatedAt}${work.lastError ? `; last error: ${work.lastError}` : ""}`,
+      `Server work ${work.id}: ${work.type} - ${work.status}; thread ${work.threadId}; updated ${work.updatedAt}${work.lastError ? `; last error: ${work.lastError}` : ""}`,
     );
   for (const process of report.processes)
     lines.push(
       "",
-      `Process ${process.pid} (${process.category}, parent ${process.ppid}) — ${process.status}${process.idleShell ? ", idle shell" : ""}`,
+      `Process ${process.pid} (${process.category}, parent ${process.ppid}) - ${process.status}${process.idleShell ? ", idle shell" : ""}`,
       `  ${process.command}`,
       `  CPU ${process.cpuPercent.toFixed(1)}%; memory ${Math.round(process.residentBytes / 1024 / 1024)} MiB; elapsed ${Math.round(process.elapsedMs / 1000)}s; children ${process.childPids.join(", ") || "none"}`,
     );

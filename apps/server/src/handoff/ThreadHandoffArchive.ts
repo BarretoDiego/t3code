@@ -84,15 +84,10 @@ export function latestThreadConfiguration(events: readonly OrchestrationV2Domain
 }
 
 /**
- * History is replayed only into the destination's event store and projection,
- * never into provider reactors. IDs visible in the conversation (messages,
- * runs, turn items, checkpoints) survive; event IDs get an import namespace.
- *
- * Native transfers retarget the source provider instance to the destination
- * one, so the next run resumes the transferred native session. Context
- * transfers keep historical runs on the source instance (renamed when the
- * destination reuses its id), so the next run is a provider switch and the
- * orchestrator hands the conversation to a new native session.
+ * History is replayed only into the destination's event store and projection, never provider reactors. Conversation-visible IDs survive; event IDs get an import namespace.
+ * Native transfers retarget the source provider instance to the destination one, so the next run resumes the transferred native session.
+ * Context transfers keep historical runs on the source instance (renamed when the destination reuses its id), so the next run is a provider switch
+ * and the orchestrator hands the conversation to a new native session.
  */
 export function remapThreadHandoffEvents(input: {
   readonly handoffId: ThreadHandoffId;

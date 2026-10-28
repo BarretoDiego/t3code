@@ -72,41 +72,40 @@ export const make = Effect.gen(function* () {
           }),
         );
   };
-  const request = <A>(
+  const request = Effect.fn("request")(function* <A>(
     input: Pick<RemotePullRequestRef, "provider" | "host">,
     effect: Effect.Effect<A, PullRequestProviderError>,
-  ) =>
-    Effect.gen(function* () {
-      const lease = yield* limits.check(input).pipe(
-        Effect.mapError(
-          () =>
-            new SourceControlHubError({
-              message: "Source control rate limit reached. Retry after the provider limit resets.",
-            }),
-        ),
-      );
-      return yield* effect.pipe(
-        Effect.tap(() => limits.recordSuccess({ ...input, lease })),
-        Effect.catch((error) =>
-          Effect.gen(function* () {
-            if (error.reason === "rate-limited")
-              yield* limits.recordRateLimit({
-                ...input,
-                lease,
-                ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
-              });
-            return yield* new SourceControlHubError({
-              message:
-                error.reason === "unauthenticated"
-                  ? "Authentication required. Manage this account in Settings → Source Control."
-                  : error.reason === "rate-limited"
-                    ? "Source control rate limit reached. Please retry later."
-                    : "The source control operation failed. Check repository permissions and refresh.",
-            });
+  ) {
+    const lease = yield* limits.check(input).pipe(
+      Effect.mapError(
+        () =>
+          new SourceControlHubError({
+            message: "Source control rate limit reached. Retry after the provider limit resets.",
           }),
-        ),
-      );
-    });
+      ),
+    );
+    return yield* effect.pipe(
+      Effect.tap(() => limits.recordSuccess({ ...input, lease })),
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          if (error.reason === "rate-limited")
+            yield* limits.recordRateLimit({
+              ...input,
+              lease,
+              ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+            });
+          return yield* new SourceControlHubError({
+            message:
+              error.reason === "unauthenticated"
+                ? "Authentication required. Manage this account in Settings → Source Control."
+                : error.reason === "rate-limited"
+                  ? "Source control rate limit reached. Please retry later."
+                  : "The source control operation failed. Check repository permissions and refresh.",
+          });
+        }),
+      ),
+    );
+  });
   const listUncached = Effect.fn(function* (
     input: RemotePullRequestListInput,
   ): Effect.fn.Return<RemotePullRequestPage, SourceControlHubError> {
@@ -178,7 +177,7 @@ export const make = Effect.gen(function* () {
   ) =>
     Cache.makeWith(
       (key: string) =>
-        Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(key).pipe(
+        Schema.decodeEffect(Schema.fromJsonString(schema))(key).pipe(
           Effect.mapError(
             () => new SourceControlHubError({ message: "Invalid source control request." }),
           ),
@@ -228,10 +227,18 @@ export const make = Effect.gen(function* () {
       });
   });
   return RemotePullRequestService.of({
-    list: (input) => Cache.get(listings, JSON.stringify(input)),
-    detail: (input) => Cache.get(details, JSON.stringify(input)),
-    activity: (input) => Cache.get(activities, JSON.stringify(input)),
-    diff: (input) => Cache.get(diffs, JSON.stringify(input)),
+    list: Effect.fn("RemotePullRequestService.list")((input) =>
+      Cache.get(listings, JSON.stringify(input)),
+    ),
+    detail: Effect.fn("RemotePullRequestService.detail")((input) =>
+      Cache.get(details, JSON.stringify(input)),
+    ),
+    activity: Effect.fn("RemotePullRequestService.activity")((input) =>
+      Cache.get(activities, JSON.stringify(input)),
+    ),
+    diff: Effect.fn("RemotePullRequestService.diff")((input) =>
+      Cache.get(diffs, JSON.stringify(input)),
+    ),
     refresh,
     review: Effect.fn(function* (input) {
       const api = yield* resolve(input);

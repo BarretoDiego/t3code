@@ -30,11 +30,8 @@ export class UnknownCommandError extends Schema.TaggedError<UnknownCommandError>
 }
 
 /**
- * The server commands take an optional working directory, so a mistyped or
- * unsupported subcommand (`t3 threads`) would otherwise start the server in a
- * freshly created folder of that name. A bare word that is not an existing
- * directory is treated as an unknown command instead; explicit paths
- * (`./name`, `~/name`, `/abs`) keep creating the folder.
+ * Server commands take an optional working directory, so a mistyped subcommand (`t3 threads`) would otherwise start the server in a new folder of that name.
+ * A bare word that is not an existing directory is treated as an unknown command; explicit paths (`./name`, `~/name`, `/abs`) keep creating the folder.
  */
 export const rejectUnknownCommand = Effect.fn("cli.rejectUnknownCommand")(function* (
   cwd: Option.Option<string>,

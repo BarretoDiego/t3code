@@ -170,16 +170,15 @@ const make = Effect.gen(function* () {
     (operation: string) =>
     <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, AutomationError, R> =>
       effect.pipe(
-        Effect.catch((cause) =>
-          isAutomationError(cause)
-            ? Effect.fail(cause)
-            : Effect.logError("Job storage failed", { operation, cause }).pipe(
-                Effect.andThen(
-                  Effect.fail(
-                    automationError("INTERNAL", `Job storage failed during ${operation}.`),
-                  ),
-                ),
+        Effect.catchIf(
+          isAutomationError,
+          (cause) => Effect.fail(cause),
+          (cause) =>
+            Effect.logError("Job storage failed", { operation, cause }).pipe(
+              Effect.andThen(
+                Effect.fail(automationError("INTERNAL", `Job storage failed during ${operation}.`)),
               ),
+            ),
         ),
       );
 
@@ -189,21 +188,20 @@ const make = Effect.gen(function* () {
    * A job an orchestrator's agent may steer: one that orchestrator requested,
    * on a node it may use. Any other caller passes untouched.
    */
-  const requireOwnJob = (caller: AutomationCaller, job: Job) =>
-    Effect.gen(function* () {
-      if (caller.kind !== "orchestrator") return;
-      yield* access.authorize(caller, "job.run", { nodeId: job.nodeId });
-      if (
-        job.requestedBy.kind !== "orchestrator" ||
-        job.requestedBy.orchestratorId !== caller.orchestratorId
-      ) {
-        return yield* automationError(
-          "PERMISSION_DENIED",
-          `Job ${job.id} was not requested by orchestrator ${caller.orchestratorId}.`,
-          { jobId: job.id },
-        );
-      }
-    });
+  const requireOwnJob = Effect.fn("requireOwnJob")(function* (caller: AutomationCaller, job: Job) {
+    if (caller.kind !== "orchestrator") return;
+    yield* access.authorize(caller, "job.run", { nodeId: job.nodeId });
+    if (
+      job.requestedBy.kind !== "orchestrator" ||
+      job.requestedBy.orchestratorId !== caller.orchestratorId
+    ) {
+      return yield* automationError(
+        "PERMISSION_DENIED",
+        `Job ${job.id} was not requested by orchestrator ${caller.orchestratorId}.`,
+        { jobId: job.id },
+      );
+    }
+  });
 
   const requireOperator = (caller: AutomationCaller) =>
     caller.kind === "peer"
@@ -214,9 +212,6 @@ const make = Effect.gen(function* () {
           ),
         )
       : Effect.void;
-
-  // -------------------------------------------------------------------------
-  // Nodes
 
   const localNode = Effect.fn("JobService.localNode")(function* () {
     const now = yield* nowIso;
@@ -242,14 +237,13 @@ const make = Effect.gen(function* () {
     } satisfies ExecutionNode;
   });
 
-  const writeNode = (node: ExecutionNode) =>
-    Effect.gen(function* () {
-      const json = yield* encodeNode(node);
-      yield* sql`INSERT INTO automation_nodes (node_id, enabled, node_json, created_at, updated_at)
+  const writeNode = Effect.fn("writeNode")(function* (node: ExecutionNode) {
+    const json = yield* encodeNode(node);
+    yield* sql`INSERT INTO automation_nodes (node_id, enabled, node_json, created_at, updated_at)
         VALUES (${node.id}, ${node.enabled ? 1 : 0}, ${json}, ${node.createdAt}, ${node.updatedAt})
         ON CONFLICT (node_id) DO UPDATE SET
           enabled = excluded.enabled, node_json = excluded.node_json, updated_at = excluded.updated_at`;
-    });
+  });
 
   const loadNodes = Effect.gen(function* () {
     const rows = yield* sql<{ node_json: string }>`SELECT node_json FROM automation_nodes
@@ -421,9 +415,6 @@ const make = Effect.gen(function* () {
     },
   );
 
-  // -------------------------------------------------------------------------
-  // Job storage
-
   const overlay = (job: Job): Job => {
     const state = live.get(job.id);
     return state === undefined
@@ -431,16 +422,15 @@ const make = Effect.gen(function* () {
       : { ...job, logBytes: state.logBytes, logTruncated: state.logTruncated };
   };
 
-  const readRow = (jobId: JobId) =>
-    Effect.gen(function* () {
-      const rows = yield* sql<JobRow>`SELECT job_json, executor_ref, log_path
+  const readRow = Effect.fn("readRow")(function* (jobId: JobId) {
+    const rows = yield* sql<JobRow>`SELECT job_json, executor_ref, log_path
         FROM automation_jobs WHERE job_id = ${jobId}`;
-      const row = rows[0];
-      if (row === undefined) {
-        return yield* automationError("NOT_FOUND", `No job ${jobId}.`, { jobId });
-      }
-      return { job: yield* decodeJob(row.job_json), row };
-    });
+    const row = rows[0];
+    if (row === undefined) {
+      return yield* automationError("NOT_FOUND", `No job ${jobId}.`, { jobId });
+    }
+    return { job: yield* decodeJob(row.job_json), row };
+  });
 
   const readJob = (jobId: JobId) =>
     readRow(jobId).pipe(
@@ -511,9 +501,6 @@ const make = Effect.gen(function* () {
         ),
         Effect.map((result) => result.job),
       );
-
-  // -------------------------------------------------------------------------
-  // Running
 
   const logPathFor = (jobId: JobId) =>
     path.join(
@@ -658,14 +645,10 @@ const make = Effect.gen(function* () {
       Effect.ensuring(Effect.sync(() => live.delete(jobId))),
     );
 
-  const handOff = (jobId: JobId, node: ExecutionNode) =>
-    Effect.gen(function* () {
-      live.set(jobId, { cancel: yield* Deferred.make<void>(), logBytes: 0, logTruncated: false });
-      yield* Effect.forkIn(runJob(jobId, node), scope);
-    });
-
-  // -------------------------------------------------------------------------
-  // Submitting
+  const handOff = Effect.fn("handOff")(function* (jobId: JobId, node: ExecutionNode) {
+    live.set(jobId, { cancel: yield* Deferred.make<void>(), logBytes: 0, logTruncated: false });
+    yield* Effect.forkIn(runJob(jobId, node), scope);
+  });
 
   const within = (root: string, candidate: string, separator: string) =>
     candidate === root ||
@@ -890,34 +873,37 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const markUnknown = (jobId: JobId, node: ExecutionNode | undefined, ref: string | null) =>
-    Effect.gen(function* () {
-      const seen =
-        node === undefined || ref === null || ref === HANDOFF_REF
-          ? ("unverifiable" as const)
-          : yield* executor.inspect(node, ref);
-      const reason =
-        seen === "running"
-          ? "Its process is still running without a supervisor, so its exit cannot be recorded."
-          : seen === "gone"
-            ? "Its process is gone and its exit was never recorded."
-            : "Whether its process ran, or still runs, cannot be established.";
-      const job = yield* transition(
-        jobId,
-        (current) =>
-          isTerminal(current.status)
+  const markUnknown = Effect.fn("markUnknown")(function* (
+    jobId: JobId,
+    node: ExecutionNode | undefined,
+    ref: string | null,
+  ) {
+    const seen =
+      node === undefined || ref === null || ref === HANDOFF_REF
+        ? ("unverifiable" as const)
+        : yield* executor.inspect(node, ref);
+    const reason =
+      seen === "running"
+        ? "Its process is still running without a supervisor, so its exit cannot be recorded."
+        : seen === "gone"
+          ? "Its process is gone and its exit was never recorded."
+          : "Whether its process ran, or still runs, cannot be established.";
+    const job = yield* transition(
+      jobId,
+      (current) =>
+        isTerminal(current.status)
+          ? null
+          : current.status === "unknown" && current.statusReason?.endsWith(reason) === true
             ? null
-            : current.status === "unknown" && current.statusReason?.endsWith(reason) === true
-              ? null
-              : {
-                  ...current,
-                  status: "unknown",
-                  statusReason: `The server restarted while this job was in flight. ${reason}`,
-                },
-        { event: "job.unknown" },
-      );
-      return { job, seen };
-    });
+            : {
+                ...current,
+                status: "unknown",
+                statusReason: `The server restarted while this job was in flight. ${reason}`,
+              },
+      { event: "job.unknown" },
+    );
+    return { job, seen };
+  });
 
   const reconcile: JobService["Service"]["reconcile"] = Effect.fn("JobService.reconcile")(
     function* (caller, jobId) {
@@ -1011,8 +997,8 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const start: JobRecovery["Service"]["start"] = () =>
-    Effect.gen(function* () {
+  const start: JobRecovery["Service"]["start"] = Effect.fn("start")(
+    function* () {
       const rows = yield* sql<
         JobRow & { job_id: string }
       >`SELECT job_id, job_json, executor_ref, log_path
@@ -1031,7 +1017,9 @@ const make = Effect.gen(function* () {
           yield* markUnknown(jobId, node, row.executor_ref);
         }
       }
-    }).pipe(Effect.catchCause((cause) => Effect.logError("Job recovery failed", { cause })));
+    },
+    Effect.catchCause((cause) => Effect.logError("Job recovery failed", { cause })),
+  );
 
   return Context.make(
     JobService,
@@ -1058,12 +1046,8 @@ const make = Effect.gen(function* () {
 export const layerWithoutExecutor = Layer.effectContext(make);
 
 /**
- * Needs `SqlClient`, `ServerEnvironment`, `ServerConfig`, `ProjectStoreV2`,
- * `FileSystem`, `Path` and `ChildProcessSpawner`. Provides `JobRecovery` too;
- * call its `start` once when the server starts. It composes whatever
- * `EventJournal.layer` and `OrchestratorService.layer` currently are, so the
- * real ones are picked up as they land; until the orchestrator service exists,
- * a job requested on behalf of an orchestrator is refused.
+ * Needs `SqlClient`, `ServerEnvironment`, `ServerConfig`, `ProjectStoreV2`, `FileSystem`, `Path` and `ChildProcessSpawner`. Provides `JobRecovery` too; call its `start` once when the server starts.
+ * It composes whatever `EventJournal.layer` and `OrchestratorService.layer` currently are; until the orchestrator service exists, a job requested on behalf of an orchestrator is refused.
  */
 export const layer = layerWithoutExecutor.pipe(
   Layer.provide(JobExecutor.layer),

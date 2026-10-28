@@ -1,13 +1,8 @@
 /**
- * Mini Skills — user-authored, reusable Markdown instruction snippets.
- *
- * A Mini Skill is a named block of instructions the user can attach to a
- * thread (snapshot captured at thread creation when the skill is enabled by
- * default) or to a single request (selected in the composer, injected into
- * that turn's effective prompt only). They are deliberately plain text: no
- * tools, scripts, parameters, or provider-specific behavior. Composition into
- * the effective prompt happens server-side, before any provider adapter sees
- * the turn, so every provider receives the same text.
+ * Mini Skills: user-authored, reusable Markdown instruction snippets attached to a
+ * thread (snapshotted at creation) or to a single request. Plain text only, no
+ * tools or provider-specific behavior; composed server-side before any adapter
+ * sees the turn, so every provider receives the same text.
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

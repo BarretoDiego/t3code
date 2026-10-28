@@ -52,14 +52,9 @@ export interface ProviderIconChoice {
 }
 
 /**
- * Curated AI provider icon registry, backed by @lobehub/icons. Only the
- * monochrome SVG component of each brand is imported — the package root and
- * its Avatar/Combine variants pull in @lobehub/ui and emoji data we never
- * render here.
- *
- * Provider instances reference entries by `key`; unknown keys fall back to
- * the driver icon so a config written by a newer build still renders on
- * older clients.
+ * Curated AI provider icon registry, backed by @lobehub/icons. Only each brand's monochrome SVG is
+ * imported: the package root and its Avatar/Combine variants pull in @lobehub/ui and emoji data.
+ * Unknown keys fall back to the driver icon so a newer config still renders on older clients.
  */
 export const PROVIDER_ICON_CHOICES: ReadonlyArray<ProviderIconChoice> = [
   { key: "claude", label: "Claude", Icon: Claude },

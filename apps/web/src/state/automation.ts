@@ -20,7 +20,6 @@ import type {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -78,17 +77,13 @@ export function useThreadOrchestrator(ref: ScopedThreadRef | null): Orchestrator
  */
 export function useResponsibilityLookup(environmentId: EnvironmentId): ResponsibilityLookup {
   const views = useAtomValue(automationEnvironment.orchestratorViewsAtom);
-  return useMemo(
-    () => ({
-      orchestratorName: (orchestratorId, hostEnvironmentId) =>
-        resolveOrchestratorView(views, orchestratorId, hostEnvironmentId)?.orchestrator.name ??
-        null,
-      threadTitle: (threadId) =>
-        appAtomRegistry.get(environmentThreadShells.threadShellAtom({ environmentId, threadId }))
-          ?.title ?? null,
-    }),
-    [environmentId, views],
-  );
+  return {
+    orchestratorName: (orchestratorId, hostEnvironmentId) =>
+      resolveOrchestratorView(views, orchestratorId, hostEnvironmentId)?.orchestrator.name ?? null,
+    threadTitle: (threadId) =>
+      appAtomRegistry.get(environmentThreadShells.threadShellAtom({ environmentId, threadId }))
+        ?.title ?? null,
+  };
 }
 
 /**
@@ -113,8 +108,5 @@ export function usePendingRequestResponsibility(
   const request = Option.getOrNull(AsyncResult.value(result))?.requests.find(
     (entry) => entry.threadId === threadId && entry.requestId === requestId,
   );
-  return useMemo(
-    () => (request === undefined ? null : presentResponsibility(request, lookup)),
-    [lookup, request],
-  );
+  return request === undefined ? null : presentResponsibility(request, lookup);
 }

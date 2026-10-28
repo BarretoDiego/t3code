@@ -1,19 +1,7 @@
 /**
- * Provider plan rate limits.
- *
- * Providers meter subscription plans on rolling windows — Claude reports a
- * 5-hour window plus 7-day windows (overall, Opus, Sonnet), Codex reports a
- * `primary`/`secondary` pair whose real duration only shows up in
- * `windowDurationMins`, and both can carry extra spend or credit ceilings.
- * The shapes have nothing in common, so adapters normalize their native
- * payload into the provider-agnostic {@link ProviderRateLimitWindow} list
- * below and everything downstream (registry, wire, UI) stays dumb.
- *
- * Snapshots are observations, never live counters: they are refreshed when a
- * provider tells us something changed, and they keep their last known value
- * between runs. `observedAt` plus `resetsAt` is what lets a client say how
- * much to trust a window.
- *
+ * Provider plan rate limits. Providers meter plans on rolling windows with
+ * unrelated native shapes, so adapters normalize into {@link ProviderRateLimitWindow}.
+ * Snapshots are observations, not live counters: `observedAt` plus `resetsAt` says how much to trust a window.
  * @module providerRateLimits
  */
 import * as Schema from "effect/Schema";
@@ -26,16 +14,10 @@ import {
 } from "./baseSchemas.ts";
 
 /**
- * Coarse bucket a window belongs to, so clients can order and label windows
- * without knowing which provider produced them.
- *
- * - `session` — the short rolling window a burst of work runs into first
- *   (Claude's 5 hours, Codex's `primary`).
- * - `weekly` — the multi-day ceiling (Claude's 7-day windows, Codex's
- *   `secondary` when it spans a week).
- * - `monthly` — longer billing-period ceilings.
- * - `credits` — balance or spend controls rather than time windows.
- * - `other` — anything a provider reports that does not fit above.
+ * Coarse bucket so clients can order and label windows without knowing the provider.
+ * `session`: the short rolling window (Claude 5 hours, Codex `primary`).
+ * `weekly`: multi-day ceilings. `monthly`: billing-period ceilings.
+ * `credits`: balance or spend controls. `other`: anything that fits none of these.
  */
 export const ProviderRateLimitWindowKind = Schema.Literals([
   "session",

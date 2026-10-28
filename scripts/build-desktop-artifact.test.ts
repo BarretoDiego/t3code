@@ -1,5 +1,26 @@
+// @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
+import * as NodeCrypto from "node:crypto";
+import * as NodePath from "node:path";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { createPackageWithOptions, extractFile } from "@electron/asar";
+import { assert, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Sink from "effect/Sink";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
 import {
-  bundlesWslRuntime,
   resolveDesktopProductName,
   resolveDesktopBuildIconAssets,
   copyPackagedDirectory,
@@ -27,7 +48,9 @@ import {
   ancestorNodeModulesPaths,
   copyDirectoryPreservingSymlinks,
   LinuxBrowserSecretHostError,
+  MacPackagedAppMissingError,
   stageBrowserSecret,
+  validateMacPackagedPayload,
   validateWindowsPackagedPayload,
   verifyPackagedBundleIsSelfContained,
   WindowsPrimaryNativeProbeError,
@@ -44,27 +67,6 @@ import {
   wslRuntimeArchiveStem,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-// @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
-import * as NodeCrypto from "node:crypto";
-import * as NodePath from "node:path";
-
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { extractFile } from "@electron/asar";
-import { assert, it } from "@effect/vitest";
-import * as ConfigProvider from "effect/ConfigProvider";
-import * as Deferred from "effect/Deferred";
-import * as Fiber from "effect/Fiber";
-import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as PlatformError from "effect/PlatformError";
-import * as Option from "effect/Option";
-import * as Path from "effect/Path";
-import * as Sink from "effect/Sink";
-import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
   ReleasePackageManifestError,
@@ -214,6 +216,26 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
     generatedAsarPath,
     appExecutableName,
   } as const;
+});
+
+const makeMacPayloadFixture = Effect.fn("test.makeMacPayloadFixture")(function* (input: {
+  readonly serverEntrySource?: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mac-payload-test-" });
+  const sourceDir = path.join(tempDir, "app-source");
+  const serverEntryPath = path.join(sourceDir, "apps/server/dist/bin.mjs");
+  yield* fs.makeDirectory(path.dirname(serverEntryPath), { recursive: true });
+  yield* fs.writeFileString(serverEntryPath, input.serverEntrySource ?? "console.log('server');\n");
+
+  const stageDistDir = path.join(tempDir, "dist");
+  const resourcesDir = path.join(stageDistDir, "mac-arm64/T3 Code.app/Contents/Resources");
+  yield* fs.makeDirectory(resourcesDir, { recursive: true });
+  yield* Effect.promise(() =>
+    createPackageWithOptions(sourceDir, path.join(resourcesDir, "app.asar"), {}),
+  );
+  return { stageDistDir } as const;
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
@@ -1317,6 +1339,58 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
         assert.instanceOf(error, BundleNotSelfContainedError);
         assert.include(error.output, "t3code-deliberately-missing-package");
+      }),
+    ),
+  );
+
+  it.effect("rejects a macOS app whose packaged server bundle cannot resolve", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeMacPayloadFixture({
+          serverEntrySource: 'import "t3code-deliberately-missing-package";\n',
+        });
+        const error = yield* validateMacPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+        }).pipe(Effect.flip);
+
+        assert.instanceOf(error, BundleNotSelfContainedError);
+        assert.include(error.output, "t3code-deliberately-missing-package");
+      }),
+    ),
+  );
+
+  it.effect("accepts a macOS app whose packaged server bundle resolves", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeMacPayloadFixture({});
+        yield* validateMacPackagedPayload({ stageDistDir: fixture.stageDistDir });
+      }),
+    ),
+  );
+
+  it.effect("rejects a macOS stage without a packaged app", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const stageDistDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mac-payload-test-" });
+        const error = yield* validateMacPackagedPayload({ stageDistDir }).pipe(Effect.flip);
+
+        assert.instanceOf(error, MacPackagedAppMissingError);
+      }),
+    ),
+  );
+
+  it.effect("rejects a macOS app without app.asar", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const stageDistDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mac-payload-test-" });
+        yield* fs.makeDirectory(`${stageDistDir}/mac-arm64/T3 Code.app/Contents/Resources`, {
+          recursive: true,
+        });
+        const error = yield* validateMacPackagedPayload({ stageDistDir }).pipe(Effect.flip);
+
+        assert.instanceOf(error, BundleNotSelfContainedError);
       }),
     ),
   );

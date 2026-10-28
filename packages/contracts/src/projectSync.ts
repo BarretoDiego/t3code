@@ -20,13 +20,10 @@ const noNulByteFilter = Schema.makeFilter(
 );
 
 /**
- * A workspace-relative path exactly as it exists on disk.
- *
- * Deliberately *not* a trimmed string: leading and trailing whitespace are
- * legal in a POSIX filename, so trimming here would quietly rewrite
- * `"docs/notes .md"` into a path the origin cannot export and the destination
- * would either skip forever or collide with a different, real file. Only
- * genuinely impossible paths (empty, NUL-bearing, absurdly long) are refused.
+ * A workspace-relative path exactly as it exists on disk. Deliberately not trimmed:
+ * leading and trailing whitespace are legal in POSIX filenames, so trimming would
+ * rewrite `"docs/notes .md"` into a path the origin cannot export. Only impossible
+ * paths (empty, NUL-bearing, absurdly long) are refused.
  */
 const ProjectSyncPath = Schema.String.check(
   Schema.isNonEmpty(),
@@ -38,14 +35,10 @@ export const ProjectSyncEntryKind = Schema.Literals(["file", "dir", "symlink"]);
 export type ProjectSyncEntryKind = typeof ProjectSyncEntryKind.Type;
 
 /**
- * One entry in a project sync manifest. `path` is always relative to the
- * project's workspace root and always uses `/` as the separator, regardless
- * of the origin environment's OS, so destination environments on a different
- * platform can rebuild the tree without re-deriving path semantics.
- *
- * `kind: "dir"` entries only exist for otherwise-empty directories: a
- * directory that contains any file/symlink entry is implied by those
- * entries' paths and does not get its own "dir" entry.
+ * One entry in a project sync manifest. `path` is relative to the workspace root
+ * and always uses `/`, so destinations on another OS can rebuild the tree.
+ * `kind: "dir"` entries exist only for otherwise-empty directories; others are
+ * implied by their children's paths.
  */
 export const ProjectSyncManifestEntry = Schema.Struct({
   path: ProjectSyncPath,
@@ -63,15 +56,10 @@ export const ProjectSyncManifestEntry = Schema.Struct({
 export type ProjectSyncManifestEntry = typeof ProjectSyncManifestEntry.Type;
 
 /**
- * Requests a manifest (file tree + hashes) for a project so the client can
- * diff it against the destination environment's tree before deciding what to
- * copy or delete.
- *
- * The server always ignores `node_modules`, `.t3`, and `.DS_Store` regardless
- * of `extraIgnores` — those are noise/local-state paths that must never
- * round-trip between environments. `extraIgnores` layers additional
- * project-specific exclusions (e.g. build output) on top of that default
- * set; it never narrows it.
+ * Requests a manifest (file tree + hashes) so the client can diff it against the
+ * destination before deciding what to copy or delete. The server always ignores
+ * `node_modules`, `.t3`, and `.DS_Store`; `extraIgnores` layers further exclusions
+ * on top and never narrows that set.
  */
 export const ProjectSyncManifestInput = Schema.Struct({
   projectId: ProjectId,
@@ -106,13 +94,10 @@ export const PROJECT_SYNC_EXPORT_ROUTE_PREFIX = "/api/projectSync/export";
 export const PROJECT_SYNC_IMPORT_ROUTE_PREFIX = "/api/projectSync/import";
 
 /**
- * One entry a client asks an origin environment to stream out.
- *
- * `size` is the size the client saw in the manifest it diffed, and the same
- * number it folded into the `totalBytes` of the matching import URL. The origin
- * re-stats each file at stream time and skips any whose size no longer matches,
- * so a file that grew after the manifest was taken cannot push the transfer
- * past the budget the destination's token was signed for.
+ * One entry a client asks an origin environment to stream out. `size` is what the
+ * client saw in its manifest and folded into the import URL's `totalBytes`. The
+ * origin skips any file whose size no longer matches, so a file that grew cannot
+ * push the transfer past the budget the destination's token was signed for.
  */
 export const ProjectSyncExportEntry = Schema.Struct({
   path: ProjectSyncPath,

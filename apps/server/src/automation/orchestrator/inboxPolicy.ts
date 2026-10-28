@@ -52,12 +52,8 @@ const isOwnTurnEvent = (
     event.scope.threadId === orchestrator.threadId);
 
 /**
- * Decides how an arriving entry is treated. The sender's `relevance` can only
- * lower the result: a hook cannot make progress noise wake the model.
- *
- * - `absorbed`: recorded and never shown (the orchestrator's own turn echo).
- * - `informational`: kept for the next turn's batch; never opens one.
- * - `actionable`: opens a turn once the batch window closes.
+ * Decides how an arriving entry is treated; the sender's `relevance` can only lower the result, so a hook cannot make progress noise wake the model.
+ * `absorbed`: recorded, never shown. `informational`: kept for the next batch, never opens one. `actionable`: opens a turn once the batch window closes.
  */
 export const classifyDelivery = (
   delivery: OrchestratorInboxDelivery,

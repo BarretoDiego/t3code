@@ -105,7 +105,10 @@ export function getEarliestExhaustedResetAt(
 export function getExhaustedRateLimitResetAt(
   providers: ReadonlyArray<{
     readonly instanceId?: ProviderInstanceId | string;
-    readonly rateLimits?: { readonly windows: ReadonlyArray<ExhaustedWindowLike> } | null | undefined;
+    readonly rateLimits?:
+      | { readonly windows: ReadonlyArray<ExhaustedWindowLike> }
+      | null
+      | undefined;
   }>,
   input: { readonly instanceId?: ProviderInstanceId | string | null; readonly nowMs: number },
 ): string | null {

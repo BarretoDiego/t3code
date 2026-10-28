@@ -318,7 +318,7 @@ const make = Effect.gen(function* () {
   const readThread = (threadId: ThreadId): Effect.Effect<ThreadView | null> =>
     threads
       .getThreadRecords(threadId, ["runs", "providerTurns"])
-      .pipe(Effect.catch(() => Effect.succeed(null)));
+      .pipe(Effect.orElseSucceed(() => null));
 
   const describe: OrchestratorRuntime["Service"]["describe"] = Effect.fn(
     "OrchestratorRuntime.describe",
@@ -541,7 +541,7 @@ const make = Effect.gen(function* () {
       Effect.map((item) =>
         item?.type === "assistant_message" ? { text: item.text, id: item.messageId } : undefined,
       ),
-      Effect.catch(() => Effect.succeed(undefined)),
+      Effect.orElseSucceed(() => undefined),
     );
     const interruptedForDuration = turn.interruptRequestedAt !== null;
     const outcome = interruptedForDuration ? "interrupted_max_duration" : run.status;
@@ -613,23 +613,22 @@ const make = Effect.gen(function* () {
     Effect.suspend(() => worker.enqueue(orchestratorId));
 
   /** One timer per orchestrator, at the earliest instant something becomes due. */
-  const wakeAt = (orchestratorId: OrchestratorId, atMs: number) =>
-    Effect.gen(function* () {
-      const existing = wakeTimers.get(orchestratorId);
-      if (existing !== undefined && existing <= atMs) return;
-      wakeTimers.set(orchestratorId, atMs);
-      const nowMs = yield* Clock.currentTimeMillis;
-      yield* Effect.sleep(Duration.millis(Math.max(0, atMs - nowMs))).pipe(
-        Effect.andThen(
-          Effect.suspend(() => {
-            if (wakeTimers.get(orchestratorId) !== atMs) return Effect.void;
-            wakeTimers.delete(orchestratorId);
-            return wake(orchestratorId);
-          }),
-        ),
-        Effect.forkIn(scope),
-      );
-    });
+  const wakeAt = Effect.fn("wakeAt")(function* (orchestratorId: OrchestratorId, atMs: number) {
+    const existing = wakeTimers.get(orchestratorId);
+    if (existing !== undefined && existing <= atMs) return;
+    wakeTimers.set(orchestratorId, atMs);
+    const nowMs = yield* Clock.currentTimeMillis;
+    yield* Effect.sleep(Duration.millis(Math.max(0, atMs - nowMs))).pipe(
+      Effect.andThen(
+        Effect.suspend(() => {
+          if (wakeTimers.get(orchestratorId) !== atMs) return Effect.void;
+          wakeTimers.delete(orchestratorId);
+          return wake(orchestratorId);
+        }),
+      ),
+      Effect.forkIn(scope),
+    );
+  });
 
   const findRun = (view: ThreadView, turn: StoredTurn) =>
     view.runs.find((run) => run.userMessageId === turn.messageId);
@@ -785,11 +784,8 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Brings a turn that is not finished one step closer, from durable facts
-   * only. This is also the whole of crash recovery: a reserved turn whose
-   * command has no receipt was never sent and is sent now for the first time;
-   * one with a receipt is matched to its run and followed; one whose facts
-   * cannot be read becomes `unknown`.
+   * Brings an unfinished turn one step closer from durable facts only, which is also all of crash recovery: a reserved turn with no command receipt is sent now,
+   * one with a receipt is matched to its run and followed, and one whose facts cannot be read becomes `unknown`.
    */
   const followTurn: (
     row: StoredOrchestrator,
@@ -877,7 +873,7 @@ const make = Effect.gen(function* () {
       actions.includes("thread.read") && actions.includes("request.answer")
         ? yield* responsibility
             .listRequests(internalCaller(`orchestrator:${row.id}`), { orchestratorId: row.id })
-            .pipe(Effect.catch(() => Effect.succeed([])))
+            .pipe(Effect.orElseSucceed(() => []))
         : [];
     const checkpoint = (yield* store.listCheckpoints(row.id, 1))[0] ?? null;
     return { tasks, requests, checkpoint };
@@ -1035,7 +1031,7 @@ const make = Effect.gen(function* () {
                       ? wake(row.id)
                       : notifyChanged,
                 ),
-                Effect.catch(() => Effect.void),
+                Effect.ignore,
               )
             : Effect.void,
         ).pipe(

@@ -89,9 +89,6 @@ export class AgentCredentialUnavailableError extends Schema.TaggedError<AgentCre
   }
 }
 
-// ---------------------------------------------------------------------------
-// Saved environments
-
 /**
  * A remote server the CLI can drive. The token is a bearer session on that
  * server (from pairing or `t3 auth session issue`), so the record lives in the
@@ -123,16 +120,17 @@ export const readSavedEnvironments = Effect.gen(function* () {
   return document.environments;
 });
 
-export const writeSavedEnvironments = (environments: ReadonlyArray<SavedEnvironment>) =>
-  Effect.gen(function* () {
-    const secrets = yield* ServerSecretStore.ServerSecretStore;
-    const encoded = yield* encodeSavedEnvironments({ version: 1, environments });
-    yield* secrets.set(SAVED_ENVIRONMENTS_SECRET, new TextEncoder().encode(encoded));
-  });
+export const writeSavedEnvironments = Effect.fn("writeSavedEnvironments")(function* (
+  environments: ReadonlyArray<SavedEnvironment>,
+) {
+  const secrets = yield* ServerSecretStore.ServerSecretStore;
+  const encoded = yield* encodeSavedEnvironments({ version: 1, environments });
+  yield* secrets.set(SAVED_ENVIRONMENTS_SECRET, new TextEncoder().encode(encoded));
+});
 
 /** Exchanges a one-time pairing credential for a long-lived bearer session. */
-export const exchangePairingCredential = (httpBaseUrl: string, credential: string) =>
-  Effect.gen(function* () {
+export const exchangePairingCredential = Effect.fn("environmentRpc.exchangePairingCredential")(
+  function* (httpBaseUrl: string, credential: string) {
     const http = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: httpBaseUrl });
     const result = yield* http.auth.token({
       headers: {},
@@ -147,21 +145,26 @@ export const exchangePairingCredential = (httpBaseUrl: string, credential: strin
       },
     });
     return result.access_token;
-  }).pipe(
-    Effect.mapError((cause) => new EnvironmentServerConnectError({ origin: httpBaseUrl, cause })),
-  );
+  },
+  (effect, httpBaseUrl) =>
+    Effect.mapError(
+      effect,
+      (cause) => new EnvironmentServerConnectError({ origin: httpBaseUrl, cause }),
+    ),
+);
 
 /** Reads the environment's public descriptor (id and label). */
-export const fetchEnvironmentDescriptor = (httpBaseUrl: string) =>
-  Effect.gen(function* () {
+export const fetchEnvironmentDescriptor = Effect.fn("environmentRpc.fetchEnvironmentDescriptor")(
+  function* (httpBaseUrl: string) {
     const http = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: httpBaseUrl });
     return yield* http.metadata.descriptor();
-  }).pipe(
-    Effect.mapError((cause) => new EnvironmentServerConnectError({ origin: httpBaseUrl, cause })),
-  );
-
-// ---------------------------------------------------------------------------
-// Connection
+  },
+  (effect, httpBaseUrl) =>
+    Effect.mapError(
+      effect,
+      (cause) => new EnvironmentServerConnectError({ origin: httpBaseUrl, cause }),
+    ),
+);
 
 /**
  * `--env <name>` picks a saved remote environment; without it commands target
@@ -195,38 +198,33 @@ function webSocketUrl(origin: string, ticket: string): string {
 }
 
 /** Opens the RPC socket using `token` and builds a client over it. */
-const openSocket = <Client>(
+const openSocket = Effect.fn("openSocket")(function* <Client>(
   origin: string,
   token: string,
   makeClient: Effect.Effect<Client, never, RpcClient.Protocol | Scope.Scope>,
-) =>
-  Effect.gen(function* () {
-    const http = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: origin });
-    const { ticket } = yield* http.auth
-      .webSocketTicket({ headers: { authorization: `Bearer ${token}` } })
-      .pipe(Effect.mapError((cause) => new EnvironmentServerConnectError({ origin, cause })));
-    // Build the protocol into the caller's scope: providing the layer directly
-    // would close the socket as soon as the client is constructed.
-    const protocol = yield* Layer.build(
-      RpcClient.layerProtocolSocket({ retryTransientErrors: false }).pipe(
-        Layer.provide(
-          Socket.layerWebSocket(webSocketUrl(origin, ticket)).pipe(
-            Layer.provide(NodeSocket.layerWebSocketConstructorWS),
-          ),
+) {
+  const http = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: origin });
+  const { ticket } = yield* http.auth
+    .webSocketTicket({ headers: { authorization: `Bearer ${token}` } })
+    .pipe(Effect.mapError((cause) => new EnvironmentServerConnectError({ origin, cause })));
+  // Build the protocol into the caller's scope: providing the layer directly
+  // would close the socket as soon as the client is constructed.
+  const protocol = yield* Layer.build(
+    RpcClient.layerProtocolSocket({ retryTransientErrors: false }).pipe(
+      Layer.provide(
+        Socket.layerWebSocket(webSocketUrl(origin, ticket)).pipe(
+          Layer.provide(NodeSocket.layerWebSocketConstructorWS),
         ),
-        Layer.provide(RpcSerialization.layerJson),
       ),
-    );
-    return yield* makeClient.pipe(Effect.provide(protocol));
-  });
+      Layer.provide(RpcSerialization.layerJson),
+    ),
+  );
+  return yield* makeClient.pipe(Effect.provide(protocol));
+});
 
 /**
- * The origin of the server that owns this base dir. The persisted runtime
- * state is the primary record, but it can be missing (an older server that
- * shared the base dir cleared it on exit) or stale, so the desktop app's
- * default port is tried as well. A candidate only counts when its descriptor
- * reports this base dir's environment id: the session minted locally is only
- * valid there.
+ * The origin of the server that owns this base dir. Persisted runtime state can be missing (an older server cleared it on exit) or stale, so the desktop default port is also tried.
+ * A candidate counts only when its descriptor reports this base dir's environment id: the locally minted session is valid only there.
  */
 const findLocalServer = Effect.fn("cli.findLocalServer")(function* (
   config: ServerConfig.ServerConfig["Service"],
@@ -260,23 +258,22 @@ interface EnvironmentTarget {
 }
 
 /** Runs `use` with the services that reach environments: local auth, saved environments, HTTP. */
-export const withEnvironmentRuntime = <A, E, R>(
+export const withEnvironmentRuntime = Effect.fn("withEnvironmentRuntime")(function* <A, E, R>(
   flags: { readonly baseDir: Option.Option<string> },
   use: (config: ServerConfig.ServerConfig["Service"]) => Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const logLevel = yield* GlobalFlag.LogLevel;
-    const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
-    return yield* use(config).pipe(
-      Effect.provide(
-        Layer.mergeAll(EnvironmentAuth.layerRuntime, ServerSecretStore.layer).pipe(
-          Layer.provideMerge(FetchHttpClient.layer),
-          Layer.provide(ServerConfig.layer(config)),
-          Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
-        ),
+) {
+  const logLevel = yield* GlobalFlag.LogLevel;
+  const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
+  return yield* use(config).pipe(
+    Effect.provide(
+      Layer.mergeAll(EnvironmentAuth.layerRuntime, ServerSecretStore.layer).pipe(
+        Layer.provideMerge(FetchHttpClient.layer),
+        Layer.provide(ServerConfig.layer(config)),
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
       ),
-    );
-  });
+    ),
+  );
+});
 
 export const findSavedEnvironment = Effect.fn("cli.findSavedEnvironment")(function* (name: string) {
   const saved = yield* readSavedEnvironments;
@@ -298,9 +295,10 @@ const decodeAgentCredential = Schema.decodeUnknownEffect(AgentCredentialDocument
  * the user's identity: an ended or unreadable credential fails the command.
  */
 export const readAgentCredential = Effect.gen(function* () {
-  const file = yield* Effect.gen(function* () {
-    return yield* Config.String(AGENT_CREDENTIAL_FILE_ENV).pipe(Config.option);
-  }).pipe(Effect.mapError(() => new AgentCredentialUnavailableError({ reason: "unreadable" })));
+  const file = yield* Config.String(AGENT_CREDENTIAL_FILE_ENV).pipe(
+    Config.option,
+    Effect.mapError(() => new AgentCredentialUnavailableError({ reason: "unreadable" })),
+  );
   if (Option.isNone(file) || file.value.length === 0) {
     return Option.none<{ readonly origin: string | null; readonly token: string }>();
   }
@@ -321,29 +319,31 @@ export const readAgentCredential = Effect.gen(function* () {
  * command. Inside an orchestrator's turn the command uses that turn's
  * credential instead, so the server sees the orchestrator and not the user.
  */
-export const withLocalEnvironmentTarget = <A, E, R>(
+export const withLocalEnvironmentTarget = Effect.fn("withLocalEnvironmentTarget")(function* <
+  A,
+  E,
+  R,
+>(
   config: ServerConfig.ServerConfig["Service"],
   use: (target: EnvironmentTarget) => Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const agent = yield* readAgentCredential;
-    if (Option.isSome(agent)) {
-      return yield* use({
-        // The server names its own origin in the credential it issued.
-        origin: agent.value.origin ?? (yield* findLocalServer(config)),
-        token: agent.value.token,
-        saved: Option.none(),
-      });
-    }
-    const origin = yield* findLocalServer(config);
-    const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    return yield* Effect.acquireUseRelease(
-      environmentAuth.issueSession({ scopes: AuthStandardClientScopes, label: "t3 cli" }),
-      (issued) => use({ origin, token: issued.token, saved: Option.none() }),
-      (issued) =>
-        environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
-    );
-  });
+) {
+  const agent = yield* readAgentCredential;
+  if (Option.isSome(agent)) {
+    return yield* use({
+      // The server names its own origin in the credential it issued.
+      origin: agent.value.origin ?? (yield* findLocalServer(config)),
+      token: agent.value.token,
+      saved: Option.none(),
+    });
+  }
+  const origin = yield* findLocalServer(config);
+  const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  return yield* Effect.acquireUseRelease(
+    environmentAuth.issueSession({ scopes: AuthStandardClientScopes, label: "t3 cli" }),
+    (issued) => use({ origin, token: issued.token, saved: Option.none() }),
+    (issued) => environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true })),
+  );
+});
 
 /** Runs `use` with the origin and credential of the environment the flags select. */
 export const withEnvironmentTarget = <A, E, R>(
@@ -396,20 +396,19 @@ export const withFlatEnvironmentRpc = <A, E, R>(
 ) => connectEnvironment(flags, makeFlatWsRpcClient, use);
 
 /** Runs `use` with the CLI's secret store, for managing saved environments. */
-export const withSavedEnvironmentStore = <A, E, R>(
+export const withSavedEnvironmentStore = Effect.fn("withSavedEnvironmentStore")(function* <A, E, R>(
   flags: { readonly baseDir: Option.Option<string> },
   use: Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const logLevel = yield* GlobalFlag.LogLevel;
-    const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
-    return yield* use.pipe(
-      Effect.provide(
-        ServerSecretStore.layer.pipe(
-          Layer.provideMerge(FetchHttpClient.layer),
-          Layer.provide(ServerConfig.layer(config)),
-          Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
-        ),
+) {
+  const logLevel = yield* GlobalFlag.LogLevel;
+  const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
+  return yield* use.pipe(
+    Effect.provide(
+      ServerSecretStore.layer.pipe(
+        Layer.provideMerge(FetchHttpClient.layer),
+        Layer.provide(ServerConfig.layer(config)),
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
       ),
-    );
-  });
+    ),
+  );
+});

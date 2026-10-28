@@ -77,10 +77,9 @@ const make = Effect.gen(function* () {
   };
   const worker = yield* makeDrainableWorker((job: Job) =>
     run(job).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.logWarning("Delegated task reconciliation failed", { job, cause }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) => Effect.logWarning("Delegated task reconciliation failed", { job, cause }),
       ),
     ),
   );
@@ -96,10 +95,9 @@ const make = Effect.gen(function* () {
           Stream.runForEach((stored) =>
             Effect.forEach(jobsFor(stored.event), worker.enqueue, { discard: true }),
           ),
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
-              : Effect.logWarning("Delegated task event stream failed", { cause }),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) => Effect.logWarning("Delegated task event stream failed", { cause }),
           ),
         ),
       );

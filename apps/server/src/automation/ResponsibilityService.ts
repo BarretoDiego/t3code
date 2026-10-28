@@ -19,6 +19,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -52,11 +53,8 @@ export class ResponsibilityService extends Context.Service<
       input: ClaimTransferInput,
     ) => Effect.Effect<ResponsibilityClaim, AutomationError>;
     /**
-     * Admission for an orchestrator's agent answering through the ordinary
-     * thread commands, which carry no responder and no claim generation: the
-     * request must be pending and claimed by that orchestrator right now, and
-     * an approval needs a matching pre-authorization. Fails without changing
-     * anything; the caller dispatches the thread command only after it passes.
+     * Admission for an orchestrator's agent answering through the ordinary thread commands, which carry no responder or claim generation: the request must be pending
+     * and claimed by that orchestrator right now, and an approval needs a matching pre-authorization. Fails without changing anything; the caller dispatches only after it passes.
      */
     readonly admitThreadResponse: (
       caller: OrchestratorCaller,
@@ -131,11 +129,8 @@ const preAuthorization = (orchestrator: StoredOrchestrator, kind: string, projec
   );
 
 /**
- * Picks the owner of a request on `thread`, in code, from stored facts. Rules
- * are tried in the default order; an orchestrator is a candidate for a rule
- * only when its own `responsibilityOrder` lists that rule. Ties go to the
- * orchestrator that ranks the rule earliest, then to the oldest, so the same
- * inputs always name the same single owner.
+ * Picks the owner of a request on `thread`, in code, from stored facts. Rules are tried in the default order; an orchestrator is a candidate only when its own `responsibilityOrder` lists that rule.
+ * Ties go to the orchestrator ranking the rule earliest, then the oldest, so the same inputs always name the same single owner.
  */
 const resolveRequestOwner = (input: {
   readonly thread: Pick<OrchestrationV2ThreadShell, "id" | "projectId" | "lineage">;
@@ -596,10 +591,8 @@ const make = Effect.gen(function* () {
     }
     const thread = yield* threads.getThreadShell(input.threadId).pipe(
       Effect.mapError(() => automationError("INTERNAL", "The thread could not be read.")),
-      Effect.flatMap((shell) =>
-        shell === null
-          ? Effect.fail(automationError("NOT_FOUND", `Thread ${input.threadId} does not exist.`))
-          : Effect.succeed(shell),
+      Effect.filterOrFail(Predicate.isNotNull, () =>
+        automationError("NOT_FOUND", `Thread ${input.threadId} does not exist.`),
       ),
     );
     const request = (yield* threads

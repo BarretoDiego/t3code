@@ -1,15 +1,7 @@
 /**
- * Runs the real CLI command handlers against a real in-process orchestrator.
- *
- * The one thing replaced is the socket: `CliRpcClientOverride` hands the
- * handlers an RPC client whose methods call the same services the WebSocket
- * route calls (command intake, thread launch, projections, the automation RPC
- * handlers), on real SQLite and the deterministic test clock. Provider
- * execution is off (no effect worker), so tests state provider facts by
- * writing the events a provider would produce through the event sink.
- *
- * Not exercised: the WebSocket route's own glue in ws.ts (scope checks, its
- * shell stream assembly), the socket transport, and authentication.
+ * Runs the real CLI command handlers against a real in-process orchestrator. Only the socket is replaced: `CliRpcClientOverride` hands the handlers an RPC client
+ * that calls the same services as the WebSocket route, on real SQLite and the deterministic test clock. Provider execution is off, so tests state provider facts by writing the events
+ * a provider would produce through the event sink. Not exercised: the WebSocket route's own glue in ws.ts (scope checks, shell stream assembly), the socket transport, and authentication.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -49,7 +41,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
-import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import type * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
@@ -329,26 +320,25 @@ const recordedPeersLayer = Layer.effectContext(
       outbox: () => Effect.succeed([]),
       hello: unsupported,
       deliver: unsupported,
-      enqueue: (input) =>
-        Effect.gen(function* () {
-          const existing = (yield* Ref.get(messages)).find(
-            (message) => message.messageId === input.dedupKey,
-          );
-          if (existing !== undefined) return existing;
-          const message: PeerMessage = {
-            version: 1,
-            messageId: PeerMessageId.make(input.dedupKey),
-            fromEnvironmentId: HARNESS_ENVIRONMENT_ID,
-            toEnvironmentId: input.toEnvironmentId,
-            sequence: (yield* Ref.get(messages)).length + 1,
-            correlationId: input.correlationId,
-            sentAt: DateTime.formatIso(yield* DateTime.now),
-            expiresAt: input.expiresAt ?? null,
-            body: input.body,
-          };
-          yield* Ref.update(messages, (current) => [...current, message]);
-          return message;
-        }),
+      enqueue: Effect.fn("enqueue")(function* (input) {
+        const existing = (yield* Ref.get(messages)).find(
+          (message) => message.messageId === input.dedupKey,
+        );
+        if (existing !== undefined) return existing;
+        const message: PeerMessage = {
+          version: 1,
+          messageId: PeerMessageId.make(input.dedupKey),
+          fromEnvironmentId: HARNESS_ENVIRONMENT_ID,
+          toEnvironmentId: input.toEnvironmentId,
+          sequence: (yield* Ref.get(messages)).length + 1,
+          correlationId: input.correlationId,
+          sentAt: DateTime.formatIso(yield* DateTime.now),
+          expiresAt: input.expiresAt ?? null,
+          body: input.body,
+        };
+        yield* Ref.update(messages, (current) => [...current, message]);
+        return message;
+      }),
     }).pipe(Context.add(RecordedPeers, { messages: Ref.get(messages) }));
   }),
 );
@@ -535,20 +525,13 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
     Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
-    Layer.succeed(ProjectService.ProjectService, {
-      create: () => Effect.die("unused"),
-      bootstrap: () => Effect.die("unused"),
-      update: () => Effect.die("unused"),
-      delete: () => Effect.die("unused"),
+    Layer.mock(ProjectService.ProjectService)({
       getById: (id) =>
-        Effect.succeed(id === HARNESS_PROJECT_ID ? Option.some(project) : Option.none()),
-      getByWorkspaceRoot: () => Effect.succeed(Option.some(project)),
-      snapshot: Effect.die("unused"),
-      getShell: () => Effect.die("unused"),
-      listShells: () => Effect.die("unused"),
+        id === HARNESS_PROJECT_ID ? Effect.succeedSome(project) : Effect.succeedNone,
+      getByWorkspaceRoot: () => Effect.succeedSome(project),
     }),
     Layer.mock(GitWorkflow.GitWorkflowService)({}),
-    Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
+    Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: () => Effect.succeed({ status: "no-script" as const }),
     }),
     Layer.mock(TextGeneration.TextGeneration)({
@@ -559,7 +542,7 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
     layerProviderRegistryMock(undefined),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
-      folderForThread: () => Effect.succeed(Option.none()),
+      folderForThread: () => Effect.succeedNone,
     }),
   );
   const launch = ThreadLaunch.layer.pipe(

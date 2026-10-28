@@ -8,14 +8,9 @@ import type {
 import type { ProviderInstanceEntry } from "../providerInstances";
 
 /**
- * Grouping for the sidebar inbox.
- *
- * The inbox is a flat thread list by default. These helpers slice it into up
- * to two nested levels of collapsible sections along independent axes
- * (environment / project / provider) without touching the ordering the caller
- * already applied: sections are emitted in first-appearance order, and threads
- * keep their incoming order inside every section. That keeps sort order and
- * grouping orthogonal — changing one never silently reshuffles the other.
+ * Grouping for the sidebar inbox: slices the flat thread list into up to two nested levels of
+ * sections (environment / project / provider). Sections appear in first-appearance order and
+ * threads keep their incoming order, so sort and grouping stay orthogonal.
  */
 
 /** Minimum thread shape the grouping needs. Keeps this module testable without the full shell type. */
@@ -97,12 +92,9 @@ export interface SidebarThreadProviderIdentity {
 }
 
 /**
- * What a section is *about*, when that is a single addressable thing.
- *
- * The header needs this to act on the section — start a thread in this
- * project, add a project to this environment. Reading it off the first thread
- * would work only for sections that have threads, and sections now exist
- * precisely when they don't (an empty project still gets a row).
+ * What a section is about, when that is a single addressable thing. The header reads it to act
+ * on the section (new thread in this project, add a project to this environment) instead of
+ * inferring it from the first thread, since sections now exist before they have threads.
  */
 export interface SidebarThreadGroupTarget {
   readonly environmentId: EnvironmentId | null;
@@ -135,12 +127,8 @@ export interface SidebarThreadGroup<TThread extends GroupableThread> {
 }
 
 /**
- * A section that must exist even with nothing in it.
- *
- * The sidebar seeds one per known project so every project keeps a row — and
- * therefore its New thread and settings buttons — whether or not it currently
- * has a single thread. Without this, the only way to reach a quiet project
- * would be to already have work in it.
+ * A section that must exist even when empty. The sidebar seeds one per known project so every
+ * project keeps its New thread and settings buttons whether or not it has threads.
  */
 export interface SidebarThreadGroupSeed {
   readonly environmentId: EnvironmentId;
@@ -150,13 +138,9 @@ export interface SidebarThreadGroupSeed {
 const UNKNOWN_PROVIDER_DRIVER = "unknown";
 
 /**
- * Resolves the provider a thread is actually running on.
- *
- * Mirrors `SidebarThreadRow`: a live session's instance wins over the thread's
- * configured model selection, because that is the provider the user sees in
- * the row badge. Falls back to a synthetic "unknown" identity so threads on a
- * provider that was deleted (or whose environment config has not streamed in
- * yet) still land in a section instead of vanishing from the list.
+ * Resolves the provider a thread runs on, mirroring `SidebarThreadRow`: a live session's instance
+ * wins over the configured model selection. Falls back to a synthetic "unknown" identity so
+ * threads on a deleted or not-yet-loaded provider still land in a section.
  */
 export function resolveThreadProviderIdentity(
   thread: GroupableThread,
@@ -171,12 +155,8 @@ export function resolveThreadProviderIdentity(
 }
 
 /**
- * Driver-level label, not the instance's `displayName`.
- *
- * The filter and the provider sections are keyed by driver kind, so two custom
- * instances of the same driver ("Claude (work)" and "Claude (personal)") must
- * collapse into one section titled after the driver rather than whichever
- * instance happened to be seen first.
+ * Driver-level label, not the instance's `displayName`: filter and sections are keyed by driver
+ * kind, so two custom instances of one driver collapse into one section titled after the driver.
  */
 function providerDriverLabel(entry: ProviderInstanceEntry): string {
   if (entry.isDefault) {
@@ -294,12 +274,9 @@ interface Bucket<TThread extends GroupableThread> {
 }
 
 /**
- * Buckets threads on one axis.
- *
- * Emission order is deliberate and layered: sections with live work first (in
- * first-appearance order), then sections that only hold history, then the
- * seeded-but-empty ones. A quiet project keeps its row without pushing the
- * work you are actually doing down the list.
+ * Buckets threads on one axis. Emission order is deliberate: sections with live work first, then
+ * history-only sections, then seeded-but-empty ones, so a quiet project keeps its row without
+ * pushing active work down.
  */
 function partitionByAxis<TThread extends GroupableThread>(input: {
   readonly threads: ReadonlyArray<TThread>;
@@ -343,14 +320,9 @@ function partitionByAxis<TThread extends GroupableThread>(input: {
 }
 
 /**
- * Splits threads into up to two nested levels of sections.
- *
- * Returns an empty array when no grouping applies, which the sidebar reads as
- * "render the flat list" — the caller never has to special-case a single
- * synthetic wrapper section.
- *
- * A secondary axis equal to the primary one is ignored rather than producing a
- * level of single-child sections that only add indentation.
+ * Splits threads into up to two nested levels of sections. Returns an empty array when no
+ * grouping applies (the sidebar renders the flat list). A secondary axis equal to the primary
+ * is ignored rather than adding a level of single-child sections.
  */
 export function buildSidebarThreadGroups<TThread extends GroupableThread>(input: {
   readonly threads: ReadonlyArray<TThread>;
@@ -460,15 +432,9 @@ const SECTION_LABEL_COLLATOR = new Intl.Collator(undefined, {
 });
 
 /**
- * Rearranges every level of the section tree.
- *
- * Applied after building rather than inside the bucketing so it can key off
- * the final section keys — nested keys are parent-prefixed, and those prefixed
- * keys are what a manual order and the collapse state both refer to.
- *
- * Only the order of sections changes: their threads, counts and nesting are
- * passed through untouched, so ordering stays orthogonal to grouping the same
- * way sorting already is.
+ * Rearranges every level of the section tree. Applied after bucketing so it can key off the final
+ * parent-prefixed section keys that manual order and collapse state refer to. Only section order
+ * changes; threads, counts, and nesting pass through untouched.
  */
 export function orderSidebarThreadGroups<TThread extends GroupableThread>(
   groups: ReadonlyArray<SidebarThreadGroup<TThread>>,
@@ -548,12 +514,9 @@ export function planSidebarSectionOrder(input: {
 }
 
 /**
- * Flattens the group tree into the rows the sidebar renders, honoring collapse
- * state.
- *
- * Collapsing a parent hides its subsections entirely — including their own
- * headers — so a collapsed section is always exactly one row tall regardless
- * of how deep it nests.
+ * Flattens the group tree into the rows the sidebar renders, honoring collapse state.
+ * Collapsing a parent hides its subsections entirely, headers included, so a collapsed section
+ * is always exactly one row tall.
  */
 export type SidebarThreadGroupRow<TThread extends GroupableThread> =
   | {

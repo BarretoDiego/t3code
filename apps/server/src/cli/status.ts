@@ -187,11 +187,10 @@ export const readStatus = Effect.fn("cli.status.read")(function* (
             ),
             Stream.runHead,
             Effect.flatMap((snapshot) =>
-              Option.isSome(snapshot)
-                ? Effect.succeed(snapshot.value)
-                : Effect.fail(
-                    new StatusReadError({ detail: "Terminal stream ended without a snapshot." }),
-                  ),
+              Effect.fromOption(
+                snapshot,
+                () => new StatusReadError({ detail: "Terminal stream ended without a snapshot." }),
+              ),
             ),
           ),
           [],

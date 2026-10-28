@@ -71,7 +71,7 @@ it.effect("resolves fresh redacted credentials only from the compute namespace",
 it.effect("rejects traversal and reports missing credentials without secret content", () =>
   Effect.gen(function* () {
     const store = ServerSecretStore.of({
-      get: () => Effect.succeed(Option.none()),
+      get: () => Effect.succeedNone,
       set: () => Effect.void,
       create: () => Effect.void,
       remove: () => Effect.void,

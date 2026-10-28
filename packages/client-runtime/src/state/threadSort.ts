@@ -57,7 +57,9 @@ export function sortSettledThreads<T extends SettledThreadTimestampInput & { rea
     })
     .sort(
       (left, right) =>
-        right.timestampMs - left.timestampMs || left.thread.id.localeCompare(right.thread.id),
+        right.timestampMs - left.timestampMs ||
+        // Plain order, as the server pages ties (ids mix upper and lower case).
+        (left.thread.id < right.thread.id ? -1 : left.thread.id > right.thread.id ? 1 : 0),
     )
     .map(({ thread }) => thread);
 }
@@ -161,15 +163,10 @@ export function getLatestThreadForProject<
   return latest;
 }
 
-// ── Pinned reorder: fractional index keys ──────────────────────────────
-// Pinned threads carry an optional pinOrderKey (a base-26 string). The
-// pinned block sorts keyed threads by plain string comparison, so a drag
-// (web) or Move up/down (mobile) writes ONE key to ONE thread on that
-// thread's own server — neighbors, possibly living on other servers, are
-// never touched, and every client connected to the same servers converges
-// on the same order.
-// The key math lives in shared so the server's CLI places a pin exactly as
-// the clients do.
+// Pinned reorder uses fractional index keys: a drag or Move up/down writes ONE
+// `pinOrderKey` (base-26 string) to ONE thread on its own server, so neighbors on
+// other servers are untouched and every client converges. The key math lives in
+// shared so the server CLI places a pin exactly as clients do.
 export { pinOrderKeyBetween };
 
 export function generateSpreadPinOrderKeys(count: number): string[] {

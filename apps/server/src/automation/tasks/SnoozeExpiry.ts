@@ -37,14 +37,8 @@ function organizedThread(event: OrchestrationV2DomainEvent): OrchestrationV2AppT
 }
 
 /**
- * Makes a snooze's end a server fact. A snooze only hides a thread until a
- * time: it does not pause its agent, mute its notifications, or drop anything.
- * When the time passes this wakes the thread with `thread.unsnooze` (reason
- * `expired`), which records `thread.unsnoozed` like any other wake.
- *
- * Deadlines live on the thread projection. This keeps only an index of them,
- * rebuilt from the projection on start, so a snooze that ran out while the
- * server was down is woken as soon as it is back.
+ * Makes a snooze's end a server fact: when the time passes, wakes the thread with `thread.unsnooze` (reason `expired`). A snooze only hides a thread; it does not pause its agent.
+ * Deadlines live on the thread projection; this keeps an index rebuilt on start, so a snooze that ran out while the server was down wakes as soon as it is back.
  */
 export class SnoozeExpiry extends Context.Service<
   SnoozeExpiry,
@@ -136,10 +130,9 @@ const make = Effect.gen(function* () {
           const thread = organizedThread(event);
           return thread === null ? Effect.void : track(thread);
         }),
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.failCause(cause)
-            : Effect.logWarning("Snooze expiry event stream failed", { cause }),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) => Effect.logWarning("Snooze expiry event stream failed", { cause }),
         ),
       ),
     );

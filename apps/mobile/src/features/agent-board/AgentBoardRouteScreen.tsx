@@ -1,7 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
 import {
   buildAgentBoard,
-  nextAgentBoardSnoozeWakeAt,
   type AgentBoardCard,
   type AgentBoardFilters,
   type BoardConnectivity,
@@ -14,8 +13,8 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { StackActions, useNavigation } from "@react-navigation/native";
+import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -25,6 +24,7 @@ import { useEnvironments } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useWorkspaceState } from "../../state/workspace";
+import { useThreadListNow } from "../threads/use-thread-list-now";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 
 const COLUMNS = [
@@ -46,21 +46,6 @@ function connectivityFor(phase: string, hasShell: boolean): BoardConnectivity {
   return "disconnected";
 }
 
-function useSnoozeWakeTick(threads: ReturnType<typeof useThreadShells>): number {
-  const [tick, bumpTick] = useState(0);
-  const nextWakeAt = useMemo(() => {
-    void tick;
-    return nextAgentBoardSnoozeWakeAt(threads, Date.now());
-  }, [threads, tick]);
-  useEffect(() => {
-    if (nextWakeAt === null) return;
-    const delayMs = Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2_147_483_647);
-    const id = setTimeout(() => bumpTick((current) => current + 1), delayMs);
-    return () => clearTimeout(id);
-  }, [nextWakeAt, tick]);
-  return tick;
-}
-
 export function AgentBoardRouteScreen() {
   const navigation = useNavigation();
   const threads = useThreadShells();
@@ -68,7 +53,7 @@ export function AgentBoardRouteScreen() {
   const configs = useServerConfigs();
   const { environments } = useEnvironments();
   const { state: workspaceState } = useWorkspaceState();
-  const snoozeWakeTick = useSnoozeWakeTick(threads);
+  const classificationNow = useThreadListNow(threads);
   const [column, setColumn] = useState<ColumnKey>("needsYou");
   const [onlyActive, setOnlyActive] = useState(true);
   const [environmentId, setEnvironmentId] = useState<string | null>(null);
@@ -120,10 +105,6 @@ export function AgentBoardRouteScreen() {
     }),
     [environmentId, onlyActive, projectKey],
   );
-  const classificationNow = useMemo(() => {
-    void snoozeWakeTick;
-    return new Date().toISOString();
-  }, [filters, snoozeWakeTick, threads]);
   const model = useMemo(
     () =>
       buildAgentBoard({
@@ -315,6 +296,7 @@ export function AgentBoardRouteScreen() {
             <MobileBoardCard
               key={`${card.ref.environmentId}:${card.ref.threadId}`}
               card={card}
+              now={classificationNow}
               supportsSettlement={
                 configs.get(card.ref.environmentId)?.environment.capabilities.threadSettlement ===
                 true
@@ -322,10 +304,12 @@ export function AgentBoardRouteScreen() {
               shell={shellsByKey.get(`${card.ref.environmentId}:${card.ref.threadId}`) ?? null}
               onArchive={() => void runAction(card, "archive")}
               onOpen={() =>
-                navigation.navigate("Thread", {
-                  environmentId: card.ref.environmentId,
-                  threadId: card.ref.threadId,
-                })
+                navigation.dispatch(
+                  StackActions.push("Thread", {
+                    environmentId: card.ref.environmentId,
+                    threadId: card.ref.threadId,
+                  }),
+                )
               }
               onScopeEnvironment={() => {
                 setEnvironmentId(card.ref.environmentId);
@@ -351,6 +335,7 @@ export function AgentBoardRouteScreen() {
 }
 
 function MobileBoardCard(props: {
+  readonly now: string;
   readonly card: AgentBoardCard;
   readonly supportsSettlement: boolean;
   readonly shell: ReturnType<typeof useThreadShells>[number] | null;
@@ -369,7 +354,7 @@ function MobileBoardCard(props: {
   const isLifecycleSettled =
     props.shell?.settledOverride === "settled" || props.shell?.settledAt != null;
   const canSettleCard =
-    props.shell !== null && !hasQueuedTurnStart(props.shell, { now: new Date().toISOString() });
+    props.shell !== null && !hasQueuedTurnStart(props.shell, { now: props.now });
   return (
     <View className="gap-2 rounded-2xl border border-border bg-surface p-4">
       <Pressable accessibilityRole="link" onPress={props.onOpen}>

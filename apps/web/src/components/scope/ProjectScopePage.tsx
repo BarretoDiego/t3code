@@ -3,8 +3,8 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { SquarePenIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
 
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useProject, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
@@ -18,12 +18,9 @@ import { EnvironmentCrumb, ProjectCrumb } from "../WorkspaceScopeCrumbs";
 import { SCOPE_ROW_CLASS, WorkspaceScopePage, WorkspaceScopeSection } from "./WorkspaceScopePage";
 
 /**
- * Everything in one project.
- *
- * Reached by clicking the project crumb. Scoped to the project on *this*
- * environment rather than to the sidebar's logical grouping: the crumb comes
- * from a thread, a thread has exactly one environment, and a page reached from
- * a path should not quietly widen it.
+ * Everything in one project, reached from the project crumb. Scoped to the project on this
+ * environment, not the sidebar's logical grouping: a thread has exactly one environment, and a
+ * page reached from a path should not quietly widen it.
  */
 export function ProjectScopePage(props: {
   readonly environmentId: EnvironmentId;
@@ -31,10 +28,7 @@ export function ProjectScopePage(props: {
 }) {
   const { environmentId, projectId } = props;
   const { environments } = useEnvironments();
-  const projectRef = useMemo(
-    () => scopeProjectRef(environmentId, projectId),
-    [environmentId, projectId],
-  );
+  const projectRef = scopeProjectRef(environmentId, projectId);
   const project = useProject(projectRef);
   const threads = useThreadShells();
   const serverConfigs = useServerConfigs();
@@ -42,27 +36,22 @@ export function ProjectScopePage(props: {
     environments.find((entry) => entry.environmentId === environmentId)?.label,
   );
   const handleNewThread = useNewThreadHandler();
-  const startNewThread = useCallback(() => {
+  const startNewThread = () => {
     void handleNewThread(projectRef);
-  }, [handleNewThread, projectRef]);
+  };
 
   // Quantized to the minute: the shelving rule is clock-derived, and a
   // per-render `now` would re-shelve the list on every unrelated re-render.
-  const nowMinute = Math.floor(Date.now() / 60_000);
-  const shelves = useMemo(
-    () =>
-      shelveScopeThreads({
-        threads: threads.filter(
-          (thread) => thread.environmentId === environmentId && thread.projectId === projectId,
-        ),
-        now: new Date(nowMinute * 60_000).toISOString(),
-        supportsSettlement: (id) =>
-          serverConfigs.get(id)?.environment.capabilities.threadSettlement === true,
-        supportsSnooze: (id) =>
-          serverConfigs.get(id)?.environment.capabilities.threadSnooze === true,
-      }),
-    [environmentId, nowMinute, projectId, serverConfigs, threads],
-  );
+  const nowMinute = Math.floor(useNowMinuteMs() / 60_000);
+  const shelves = shelveScopeThreads({
+    threads: threads.filter(
+      (thread) => thread.environmentId === environmentId && thread.projectId === projectId,
+    ),
+    now: new Date(nowMinute * 60_000).toISOString(),
+    supportsSettlement: (id) =>
+      serverConfigs.get(id)?.environment.capabilities.threadSettlement === true,
+    supportsSnooze: (id) => serverConfigs.get(id)?.environment.capabilities.threadSnooze === true,
+  });
 
   const label = project?.title ?? "Unknown project";
   const breadcrumb = (

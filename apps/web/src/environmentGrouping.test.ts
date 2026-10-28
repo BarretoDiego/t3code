@@ -5,7 +5,6 @@ import { deriveLogicalProjectKeyFromSettings } from "./logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
-  projectGroupsSpanEnvironments,
   resolveProjectEnvironmentSummary,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,

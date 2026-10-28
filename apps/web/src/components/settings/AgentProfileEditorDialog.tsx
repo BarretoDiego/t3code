@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, XIcon } from "lucide-react";
 import {
   AgentProfileSlug,
@@ -514,7 +514,7 @@ function RouteEditor(props: {
 }) {
   const { route } = props;
   const instance = props.instanceEntries.find((entry) => entry.instanceId === route.instanceId);
-  const instanceModels = useMemo(() => instance?.models ?? [], [instance]);
+  const instanceModels = instance?.models ?? [];
   const candidateSet = new Set(route.modelCandidates);
   const addableModels = instanceModels.filter((model) => !candidateSet.has(model.slug));
 
@@ -546,7 +546,7 @@ function RouteEditor(props: {
         <span className="text-muted-foreground text-xs">Model candidates</span>
         {route.modelCandidates.length === 0 ? (
           <span className="text-muted-foreground/80 text-xs">
-            No candidates — the profile keeps this provider's current model.
+            No candidates. The profile keeps this provider's current model.
           </span>
         ) : (
           <ul className="grid gap-1">

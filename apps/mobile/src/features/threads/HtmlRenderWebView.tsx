@@ -95,6 +95,7 @@ export function HtmlRenderWebView(props: {
     () => ({ uri: props.uri + htmlRenderThemeFragment(initialTheme) }),
     [props.uri, initialTheme],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- posts theme changes into the already loaded WebView
   useEffect(() => {
     if (shownTheme.current === null || shownTheme.current === theme) return;
     shownTheme.current = theme;
@@ -131,14 +132,12 @@ export function HtmlRenderWebView(props: {
         accessibilityLabel={props.title}
         style={{ flex: 1, backgroundColor: "transparent" }}
         allowsInlineMediaPlayback
-        automaticallyAdjustContentInsets={!props.nested}
+        contentInsetAdjustmentBehavior={props.nested ? "never" : "automatic"}
         bounces={!props.nested}
         showsVerticalScrollIndicator={!props.nested}
         showsHorizontalScrollIndicator={!props.nested}
         scrollEnabled={scrollable}
-        // Android only: the page holds vertical drags until it reaches an edge,
-        // then hands them to the feed (patches/react-native-webview). A page
-        // that only overflows sideways leaves vertical drags to the feed.
+        // Patched Android WebView hands vertical drags to the feed at its edges; horizontal-only overflow leaves them to the feed.
         nestedScrollEnabled={props.nested && overflow.y}
         overScrollMode={props.nested ? "never" : "always"}
         onShouldStartLoadWithRequest={(request) =>

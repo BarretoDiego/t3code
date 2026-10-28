@@ -458,11 +458,8 @@ export const layerWithoutTargetPolicy = Layer.effect(HookService, make).pipe(
 );
 
 /**
- * Needs `SqlClient`, `ServerEnvironment`, `ServerSecretStore` and
- * `ChildProcessSpawner`. The journal store and the orchestrator inbox are the
- * same layers `EventJournal` and the inbox module export, so a composition
- * that also provides those shares one instance of each. Add
- * `HookRuntime.workerLive` to start delivery.
+ * Needs `SqlClient`, `ServerEnvironment`, `ServerSecretStore` and `ChildProcessSpawner`. The journal store and orchestrator inbox are the same layers `EventJournal` and the inbox module export,
+ * so a composition that also provides those shares one instance of each. Add `HookRuntime.workerLive` to start delivery.
  */
 export const layer = layerWithoutTargetPolicy.pipe(
   Layer.provide(

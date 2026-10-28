@@ -73,14 +73,14 @@ const delegation = (
   ...(overrides.parentTaskId === undefined ? {} : { parentTaskId: overrides.parentTaskId }),
 });
 
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeDelegateInput = Schema.decodeSync(Schema.fromJsonString(TaskDelegateInput));
+
 /** Writes `value` to a temporary JSON file and returns its path. */
 const jsonFile = Effect.fn("test.jsonFile")(function* (value: unknown) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* fs.makeTempFileScoped({ prefix: "t3-task-", suffix: ".json" });
-  yield* fs.writeFileString(
-    path,
-    yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(value),
-  );
+  yield* fs.writeFileString(path, yield* encodeJson(value));
   return path;
 });
 
@@ -329,7 +329,7 @@ describe("t3 task delegate", () => {
       ),
       "utf8",
     );
-    const decoded = Schema.decodeUnknownSync(Schema.fromJsonString(TaskDelegateInput))(example);
+    const decoded = decodeDelegateInput(example);
     assert.equal(decoded.contract.onParentCancel, "detach");
     assert.isString(decoded.target.environmentId);
     assert.lengthOf(decoded.contract.acceptanceCriteria, 3);

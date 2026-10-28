@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../../hooks/useNowMinute";
 import {
   emptyHookDraft,
   hookDraftToInput,
@@ -29,7 +30,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../../localApi";
 import { automationEnvironment } from "../../../state/automation";
@@ -65,7 +66,7 @@ import {
   hookDeliveryFilterStatuses,
   type HookDeliveryFilterId,
 } from "../automationSettings.logic";
-import { SettingsRow, SettingsSection, useRelativeTimeTick } from "../settingsLayout";
+import { SettingsRow, SettingsSection } from "../settingsLayout";
 import {
   AutomationEnvironmentSection,
   DraftErrors,
@@ -99,12 +100,12 @@ export function HooksSettingsSection({
 }) {
   const [editor, setEditor] = useState<HookEditorTarget | null>(null);
   const [testing, setTesting] = useState<{ environmentId: EnvironmentId; hook: Hook } | null>(null);
-  const openForEdit = useCallback((environmentId: EnvironmentId, hook: Hook) => {
+  const openForEdit = (environmentId: EnvironmentId, hook: Hook) => {
     setEditor({ environmentId, hook });
-  }, []);
-  const openTest = useCallback((environmentId: EnvironmentId, hook: Hook) => {
+  };
+  const openTest = (environmentId: EnvironmentId, hook: Hook) => {
     setTesting({ environmentId, hook });
-  }, []);
+  };
   const creatable = environments.filter(
     (environment) => automationEnvironmentAvailability(environment) === "ready",
   );
@@ -174,11 +175,8 @@ function useOrchestratorNames(environmentId: EnvironmentId) {
     automationEnvironment.orchestratorsLive({ environmentId, input: {} }),
   );
   const orchestrators = query.data?.orchestrators ?? EMPTY_ORCHESTRATORS;
-  const nameOf = useCallback(
-    (orchestratorId: string) =>
-      orchestrators.find((entry) => entry.id === orchestratorId)?.name ?? null,
-    [orchestrators],
-  );
+  const nameOf = (orchestratorId: string) =>
+    orchestrators.find((entry) => entry.id === orchestratorId)?.name ?? null;
   return { orchestrators, nameOf };
 }
 
@@ -337,15 +335,12 @@ function HookRow({
 
 function HookDeliveries({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const [filter, setFilter] = useState<HookDeliveryFilterId>("attention");
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const statuses = hookDeliveryFilterStatuses(filter);
-  const input = useMemo(
-    () => ({
-      ...(statuses === null ? {} : { statuses: [...statuses] }),
-      limit: DELIVERY_PAGE_SIZE,
-    }),
-    [statuses],
-  );
+  const input = {
+    ...(statuses === null ? {} : { statuses: [...statuses] }),
+    limit: DELIVERY_PAGE_SIZE,
+  };
   const deliveries = useEnvironmentQuery(
     automationEnvironment.hookDeliveries({ environmentId, input }),
   );

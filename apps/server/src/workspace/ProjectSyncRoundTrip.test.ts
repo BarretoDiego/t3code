@@ -1,17 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * End-to-end project sync between two real directories.
- *
- * The three server pieces (manifest walk, export stream, import/delete apply)
- * are only correct together: the diff the client computes has to name paths
- * the export can serve, the framing has to survive the trip, and the delete
- * pass has to leave the destination mirroring the origin. These tests drive
- * the whole loop rather than any one piece.
- *
- * `computeProjectSyncPlan` is imported from its source file because the diff
- * lives on the client (client-runtime is not, and should not become, a server
- * dependency) while the thing under test here is that the client's plan and
- * the server's filesystem work agree.
+ * End-to-end project sync between two real directories. The manifest walk, export stream and import/delete apply are only correct together,
+ * so these tests drive the whole loop rather than any one piece.
+ * `computeProjectSyncPlan` is imported from its source file because the diff lives on the client and client-runtime must not become a server dependency;
+ * what is under test is that the client's plan and the server's filesystem agree.
  */
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";

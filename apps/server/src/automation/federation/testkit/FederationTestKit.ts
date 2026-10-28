@@ -1,15 +1,8 @@
 /**
- * Two or more complete environments in one test process.
- *
- * Each environment gets its own state directory, SQLite file, secret store,
- * environment id and real session store. What the fronts that own them have
- * not built yet (journal, delegated tasks, orchestrator inbox) is a small
- * recording layer whose state outlives a simulated restart. The network
- * between environments is the one test double of the federation code itself:
- * it authenticates the bearer token against the destination's real session
- * store, derives the caller with the production `callerFromSession`, enforces
- * the production scope table, round-trips every payload through its wire
- * schema, and can be told to refuse connections or lose a response.
+ * Two or more complete environments in one test process, each with its own state directory, SQLite file, secret store, id and real session store.
+ * Journal, delegated tasks and the orchestrator inbox are recording layers whose state outlives a simulated restart.
+ * The network between environments is the one test double: it authenticates against the destination's real session store, uses the production `callerFromSession` and scope table,
+ * round-trips payloads through their wire schemas, and can be told to refuse connections or lose a response.
  */
 import {
   AUTOMATION_WS_METHODS,
@@ -159,7 +152,6 @@ export const makeWorld = Effect.fn("makeWorld")(function* (name: string) {
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
-// ---------------------------------------------------------------------------
 // Recording layers for the services other fronts own
 
 /** An in-memory journal that assigns cursors, ids and the origin environment as the real one must. */
@@ -172,7 +164,7 @@ export const journalLayer = (world: Pick<EnvironmentWorld, "id" | "journal">) =>
       retainedEntries: world.journal.entries.length,
       observedAt,
     })),
-    read: (_caller, input) =>
+    read: Effect.fn("EventJournal.EventJournal.read")((_caller, input) =>
       Effect.map(nowIso, (observedAt) => {
         const after = input.afterCursor ?? 0;
         const window = world.journal.entries
@@ -196,8 +188,9 @@ export const journalLayer = (world: Pick<EnvironmentWorld, "id" | "journal">) =>
           },
         };
       }),
+    ),
     subscribe: () => Stream.fail(unsupported("EventJournal.subscribe")),
-    emit: (caller, input) =>
+    emit: Effect.fn("EventJournal.EventJournal.emit")((caller, input) =>
       Effect.map(nowIso, (now) => {
         const known = world.journal.dedup.get(`emit:${input.idempotencyKey}`);
         if (known !== undefined) return { entry: known, created: false };
@@ -231,67 +224,83 @@ export const journalLayer = (world: Pick<EnvironmentWorld, "id" | "journal">) =>
         world.journal.dedup.set(`emit:${input.idempotencyKey}`, entry);
         return { entry, created: true };
       }),
-    append: (events) =>
-      Effect.map(nowIso, (now) =>
-        events.map((event) => {
-          const known =
-            event.dedupKey === undefined ? undefined : world.journal.dedup.get(event.dedupKey);
-          if (known !== undefined) return known;
-          const cursor = world.journal.entries.length + 1;
-          const eventId = EventId.make(`evt-${world.id}-${cursor}`);
-          const entry: AutomationJournalEntry = {
-            cursor,
-            event: {
-              version: 1,
-              eventId,
-              type: event.type,
-              origin: { environmentId: world.id, ...event.origin },
-              originCursor: cursor,
-              scope: event.scope,
-              aggregate: { ...event.aggregate, revision: 0 },
-              occurredAt: event.occurredAt ?? now,
-              recordedAt: now,
-              correlationId: event.correlationId ?? event.causedBy?.correlationId ?? eventId,
-              causationId: event.causedBy?.eventId ?? null,
-              hops: event.causedBy === undefined ? 0 : event.causedBy.hops + 1,
-              payload: event.payload,
-              ...(event.refs === undefined ? {} : { refs: event.refs }),
-            },
-          };
-          world.journal.entries.push(entry);
-          if (event.dedupKey !== undefined) world.journal.dedup.set(event.dedupKey, entry);
-          return entry;
-        }),
-      ),
-    importPeerEntries: (entries) =>
-      Effect.sync(() =>
-        entries.flatMap((entry) => {
-          const key = `import:${entry.event.origin.environmentId}:${entry.event.originCursor}`;
-          if (world.journal.dedup.has(key)) return [];
-          const imported = { cursor: world.journal.entries.length + 1, event: entry.event };
-          world.journal.entries.push(imported);
-          world.journal.dedup.set(key, imported);
-          return [imported];
-        }),
-      ),
-    listConsumers: () => Effect.fail(unsupported("EventJournal.listConsumers")),
-    ackConsumer: () => Effect.fail(unsupported("EventJournal.ackConsumer")),
-    deleteConsumer: () => Effect.fail(unsupported("EventJournal.deleteConsumer")),
+    ),
+    append: Effect.fn("EventJournal.EventJournal.append")(function* (
+      events: ReadonlyArray<EventJournal.EventJournalAppend>,
+    ) {
+      const now = yield* nowIso;
+      return events.map((event) => {
+        const known =
+          event.dedupKey === undefined ? undefined : world.journal.dedup.get(event.dedupKey);
+        if (known !== undefined) return known;
+        const cursor = world.journal.entries.length + 1;
+        const eventId = EventId.make(`evt-${world.id}-${cursor}`);
+        const entry: AutomationJournalEntry = {
+          cursor,
+          event: {
+            version: 1,
+            eventId,
+            type: event.type,
+            origin: { environmentId: world.id, ...event.origin },
+            originCursor: cursor,
+            scope: event.scope,
+            aggregate: { ...event.aggregate, revision: 0 },
+            occurredAt: event.occurredAt ?? now,
+            recordedAt: now,
+            correlationId: event.correlationId ?? event.causedBy?.correlationId ?? eventId,
+            causationId: event.causedBy?.eventId ?? null,
+            hops: event.causedBy === undefined ? 0 : event.causedBy.hops + 1,
+            payload: event.payload,
+            ...(event.refs === undefined ? {} : { refs: event.refs }),
+          },
+        };
+        world.journal.entries.push(entry);
+        if (event.dedupKey !== undefined) world.journal.dedup.set(event.dedupKey, entry);
+        return entry;
+      });
+    }),
+    importPeerEntries: Effect.fn("EventJournal.EventJournal.importPeerEntries")(
+      (entries: ReadonlyArray<AutomationJournalEntry>) =>
+        Effect.sync(() =>
+          entries.flatMap((entry) => {
+            const key = `import:${entry.event.origin.environmentId}:${entry.event.originCursor}`;
+            if (world.journal.dedup.has(key)) return [];
+            const imported = { cursor: world.journal.entries.length + 1, event: entry.event };
+            world.journal.entries.push(imported);
+            world.journal.dedup.set(key, imported);
+            return [imported];
+          }),
+        ),
+    ),
+    listConsumers: Effect.fn("EventJournal.EventJournal.listConsumers")(() =>
+      Effect.fail(unsupported("EventJournal.listConsumers")),
+    ),
+    ackConsumer: Effect.fn("EventJournal.EventJournal.ackConsumer")(() =>
+      Effect.fail(unsupported("EventJournal.ackConsumer")),
+    ),
+    deleteConsumer: Effect.fn("EventJournal.EventJournal.deleteConsumer")(() =>
+      Effect.fail(unsupported("EventJournal.deleteConsumer")),
+    ),
   });
 
 const tasksLayer = (world: EnvironmentWorld) =>
   Layer.succeed(DelegatedTaskService.DelegatedTaskService, {
-    delegate: () => Effect.fail(unsupported("DelegatedTaskService.delegate")),
-    list: () => Effect.fail(unsupported("DelegatedTaskService.list")),
-    threadTree: () => Effect.fail(unsupported("DelegatedTaskService.threadTree")),
-    get: (_caller, taskId) => {
+    delegate: Effect.fn("DelegatedTaskService.DelegatedTaskService.delegate")(() =>
+      Effect.fail(unsupported("DelegatedTaskService.delegate")),
+    ),
+    list: Effect.fn("DelegatedTaskService.DelegatedTaskService.list")(() =>
+      Effect.fail(unsupported("DelegatedTaskService.list")),
+    ),
+    threadTree: Effect.fn("DelegatedTaskService.DelegatedTaskService.threadTree")(() =>
+      Effect.fail(unsupported("DelegatedTaskService.threadTree")),
+    ),
+    get: Effect.fn("DelegatedTaskService.DelegatedTaskService.get")(function* (_caller, taskId) {
       const task = world.tasks.byId.get(taskId);
-      return task === undefined
-        ? Effect.fail(automationError("NOT_FOUND", `No task ${taskId}.`))
-        : Effect.succeed(task);
-    },
-    update: (_caller, input) =>
-      Effect.gen(function* () {
+      if (task === undefined) return yield* automationError("NOT_FOUND", `No task ${taskId}.`);
+      return task;
+    }),
+    update: Effect.fn("DelegatedTaskService.DelegatedTaskService.update")(
+      function* (_caller, input) {
         const task = world.tasks.byId.get(input.taskId);
         if (task === undefined) {
           return yield* automationError("NOT_FOUND", `No task ${input.taskId}.`);
@@ -302,9 +311,10 @@ const tasksLayer = (world: EnvironmentWorld) =>
             : task;
         world.tasks.byId.set(task.id, next);
         return next;
-      }),
-    acceptRemote: (_caller, task) =>
-      Effect.gen(function* () {
+      },
+    ),
+    acceptRemote: Effect.fn("DelegatedTaskService.DelegatedTaskService.acceptRemote")(
+      function* (_caller, task) {
         world.tasks.acceptCalls += 1;
         const failure = world.tasks.failures.shift();
         if (failure !== undefined) return yield* failure;
@@ -320,18 +330,21 @@ const tasksLayer = (world: EnvironmentWorld) =>
         };
         world.tasks.byId.set(task.id, accepted);
         return accepted;
-      }),
-    applyRemoteStatus: (_caller, task) =>
-      Effect.sync(() => {
-        world.tasks.remoteStatuses.push(task);
-        world.tasks.byId.set(task.id, task);
-        return task;
-      }),
+      },
+    ),
+    applyRemoteStatus: Effect.fn("DelegatedTaskService.DelegatedTaskService.applyRemoteStatus")(
+      (_caller, task) =>
+        Effect.sync(() => {
+          world.tasks.remoteStatuses.push(task);
+          world.tasks.byId.set(task.id, task);
+          return task;
+        }),
+    ),
   });
 
 const inboxLayer = (world: EnvironmentWorld) =>
   Layer.succeed(OrchestratorInbox.OrchestratorInbox, {
-    deliver: (input) =>
+    deliver: Effect.fn("OrchestratorInbox.OrchestratorInbox.deliver")((input) =>
       Effect.map(nowIso, (now) => {
         const known = world.inbox.entries.find(
           (entry) =>
@@ -349,10 +362,8 @@ const inboxLayer = (world: EnvironmentWorld) =>
         world.inbox.entries.push(entry);
         return { entry, created: true };
       }),
+    ),
   });
-
-// ---------------------------------------------------------------------------
-// Network
 
 const viaWire =
   <S extends Schema.Top>(schema: S) =>
@@ -366,27 +377,26 @@ const viaWire =
 
 const transportLayer = (network: Network) =>
   Layer.succeed(PeerTransport.PeerTransport, {
-    describe: (httpBaseUrl) =>
-      Effect.gen(function* () {
-        const node = network.nodes.get(httpBaseUrl);
-        if (node === undefined || network.unreachable.has(httpBaseUrl)) {
-          return yield* new PeerTransport.PeerTransportError({
-            reason: "unreachable",
-            origin: httpBaseUrl,
-          });
-        }
-        const descriptor = yield* Context.get(node, ServerEnvironment.ServerEnvironment)
-          .getDescriptor;
-        return {
-          environmentId: descriptor.environmentId,
-          label: descriptor.label,
-          automation: descriptor.capabilities.automation === true,
-          federationProtocolVersions: descriptor.capabilities.federationProtocolVersions ?? [],
-          ...network.descriptorOverrides.get(httpBaseUrl),
-        };
-      }),
-    exchangePairing: (httpBaseUrl, credential) =>
-      Effect.gen(function* () {
+    describe: Effect.fn("PeerTransport.PeerTransport.describe")(function* (httpBaseUrl) {
+      const node = network.nodes.get(httpBaseUrl);
+      if (node === undefined || network.unreachable.has(httpBaseUrl)) {
+        return yield* new PeerTransport.PeerTransportError({
+          reason: "unreachable",
+          origin: httpBaseUrl,
+        });
+      }
+      const descriptor = yield* Context.get(node, ServerEnvironment.ServerEnvironment)
+        .getDescriptor;
+      return {
+        environmentId: descriptor.environmentId,
+        label: descriptor.label,
+        automation: descriptor.capabilities.automation === true,
+        federationProtocolVersions: descriptor.capabilities.federationProtocolVersions ?? [],
+        ...network.descriptorOverrides.get(httpBaseUrl),
+      };
+    }),
+    exchangePairing: Effect.fn("PeerTransport.PeerTransport.exchangePairing")(
+      function* (httpBaseUrl, credential) {
         const node = network.nodes.get(httpBaseUrl);
         if (node === undefined || network.unreachable.has(httpBaseUrl)) {
           return yield* new PeerTransport.PeerTransportError({
@@ -408,70 +418,65 @@ const transportLayer = (network: Network) =>
             ),
           );
         return result.access_token;
-      }),
-    open: (httpBaseUrl, token) =>
-      Effect.gen(function* () {
-        const unreachable = new PeerTransport.PeerTransportError({
-          reason: "unreachable",
-          origin: httpBaseUrl,
-        });
-        const unauthorized = new PeerTransport.PeerTransportError({
-          reason: "unauthorized",
-          origin: httpBaseUrl,
-        });
-        const reach = Effect.suspend(() => {
-          const node = network.nodes.get(httpBaseUrl);
-          return node === undefined || network.unreachable.has(httpBaseUrl)
-            ? Effect.fail(unreachable)
-            : Effect.succeed(node);
-        });
-        // As on a real socket, the session is verified once, when the link opens.
-        const session = yield* Effect.flatMap(reach, (node) =>
-          Context.get(node, SessionStore.SessionStore)
-            .verify(token)
-            .pipe(Effect.mapError(() => unauthorized)),
-        );
-        const caller = callerFromSession(session);
-        const authorize = (method: keyof typeof AUTOMATION_RPC_REQUIRED_SCOPES) =>
-          session.scopes.includes(AUTOMATION_RPC_REQUIRED_SCOPES[method])
-            ? Effect.void
-            : Effect.fail(unauthorized);
-        return {
-          hello: (input) =>
-            Effect.gen(function* () {
-              const node = yield* reach;
-              yield* authorize(AUTOMATION_WS_METHODS.peerHello);
-              network.calls.push({ to: httpBaseUrl, method: "hello", messages: 0 });
-              const result = yield* Context.get(node, PeerService.PeerService)
-                .hello(caller, yield* viaWire(PeerHelloInput)(input))
-                .pipe(Effect.flatMap(viaWire(PeerHelloResult)));
-              return network.helloOverrides.get(httpBaseUrl)?.(result) ?? result;
-            }),
-          deliver: (input) =>
-            Effect.gen(function* () {
-              const node = yield* reach;
-              yield* authorize(AUTOMATION_WS_METHODS.peerDeliver);
-              network.calls.push({
-                to: httpBaseUrl,
-                method: "deliver",
-                messages: input.messages.length,
-              });
-              const result = yield* Context.get(node, PeerService.PeerService)
-                .deliver(caller, yield* viaWire(PeerDeliverInput)(input))
-                .pipe(Effect.flatMap(viaWire(PeerDeliverResult)));
-              const lost = network.lostResponses.get(httpBaseUrl) ?? 0;
-              if (lost > 0) {
-                network.lostResponses.set(httpBaseUrl, lost - 1);
-                return yield* unreachable;
-              }
-              return result;
-            }),
-        } satisfies PeerTransport.PeerLink;
-      }),
+      },
+    ),
+    open: Effect.fn("PeerTransport.PeerTransport.open")(function* (httpBaseUrl, token) {
+      const unreachable = new PeerTransport.PeerTransportError({
+        reason: "unreachable",
+        origin: httpBaseUrl,
+      });
+      const unauthorized = new PeerTransport.PeerTransportError({
+        reason: "unauthorized",
+        origin: httpBaseUrl,
+      });
+      const reach = Effect.suspend(() => {
+        const node = network.nodes.get(httpBaseUrl);
+        return node === undefined || network.unreachable.has(httpBaseUrl)
+          ? Effect.fail(unreachable)
+          : Effect.succeed(node);
+      });
+      // As on a real socket, the session is verified once, when the link opens.
+      const session = yield* Effect.flatMap(reach, (node) =>
+        Context.get(node, SessionStore.SessionStore)
+          .verify(token)
+          .pipe(Effect.mapError(() => unauthorized)),
+      );
+      const caller = callerFromSession(session);
+      const authorize = (method: keyof typeof AUTOMATION_RPC_REQUIRED_SCOPES) =>
+        session.scopes.includes(AUTOMATION_RPC_REQUIRED_SCOPES[method])
+          ? Effect.void
+          : Effect.fail(unauthorized);
+      return {
+        hello: Effect.fn("hello")(function* (input) {
+          const node = yield* reach;
+          yield* authorize(AUTOMATION_WS_METHODS.peerHello);
+          network.calls.push({ to: httpBaseUrl, method: "hello", messages: 0 });
+          const result = yield* Context.get(node, PeerService.PeerService)
+            .hello(caller, yield* viaWire(PeerHelloInput)(input))
+            .pipe(Effect.flatMap(viaWire(PeerHelloResult)));
+          return network.helloOverrides.get(httpBaseUrl)?.(result) ?? result;
+        }),
+        deliver: Effect.fn("deliver")(function* (input) {
+          const node = yield* reach;
+          yield* authorize(AUTOMATION_WS_METHODS.peerDeliver);
+          network.calls.push({
+            to: httpBaseUrl,
+            method: "deliver",
+            messages: input.messages.length,
+          });
+          const result = yield* Context.get(node, PeerService.PeerService)
+            .deliver(caller, yield* viaWire(PeerDeliverInput)(input))
+            .pipe(Effect.flatMap(viaWire(PeerDeliverResult)));
+          const lost = network.lostResponses.get(httpBaseUrl) ?? 0;
+          if (lost > 0) {
+            network.lostResponses.set(httpBaseUrl, lost - 1);
+            return yield* unreachable;
+          }
+          return result;
+        }),
+      } satisfies PeerTransport.PeerLink;
+    }),
   });
-
-// ---------------------------------------------------------------------------
-// Environments
 
 const descriptorOf = (world: EnvironmentWorld): ExecutionEnvironmentDescriptor => ({
   environmentId: world.id,
@@ -497,7 +502,9 @@ const environmentLayer = (world: EnvironmentWorld, network: Network) =>
         inboxLayer(world),
         PeerOrchestratorMessages.layerUnsupported,
         // Tests drive passes themselves; nothing runs on a timer.
-        Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
+        Layer.succeed(Scheduler.Scheduler, {
+          register: Effect.fn("Scheduler.Scheduler.register")(() => Effect.void),
+        }),
       ),
     ),
     Layer.provideMerge(EnvironmentAuth.layer),

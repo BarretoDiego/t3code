@@ -132,9 +132,6 @@ const make = Effect.gen(function* () {
 
   yield* Effect.addFinalizer(() => Effect.forEach([...links.keys()], closeLink, { discard: true }));
 
-  // -------------------------------------------------------------------------
-  // Status
-
   /**
    * Publishes `peer.availability` when the settled status differs from the
    * last one announced. Within the debounce window the change waits for a
@@ -169,19 +166,18 @@ const make = Effect.gen(function* () {
     announced.set(environmentId, { status: record.detail.status, at: now });
   });
 
-  const setStatus = (
+  const setStatus = Effect.fn("setStatus")(function* (
     environmentId: EnvironmentId,
     status: PeerConnectionStatus,
     statusReason: string | null,
     extra?: (detail: PeerStore.PeerDetail, now: string) => Partial<PeerStore.PeerDetail>,
-  ) =>
-    Effect.gen(function* () {
-      const now = yield* nowIso;
-      yield* store.update(environmentId, {
-        detail: (current) => ({ ...current, status, statusReason, ...extra?.(current, now) }),
-        updatedAt: now,
-      });
+  ) {
+    const now = yield* nowIso;
+    yield* store.update(environmentId, {
+      detail: (current) => ({ ...current, status, statusReason, ...extra?.(current, now) }),
+      updatedAt: now,
     });
+  });
 
   const scheduleRetry = Effect.fn("FederationReactor.scheduleRetry")(function* (
     environmentId: EnvironmentId,
@@ -211,9 +207,6 @@ const make = Effect.gen(function* () {
     yield* setStatus(environmentId, refused ? "revoked" : "offline", error.message);
     yield* scheduleRetry(environmentId, { slow: refused });
   });
-
-  // -------------------------------------------------------------------------
-  // Outbound
 
   const connect = Effect.fn("FederationReactor.connect")(function* (record: PeerStore.PeerRecord) {
     const environmentId = record.environmentId;
@@ -514,9 +507,6 @@ const make = Effect.gen(function* () {
       );
     });
 
-  // -------------------------------------------------------------------------
-  // Inbound
-
   const peerCaller = (environmentId: EnvironmentId): AutomationCaller => ({
     kind: "peer",
     environmentId,
@@ -773,9 +763,6 @@ const make = Effect.gen(function* () {
       }
     }).pipe(Effect.catchCause(logFailure("Peer inbox pass failed"))),
   );
-
-  // -------------------------------------------------------------------------
-  // Runtime
 
   const tick: FederationReactor["Service"]["tick"] = Effect.gen(function* () {
     const records = yield* store.list;

@@ -2,6 +2,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { type DiscoveredProjectScript } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+// oxlint-disable-next-line t3code/require-disposable-render -- react-test-renderer unit test; the render helper needs the browser project, which cannot mount a test renderer tree
 import { act, StrictMode, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -124,6 +125,7 @@ function deferredSave() {
 
 beforeEach(() => {
   renderer = null;
+  // oxlint-disable-next-line t3code/require-disposable-render -- react-test-renderer unit test; the render helper needs the browser project, which cannot mount a test renderer tree
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   onSubmit.mockReset();
   onClose.mockReset();

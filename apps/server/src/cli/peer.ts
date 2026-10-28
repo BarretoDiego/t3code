@@ -1,11 +1,7 @@
 /**
- * `t3 peer` - other T3 environments this one talks to directly.
- *
- * A peer link is one-directional: this environment holds a credential minted
- * by the peer and pushes addressed messages to it. For work that reports back
- * (a delegated task and its status) each side adds the other. Nothing is
- * relayed: the peer's URL must be reachable from here, on the LAN, over
- * Tailscale, or through a tunnel that is already running.
+ * `t3 peer` manages other T3 environments this one talks to directly. A link is one-directional: this environment holds a credential minted by the peer and pushes addressed messages to it;
+ * for work that reports back (a delegated task and its status) each side adds the other.
+ * Nothing is relayed: the peer's URL must be reachable from here, on the LAN, over Tailscale, or through a tunnel that is already running.
  */
 import {
   AUTOMATION_WS_METHODS,
@@ -339,7 +335,6 @@ const outboxCommand = Command.make("outbox", {
   ),
 );
 
-// ---------------------------------------------------------------------------
 // Credentials: run on the environment that will be called
 
 /**
@@ -368,25 +363,24 @@ export const issuePeerCredential = Effect.fn("cli.peer.issuePeerCredential")(fun
   return { kind: "pairing" as const, secret: issued.credential, expiresAt: issued.expiresAt };
 });
 
-const withLocalAuth = <A, E>(
+const withLocalAuth = Effect.fn("withLocalAuth")(function* <A, E>(
   flags: { readonly baseDir: Option.Option<string>; readonly devUrl?: Option.Option<URL> },
   run: Effect.Effect<
     A,
     E,
     EnvironmentAuth.EnvironmentAuth | ServerEnvironment.ServerEnvironmentIdentity
   >,
-) =>
-  Effect.gen(function* () {
-    const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
-    return yield* run.pipe(
-      Effect.provide(
-        EnvironmentAuth.layerRuntime.pipe(
-          Layer.provide(ServerConfig.layer(config)),
-          Layer.provide(Layer.succeed(References.MinimumLogLevel, "Error")),
-        ),
+) {
+  const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel);
+  return yield* run.pipe(
+    Effect.provide(
+      EnvironmentAuth.layerRuntime.pipe(
+        Layer.provide(ServerConfig.layer(config)),
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, "Error")),
       ),
-    );
-  });
+    ),
+  );
+});
 
 const credentialCreateCommand = Command.make("create", {
   ...authLocationFlags,

@@ -9,6 +9,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as Config from "../config.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
+import { DocumentText } from "../provider/DocumentText.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { ComputeService } from "./ComputeService.ts";
 
@@ -16,11 +17,17 @@ const environment = ServerEnvironment.of({
   getEnvironmentId: Effect.succeed(EnvironmentId.make("compute-test-environment")),
   getDescriptor: Effect.die("unused"),
 });
+// Compute artifacts are images; document text extraction never runs for them.
+const documentTextUnused = Layer.succeed(
+  DocumentText,
+  DocumentText.of({ ensure: () => Effect.undefined }),
+);
 const layer = ComputeService.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "t3-compute-service-test-" })),
   Layer.provideMerge(NodeServices.layer),
   Layer.provide(Layer.succeed(ServerEnvironment, environment)),
+  Layer.provideMerge(documentTextUnused),
 );
 
 it.effect(
@@ -62,6 +69,7 @@ it.effect(
         Layer.mergeAll(
           Config.layerTest(process.cwd(), { prefix: "t3-compute-restart-test-" }),
           Layer.succeed(ServerEnvironment, environment),
+          documentTextUnused,
           TestClock.layer(),
         ).pipe(Layer.provideMerge(NodeServices.layer)),
       ),

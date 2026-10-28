@@ -1,15 +1,6 @@
 /**
- * Normalizes provider-native plan rate limits into {@link ProviderRateLimits}.
- *
- * Every provider meters its plan differently — Claude names its windows
- * (`five_hour`, `seven_day_opus`, …) and reports percentages, Codex reports an
- * anonymous `primary`/`secondary` pair whose meaning only comes from
- * `windowDurationMins`. Both land here so the rest of the server, the wire, and
- * the clients only ever see labelled windows with a used percentage.
- *
- * Everything in this module is pure: adapters call it with the payload they
- * just received and hand the result to the registry.
- *
+ * Normalizes provider-native plan rate limits into {@link ProviderRateLimits}. Claude names its windows (`five_hour`, `seven_day_opus`) and reports percentages;
+ * Codex reports an anonymous `primary`/`secondary` pair whose meaning comes only from `windowDurationMins`. Pure: adapters pass the payload they received and hand the result to the registry.
  * @module provider/providerRateLimits
  */
 import * as DateTime from "effect/DateTime";

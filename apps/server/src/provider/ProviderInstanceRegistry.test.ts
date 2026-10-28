@@ -1,5 +1,6 @@
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as CodexInstallation from "./CodexInstallation.ts";
+import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "@effect/vitest";
@@ -35,6 +36,7 @@ import * as ResetCreditCoordinator from "./resetCreditCoordinator.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestrationAdapterInfrastructure.ts";
+import * as PortScanner from "../preview/PortScanner.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
@@ -154,6 +156,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
     prefix: "provider-instance-registry-test",
   }).pipe(
+    Layer.provideMerge(
+      Layer.mock(CodexManagedTokenBroker.CodexManagedTokenBroker)({
+        endpoint: Effect.succeed("unused-private-pipe"),
+      }),
+    ),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(
       Layer.mock(CodexInstallation.CodexInstallation)({
@@ -185,6 +192,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
   );
   const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
   const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
+    Layer.provide(PortScanner.layerTest),
     Layer.provideMerge(layerBase),
   );
 
@@ -279,8 +287,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
           [claudeId]: {
             driver: ProviderDriverKind.make("claudeAgent"),
             enabled: true,
-            // Packaged desktop builds start the server in $HOME, where some
-            // `claude` wrappers refuse to run.
+            // Packaged desktop starts in $HOME, where some claude wrappers refuse to run.
             environment: [{ name: "T3_CLAUDE_REQUIRED_CWD", value: stateDir, sensitive: false }],
             config: makeClaudeConfig({
               enabled: true,

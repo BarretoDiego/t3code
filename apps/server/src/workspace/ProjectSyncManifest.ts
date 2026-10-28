@@ -1,13 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * ProjectSyncManifest - Walks a project's workspace root and describes it as a
- * flat, hash-addressed manifest.
- *
- * The manifest is the input to the client-orchestrated diff between two
- * environments: the client asks both sides for one, compares them, and then
- * only exports/imports/deletes what actually differs. Nothing here touches the
- * event store — it is a read-only filesystem walk.
- *
+ * ProjectSyncManifest - Walks a project's workspace root and describes it as a flat, hash-addressed manifest.
+ * It is the input to the client-orchestrated diff between two environments: the client compares both sides' manifests and exports/imports/deletes only what differs.
+ * Nothing here touches the event store; it is a read-only filesystem walk.
  * @module ProjectSyncManifest
  */
 import * as NodeCrypto from "node:crypto";
@@ -63,11 +58,8 @@ function resolveIgnoredSegments(input: ProjectSyncManifestInputs): ReadonlySet<s
 
 /**
  * Depth-first walk producing one draft per entry we intend to publish.
- *
- * A directory only earns its own `"dir"` draft when it contributes nothing
- * else to the manifest — either because it is genuinely empty or because
- * everything inside it was ignored. Destinations rebuild every other directory
- * implicitly from the paths of the entries inside it.
+ * A directory earns its own `"dir"` draft only when it contributes nothing else (genuinely empty, or everything inside was ignored);
+ * destinations rebuild every other directory implicitly from the paths of the entries inside it.
  */
 async function collectDrafts(
   absoluteDir: string,

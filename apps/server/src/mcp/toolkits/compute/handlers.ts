@@ -7,64 +7,58 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { ComputeToolkit } from "./tools.ts";
 
 export const handlers = {
-  "compute.listProviders": () =>
-    Effect.gen(function* () {
-      yield* McpInvocationContext.requireComputeCapability();
-      const compute = yield* ComputeService;
-      return (yield* compute.list()).providers;
-    }),
-  "compute.listCapabilities": () =>
-    Effect.gen(function* () {
-      yield* McpInvocationContext.requireComputeCapability();
-      const compute = yield* ComputeService;
-      return (yield* compute.list()).providers.flatMap((provider) => provider.capabilities);
-    }),
-  "compute.listModels": () =>
-    Effect.gen(function* () {
-      yield* McpInvocationContext.requireComputeCapability();
-      const compute = yield* ComputeService;
-      return (yield* compute.list()).providers.flatMap((provider) => provider.models);
-    }),
-  "compute.submit": (request) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.requireComputeCapability();
-      if (request.context?.threadId && request.context.threadId !== scope.thread.threadId)
-        return yield* new ComputeError({
-          code: "compute-forbidden",
-          message: "Compute tools are scoped to the current thread.",
-        });
-      const compute = yield* ComputeService;
-      return yield* compute.submit({
-        request: {
-          ...request,
-          context: { ...request.context, threadId: scope.thread.threadId },
-        },
+  "compute.listProviders": Effect.fn("compute.listProviders")(function* () {
+    yield* McpInvocationContext.requireComputeCapability();
+    const compute = yield* ComputeService;
+    return (yield* compute.list()).providers;
+  }),
+  "compute.listCapabilities": Effect.fn("compute.listCapabilities")(function* () {
+    yield* McpInvocationContext.requireComputeCapability();
+    const compute = yield* ComputeService;
+    return (yield* compute.list()).providers.flatMap((provider) => provider.capabilities);
+  }),
+  "compute.listModels": Effect.fn("compute.listModels")(function* () {
+    yield* McpInvocationContext.requireComputeCapability();
+    const compute = yield* ComputeService;
+    return (yield* compute.list()).providers.flatMap((provider) => provider.models);
+  }),
+  "compute.submit": Effect.fn("compute.submit")(function* (request) {
+    const scope = yield* McpInvocationContext.requireComputeCapability();
+    if (request.context?.threadId && request.context.threadId !== scope.thread.threadId)
+      return yield* new ComputeError({
+        code: "compute-forbidden",
+        message: "Compute tools are scoped to the current thread.",
       });
-    }),
-  "compute.getJob": (input) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.requireComputeCapability();
-      const compute = yield* ComputeService;
-      const job = yield* compute.getJob(input);
-      if (job.request.context?.threadId !== scope.thread.threadId)
-        return yield* new ComputeError({
-          code: "job-not-found",
-          message: "Job not found in this thread.",
-        });
-      return job;
-    }),
-  "compute.cancelJob": (input) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.requireComputeCapability();
-      const compute = yield* ComputeService;
-      const job = yield* compute.getJob(input);
-      if (job.request.context?.threadId !== scope.thread.threadId)
-        return yield* new ComputeError({
-          code: "job-not-found",
-          message: "Job not found in this thread.",
-        });
-      return yield* compute.cancel(input);
-    }),
+    const compute = yield* ComputeService;
+    return yield* compute.submit({
+      request: {
+        ...request,
+        context: { ...request.context, threadId: scope.thread.threadId },
+      },
+    });
+  }),
+  "compute.getJob": Effect.fn("compute.getJob")(function* (input) {
+    const scope = yield* McpInvocationContext.requireComputeCapability();
+    const compute = yield* ComputeService;
+    const job = yield* compute.getJob(input);
+    if (job.request.context?.threadId !== scope.thread.threadId)
+      return yield* new ComputeError({
+        code: "job-not-found",
+        message: "Job not found in this thread.",
+      });
+    return job;
+  }),
+  "compute.cancelJob": Effect.fn("compute.cancelJob")(function* (input) {
+    const scope = yield* McpInvocationContext.requireComputeCapability();
+    const compute = yield* ComputeService;
+    const job = yield* compute.getJob(input);
+    if (job.request.context?.threadId !== scope.thread.threadId)
+      return yield* new ComputeError({
+        code: "job-not-found",
+        message: "Job not found in this thread.",
+      });
+    return yield* compute.cancel(input);
+  }),
 } satisfies Parameters<typeof ComputeToolkit.toLayer>[0];
 
 // Every compute handler gates itself on the thread's compute capability, so the

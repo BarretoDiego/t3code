@@ -14,13 +14,10 @@ import type {
 } from "@t3tools/contracts";
 
 /**
- * View models for durable automation: orchestrators, delegated tasks, jobs,
- * hooks, peers and responsibility claims. Web and mobile render from these so
- * a status reads the same on every client.
- *
- * Every mapping accepts a plain string. A server newer than this client can
- * send a status this file has never heard of, and that must read as a generic
- * label rather than break the screen it is on.
+ * View models for durable automation, shared by web and mobile so a status reads
+ * the same everywhere. Every mapping accepts a plain string: a newer server can send
+ * a status this file has never heard of, and that must read as a generic label
+ * rather than break the screen.
  */
 
 export type AutomationSeverity = "neutral" | "info" | "success" | "warning" | "error" | "unknown";
@@ -254,10 +251,6 @@ export function environmentSupportsAutomation(
   return config?.environment.capabilities.automation === true;
 }
 
-// ---------------------------------------------------------------------------
-// Orchestrators joined to threads
-// ---------------------------------------------------------------------------
-
 /** The orchestrator list one environment reported. */
 export interface OrchestratorEnvironmentSnapshot {
   readonly environmentId: EnvironmentId;
@@ -413,12 +406,10 @@ export const EMPTY_ORCHESTRATOR_THREAD_INDEX: OrchestratorThreadIndex = {
 };
 
 /**
- * Finds the orchestrator behind each main thread.
- *
- * The join is `(observing environment, Orchestrator.threadId)`. A projection
- * with no thread marks nothing. When two orchestrators of one environment name
- * the same thread, the one hosted there wins, then the newer record. Pass
- * `previous` to keep the markers that did not change.
+ * Finds the orchestrator behind each main thread, joined on `(observing
+ * environment, Orchestrator.threadId)`. A projection with no thread marks nothing.
+ * When two orchestrators name one thread, the one hosted there wins, then the
+ * newer record. Pass `previous` to keep markers that did not change.
  */
 export function buildOrchestratorThreadIndex(
   snapshots: ReadonlyArray<OrchestratorEnvironmentSnapshot>,
@@ -536,10 +527,6 @@ export function orchestratorStateActions(view: OrchestratorView): {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Budget and usage
-// ---------------------------------------------------------------------------
-
 function formatAutomationCount(value: number): string {
   return String(Math.trunc(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
@@ -644,10 +631,6 @@ export function presentOrchestratorBudget(
   ];
 }
 
-// ---------------------------------------------------------------------------
-// Inbox
-// ---------------------------------------------------------------------------
-
 export interface OrchestratorInboxSummary {
   readonly pending: number;
   readonly reserved: number;
@@ -685,10 +668,6 @@ export function inboxEntryPreview(entry: InboxEntry): string {
   if (types.length > 0) return types.join(", ");
   return humanizeAutomationStatus(entry.kind);
 }
-
-// ---------------------------------------------------------------------------
-// Staleness and reachability
-// ---------------------------------------------------------------------------
 
 /** After this, something read from another environment is shown as stale. */
 export const AUTOMATION_STALE_AFTER_MS = 2 * 60_000;
@@ -767,10 +746,6 @@ export function resolveEnvironmentReachability(input: {
   }
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Responsibility
-// ---------------------------------------------------------------------------
 
 const RESPONSIBILITY_RULES: Readonly<Record<string, string>> = {
   explicit_owner: "it was assigned explicitly",
@@ -980,10 +955,6 @@ export function buildThreadResponsibilityIndex(
   return changed || next.size !== previous.size ? next : previous;
 }
 
-// ---------------------------------------------------------------------------
-// Delegated tasks
-// ---------------------------------------------------------------------------
-
 const DELEGATED_TASK_SETTLED = new Set(["validated", "failed", "cancelled", "expired"]);
 
 export interface DelegatedTaskRow {
@@ -1043,10 +1014,6 @@ export function presentDelegatedTasks(input: {
       return left.task.id < right.task.id ? -1 : left.task.id > right.task.id ? 1 : 0;
     });
 }
-
-// ---------------------------------------------------------------------------
-// Activity and live changes
-// ---------------------------------------------------------------------------
 
 const AUTOMATION_EVENT_LABELS: Readonly<Record<string, string>> = {
   "thread.created": "Thread created",
@@ -1193,10 +1160,6 @@ export function applyAutomationChange(
   for (const kind of kinds) next[kind] += 1;
   return next;
 }
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
 
 const AUTOMATION_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   NOT_FOUND: "It no longer exists. Reload the list.",

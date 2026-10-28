@@ -50,8 +50,7 @@ export const RelayDeviceRegistrationRequest = Schema.Struct({
   iosMajorVersion: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(18))),
   androidApiLevel: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))),
   appVersion: Schema.optional(TrimmedNonEmptyString),
-  // APNs routing for this install: the topic must match the app's bundle id (dev/preview/prod
-  // variants differ) and development-signed builds receive sandbox tokens.
+  // APNs topic must match the variant's bundle id; development-signed builds use sandbox tokens.
   bundleId: Schema.optional(TrimmedNonEmptyString),
   apsEnvironment: Schema.optional(RelayApnsEnvironment),
   pushToken: Schema.optional(TrimmedNonEmptyString),
@@ -886,12 +885,7 @@ export const RelayCloudEnvironmentHealthProofPayload = Schema.Struct({
 export type RelayCloudEnvironmentHealthProofPayload =
   typeof RelayCloudEnvironmentHealthProofPayload.Type;
 
-/**
- * Sent with every webhook the relay forwards, signed with the relay's mint key
- * (`x-t3-relay-delivery`). The environment trusts the relay's delivery id,
- * receive time and trace context only when this verifies, since its webhook
- * URL can also be called directly.
- */
+/** Verify x-t3-relay-delivery with the relay mint key before trusting delivery id, time, or trace context. */
 export const RelayHookDeliveryProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
   environmentId: EnvironmentId,
@@ -1238,14 +1232,8 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
-/**
- * Public, stateless webhook forwarding to an environment's managed tunnel.
- * Unauthenticated: the token in the path is the environment's credential, and
- * the relay only routes and forwards. Raw, so the body reaches the
- * environment byte for byte and signatures still verify there. `endpointKey`
- * names one managed endpoint (its tunnel's hash of user and environment), not
- * the environment id, which any account can link.
- */
+// Path token authenticates; forward raw bytes for signature verification.
+// endpointKey is the managed endpoint hash, not the account-linkable environment id.
 const RelayHookParams = Schema.Struct({
   endpointKey: Schema.String,
   hookId: Schema.String,
@@ -1262,6 +1250,22 @@ const RelayHooksGroup = HttpApiGroup.make("hooks")
   )
   .annotate(OpenApi.Description, "Forward webhook requests to an environment.");
 
+export const RelayMobileTelemetrySignal = Schema.Literals(["logs", "metrics", "traces"]);
+export type RelayMobileTelemetrySignal = typeof RelayMobileTelemetrySignal.Type;
+
+// expo-observe appends `<easProjectId>/v1/<signal>` to its endpoint URL and cannot send credentials.
+const RelayMobileTelemetryParams = Schema.Struct({
+  projectId: Schema.String.check(Schema.isGUID()),
+  signal: RelayMobileTelemetrySignal,
+});
+const RelayMobileTelemetryGroup = HttpApiGroup.make("mobileTelemetry")
+  .add(
+    HttpApiEndpoint.post("ingest", "/v1/mobile/observe/:projectId/v1/:signal", {
+      params: RelayMobileTelemetryParams,
+    }),
+  )
+  .annotate(OpenApi.Description, "Receive mobile app telemetry from expo-observe.");
+
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
@@ -1272,6 +1276,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayDpopClientGroup,
     RelayServerGroup,
     RelayHooksGroup,
+    RelayMobileTelemetryGroup,
   )
   .annotate(OpenApi.Title, "T3 Code Relay API")
   .annotate(OpenApi.Version, "1.0.0")

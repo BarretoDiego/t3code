@@ -81,7 +81,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry;
   const crypto = yield* Crypto.Crypto;
   return ReviewAgentExecutor.of({
-    execute: (input) =>
+    execute: Effect.fn("ReviewAgentExecutor.execute")((input) =>
       Effect.scoped(
         Effect.gen(function* () {
           const instance = yield* registry.getInstance(input.modelSelection.instanceId);
@@ -300,6 +300,7 @@ export const make = Effect.gen(function* () {
               }),
         ),
       ),
+    ),
   });
 });
 export const layer = Layer.effect(ReviewAgentExecutor, make);

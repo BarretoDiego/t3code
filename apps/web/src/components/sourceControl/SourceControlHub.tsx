@@ -25,7 +25,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { GitHubIcon, BitbucketIcon } from "../Icons";
+import { getSourceControlPresentationForKind } from "../../sourceControlPresentation";
 import { useHubQuery } from "./useHubQuery";
 import { HubSelect } from "./HubSelect";
 import { RemotePullRequestPanel } from "./RemotePullRequestPanel";
@@ -619,7 +619,7 @@ function RemoteRepositoryHub({
               </p>
               {(["github", "bitbucket"] as const).map((provider) => {
                 const key = `${environment.environmentId}:${provider}`;
-                const Icon = provider === "github" ? GitHubIcon : BitbucketIcon;
+                const Icon = getSourceControlPresentationForKind(provider).Icon;
                 return (
                   <div key={key}>
                     <Button

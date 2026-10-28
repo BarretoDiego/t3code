@@ -1,12 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - reads the sync configuration and detaches the installer.
 /**
- * `t3 fork` - keeps a fork of T3 Code current with upstream and installs the
- * result on this machine.
- *
- * `sync` merges upstream into the fork's branch in an isolated worktree,
- * publishes the merge, builds the desktop app from it, and installs it. When
- * the merge conflicts, or the merged code no longer typechecks, the work goes
- * to a coding agent in a T3 Code thread on this machine's server.
+ * `t3 fork` keeps a fork of T3 Code current with upstream and installs the result on this machine.
+ * `sync` merges upstream into the fork's branch in an isolated worktree, publishes the merge, builds the desktop app and installs it.
+ * When the merge conflicts or no longer typechecks, the work goes to a coding agent in a T3 Code thread on this machine's server.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -63,9 +59,6 @@ const BUILD_FAILURES = new Set([
   "prereq-missing",
 ]);
 
-// ---------------------------------------------------------------------------
-// Configuration
-
 const configDirFlag = Flag.String("config-dir").pipe(
   Flag.withDescription(
     "Directory holding config.env, the worktree, logs, and state. Default: ~/.local/share/t3code-sync.",
@@ -105,18 +98,17 @@ const loadConfig = Effect.fn("cli.fork.loadConfig")(function* (configDir: Option
 });
 
 /** Runs `use` holding the run lock; a second run started meanwhile reports that and stops. */
-const withLock = <A, E, R>(config: ForkSyncConfig, use: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    if (!acquireLock(config.lockPath)) {
-      return yield* Console.log(
-        `Another run is in progress (pid ${lockOwner(config.lockPath) ?? "?"}). See: t3 fork status`,
-      );
-    }
-    return yield* use.pipe(Effect.ensuring(Effect.sync(() => releaseLock(config.lockPath))));
-  });
-
-// ---------------------------------------------------------------------------
-// The agent
+const withLock = Effect.fn("withLock")(function* <A, E, R>(
+  config: ForkSyncConfig,
+  use: Effect.Effect<A, E, R>,
+) {
+  if (!acquireLock(config.lockPath)) {
+    return yield* Console.log(
+      `Another run is in progress (pid ${lockOwner(config.lockPath) ?? "?"}). See: t3 fork status`,
+    );
+  }
+  return yield* use.pipe(Effect.ensuring(Effect.sync(() => releaseLock(config.lockPath))));
+});
 
 /**
  * Runs agent turns as T3 Code threads in the repository's project, with the
@@ -177,23 +169,19 @@ function threadAgent(flags: { readonly baseDir: Option.Option<string> }, config:
   };
 }
 
-// ---------------------------------------------------------------------------
-// Finishing a run
-
 /** Records the result, tells the person, and tidies up. `summary` is the one-line account. */
-const finish = (run: Run, summary: string) =>
-  Effect.gen(function* () {
-    const ok = !BUILD_FAILURES.has(run.outcome.build);
-    yield* writeState(run, ok ? "ok" : "ok-build-failed", summary);
-    yield* run.info(`DONE: ${summary}`);
-    if (ok) {
-      yield* clearAlert(run.config);
-      yield* notifyDone(run, "t3 fork: done", summary);
-    } else {
-      yield* raiseAlert(run, "t3 fork: app not updated", summary);
-    }
-    yield* pruneLogs(run.config);
-  });
+const finish = Effect.fn("finish")(function* (run: Run, summary: string) {
+  const ok = !BUILD_FAILURES.has(run.outcome.build);
+  yield* writeState(run, ok ? "ok" : "ok-build-failed", summary);
+  yield* run.info(`DONE: ${summary}`);
+  if (ok) {
+    yield* clearAlert(run.config);
+    yield* notifyDone(run, "t3 fork: done", summary);
+  } else {
+    yield* raiseAlert(run, "t3 fork: app not updated", summary);
+  }
+  yield* pruneLogs(run.config);
+});
 
 const summaryOf = (outcome: RunOutcome, commitCount: number | null) =>
   commitCount === null
@@ -248,50 +236,49 @@ const decodePendingInstall = Schema.decodeUnknownEffect(PendingInstall);
  * in a process of its own: installing closes the app, which would otherwise
  * take this command down between removing the old version and copying the new.
  */
-const buildAndInstall = (run: Run, commitCount: number | null) =>
-  Effect.gen(function* () {
-    const { config } = run;
-    const artifact = yield* buildApp(run);
-    if (artifact === null) return yield* finish(run, summaryOf(run.outcome, commitCount));
-    if (!config.restartApp) {
-      yield* run.info("RESTART_APP=0: the artifact is built but not installed");
-      return yield* finish(run, summaryOf(run.outcome, commitCount));
-    }
-    if (!(yield* startedByApp(run))) {
-      yield* installApp(run, artifact);
-      return yield* finish(run, summaryOf(run.outcome, commitCount));
-    }
+const buildAndInstall = Effect.fn("buildAndInstall")(function* (
+  run: Run,
+  commitCount: number | null,
+) {
+  const { config } = run;
+  const artifact = yield* buildApp(run);
+  if (artifact === null) return yield* finish(run, summaryOf(run.outcome, commitCount));
+  if (!config.restartApp) {
+    yield* run.info("RESTART_APP=0: the artifact is built but not installed");
+    return yield* finish(run, summaryOf(run.outcome, commitCount));
+  }
+  if (!(yield* startedByApp(run))) {
+    yield* installApp(run, artifact);
+    return yield* finish(run, summaryOf(run.outcome, commitCount));
+  }
 
-    const pending = NodePath.join(config.baseDir, ".pending-install.json");
-    NodeFS.writeFileSync(
+  const pending = NodePath.join(config.baseDir, ".pending-install.json");
+  NodeFS.writeFileSync(
+    pending,
+    encodePendingInstall({ artifact, logPath: run.logPath, commitCount, outcome: run.outcome }),
+  );
+  yield* writeState(run, "installing", `installing ${run.outcome.appVersion}`);
+  yield* run.info(
+    "this command runs inside the app, which is about to close; the install continues in the background",
+  );
+  yield* run.info(`follow it with: t3 fork status   (log: ${run.logPath})`);
+  // The lock passes to the installer, which takes it as soon as it starts.
+  releaseLock(config.lockPath);
+  const entry = process.argv[1];
+  NodeChildProcess.spawn(
+    process.execPath,
+    [
+      ...process.execArgv,
+      ...(entry === undefined ? [] : [entry]),
+      "fork",
+      "install-pending",
+      "--config-dir",
+      config.baseDir,
       pending,
-      encodePendingInstall({ artifact, logPath: run.logPath, commitCount, outcome: run.outcome }),
-    );
-    yield* writeState(run, "installing", `installing ${run.outcome.appVersion}`);
-    yield* run.info(
-      "this command runs inside the app, which is about to close; the install continues in the background",
-    );
-    yield* run.info(`follow it with: t3 fork status   (log: ${run.logPath})`);
-    // The lock passes to the installer, which takes it as soon as it starts.
-    releaseLock(config.lockPath);
-    const entry = process.argv[1];
-    NodeChildProcess.spawn(
-      process.execPath,
-      [
-        ...process.execArgv,
-        ...(entry === undefined ? [] : [entry]),
-        "fork",
-        "install-pending",
-        "--config-dir",
-        config.baseDir,
-        pending,
-      ],
-      { detached: true, stdio: "ignore" },
-    ).unref();
-  });
-
-// ---------------------------------------------------------------------------
-// Commands
+    ],
+    { detached: true, stdio: "ignore" },
+  ).unref();
+});
 
 const syncCommand = Command.make("sync", {
   baseDir: baseDirFlag,
@@ -393,21 +380,20 @@ const buildCommand = Command.make("build", { configDir: configDirFlag }).pipe(
 );
 
 /** Points the sync worktree at `sha` so a build can run without a merge. */
-const prepareBuildWorktree = (run: Run, sha: string) =>
-  Effect.gen(function* () {
-    const { repo, worktree, stagingBranch } = run.config;
-    const args = NodeFS.existsSync(NodePath.join(worktree, ".git"))
-      ? (["-C", worktree, "checkout", "-f", "-B", stagingBranch, sha] as const)
-      : (["-C", repo, "worktree", "add", "--force", "-B", stagingBranch, worktree, sha] as const);
-    const prepared = yield* Effect.sync(() =>
-      NodeChildProcess.spawnSync("git", [...args], { encoding: "utf8" }),
-    );
-    if (prepared.status !== 0) {
-      return yield* new ForkSyncError({
-        detail: `could not prepare the worktree: ${prepared.stderr.trim()}`,
-      });
-    }
-  });
+const prepareBuildWorktree = Effect.fn("prepareBuildWorktree")(function* (run: Run, sha: string) {
+  const { repo, worktree, stagingBranch } = run.config;
+  const args = NodeFS.existsSync(NodePath.join(worktree, ".git"))
+    ? (["-C", worktree, "checkout", "-f", "-B", stagingBranch, sha] as const)
+    : (["-C", repo, "worktree", "add", "--force", "-B", stagingBranch, worktree, sha] as const);
+  const prepared = yield* Effect.sync(() =>
+    NodeChildProcess.spawnSync("git", [...args], { encoding: "utf8" }),
+  );
+  if (prepared.status !== 0) {
+    return yield* new ForkSyncError({
+      detail: `could not prepare the worktree: ${prepared.stderr.trim()}`,
+    });
+  }
+});
 
 const installPendingCommand = Command.make("install-pending", {
   configDir: configDirFlag,

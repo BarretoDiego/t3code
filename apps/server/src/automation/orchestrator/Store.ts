@@ -16,6 +16,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type * as SqlClient from "effect/sql/SqlClient";
 
@@ -161,25 +162,24 @@ export const configOf = (input: OrchestratorConfig): OrchestratorConfig => ({
 
 /** SQL access for orchestrators, their inbox, turns and checkpoints. */
 export const makeStore = (sql: SqlClient.SqlClient) => {
-  const decodeOrchestrator = (row: OrchestratorRow) =>
-    Effect.gen(function* () {
-      const config = configOf(yield* decodeConfig(parseJson(row.config_json)));
-      const usage = parseJson(row.usage_json) as { readonly since?: string };
-      return {
-        id: row.orchestrator_id as OrchestratorId,
-        revision: row.revision,
-        config,
-        hostEnvironmentId: row.host_environment_id as EnvironmentId,
-        hostGeneration: row.host_generation,
-        threadId: row.thread_id as ThreadId | null,
-        desiredState: row.desired_state as OrchestratorDesiredState,
-        stateReason: row.state_reason,
-        usageSince: usage.since ?? row.created_at,
-        lastTurnAt: row.last_turn_at,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      } satisfies StoredOrchestrator;
-    });
+  const decodeOrchestrator = Effect.fn("decodeOrchestrator")(function* (row: OrchestratorRow) {
+    const config = configOf(yield* decodeConfig(parseJson(row.config_json)));
+    const usage = parseJson(row.usage_json) as { readonly since?: string };
+    return {
+      id: row.orchestrator_id as OrchestratorId,
+      revision: row.revision,
+      config,
+      hostEnvironmentId: row.host_environment_id as EnvironmentId,
+      hostGeneration: row.host_generation,
+      threadId: row.thread_id as ThreadId | null,
+      desiredState: row.desired_state as OrchestratorDesiredState,
+      stateReason: row.state_reason,
+      usageSince: usage.since ?? row.created_at,
+      lastTurnAt: row.last_turn_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    } satisfies StoredOrchestrator;
+  });
 
   const decodeTurn = (row: TurnRow): StoredTurn => ({
     orchestratorId: row.orchestrator_id as OrchestratorId,
@@ -231,10 +231,8 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
 
   const requireOrchestrator = (id: OrchestratorId) =>
     getOrchestrator(id).pipe(
-      Effect.flatMap((row) =>
-        row === null
-          ? Effect.fail(automationError("NOT_FOUND", `Orchestrator ${id} does not exist.`))
-          : Effect.succeed(row),
+      Effect.filterOrFail(Predicate.isNotNull, () =>
+        automationError("NOT_FOUND", `Orchestrator ${id} does not exist.`),
       ),
     );
 
@@ -313,21 +311,17 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
       WHERE orchestrator_id = ${id}
     `.pipe(storageFailure("record orchestrator turn time"));
 
-  const deleteOrchestrator = (id: OrchestratorId) =>
-    Effect.gen(function* () {
-      const removed = yield* sql<{ readonly orchestrator_id: string }>`
+  const deleteOrchestrator = Effect.fn("deleteOrchestrator")(function* (id: OrchestratorId) {
+    const removed = yield* sql<{ readonly orchestrator_id: string }>`
         DELETE FROM automation_orchestrators WHERE orchestrator_id = ${id}
         RETURNING orchestrator_id
       `;
-      yield* sql`DELETE FROM automation_inbox WHERE orchestrator_id = ${id}`;
-      yield* sql`DELETE FROM automation_checkpoints WHERE orchestrator_id = ${id}`;
-      yield* sql`DELETE FROM automation_orchestrator_turns WHERE orchestrator_id = ${id}`;
-      yield* sql`DELETE FROM automation_orchestrator_turn_entries WHERE orchestrator_id = ${id}`;
-      return removed.length > 0;
-    }).pipe(storageFailure("delete orchestrator"));
-
-  // -------------------------------------------------------------------------
-  // Inbox
+    yield* sql`DELETE FROM automation_inbox WHERE orchestrator_id = ${id}`;
+    yield* sql`DELETE FROM automation_checkpoints WHERE orchestrator_id = ${id}`;
+    yield* sql`DELETE FROM automation_orchestrator_turns WHERE orchestrator_id = ${id}`;
+    yield* sql`DELETE FROM automation_orchestrator_turn_entries WHERE orchestrator_id = ${id}`;
+    return removed.length > 0;
+  }, storageFailure("delete orchestrator"));
 
   const getInboxByDedup = (orchestratorId: OrchestratorId, dedupKey: string) =>
     sql<InboxRow>`
@@ -423,9 +417,6 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
       storageFailure("update inbox entry"),
     );
 
-  // -------------------------------------------------------------------------
-  // Turns
-
   const listTurns = (orchestratorId: OrchestratorId) =>
     sql<TurnRow>`
       SELECT * FROM automation_orchestrator_turns
@@ -444,9 +435,11 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
       storageFailure("read turn entries"),
     );
 
-  const insertTurn = (turn: StoredTurn, entryIds: ReadonlyArray<InboxEntryId>) =>
-    Effect.gen(function* () {
-      yield* sql`
+  const insertTurn = Effect.fn("insertTurn")(function* (
+    turn: StoredTurn,
+    entryIds: ReadonlyArray<InboxEntryId>,
+  ) {
+    yield* sql`
         INSERT INTO automation_orchestrator_turns (
           orchestrator_id, sequence, command_id, message_id, thread_id, run_id, status, outcome,
           prompt, task_ids_json, interrupt_requested_at, reserved_at, dispatched_at, finished_at
@@ -456,13 +449,13 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
           ${toJson(turn.taskIds)}, NULL, ${turn.reservedAt}, NULL, NULL
         )
       `;
-      for (const entryId of entryIds) {
-        yield* sql`
+    for (const entryId of entryIds) {
+      yield* sql`
           INSERT INTO automation_orchestrator_turn_entries (orchestrator_id, turn_sequence, entry_id)
           VALUES (${turn.orchestratorId}, ${turn.sequence}, ${entryId})
         `;
-      }
-    }).pipe(storageFailure("reserve turn"));
+    }
+  }, storageFailure("reserve turn"));
 
   const updateTurn = (
     turn: Pick<StoredTurn, "orchestratorId" | "sequence">,
@@ -485,9 +478,6 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
           interrupt_requested_at = COALESCE(${patch.interruptRequestedAt ?? null}, interrupt_requested_at)
       WHERE orchestrator_id = ${turn.orchestratorId} AND sequence = ${turn.sequence}
     `.pipe(storageFailure("update turn"));
-
-  // -------------------------------------------------------------------------
-  // Checkpoints
 
   const listCheckpoints = (orchestratorId: OrchestratorId, limit?: number) =>
     sql<{ readonly checkpoint_json: string }>`
@@ -512,7 +502,6 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
       )
     `.pipe(storageFailure("write checkpoint"));
 
-  // -------------------------------------------------------------------------
   // Tasks (owned by the task service; read here for budgets and context)
 
   const listTasks = (orchestratorId: OrchestratorId) =>
@@ -555,9 +544,6 @@ export const makeStore = (sql: SqlClient.SqlClient) => {
       ),
       storageFailure("read delegated task by thread"),
     );
-
-  // -------------------------------------------------------------------------
-  // Idempotency
 
   const getIdempotent = (scope: string, key: string) =>
     sql<{ readonly result_json: string }>`

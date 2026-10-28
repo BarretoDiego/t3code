@@ -32,9 +32,6 @@ const KEY_EXPIRY_WARNING_MS = 7 * 24 * 60 * 60 * 1000;
 const check = (id: string, status: DoctorStatus, summary: string, hint?: string): DoctorCheck =>
   hint === undefined ? { id, status, summary } : { id, status, summary, hint };
 
-// ---------------------------------------------------------------------------
-// Routes
-
 type RouteKind = "loopback" | "tailscale" | "lan" | "public";
 
 interface EnvironmentRoute {
@@ -83,9 +80,6 @@ const ROUTE_LABELS: Record<RouteKind, string> = {
 
 export const routeCheck = (origin: string, route: EnvironmentRoute): DoctorCheck =>
   check("route", "info", `${origin} is reached over ${ROUTE_LABELS[route.kind]}.`);
-
-// ---------------------------------------------------------------------------
-// Tailscale on one machine
 
 /**
  * Whether Tailscale on a machine is usable. `required` is false when nothing
@@ -192,7 +186,6 @@ export function tailscaleChecks(input: {
   return checks;
 }
 
-// ---------------------------------------------------------------------------
 // Tailscale Serve on the environment's host
 
 function loopbackPortOf(proxy: string | null): number | null {
@@ -277,7 +270,6 @@ export function serveChecks(input: {
   ];
 }
 
-// ---------------------------------------------------------------------------
 // One tailnet node as seen from another
 
 /** The node `host` names in `tailscale`'s view: by MagicDNS name, short name, or address. */
@@ -376,9 +368,6 @@ export function peerChecks(input: {
   return [check(id, "ok", `${viewer} reaches ${host} directly (${ping.latencyMs}ms).`)];
 }
 
-// ---------------------------------------------------------------------------
-// HTTP reachability
-
 const CERTIFICATE_CODES = new Set([
   "CERT_HAS_EXPIRED",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
@@ -468,9 +457,6 @@ export function unexpectedStatusCheck(input: {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Between environments
-
 interface EnvironmentReport {
   readonly name: string;
   /** Set when the environment is reachable and usable from this machine. */
@@ -488,12 +474,8 @@ const CROSS_ENVIRONMENT_FEATURES = [
 ] as const;
 
 /**
- * What works between each pair of environments. Sync and handoff are driven
- * by the client, which talks to both sides, so they need both servers to
- * support them and nothing between the hosts. Only features that connect
- * hosts directly (an AI runtime shared over the tailnet) depend on the hosts
- * seeing each other, which is why a missing tailnet path is a warning here.
- * Environments that are unreachable are left out: their own section says why.
+ * What works between each pair of environments. Sync and handoff are client-driven and need only both servers' support; only features that connect hosts directly (an AI runtime shared over the tailnet)
+ * depend on hosts seeing each other, hence a missing tailnet path is a warning. Unreachable environments are left out: their own section says why.
  */
 export function betweenEnvironmentsChecks(
   reports: ReadonlyArray<EnvironmentReport>,
@@ -558,9 +540,6 @@ export function betweenEnvironmentsChecks(
   );
   return [...features, ...paths];
 }
-
-// ---------------------------------------------------------------------------
-// Report
 
 const STATUS_MARKS: Record<DoctorStatus, string> = { ok: "✓", info: "·", warn: "!", fail: "✗" };
 

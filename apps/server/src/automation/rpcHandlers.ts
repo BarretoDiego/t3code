@@ -31,12 +31,8 @@ type AutomationRpcMethod = RpcGroup.Rpcs<typeof AutomationRpcGroup>["_tag"];
 const traceAttributes = { "rpc.aggregate": "automation" } as const;
 
 /**
- * A session is a peer only when it holds the federation scope and its subject
- * names the peer environment; it is an orchestrator's agent only when the
- * orchestrator runtime issued that very session. Both are decided by the server
- * when it issues the credential, so a client cannot claim to be either. A
- * session that carries an orchestrator's subject without having been issued by
- * the runtime holds no scopes at all.
+ * A session is a peer only with the federation scope and a subject naming the peer environment; it is an orchestrator's agent only if the orchestrator runtime issued that session.
+ * The server decides both when issuing the credential, so a client cannot claim either; an orchestrator subject the runtime did not issue holds no scopes.
  */
 export const callerFromSession = (session: {
   readonly sessionId: string;

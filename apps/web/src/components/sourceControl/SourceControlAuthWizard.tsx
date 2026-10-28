@@ -6,7 +6,7 @@ import { useEnvironments } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOpenLink } from "../../browser/useOpenLink";
-import { GitHubIcon, BitbucketIcon } from "../Icons";
+import { getSourceControlPresentationForKind } from "../../sourceControlPresentation";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
@@ -19,6 +19,9 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { HubSelect } from "./HubSelect";
+
+const GitHubIcon = getSourceControlPresentationForKind("github").Icon;
+const BitbucketIcon = getSourceControlPresentationForKind("bitbucket").Icon;
 
 export function SourceControlAuthWizard({
   environmentId: initialEnvironmentId,

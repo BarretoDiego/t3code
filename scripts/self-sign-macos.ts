@@ -21,13 +21,9 @@ const security = (...args: ReadonlyArray<string>) =>
 
 /**
  * electron-builder `afterPack` hook for builds without an Apple Developer ID.
- * Signs the app with the self-signed certificate in
- * T3CODE_DESKTOP_MAC_SELF_SIGN_P12 (base64 PKCS#12, password in
- * T3CODE_DESKTOP_MAC_SELF_SIGN_PASSWORD). Squirrel.Mac only installs an update
- * that satisfies the running app's designated requirement. An ad hoc signature
- * pins that to one build's hash, while a certificate that stays the same across
- * builds lets every later build satisfy it. Gatekeeper still treats the app as
- * unidentified, so the first install is done by hand.
+ * Signs with the self-signed certificate in T3CODE_DESKTOP_MAC_SELF_SIGN_P12 (base64
+ * PKCS#12, password in T3CODE_DESKTOP_MAC_SELF_SIGN_PASSWORD). Squirrel.Mac only installs
+ * updates satisfying the running app's designated requirement, so the certificate must stay stable across builds.
  */
 export default async function selfSignMacApp(context: AfterPackContext): Promise<void> {
   if (context.electronPlatformName !== "darwin") return;

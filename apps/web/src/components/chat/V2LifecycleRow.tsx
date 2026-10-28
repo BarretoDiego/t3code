@@ -3,6 +3,9 @@ import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ReactNode } from "react";
 import { useThreadShell, useProject } from "../../state/entities";
+import { useEnvironment } from "../../state/environments";
+import { buildThreadRouteParams } from "../../threadRoutes";
+import { useNavigate } from "@tanstack/react-router";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -21,6 +24,7 @@ import {
   ProviderDriverKind,
   type OrchestrationV2Notification,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
   type ProviderInstanceId,
   type ServerProvider,
@@ -33,12 +37,12 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   BotIcon,
   ChevronRightIcon,
+  CircleStopIcon,
   ArrowRightLeftIcon,
   ArrowRightIcon,
   GitForkIcon,
   MessageSquareIcon,
   MinusIcon,
-  XIcon,
 } from "lucide-react";
 
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -86,7 +90,7 @@ export function V2LifecycleRow(props: {
   if (item.type === "run_interrupt_request") {
     return (
       <div className="flex justify-end px-1 py-1" data-v2-item-type={item.type}>
-        <div className="flex max-w-[80%] items-center gap-2 text-xs text-destructive">
+        <div className="flex max-w-[80%] items-center gap-2 text-xs text-muted-foreground">
           <span aria-hidden="true" className="font-mono">
             ■
           </span>
@@ -104,12 +108,7 @@ export function V2LifecycleRow(props: {
   }
   if (item.type === "run_interrupt_result") {
     return (
-      <TimelineSystemDivider
-        label="Run interrupted"
-        detail={item.message}
-        tone="danger"
-        icon={XIcon}
-      />
+      <TimelineSystemDivider label="Run interrupted" detail={item.message} icon={CircleStopIcon} />
     );
   }
   if (item.type === "compaction") {
@@ -204,6 +203,7 @@ export function V2LifecycleRow(props: {
         startedAt={item.startedAt}
         completedAt={item.completedAt}
         threadId={item.childThreadId}
+        remote={item.remoteChild}
         onOpenThread={props.onOpenThread}
       />
     );
@@ -299,11 +299,7 @@ function SubagentAvatar({
   );
 }
 
-/**
- * Reads only the two provider fields the avatar draws. Provider status pushes
- * replace the provider objects (fresh `checkedAt`), so selecting strings keeps
- * the avatar from re-rendering when nothing it shows changed.
- */
+// Select strings; status pushes replace providers even when avatar fields are unchanged.
 export function EnvironmentSubagentAvatar({
   environmentId,
   providerInstanceId,
@@ -363,7 +359,6 @@ export function SubagentNotificationLink(props: {
       null,
   );
   if (agent === null) return props.fallback;
-  // A subagent resumed since this notification shows its live status, not the outcome reported then.
   const resumed =
     NOTIFICATION_OUTCOME_STATUS[props.outcome] !== null &&
     subagentResumedSince(agent, props.createdAt);
@@ -408,6 +403,8 @@ function SubagentTimelineLink(props: {
   readonly startedAt: DateTime.Utc | null;
   readonly completedAt: DateTime.Utc | null;
   readonly threadId: ThreadId | null;
+  /** The thread in a linked environment that runs this task, when it runs there. */
+  readonly remote?: OrchestrationV2RemoteTaskChild | undefined;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly event?: {
     readonly status: OrchestrationV2TurnItem["status"] | null;
@@ -419,7 +416,21 @@ function SubagentTimelineLink(props: {
     environmentThreadDetails.threadAtom(props.parentRef),
     (thread) => thread?.projection.subagents.find((agent) => agent.id === props.subagentId) ?? null,
   );
+  const remote = props.remote ?? agent?.remoteChild;
+  const remoteEnvironment = useEnvironment(remote?.environmentId ?? null);
+  const navigate = useNavigate();
   const threadId = props.threadId;
+  // A task in a linked environment opens there, if this client is connected to it.
+  const open =
+    threadId !== null
+      ? () => props.onOpenThread(threadId)
+      : remote !== undefined && remoteEnvironment !== null
+        ? () =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(scopeThreadRef(remote.environmentId, remote.threadId)),
+            })
+        : null;
   const liveStatus = agent?.status ?? props.status;
   const status = props.event ? props.event.status : liveStatus;
   const statusLabel = props.event?.label ?? subagentStatusVisual(liveStatus).label;
@@ -448,15 +459,8 @@ function SubagentTimelineLink(props: {
           <span className="min-w-0 truncate text-xs font-medium text-foreground">
             {props.title}
           </span>
-          {detail !== null && (props.event !== undefined || status !== "completed") ? (
-            <span
-              className={cn(
-                "shrink-0 text-3xs",
-                failed ? "text-destructive" : "text-muted-foreground",
-              )}
-            >
-              {statusLabel}
-            </span>
+          {remote !== undefined ? (
+            <span className="shrink-0 text-xs text-muted-foreground">on {remote.label}</span>
           ) : null}
         </span>
         <span
@@ -474,10 +478,17 @@ function SubagentTimelineLink(props: {
           )}
         </span>
       </span>
+      {detail !== null && (props.event !== undefined || status !== "completed") ? (
+        <span
+          className={cn("shrink-0 text-xs", failed ? "text-destructive" : "text-muted-foreground")}
+        >
+          {statusLabel}
+        </span>
+      ) : null}
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
         {props.event ? props.event.timestamp : <SubagentElapsed agent={timing} />}
       </span>
-      {threadId !== null ? (
+      {open !== null ? (
         <ChevronRightIcon
           aria-hidden
           className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/subagent:text-foreground"
@@ -492,7 +503,7 @@ function SubagentTimelineLink(props: {
       <TooltipTrigger
         delay={200}
         render={
-          threadId === null ? (
+          open === null ? (
             <div data-v2-item-type="subagent" aria-description={statusLabel} className={className}>
               {content}
             </div>
@@ -502,7 +513,7 @@ function SubagentTimelineLink(props: {
               data-v2-item-type="subagent"
               aria-label={`Open ${props.title}`}
               aria-description={statusLabel}
-              onClick={() => props.onOpenThread(threadId)}
+              onClick={open}
               className={cn(
                 className,
                 "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
@@ -536,8 +547,7 @@ function SubagentTimelineTooltip(
   },
 ) {
   const environmentId = props.parentRef.environmentId;
-  // The popup only mounts while open, so the full provider list is read here
-  // instead of in every timeline row.
+  // Read providers only in the open popup to avoid per-row subscriptions.
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const parent = useThreadShell(props.parentRef)?.source;
@@ -643,7 +653,7 @@ function HandoffEndpoint(props: {
       : entry?.models.find((candidate) => candidate.slug === model);
   const label =
     providerModel !== undefined
-      ? getTriggerDisplayModelName(providerModel)
+      ? getTriggerDisplayModelName(providerModel, entry?.driverKind)
       : model !== undefined && model.length > 0
         ? model
         : (entry?.displayName ?? props.instanceId);

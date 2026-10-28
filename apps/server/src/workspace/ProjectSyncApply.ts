@@ -1,14 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * ProjectSyncApply - Writes and deletes workspace entries on behalf of a
- * project sync transfer.
- *
- * Every path that arrives here came off the wire, so nothing is trusted: paths
- * are validated segment by segment, and no ancestor of a write target is ever
- * allowed to be a symlink. A symlink *entry* is copied faithfully (its target
- * may legitimately point anywhere), but a symlink *ancestor* would let a
- * crafted manifest write outside the workspace root, so it is refused.
- *
+ * ProjectSyncApply - Writes and deletes workspace entries on behalf of a project sync transfer. Every path came off the wire, so nothing is trusted:
+ * paths are validated segment by segment and no ancestor of a write target may be a symlink. A symlink *entry* is copied faithfully (its target may point anywhere),
+ * but a symlink *ancestor* would let a crafted manifest write outside the workspace root, so it is refused.
  * @module ProjectSyncApply
  */
 import * as NodeCrypto from "node:crypto";
@@ -42,18 +36,10 @@ export interface ResolvedProjectSyncPath {
 }
 
 /**
- * Validates a wire path and resolves it inside `workspaceRoot`, returning
- * `null` for anything that is absolute, empty, traversing, or otherwise not a
- * plain relative path. The root itself is compared unresolved, so a workspace
- * that lives behind a symlink (every macOS temp directory, for one) still
- * works.
- *
- * The path is never rewritten, only accepted or refused. Trailing spaces and
- * backslashes are ordinary characters in a POSIX filename, and normalizing
- * either one would turn a real file into a path the origin cannot export —
- * a silent omission from a sync that reports itself complete. On Windows a
- * backslash *is* a separator, so a segment carrying one is refused there
- * rather than quietly split.
+ * Validates a wire path and resolves it inside `workspaceRoot`, returning `null` for anything absolute, empty, traversing, or not a plain relative path.
+ * The root is compared unresolved, so a workspace behind a symlink (every macOS temp directory) still works.
+ * The path is never rewritten: trailing spaces and backslashes are ordinary POSIX filename characters, and normalizing them would silently omit a real file from a sync that reports itself complete.
+ * On Windows a backslash is a separator, so a segment carrying one is refused there rather than quietly split.
  */
 export function resolveProjectSyncRelativePath(input: {
   readonly workspaceRoot: string;
@@ -97,14 +83,9 @@ async function lstatOrNull(path: string) {
 }
 
 /**
- * Absolute directories already proven, during one apply/delete/export pass, to
- * be real directories under the workspace root.
- *
- * A 20k-file sync shares a few thousand ancestors across its records, so
- * without this every record re-`lstat`s its whole chain and the pass spends
- * most of its syscalls re-answering the same question. Any directory removal
- * invalidates the whole set rather than trying to reason about which cached
- * descendants it took with it.
+ * Absolute directories already proven, during one apply/delete/export pass, to be real directories under the workspace root.
+ * A 20k-file sync shares a few thousand ancestors across records, so without this every record re-`lstat`s its whole chain.
+ * Any directory removal invalidates the whole set rather than reasoning about which cached descendants it took with it.
  */
 export class ProjectSyncAncestorCache {
   private readonly verified = new Set<string>();
@@ -187,12 +168,8 @@ async function prepareAncestors(
 }
 
 /**
- * Read-only version of the ancestor check, for the export side.
- *
- * The apply pass refuses to *write* through a symlinked ancestor; without the
- * same check here a `link -> /Users/someone` planted inside a workspace would
- * let a signed export URL *read* `link/.ssh/id_rsa` straight out of the home
- * directory. Callers skip the entry the same way they skip one that vanished.
+ * Read-only version of the ancestor check, for the export side. The apply pass refuses to *write* through a symlinked ancestor; without the same check here a planted
+ * `link -> /Users/someone` would let a signed export URL *read* `link/.ssh/id_rsa` out of the home directory. Callers skip the entry as they skip one that vanished.
  */
 export async function projectSyncAncestorsAreSafe(input: {
   readonly workspaceRoot: string;
@@ -309,13 +286,9 @@ export interface ProjectSyncApplyResult {
 }
 
 /**
- * Applies a decoded frame stream into `workspaceRoot`, one record at a time.
- *
- * `maxContentBytes` and `maxRecordCount` mirror the two budgets the signed
- * import URL was issued for; exceeding either aborts mid-stream instead of
- * letting a token authorize unbounded work. The record cap matters on its own:
- * a body of a million zero-byte `"dir"` records costs no content bytes at all
- * and would still exhaust the destination's inodes.
+ * Applies a decoded frame stream into `workspaceRoot`, one record at a time. `maxContentBytes` and `maxRecordCount` mirror the budgets the signed import URL was issued for;
+ * exceeding either aborts mid-stream instead of letting a token authorize unbounded work. The record cap matters on its own: a million zero-byte `"dir"` records
+ * cost no content bytes yet would still exhaust the destination's inodes.
  */
 export const applyProjectSyncRecords = Effect.fn("ProjectSyncApply.applyRecords")(
   function* (input: {

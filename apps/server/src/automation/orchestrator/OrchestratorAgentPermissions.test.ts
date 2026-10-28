@@ -233,7 +233,6 @@ describe("orchestrator agent permissions", () => {
             } as OrchestrationV2Command),
             "PERMISSION_DENIED: Orchestrator",
           );
-          // Wrong project.
           const wrongProject = yield* refused(messageTo(outOfScope, "wrong-project"));
           assert.include(wrongProject, "PERMISSION_DENIED");
           assert.include(wrongProject, otherProjectId);
