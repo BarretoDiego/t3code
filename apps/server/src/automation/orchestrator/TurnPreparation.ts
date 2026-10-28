@@ -13,14 +13,9 @@ import * as Effect from "effect/Effect";
 import { automationError } from "../Caller.ts";
 
 /**
- * Whether T3 Code can hand an orchestrator's agent its own credential and `t3`
- * on this provider. `null` means it can; a string says why it cannot. An
- * orchestrator never takes a turn on a provider that is not listed as
- * supported: its agent would otherwise call the CLI as the user.
- *
- * Supported means the adapter applies `withAgentShellEnvironment` to the
- * process whose shell runs the agent's commands. Every driver is listed, so a
- * new one is refused until someone decides.
+ * Whether T3 Code can hand an orchestrator's agent its own credential and `t3` on this provider: `null` means yes, a string says why not.
+ * Supported means the adapter applies `withAgentShellEnvironment` to the process whose shell runs the agent's commands; otherwise the agent would call the CLI as the user.
+ * Every driver is listed, so a new one is refused until someone decides.
  */
 const AGENT_SHELL_SUPPORT: Readonly<Record<string, string | null>> = {
   codex: null,

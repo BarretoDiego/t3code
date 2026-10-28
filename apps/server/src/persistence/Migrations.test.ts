@@ -39,6 +39,11 @@ describe("runMigrations", () => {
         [72, "CodexUsageNativeTurnIndex"],
         [73, "RepairClientSettlementTimestamps"],
         [74, "WebhookDedupe"],
+        [75, "ShellStopRequestIndex"],
+        [76, "ThreadMessageSearch"],
+        [77, "PeerLinks"],
+        [78, "PeerLinkFence"],
+        [79, "WaitingLinkRequestIndex"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);

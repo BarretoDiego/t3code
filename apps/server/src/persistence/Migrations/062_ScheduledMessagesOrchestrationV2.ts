@@ -11,11 +11,8 @@ const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Held messages were stored as V1 `thread.turn.start` commands. Rewrite each
- * as the V2 `message.dispatch` the scheduler now replays, keeping the command
- * and message ids so a dispatch that already landed stays deduplicated. A
- * row that is not a readable turn start cannot be shown or cancelled by any
- * client, so it is dropped.
+ * Held messages were stored as V1 `thread.turn.start` commands. Rewrite each as the V2 `message.dispatch` the scheduler now replays, keeping command and message ids
+ * so a dispatch that already landed stays deduplicated. A row that is not a readable turn start can be neither shown nor cancelled by any client, so it is dropped.
  */
 export function scheduledTurnStartToMessageDispatch(command: unknown): JsonRecord | null {
   if (!isRecord(command) || command.type !== "thread.turn.start") return null;

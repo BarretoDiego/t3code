@@ -6,6 +6,7 @@ import { isElectron } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { usePeerLinkHosts } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
 import { automationCapableEnvironments } from "./automationSettings.logic";
 import { useEnvironmentScope } from "~/state/session";
@@ -19,10 +20,7 @@ import {
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const { environments } = useEnvironments();
-  // The filtered list must be cached on boolean flags so it stays stable for the search and
-  // the command palette while environments update. The compiler cannot tell that `.some()`
-  // and other plain calls return primitives, so `=== true` marks each flag as one; without
-  // it the flags join the filter's cache scope and the list is rebuilt every render.
+  // Explicit booleans keep flags out of the filter cache so environment updates do not rebuild the list.
   const hasEnvironment =
     environments.some((environment) => environment.serverConfig !== null) === true;
   const hasProviderSettingsEnvironment =
@@ -46,6 +44,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
+  const hasPeerLinkHost = usePeerLinkHosts().length > 0;
   const cloudLinkState = usePrimaryCloudLinkState().data;
   // Same fallback as the Connections row: older servers imply a tunnel from `linked`.
   const managedTunnelActive =
@@ -71,5 +70,6 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
     hasThreadAutoSettlement,
     hasAutomation: automationCapableEnvironments(environments).length > 0,
     managedTunnelActive,
+    hasPeerLinkHost,
   });
 }

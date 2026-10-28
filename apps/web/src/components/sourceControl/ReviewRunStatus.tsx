@@ -4,6 +4,7 @@ import type { AiReviewRun } from "@t3tools/contracts";
 export function ReviewRunStatus({ run }: { run: AiReviewRun }) {
   const running = !["draft", "failed", "cancelled"].includes(run.stage);
   const [now, setNow] = useState(Date.now);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- re-renders the elapsed and quiet-time counters on a 5s interval while the run is active; cleared on cleanup
   useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(() => setNow(Date.now()), 5_000);

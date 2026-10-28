@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../../hooks/useNowMinute";
 import {
   emptyExecutionNodeDraft,
   executionNodeDraftToInput,
@@ -19,7 +20,7 @@ import {
   ScrollTextIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../../localApi";
 import { automationEnvironment } from "../../../state/automation";
@@ -50,7 +51,7 @@ import {
   AUTOMATION_SETTINGS_ANCHORS,
   tailLogText,
 } from "../automationSettings.logic";
-import { SettingsRow, SettingsSection, useRelativeTimeTick } from "../settingsLayout";
+import { SettingsRow, SettingsSection } from "../settingsLayout";
 import {
   AutomationEnvironmentSection,
   DraftErrors,
@@ -75,9 +76,9 @@ export function NodesSettingsSection({
   readonly environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
   const [editor, setEditor] = useState<NodeEditorTarget | null>(null);
-  const openForEdit = useCallback((environmentId: EnvironmentId, node: ExecutionNode) => {
+  const openForEdit = (environmentId: EnvironmentId, node: ExecutionNode) => {
     setEditor({ environmentId, node });
-  }, []);
+  };
   const creatable = environments.filter(
     (environment) => automationEnvironmentAvailability(environment) === "ready",
   );
@@ -137,7 +138,7 @@ function NodeRows({
   readonly environmentId: EnvironmentId;
   readonly onEdit: (environmentId: EnvironmentId, node: ExecutionNode) => void;
 }) {
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const query = useEnvironmentQuery(automationEnvironment.nodes({ environmentId, input: {} }));
   return (
     <QueryRows
@@ -306,7 +307,7 @@ function describeJobAction(job: Job): string {
 }
 
 function JobRows({ environmentId }: { readonly environmentId: EnvironmentId }) {
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const jobs = useEnvironmentQuery(
     automationEnvironment.jobs({ environmentId, input: { limit: JOB_PAGE_SIZE } }),
   );

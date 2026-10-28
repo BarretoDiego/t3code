@@ -86,7 +86,7 @@ export function ThreadHandoffIndicator({ threadRef }: { readonly threadRef: Scop
               environmentId: ownerId,
               threadId: threadRef.threadId,
             })}
-            className="truncate rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="truncate rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             {ownerText}
           </Link>

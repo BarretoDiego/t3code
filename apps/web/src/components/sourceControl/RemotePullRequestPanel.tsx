@@ -1,7 +1,7 @@
 import ChatMarkdown from "../ChatMarkdown";
-import type { CodeViewHandle } from "@pierre/diffs/react";
+import type { CodeViewAnnotationArgs, CodeViewHandle } from "@pierre/diffs/react";
 import { useEffect, useRef, useState } from "react";
-import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
+import type { CodeViewItem, SelectedLineRange } from "@pierre/diffs";
 import type {
   EnvironmentId,
   AiReviewFinding,
@@ -94,6 +94,7 @@ export function RemotePullRequestPanel({
   const refreshDetail = detail.refresh,
     refreshActivity = activity.refresh,
     refreshRevisions = revisions.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the pull request detail, activity, and revisions from the hub when the parent bumps refreshKey
   useEffect(() => {
     if (refreshKey > 0) {
       refreshDetail();
@@ -484,6 +485,19 @@ export function RemotePullRequestPanel({
     </section>
   );
 }
+// Module scope: the React Compiler rejects rest-parameter callbacks inside components.
+const renderReviewThreadAnnotation = (
+  ...[annotation]: CodeViewAnnotationArgs<PullRequestReviewThread>
+) => (
+  <div className="space-y-2 rounded-md border bg-background p-3 font-sans text-sm text-foreground">
+    {annotation.metadata.comments.map((comment) => (
+      <p key={comment.id} className="whitespace-pre-wrap">
+        <strong>{comment.author?.login ?? "Reviewer"}</strong>: {comment.body}
+      </p>
+    ))}
+  </div>
+);
+
 function RemoteDiff({
   environmentId,
   reference,
@@ -512,11 +526,10 @@ function RemoteDiff({
   const [draft, setDraft] = useState<Omit<PullRequestReviewCommentDraft, "body"> | null>(null);
   const [body, setBody] = useState("");
   const { resolvedTheme } = useTheme();
-  const parsed = (() =>
-    getRenderablePatch(
-      query.data?.patch,
-      `hub:${reference.repository}:${reference.number}:${cursor ?? "first"}`,
-    ))();
+  const parsed = getRenderablePatch(
+    query.data?.patch,
+    `hub:${reference.repository}:${reference.number}:${cursor ?? "first"}`,
+  );
   const files = parsed?.kind === "files" ? parsed.files : [];
   const selected = selectedPath
     ? files.find((file) => resolveFileDiffPath(file) === selectedPath)
@@ -524,11 +537,13 @@ function RemoteDiff({
   const viewer = useRef<CodeViewHandle<PullRequestReviewThread, never>>(null);
   const selectedId = selected ? buildFileDiffRenderKey(selected) : null;
   const nextCursor = query.data?.nextCursor;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- walks remote page cursors until the requested file appears; each step is a network round trip
   useEffect(() => {
     // Follow a remote page receipt to locate the requested finding without loading every file.
     // eslint-disable-next-line react/set-state-in-effect
     if (selectedPath && !selectedId && nextCursor && nextCursor !== cursor) setCursor(nextCursor);
   }, [selectedPath, selectedId, nextCursor, cursor]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- imperatively scrolls the diff viewer to the selected line
   useEffect(() => {
     if (selectedId && selectedLine)
       viewer.current?.scrollTo({
@@ -539,28 +554,25 @@ function RemoteDiff({
         align: "center",
       });
   }, [selectedId, selectedLine, viewer]);
-  const items = (() =>
-    selected
-      ? [
-          {
-            id: buildFileDiffRenderKey(selected),
-            type: "diff" as const,
-            fileDiff: selected,
-            annotations: threads
-              .filter(
-                (thread) =>
-                  !thread.isOutdated &&
-                  thread.line &&
-                  thread.path === resolveFileDiffPath(selected),
-              )
-              .map((thread) => ({
-                lineNumber: thread.line!,
-                side: thread.side === "right" ? ("additions" as const) : ("deletions" as const),
-                metadata: thread,
-              })),
-          },
-        ]
-      : [])();
+  const items = selected
+    ? [
+        {
+          id: buildFileDiffRenderKey(selected),
+          type: "diff" as const,
+          fileDiff: selected,
+          annotations: threads
+            .filter(
+              (thread) =>
+                !thread.isOutdated && thread.line && thread.path === resolveFileDiffPath(selected),
+            )
+            .map((thread) => ({
+              lineNumber: thread.line!,
+              side: thread.side === "right" ? ("additions" as const) : ("deletions" as const),
+              metadata: thread,
+            })),
+        },
+      ]
+    : [];
   const beginComment = (
     range: SelectedLineRange | null,
     context: {
@@ -685,15 +697,7 @@ function RemoteDiff({
                 onGutterUtilityClick: beginComment,
                 onLineSelectionEnd: beginComment,
               }}
-              renderAnnotation={(annotation: DiffLineAnnotation<PullRequestReviewThread>) => (
-                <div className="space-y-2 rounded-md border bg-background p-3 font-sans text-sm text-foreground">
-                  {annotation.metadata.comments.map((comment) => (
-                    <p key={comment.id} className="whitespace-pre-wrap">
-                      <strong>{comment.author?.login ?? "Reviewer"}</strong>: {comment.body}
-                    </p>
-                  ))}
-                </div>
-              )}
+              renderAnnotation={renderReviewThreadAnnotation}
             />
           )}
         </div>

@@ -1,6 +1,6 @@
 import { SidebarSubthreadVisibilityItem } from "./SidebarSubthreadVisibilityMenu";
 import { ArrowUpDownIcon, CheckIcon, FunnelIcon, GroupIcon } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import type {
   SidebarProjectGroupingMode,
   SidebarSectionOrderMode,
@@ -22,13 +22,9 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
- * The compact layout bar under the project scope row.
- *
- * Three menus, each one axis of the same question "how is this inbox laid
- * out": how sections are cut (grouping), which providers are in scope
- * (filter), and how rows are ordered (sort). Each trigger is an icon plus the
- * current choice in short form, so the bar doubles as the readout of how the
- * list is arranged — no need to open a menu to find out.
+ * The compact layout bar under the project scope row: grouping, provider filter, and sort menus.
+ * Each trigger shows the current choice in short form, so the bar doubles as a readout of how
+ * the list is arranged.
  */
 
 const GROUPING_AXIS_LABELS: Record<SidebarThreadGroupingAxis, string> = {
@@ -151,30 +147,18 @@ export const SidebarGroupingBar = memo(function SidebarGroupingBar(props: Sideba
     onThreadSortOrderChange,
   } = props;
 
-  const handlePrimaryAxisChange = useCallback(
-    (value: string) => onPrimaryAxisChange(value as SidebarThreadGroupingAxis),
-    [onPrimaryAxisChange],
-  );
-  const handleSecondaryAxisChange = useCallback(
-    (value: string) => onSecondaryAxisChange(value as SidebarThreadGroupingAxis),
-    [onSecondaryAxisChange],
-  );
-  const handleProjectGroupingModeChange = useCallback(
-    (value: string) => onProjectGroupingModeChange(value as SidebarProjectGroupingMode),
-    [onProjectGroupingModeChange],
-  );
-  const handleThreadSortOrderChange = useCallback(
-    (value: string) => onThreadSortOrderChange(value as SidebarThreadSortOrder),
-    [onThreadSortOrderChange],
-  );
-  const handleProviderFilterChange = useCallback(
-    (value: string) => onProviderFilterChange(value === "all" ? null : value),
-    [onProviderFilterChange],
-  );
-  const handleSectionOrderModeChange = useCallback(
-    (value: string) => onSectionOrderModeChange(value as SidebarSectionOrderMode),
-    [onSectionOrderModeChange],
-  );
+  const handlePrimaryAxisChange = (value: string) =>
+    onPrimaryAxisChange(value as SidebarThreadGroupingAxis);
+  const handleSecondaryAxisChange = (value: string) =>
+    onSecondaryAxisChange(value as SidebarThreadGroupingAxis);
+  const handleProjectGroupingModeChange = (value: string) =>
+    onProjectGroupingModeChange(value as SidebarProjectGroupingMode);
+  const handleThreadSortOrderChange = (value: string) =>
+    onThreadSortOrderChange(value as SidebarThreadSortOrder);
+  const handleProviderFilterChange = (value: string) =>
+    onProviderFilterChange(value === "all" ? null : value);
+  const handleSectionOrderModeChange = (value: string) =>
+    onSectionOrderModeChange(value as SidebarSectionOrderMode);
 
   const groupingActive = props.primaryAxis !== "none";
   const providerFilterActive = props.providerFilter !== null;

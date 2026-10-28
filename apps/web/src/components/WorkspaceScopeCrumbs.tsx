@@ -9,17 +9,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { WorkspaceBreadcrumbItem } from "./WorkspaceBreadcrumb";
 
 /**
- * The clickable halves of a thread's path: its environment and its project.
- *
- * Both crumbs render the same way wherever the path is shown — the chat
- * header, the environment page, the project page — so a scope always looks
- * like the same thing and always leads to the same place. Shared as
- * components rather than as a `crumbs` array because each one carries its own
- * icon rule and its own tooltip copy.
+ * The clickable halves of a thread's path: its environment and its project. Both render the same
+ * wherever the path is shown, so a scope always looks and leads the same. Shared as components,
+ * not a `crumbs` array, because each carries its own icon rule and tooltip copy.
  */
 
 const CRUMB_LINK_CLASS =
-  "inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
 /** A crumb that is the page you are on: no link, no hover affordance. */
 const CRUMB_CURRENT_CLASS = "inline-flex min-w-0 items-center gap-1.5 text-foreground";

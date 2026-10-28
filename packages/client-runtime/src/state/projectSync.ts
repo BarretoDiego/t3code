@@ -84,26 +84,17 @@ export interface RunProjectSyncParams {
   readonly signal?: AbortSignal;
   readonly onProgress: (progress: ProjectSyncProgress) => void;
   /**
-   * A plan the user already confirmed (typically from a preview step that
-   * called `planProjectSync` directly). When present, `runProjectSync` trusts
-   * it byte-for-byte: it does not re-fetch either manifest or recompute the
-   * diff, so what gets copied/deleted is exactly what the user saw and
-   * confirmed, not a second, possibly different plan recomputed against
-   * whatever the destination looks like by the time execution starts. When
-   * absent, `runProjectSync` calls `planProjectSync` itself, preserving the
-   * original fetch-then-plan-then-execute behavior.
+   * A plan the user already confirmed (e.g. from a preview via `planProjectSync`).
+   * When present, `runProjectSync` trusts it byte-for-byte and re-fetches nothing, so
+   * what is copied/deleted is exactly what the user saw. When absent it plans itself.
    */
   readonly precomputedPlan?: ProjectSyncPlanResult;
 }
 
 /**
- * Fetches both projects' manifests and diffs them into a plan, without
- * executing it. Split out from `runProjectSync` so a preview/confirmation UI
- * can compute the plan once, show the user exactly what will be copied and
- * deleted, and then hand that same plan back via `precomputedPlan` — instead
- * of `runProjectSync` silently recomputing a second, potentially different
- * plan against whatever the destination looks like by the time the user
- * confirms.
+ * Fetches both manifests and diffs them into a plan without executing it. Split from
+ * `runProjectSync` so a preview UI can compute the plan once and hand the same plan
+ * back via `precomputedPlan` instead of recomputing a possibly different one.
  */
 export async function planProjectSync(
   deps: ProjectSyncDeps,
@@ -129,13 +120,10 @@ export async function planProjectSync(
 }
 
 /**
- * Everything `runProjectSync` needs from the outside world, injected so the
- * controller can be exercised in tests without a socket, an `AtomRegistry`,
- * or a real `fetch`. A real caller (the web/desktop/mobile app) wires
- * `resolveUrl` the same way `resolveAssetUrl` is used today: look up the
- * environment's prepared connection, then resolve the RPC-returned relative
- * URL against its `httpBaseUrl`. The signed URL itself carries the auth
- * token, so no extra header is needed for the export/import fetches.
+ * Everything `runProjectSync` needs from outside, injected so tests need no socket,
+ * `AtomRegistry`, or real `fetch`. Callers wire `resolveUrl` like `resolveAssetUrl`:
+ * resolve the RPC-returned relative URL against the environment's `httpBaseUrl`.
+ * The signed URL carries the auth token, so fetches need no extra header.
  */
 export interface ProjectSyncDeps {
   readonly fetch: typeof fetch;
@@ -214,25 +202,10 @@ function checkProjectSyncAborted(signal: AbortSignal | undefined): void {
 type StreamingRequestInit = RequestInit & { readonly duplex?: "half" };
 
 /**
- * Feature-detects whether the current environment's `fetch`/`Request` can
- * stream a `ReadableStream` request body end to end, rather than buffering it
- * into memory first. Safari and React Native's `fetch` either throw when
- * given a stream body or silently ignore `duplex` and buffer it anyway, so a
- * capability probe is the only reliable signal (there is no separate feature
- * flag to read).
- *
- * This is the check Chrome's own fetch-upload-streaming guidance recommends:
- * constructing a `Request` with a stream body and a `duplex` *getter* is
- * side-effect-free, so a runtime that understands duplex streaming reads the
- * getter (proving it looked at the option) and does not fall back to forcing
- * a `Content-Type` header the way non-streaming runtimes do when they end up
- * buffering the stream through a different code path. Constructors that
- * don't support streaming bodies at all can also throw outright, which the
- * try/catch treats the same as "unsupported".
- *
- * `RequestCtor`/`ReadableStreamCtor` are parameterized (defaulting to the
- * globals) purely so tests can substitute fakes that simulate an unsupported
- * runtime without needing an actual old browser.
+ * Feature-detects whether `fetch`/`Request` can stream a `ReadableStream` request
+ * body end to end. Safari and React Native either throw or ignore `duplex` and buffer
+ * anyway, so a probe is the only signal: a `Request` with a `duplex` getter reads it
+ * only when streaming is supported. `RequestCtor`/`ReadableStreamCtor` are injectable for tests.
  */
 export function detectProjectSyncStreamingUploadSupport(
   RequestCtor: typeof Request = Request,
@@ -306,12 +279,9 @@ async function transferProjectSyncBatch(
     throw new ProjectSyncUrlResolutionError(dest.environmentId);
   }
 
-  // Buffering the whole export response into an ArrayBuffer defeats the
-  // streaming both server-side endpoints already do: a single large file (a
-  // batch is sized by count/bytes budgets, not a hard per-file cap) would sit
-  // fully in memory in the tab/app process. Stream the body straight through
-  // when the runtime can actually deliver a streaming request; only fall
-  // back to buffering where that is not possible at all.
+  // Buffering the whole export response defeats the streaming both endpoints already do
+  // and could hold a large file fully in memory. Stream the body straight through when
+  // the runtime can deliver a streaming request; buffer only where that is impossible.
   const streamingSupported =
     deps.streamingUploadSupported ?? detectProjectSyncStreamingUploadSupport();
   const canStreamImportBody = streamingSupported && exportResponse.body !== null;
@@ -350,16 +320,10 @@ async function transferProjectSyncBatch(
 }
 
 /**
- * Orchestrates a client-driven project sync between two environments: reads
- * both projects' manifests, diffs them, and streams changed files from the
- * source into the destination in bounded batches (never buffering the whole
- * project in memory at once), then applies deletions on the destination when
- * running in `"sync"` mode. `"send"` never deletes, even if the destination
- * (a project the caller just created) happens to report existing entries.
- *
- * A batch failure aborts the rest of the sync; the destination is left with
- * whatever batches completed before the failure, which is always a subset of
- * `toCopy` and never partially-written destination-only cruft.
+ * Orchestrates a client-driven sync: reads both manifests, diffs them, streams
+ * changed files in bounded batches, then (in `"sync"` mode only; `"send"` never
+ * deletes) applies deletions. A batch failure aborts the rest, leaving the
+ * destination with only completed batches, a subset of `toCopy`.
  */
 export async function runProjectSync(
   deps: ProjectSyncDeps,
@@ -440,11 +404,10 @@ export async function runProjectSync(
       );
     }
 
-    // Removing the last entry inside a destination directory also prunes that
-    // now-empty directory, which can collapse a directory the source publishes
-    // as a `"dir"` entry (manifests only name directories that are empty). The
-    // copy pass ran before the deletions, so re-assert those zero-byte entries
-    // afterwards or the destination would silently end up short a directory.
+    // Removing the last entry in a destination directory also prunes that directory,
+    // which can collapse one the source publishes as a `"dir"` entry. The copy pass ran
+    // before deletions, so re-assert those zero-byte entries or the destination ends up
+    // short a directory.
     for (const batch of batchProjectSyncEntries(
       plan.toCopy.filter((entry) => entry.kind === "dir"),
       batchOptions,

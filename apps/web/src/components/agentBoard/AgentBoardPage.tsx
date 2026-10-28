@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { useClientSettings } from "../../hooks/useSettings";
 import { confirmThreadInterruption, isIntentionalInterruption } from "../../lib/threadInterruption";
 import {
@@ -157,6 +158,7 @@ function updateSearchForFilters(filters: AgentBoardFilters): AgentBoardSearch {
 }
 function useCoarseNow(enabled: boolean): number {
   const [now, setNow] = useState(Date.now);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls the clock every 30s while enabled so relative ages stay fresh; the interval is cleared on cleanup
   useEffect(() => {
     if (!enabled) return;
     const id = window.setInterval(() => setNow(Date.now()), 30000);
@@ -166,6 +168,7 @@ function useCoarseNow(enabled: boolean): number {
 }
 function useSnoozeWakeTick(threads: Parameters<typeof nextAgentBoardSnoozeWakeAt>[0]): number {
   const [now, setNow] = useState(Date.now);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arms a timer for the next snooze wake so the board re-evaluates at that moment; cleared on change
   useEffect(() => {
     const nextWakeAt = nextAgentBoardSnoozeWakeAt(threads, now);
     if (nextWakeAt === null) return;
@@ -679,6 +682,7 @@ function CardActions(props: {
   const { card, sources, actions } = props;
   const shell = sources.shellsByKey.get(cardKey(card)) ?? null;
   const config = sources.configs.get(card.ref.environmentId);
+  const now = new Date(useNowMinuteMs()).toISOString();
   const supportsSettlement = config?.environment.capabilities.threadSettlement === true;
   const isLifecycleSettled = shell?.settledOverride === "settled" || shell?.settledAt != null;
   const error = actions.errors.get(cardKey(card)) ?? null;
@@ -687,7 +691,7 @@ function CardActions(props: {
     connected: card.environment.connectivity === "connected",
     supportsSettlement,
     lifecycleSettled: isLifecycleSettled,
-    canSettle: shell !== null && !hasQueuedTurnStart(shell, { now: new Date().toISOString() }),
+    canSettle: shell !== null && !hasQueuedTurnStart(shell, { now }),
   });
   const hasMutatingAction = Object.values(availability).some(Boolean);
   return (

@@ -477,11 +477,9 @@ function linkSideIdentity(group: ProjectGroupLinkSide): string {
 }
 
 /**
- * Plans the `linkKey` writes that make two project groups one. A group that
- * already has a shared identity (git remote or an earlier link) lends its key,
- * so every other project with that identity stays in the merged group. Two
- * unidentified groups get a fresh key. Only projects whose key changes are
- * returned.
+ * Plans the `linkKey` writes that make two project groups one. A group with a
+ * shared identity (git remote or earlier link) lends its key; two unidentified
+ * groups get a fresh key. Only projects whose key changes are returned.
  */
 export function planProjectGroupLink(input: {
   readonly source: ProjectGroupLinkSide;

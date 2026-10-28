@@ -172,12 +172,10 @@ export function createAutomationDerivedAtoms<OrchestratorsError, RequestsError>(
 }
 
 /**
- * Automation state for every connected environment.
- *
- * Live data comes from two subscriptions per environment and no more:
- * `orchestrators.subscribe` for the orchestrator list, and one filtered
- * `events.subscribe` whose only job is to tell the query atoms below when to
- * read again. Rows and panels read derived atoms; none of them subscribes.
+ * Automation state for every connected environment. Live data comes from two
+ * subscriptions per environment: `orchestrators.subscribe` for the list, and one
+ * filtered `events.subscribe` that only tells the query atoms when to read again.
+ * Rows and panels read derived atoms and never subscribe.
  */
 export function createAutomationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,

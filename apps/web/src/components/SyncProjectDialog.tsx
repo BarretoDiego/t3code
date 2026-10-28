@@ -77,11 +77,9 @@ export interface SyncProjectDialogProps {
   readonly initialSource?: SyncProjectDialogSource;
 }
 /**
- * The progress step's whole story in one value: a run is either untouched,
- * in flight (with its latest progress snapshot), finished (with the summary
- * it produced), or over with a described failure. Keeping these as separate
- * `useState` slots lets combinations exist that never should — a "done" run
- * still holding the previous attempt's error, say.
+ * The progress step's whole story in one value: untouched, in flight (with its latest snapshot),
+ * finished (with its summary), or failed. Separate `useState` slots would allow combinations that
+ * never should exist, such as a done run still holding the previous attempt's error.
  */
 type SyncRunState =
   | {
@@ -156,14 +154,9 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
       setRunState(IDLE_RUN_STATE);
     }
   }
-  useEffect(() => {
-    if (open) abortControllerRef.current = null;
-  }, [open]);
-  // Derived from primitive fields (not the `initialSource` object itself) so
-  // its identity stays stable across renders even when a caller passes a
-  // freshly-literal `initialSource` prop every render (as
-  // `ProjectSettingsPanel` does) — otherwise every downstream effect keyed on
-  // `source` would re-run on every unrelated parent re-render.
+  // Derived from primitive fields, not the `initialSource` object, so identity stays stable when a
+  // caller passes a fresh literal every render (as `ProjectSettingsPanel` does); otherwise every
+  // effect keyed on `source` would re-run on each unrelated parent re-render.
   const fixedSourceEnvironmentId = initialSource?.environmentId ?? null;
   const fixedSourceProjectId = initialSource?.projectId ?? null;
   const source: SyncProjectDialogSource | null = (() => {
@@ -287,6 +280,7 @@ export function SyncProjectDialog({ open, onOpenChange, initialSource }: SyncPro
     setPlanError(null);
     setPlanResult(null);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the sync plan over RPC for the current selection and ignores results after the inputs change
   useEffect(() => {
     if (
       planRequestKey === null ||
@@ -765,7 +759,7 @@ function ModeStep(props: {
         >
           <div className="text-sm font-medium text-foreground">Sync an existing project</div>
           <div className="text-xs text-muted-foreground">
-            Mirrors the source onto an existing project — this can delete files on the destination.
+            Mirrors the source onto an existing project. This can delete files on the destination.
           </div>
         </button>
       </div>
@@ -818,7 +812,7 @@ function ModeStep(props: {
           </Select>
           {props.destProjectCandidates.length === 0 ? (
             <span className="text-2xs text-muted-foreground">
-              No other projects exist on this environment yet — use "Send as a new project" instead.
+              No other projects exist on this environment yet. Use "Send as a new project" instead.
             </span>
           ) : null}
         </label>
@@ -831,8 +825,8 @@ function ModeStep(props: {
           id="sync-project-include-git"
         />
         <label htmlFor="sync-project-include-git" className="text-xs text-muted-foreground">
-          Include <code className="font-mono">.git</code> — copies version-control history along
-          with the files.
+          Include <code className="font-mono">.git</code>: copies version-control history along with
+          the files.
         </label>
       </div>
     </div>

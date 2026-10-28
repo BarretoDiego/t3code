@@ -1,4 +1,3 @@
-import { useCallback, useMemo } from "react";
 import {
   createEnvironmentRpcCommand,
   squashAtomCommandFailure,
@@ -20,18 +19,12 @@ const requestHandoff = createEnvironmentRpcCommand(connectionAtomRuntime, {
 export function useThreadHandoffDeps(): ThreadHandoffDeps {
   const command = useAtomCommand(requestHandoff, { reportFailure: false });
   const projectSync = useProjectSyncDeps();
-  const request: ThreadHandoffDeps["request"] = useCallback(
-    async (environmentId, input) => {
-      const result = await command({ environmentId, input });
-      if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-      return result.value;
-    },
-    [command],
-  );
-  return useMemo(
-    () => ({ request, fetch: projectSync.fetch, resolveUrl: projectSync.resolveUrl }),
-    [request, projectSync.fetch, projectSync.resolveUrl],
-  );
+  const request: ThreadHandoffDeps["request"] = async (environmentId, input) => {
+    const result = await command({ environmentId, input });
+    if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+    return result.value;
+  };
+  return { request, fetch: projectSync.fetch, resolveUrl: projectSync.resolveUrl };
 }
 
 export const THREAD_HANDOFF_EVENT = "t3:thread-handoff";

@@ -18,7 +18,7 @@ export interface ListCursor extends ProviderListCursor {
  * provider drop it into a filter without checking it again.
  */
 const LIST_CURSOR_PATTERN =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))\|(\d{1,9})\|(\d{1,9}(?:,\d{1,9})*)?$/;
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))\|(\d{1,9})\|(\d{1,9}(?:,\d{1,9})*)?(?:\|([\w.:~+-]{1,128}))?$/;
 
 export function parseListCursor(raw: string): ListCursor | null {
   const match = LIST_CURSOR_PATTERN.exec(raw);
@@ -28,6 +28,7 @@ export function parseListCursor(raw: string): ListCursor | null {
     updatedBefore: match[1]!,
     delivered: Number(match[2]),
     seenAt: seenAt === undefined ? [] : seenAt.split(",").map(Number),
+    ...(match[4] === undefined ? {} : { resumeAfter: match[4] }),
   };
 }
 
@@ -40,13 +41,9 @@ export function listCursorKey(host: string, repository: string): string {
 }
 
 /**
- * Where a repository carries on, worked out from the slice just handed over. The boundary is the
- * instant of the oldest row in it: the next read asks for that instant and everything before it,
- * and names the rows already sent at it so none of them arrives twice.
- *
- * The names carry over when the boundary has not moved. A slice that ends on the same instant it
- * began on has to keep the earlier rows excluded as well as its own, or the read after it would
- * hand them over again.
+ * Where a repository carries on, from the slice just handed over. The boundary is the instant of the oldest row in it: the next read asks for that instant and everything before it,
+ * and names the rows already sent at it so none arrives twice. The names carry over when the boundary has not moved: a slice ending on the instant it began on
+ * must keep the earlier rows excluded as well as its own, or the next read would hand them over again.
  */
 export function nextListCursor(
   previous: ListCursor | undefined,
@@ -56,6 +53,7 @@ export function nextListCursor(
   delivered: ReadonlyArray<ProviderChangeRequest>,
   /** A provider may consume malformed offset-paged rows that never appear in `delivered`. */
   cursorAdvance = delivered.length,
+  resumeAfter?: string,
 ): string | null {
   // The host had nothing at all, so there is no row to carry on from — and repeating the cursor
   // that produced the empty slice would ask the same question forever.
@@ -65,15 +63,13 @@ export function nextListCursor(
   // repository's boring afternoon — and reading "nothing new" as "nothing left" would end the
   // walk on the instant it was stuck on, with everything older unreachable for good.
   const oldest = fetched.reduce((left, right) => (right.updatedAt < left.updatedAt ? right : left));
-  return listCursorAt(previous, oldest.updatedAt, fetched, cursorAdvance);
+  return listCursorAt(previous, oldest.updatedAt, fetched, cursorAdvance, resumeAfter);
 }
 
 /**
- * The same cursor against a boundary chosen elsewhere, which is what a slice read across several
- * repositories at once needs: every repository in it is read up to the oldest row of the whole
- * slice, including the ones that contributed nothing to it — their rows are simply all older, and
- * a repository that carried on from its own oldest row would be right about where it stopped and
- * silent about the ones that never appeared.
+ * The same cursor against a boundary chosen elsewhere, for a slice read across several repositories: each is read up to the oldest row of the whole slice,
+ * including those that contributed nothing (their rows are all older). A repository continuing from its own oldest row would be right about where it stopped
+ * and silent about the ones that never appeared.
  */
 export function listCursorAt(
   previous: ListCursor | undefined,
@@ -81,10 +77,12 @@ export function listCursorAt(
   /** This repository's own rows in the slice, before the ones already sent were dropped. */
   fetched: ReadonlyArray<ProviderChangeRequest>,
   deliveredCount: number,
+  resumeAfter?: string,
 ): string {
   const seenAt = new Set([
     ...(previous?.updatedBefore === boundary ? previous.seenAt : []),
     ...fetched.filter((item) => item.updatedAt === boundary).map((item) => item.number),
   ]);
-  return `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
+  const cursor = `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
+  return resumeAfter === undefined ? cursor : `${cursor}|${resumeAfter}`;
 }

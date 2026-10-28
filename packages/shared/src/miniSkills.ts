@@ -1,12 +1,8 @@
 /**
- * Mini skill prompt rendering — the single place where skill content becomes
- * prompt text. Kept pure so the server composition path and the settings UI
- * share exactly one string-concatenation implementation.
- *
- * Scopes are distinct on purpose: thread skills were snapshotted onto the
- * thread at creation; request skills were picked in the composer for one
- * message. A skill explicitly picked for a request wins over its (possibly
- * stale) thread snapshot, so the two blocks never repeat the same skill.
+ * Mini skill prompt rendering: the single place where skill content becomes prompt text.
+ * Thread skills were snapshotted at creation; request skills were picked for one
+ * message. A request skill wins over its (possibly stale) thread snapshot, so the
+ * two blocks never repeat a skill.
  */
 import {
   DEFAULT_MINI_SKILL_PROMPT_WRAPPERS,

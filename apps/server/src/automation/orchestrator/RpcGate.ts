@@ -32,12 +32,8 @@ type AutomationRpcMethod = RpcGroup.Rpcs<typeof AutomationRpcGroup>["_tag"];
 const M = AUTOMATION_WS_METHODS;
 
 /**
- * What an orchestrator's agent may do with each automation RPC.
- * - `read`: observation, open to a live credential.
- * - `service`: the service behind it checks the action and its target.
- * - `operator`: configuration only the operator changes; always refused.
- * - `message`: needs `peer.message`; see `makeAutomationMethodGate`.
- *
+ * What an orchestrator's agent may do with each automation RPC: `read` (open to a live credential), `service` (the service checks action and target),
+ * `operator` (operator-only configuration; always refused), `message` (needs `peer.message`; see `makeAutomationMethodGate`).
  * Keyed by the RPC group, so a new method is a type error until it is placed.
  */
 const AUTOMATION_RPC_ORCHESTRATOR_RULES = {

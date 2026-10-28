@@ -587,7 +587,7 @@ export function makeEngineLayer(input: {
     ]),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
-      folderForThread: () => Effect.succeed(Option.none()),
+      folderForThread: () => Effect.succeedNone,
     }),
   );
   const launch = ThreadLaunch.layer.pipe(

@@ -147,14 +147,9 @@ export interface TaskStateChange {
 }
 
 /**
- * The status a locally executed task has, given its thread's facts. Returns
- * null when nothing changes.
- *
- * `reconcile` is a deliberate re-read (startup, or the `reconcile` action). It
- * is the only mode that can conclude `unknown`: a run marked active with no
- * provider session behind it has an outcome nobody can establish. A live event
- * never concludes that on its own, because the session attaches a moment after
- * the run starts.
+ * The status a locally executed task has, given its thread's facts; null when nothing changes.
+ * `reconcile` is a deliberate re-read (startup or the `reconcile` action) and the only mode that can conclude `unknown`: a run marked active with no provider session has no establishable outcome.
+ * A live event never concludes that, because the session attaches a moment after the run starts.
  */
 export function deriveTaskState(
   task: Pick<DelegatedTask, "status" | "statusReason" | "result">,

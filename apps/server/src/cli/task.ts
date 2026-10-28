@@ -55,6 +55,9 @@ const taskFlags = {
 
 const mutationFlags = { ...taskFlags, idempotencyKey: idempotencyKeyFlag } as const;
 
+const decodeJsonDocument = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeIdempotencyKey = Schema.decodeEffect(IdempotencyKey);
+
 /** Reads a JSON document from a file, or from stdin when the path is `-`. */
 const readJsonFile = Effect.fn("cli.task.readJsonFile")(function* (path: string) {
   const text =
@@ -67,7 +70,7 @@ const readJsonFile = Effect.fn("cli.task.readJsonFile")(function* (path: string)
               cliFailure("INVALID_INPUT", `Cannot read ${path}: ${cause.message}`),
             ),
           );
-  return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
+  return yield* decodeJsonDocument(text).pipe(
     Effect.mapError(() => cliFailure("INVALID_INPUT", `${path} is not valid JSON.`)),
   );
 });
@@ -82,7 +85,7 @@ const decodeInput = <S extends Schema.Top>(schema: S, value: unknown, what: stri
 const idempotencyKey = (flag: Option.Option<string>) =>
   Option.match(flag, {
     onSome: (value) =>
-      Schema.decodeUnknownEffect(IdempotencyKey)(value).pipe(
+      decodeIdempotencyKey(value).pipe(
         Effect.mapError(() =>
           cliFailure("INVALID_INPUT", "--idempotency-key must be 1 to 200 characters."),
         ),
@@ -144,7 +147,7 @@ function formatTask(task: DelegatedTask): string {
     for (const criterion of task.result.criteria) {
       const mark = criterion.met === null ? "?" : criterion.met ? "x" : " ";
       lines.push(
-        `  [${mark}] ${criterion.text}${criterion.evidence ? ` — ${criterion.evidence}` : ""}`,
+        `  [${mark}] ${criterion.text}${criterion.evidence ? ` (${criterion.evidence})` : ""}`,
       );
     }
   } else if (task.contract.acceptanceCriteria.length > 0) {

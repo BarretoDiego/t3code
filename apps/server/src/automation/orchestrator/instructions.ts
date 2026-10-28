@@ -1,11 +1,8 @@
 import { MiniSkillId, type ThreadMiniSkillSnapshot } from "@t3tools/contracts";
 
 /**
- * Every `t3` command the instructions name, as data: the command path, its
- * positional arguments, and the flags shown with it (a flag that takes a value
- * is written with a placeholder for it). The instruction text is
- * rendered from this table and a test resolves each entry in the real CLI
- * catalog, so the text cannot name a command or flag that does not exist.
+ * Every `t3` command the instructions name, as data: path, positional arguments, and flags (a value flag carries a placeholder).
+ * The text is rendered from this table and a test resolves each entry in the real CLI catalog, so it cannot name a command or flag that does not exist.
  */
 export const ORCHESTRATOR_COMMANDS = {
   status: { path: ["status"], args: [], flags: ["--json"] },
@@ -49,11 +46,8 @@ const command = (key: CommandKey, withFlags = true) => {
 };
 
 /**
- * The built-in orchestrator instructions. A main thread the orchestrator
- * creates carries them as a thread mini skill, so the provider receives them
- * with the thread's first turn and keeps them; an adopted thread gets the same
- * text at the top of its first decision turn instead. Paid for on every thread,
- * so they state rules and point at `t3 guide` for the manual.
+ * The built-in orchestrator instructions. A created main thread carries them as a thread mini skill kept across turns; an adopted thread gets the text atop its first decision turn.
+ * Paid for on every thread, so they state rules and point at `t3 guide` for the manual.
  */
 export const ORCHESTRATOR_INSTRUCTIONS = `You are a T3 Code orchestrator: a persistent coordinator, not a worker.
 

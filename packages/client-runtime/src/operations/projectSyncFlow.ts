@@ -18,11 +18,10 @@ import { getAddProjectInitialQuery } from "./projects.ts";
 import type { ProjectSyncPlanSummary } from "./projectSync.ts";
 
 /**
- * Pure decision/presentation logic behind the "sync project between
- * environments" flow: which environments and projects can take part, what the
- * default destination folder is, how a run's progress and failures read, and
- * when the flow is allowed to start. Shared by web and mobile — nothing here
- * touches React, the DOM, or a socket.
+ * Pure decision/presentation logic behind the "sync project between environments"
+ * flow: eligible environments and projects, default destination, progress and
+ * failure text, and when the flow may start. Shared by web and mobile; touches no
+ * React, DOM, or socket.
  */
 
 /**
@@ -50,13 +49,10 @@ export function selectProjectSyncEnvironmentOptions(
 }
 
 /**
- * Whether a specific environment can take part in a sync at all.
- *
- * The dialog's pickers only ever list eligible environments, but a fixed
- * source (Project Settings, or the palette's project-scoped entry) skips the
- * origin step entirely — so the source it was handed still has to be checked
- * against the same rule, or an old/disconnected server would only fail once
- * the manifest RPC came back.
+ * Whether a specific environment can take part in a sync at all. A fixed source
+ * (Project Settings, the palette's project-scoped entry) skips the pickers, so it
+ * must be checked against the same rule or an old/disconnected server would only
+ * fail once the manifest RPC came back.
  */
 export function isProjectSyncEnvironmentEligible(
   candidates: ReadonlyArray<SyncEnvironmentCandidate>,
@@ -142,11 +138,9 @@ export function slugifyProjectFolderName(title: string): string {
 }
 
 /**
- * Default destination path for a "send" (new project) sync: the destination
- * environment's configured `addProjectBaseDirectory` (or `~/` when unset),
- * plus a slug of the source project's title. The base folder comes from
- * `getAddProjectInitialQuery`, the same rule the add-project flow uses, so
- * both surfaces propose folders under the same directory.
+ * Default destination path for a "send" sync: the destination's
+ * `addProjectBaseDirectory` (or `~/`) plus a slug of the source title. The base
+ * comes from `getAddProjectInitialQuery`, the add-project flow's own rule.
  */
 export function buildDefaultSendDestinationPath(input: {
   readonly baseDirectory: string;
@@ -318,12 +312,9 @@ export function projectSyncPlanNeedsDeleteConfirmation(summary: {
 }
 
 /**
- * Formats a byte count for a sync plan summary. Deliberately drops the
- * fractional part once it is meaningless ("2 KB", not "2.00 KB"): a plan
- * summary is a one-line size estimate, not a measurement. The diagnostics
- * panels' own `formatBytes` helpers keep two decimals instead because they
- * render live telemetry where small deltas matter — that difference is
- * intentional, not drift.
+ * Formats a byte count for a sync plan summary, dropping a meaningless fractional
+ * part ("2 KB", not "2.00 KB") since it is a one-line estimate. The diagnostics
+ * panels' `formatBytes` keeps two decimals for live telemetry on purpose.
  */
 export function formatProjectSyncBytes(bytes: number): string {
   if (bytes <= 0) {

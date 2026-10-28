@@ -82,28 +82,26 @@ const carriesAttachments = ({ event }: OrchestrationV2StoredEvent) => {
       ))
   );
 };
-function measure<A, E, R>(
+const measure = Effect.fn("measure")(function* <A, E, R>(
   operation: string,
   handoffId: ThreadHandoffId | undefined,
   effect: Effect.Effect<A, E, R>,
 ) {
-  return Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis;
-    return yield* effect.pipe(
-      Effect.ensuring(
-        Clock.currentTimeMillis.pipe(
-          Effect.flatMap((endedAt) =>
-            Effect.logDebug("Thread handoff timing", {
-              operation,
-              handoffId,
-              durationMs: endedAt - startedAt,
-            }),
-          ),
+  const startedAt = yield* Clock.currentTimeMillis;
+  return yield* effect.pipe(
+    Effect.ensuring(
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((endedAt) =>
+          Effect.logDebug("Thread handoff timing", {
+            operation,
+            handoffId,
+            durationMs: endedAt - startedAt,
+          }),
         ),
       ),
-    );
-  });
-}
+    ),
+  );
+});
 function latestConfiguration(events: readonly OrchestrationV2StoredEvent[]) {
   return latestThreadConfiguration(events.map((stored) => stored.event));
 }
@@ -426,7 +424,7 @@ export function createThreadHandoffService(
         ? yield* Effect.try({
             try: () => driver.sessionIdFromCursor({ resume: nativeThreadId }),
             catch: normalize,
-          }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          }).pipe(Effect.orElseSucceed(() => undefined))
         : undefined;
     const repositories: NonNullable<ThreadHandoffSource["repositories"]>[number][] = [];
     for (const projectId of new Set([thread.projectId, ...projectIds])) {
@@ -1176,7 +1174,7 @@ export function createThreadHandoffService(
     }
     return yield* fail("unsupported", "Unknown handoff operation.");
   });
-  const handle = (request: ThreadHandoffRequest) => {
+  const handle = Effect.fn("handle")((request: ThreadHandoffRequest) => {
     const id =
       "handoffId" in request
         ? request.handoffId
@@ -1206,7 +1204,7 @@ export function createThreadHandoffService(
         return Deferred.succeed(cancellation, undefined).pipe(Effect.andThen(operation));
     }
     return operation;
-  };
+  });
   const watch = (threadId: ThreadId) =>
     Stream.unwrap(
       Effect.gen(function* () {

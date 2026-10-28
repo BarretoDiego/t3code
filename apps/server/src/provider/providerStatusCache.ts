@@ -20,9 +20,7 @@ const mergeProviderModels = (
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const fallbackSlugs = new Set(fallbackModels.map((model) => model.slug));
-  // The fallback snapshot is built from current settings and already carries
-  // every custom model, so cached custom rows that are not in it were removed
-  // while the cache was stale and must not come back.
+  // Settings already supply current custom models; cached rows could resurrect removed ones.
   return [
     ...fallbackModels,
     ...cachedModels.filter((model) => !model.isCustom && !fallbackSlugs.has(model.slug)),
@@ -36,6 +34,7 @@ const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
   "grok",
   "opencode",
   "antigravity",
+  "fx",
 ];
 
 const driverRank = (driver: string): number => {
@@ -100,21 +99,9 @@ export const hydrateCachedProvider = (input: {
 };
 
 /**
- * Resolve the on-disk cache path for a provider instance snapshot.
- *
- * File naming: `<cacheDir>/<instanceId>.json`. For the default instance of
- * a built-in kind this equals the legacy `<kind>.json` path (because
- * `defaultInstanceIdForDriver(kind).toString() === kind`), so existing
- * cached snapshots remain readable without any rename step.
- *
- * Non-default instances (e.g. `codex_personal`) land in their own files and
- * never collide with other instances.
- *
- * Cache contents must still carry matching `instanceId`, `driver`, and, when
- * the live instance supplies it, continuation identity before hydration. The
- * continuation group identifies account-bearing homes for Codex and Claude,
- * so editing settings while the server is stopped cannot hydrate one account
- * with another account's cached plan limits.
+ * Require matching instanceId, driver, and (when supplied) continuation identity before
+ * hydration; filenames alone cannot authorize routing. The continuation group keeps one
+ * account's cached plan limits off another account edited in while the server was stopped.
  */
 export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCachePath")(
   function* (input: {

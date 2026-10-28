@@ -39,9 +39,6 @@ export const printJson = (value: unknown) => Console.log(JSON.stringify(value, n
 /** Prints one event of a stream as a single JSON line. */
 export const printJsonLine = (value: unknown) => Console.log(JSON.stringify(value));
 
-// ---------------------------------------------------------------------------
-// Errors
-
 /**
  * Codes a script branches on. They are the server's `AutomationErrorCode`s plus
  * `WAIT_TIMEOUT`, which only a waiting CLI command can produce.
@@ -247,9 +244,6 @@ export const reportCliFailure =
       }),
     );
 
-// ---------------------------------------------------------------------------
-// Idempotency
-
 /**
  * The command id for a mutation. With `--idempotency-key` the id is derived
  * from the key (and `part`, when one CLI command dispatches several server
@@ -272,9 +266,6 @@ export const commandIdFor = (
         Effect.map((id) => CommandId.make(part === undefined ? id : `${id}:${part}`)),
       ),
   });
-
-// ---------------------------------------------------------------------------
-// Connection
 
 /**
  * Replaces the socket a command would open. Tests set it to drive the real

@@ -7,7 +7,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { UserRoundCheckIcon, WorkflowIcon } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 
 import { useRightPanelStore } from "../../rightPanelStore";
 import { cn } from "../../lib/utils";
@@ -51,14 +51,10 @@ function OrchestratorMarkerDetails({ marker }: { readonly marker: OrchestratorTh
 }
 
 /**
- * Says a thread is an orchestrator's main thread, and when something other
- * than the user is responsible for a request waiting on it. Renders nothing on
- * an ordinary thread.
- *
- * `row` is two small icons for the sidebar. `header` spells the state out and
- * opens the orchestrator panel. `card` spells it out without acting, for lists
- * such as the Agent Operations Board. None relies on colour: the state has
- * its own glyph and a text label.
+ * Says a thread is an orchestrator's main thread, and when something other than the user is
+ * responsible for a request waiting on it; nothing on an ordinary thread. `row` is two small icons,
+ * `header` spells the state out and opens the panel, `card` spells it out without acting.
+ * None relies on colour: the state has its own glyph and a text label.
  */
 export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
   environmentId,
@@ -71,10 +67,7 @@ export const ThreadAutomationMarkers = memo(function ThreadAutomationMarkers({
   readonly variant: "row" | "header" | "card";
   readonly className?: string;
 }) {
-  const threadRef = useMemo(
-    () => scopeThreadRef(environmentId, threadId),
-    [environmentId, threadId],
-  );
+  const threadRef = scopeThreadRef(environmentId, threadId);
   const markers = useThreadAutomationMarkers(threadRef);
   if (markers === null) return null;
   const { orchestrator, responsibility } = markers;

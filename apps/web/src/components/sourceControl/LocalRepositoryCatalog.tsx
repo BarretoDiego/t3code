@@ -84,7 +84,7 @@ export function LocalRepositoryCatalog({
         </div>
         <RepositoryImportActions />
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className="min-h-0 flex-1 overflow-auto scrollbar-gutter-both p-4">
         {projects.length === 0 ? (
           <div className="mx-auto grid max-w-md gap-3 py-12 text-center">
             <FolderGit2Icon className="mx-auto size-8 text-muted-foreground" />
@@ -128,7 +128,7 @@ export function LocalRepositoryCatalog({
                     >
                       <button
                         type="button"
-                        className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         onClick={() => onSelect(project)}
                       >
                         <FolderGit2Icon className="size-4 shrink-0 text-muted-foreground" />

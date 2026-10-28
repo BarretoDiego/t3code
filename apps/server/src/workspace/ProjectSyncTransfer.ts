@@ -1,23 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * ProjectSyncTransfer - Issues and validates the signed URLs a project sync
- * transfer runs over, and streams the origin side of an export.
- *
- * Signing follows the asset/attachment precedent exactly: HMAC-SHA256 over a
- * base64url claims blob, keyed by the shared `asset-access-signing-key`
- * secret, with the claim `kind` keeping the token families apart.
- *
- * Two things differ from an attachment upload, both forced by scale:
- *
- * - The set of paths an export covers can run to thousands of entries, which
- *   would blow far past the 4096-character URL the contract allows. The token
- *   therefore carries a random request id and the path list stays in a
- *   short-lived in-process registry, expiring with the URL itself.
- * - The claims carry the resolved `workspaceRoot`, so the HTTP routes never
- *   need the projection read model. That mirrors how workspace-file asset
- *   claims already work.
- *
- * @module ProjectSyncTransfer
+ * ProjectSyncTransfer - Issues and validates the signed URLs a project sync transfer runs over, and streams the origin side of an export.
+ * Signing follows the asset/attachment precedent: HMAC-SHA256 over a base64url claims blob keyed by `asset-access-signing-key`, with the claim `kind` keeping token families apart.
+ * Unlike an attachment upload: the path list can exceed the 4096-character URL limit, so the token carries a random request id and the list stays in a short-lived in-process registry;
+ * and the claims carry the resolved `workspaceRoot`, so the HTTP routes never need the projection read model. @module ProjectSyncTransfer
  */
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
@@ -49,13 +35,8 @@ import {
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
 
 /**
- * Backstop on the pending-export registry.
- *
- * A registration is normally short-lived: it is released the moment its export
- * finishes streaming, and otherwise expires with its URL. The cap only exists
- * so a peer that issues URLs it never fetches cannot grow the map without
- * bound, and it is set high enough that legitimate concurrent syncs never
- * evict each other's in-flight token.
+ * Backstop on the pending-export registry. A registration is released when its export finishes streaming, or expires with its URL.
+ * The cap only stops a peer that issues URLs it never fetches from growing the map without bound, and is high enough that concurrent syncs never evict each other.
  */
 const MAX_PENDING_EXPORTS = 1024;
 
@@ -240,20 +221,10 @@ export const resolveProjectSyncImportToken = Effect.fn("ProjectSyncTransfer.reso
 const EMPTY_CONTENT = new Uint8Array(0);
 
 /**
- * Streams the requested entries as framing records.
- *
- * The manifest the client diffed is a snapshot; by the time it asks for these
- * bytes an agent may have deleted or replaced any of them. Three things can
- * therefore make an entry drop out here, all of them silent because the next
- * sync reconciles them:
- *
- * - it vanished;
- * - one of its ancestors is a symlink, which would read outside the root;
- * - its size no longer matches the size the client signed a budget for.
- *
- * That last one is what keeps a growing file from failing the whole transfer:
- * the destination's token authorizes exactly the manifest's bytes, so emitting
- * the file's *current* larger size would blow the budget and 413 the batch.
+ * Streams the requested entries as framing records. The manifest is a snapshot, so an entry may silently drop out here (the next sync reconciles it) when it vanished,
+ * one of its ancestors is a symlink (which would read outside the root), or its size no longer matches the size the client signed a budget for.
+ * The last keeps a growing file from failing the whole transfer: the destination's token authorizes exactly the manifest's bytes,
+ * so emitting the file's current larger size would blow the budget and 413 the batch.
  */
 export async function* projectSyncExportRecords(input: {
   readonly workspaceRoot: string;

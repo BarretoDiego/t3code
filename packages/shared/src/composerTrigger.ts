@@ -46,10 +46,7 @@ function isWhitespace(char: string): boolean {
   return char === " " || char === "\n" || char === "\t" || char === "\r";
 }
 
-/**
- * A slash word with a second slash, such as `/tmp/build.sh`, is a path, not a
- * command. The whole word counts, so a caret before the second slash still sees it.
- */
+/** A second slash makes the whole word a path, even when the caret precedes that slash. */
 export function isPathWord(
   text: string,
   wordStart: number,
@@ -133,8 +130,8 @@ export function detectComposerTrigger(
     };
   }
   // "#profile-slug" only triggers at the very start of the message, and only
-  // with a letter after '#': issue references like "Fix #123" and mid-text
-  // hashtags never open the profile menu.
+  // with a letter after '#': issue references and mid-text hashtags never
+  // open the profile menu.
   if (tokenStart === 0 && /^#(?:[a-z][a-z0-9-]*)?$/i.test(token)) {
     return {
       kind: "profile",

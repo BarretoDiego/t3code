@@ -39,13 +39,9 @@ const JOURNALED_DOMAIN_EVENT_TYPES = new Set<OrchestrationV2DomainEvent["type"]>
 ]);
 
 /**
- * Builds the step the event sink runs inside its write transaction, after the
- * events are appended and before the projections absorb them: it reads the
- * state the projections still hold, maps the events, and appends the result to
- * the journal in that same transaction.
- *
- * Streaming deltas return before any query. A batch that carries a run or
- * request snapshot costs one indexed read per kind, however many events it has.
+ * Builds the step the event sink runs inside its write transaction, after events are appended and before the projections absorb them: it reads the state the projections still hold,
+ * maps the events, and appends the result to the journal in that same transaction.
+ * Streaming deltas return before any query; a batch with a run or request snapshot costs one indexed read per kind.
  */
 export const makeDomainEventRecorder = (
   sql: SqlClient.SqlClient,

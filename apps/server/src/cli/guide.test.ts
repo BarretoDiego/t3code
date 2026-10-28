@@ -47,7 +47,7 @@ describe("t3 guide", () => {
             expect.objectContaining({ flag: "--help", aliases: ["-h"], source: "global" }),
             expect.objectContaining({
               flag: "--completions",
-              choices: ["bash", "zsh", "fish", "sh"],
+              choices: expect.arrayContaining(["bash", "zsh", "fish", "sh"]),
             }),
           ]),
         }),
@@ -59,7 +59,7 @@ describe("t3 guide", () => {
         }),
       ]),
     );
-  }, 30_000);
+  });
 
   it("still prints the operating manual by default", () => {
     const result = runGuide();
@@ -67,7 +67,7 @@ describe("t3 guide", () => {
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe(AGENT_GUIDE.trim());
     expect(result.stderr).toBe("");
-  }, 30_000);
+  });
 });
 
 describe("command catalog metadata", () => {

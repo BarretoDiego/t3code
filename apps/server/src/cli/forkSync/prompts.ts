@@ -86,7 +86,7 @@ Diffstat:
 ${input.diffstat}
 
 FORMATO EXIGIDO
-Linha 1 (titulo, ate 72 chars): chore(sync): merge ${upstream} (${input.upstreamShort}) — <resumo curto do que entrou>
+Linha 1 (titulo, ate 72 chars): chore(sync): merge ${upstream} (${input.upstreamShort}) - <resumo curto do que entrou>
 Linha 2: vazia
 Corpo: 3 a 8 bullets em portugues, comecando com "- ", agrupando os temas principais que entraram do upstream. Se houve conflito, um bullet final dizendo quantos arquivos conflitaram e como foram resolvidos (mantendo as modificacoes do fork).
 Nao invente mudancas que nao estao na lista.`;

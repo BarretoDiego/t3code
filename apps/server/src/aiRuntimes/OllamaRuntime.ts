@@ -48,7 +48,7 @@ export const makeOllamaRuntime = Effect.gen(function* () {
   const external = spawner.string(ChildProcess.make("ollama", ["--version"])).pipe(
     Effect.timeout("3 seconds"),
     Effect.map((output) => output.trim().length > 0),
-    Effect.catch(() => Effect.succeed(false)),
+    Effect.orElseSucceed(() => false),
   );
   const stop = Effect.gen(function* () {
     if (!processScope)

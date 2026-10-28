@@ -22,14 +22,10 @@ import {
 } from "./providerPolicy.ts";
 
 /**
- * Contracts for durable automation: the event journal, hook subscriptions,
- * persistent orchestrators, delegated tasks, execution nodes and jobs, and
- * peer federation between environments.
- *
- * Four dimensions stay separate throughout: how a thread is organized
- * (settled, snoozed, archived), what its provider is doing (run status), what
- * needs attention (runtime requests), and the state of a delegated task. None
- * of them implies another.
+ * Contracts for durable automation: the event journal, hooks, orchestrators,
+ * delegated tasks, execution nodes and jobs, and peer federation.
+ * Thread organization, provider run status, runtime requests, and delegated task
+ * state stay separate dimensions; none implies another.
  */
 
 export const AUTOMATION_CONTRACT_VERSION = 1;
@@ -61,10 +57,6 @@ export type IdempotencyKey = typeof IdempotencyKey.Type;
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
 /** Stable codes. The CLI prints them as `error.code` in `--json` mode. */
 export const AutomationErrorCode = Schema.Literals([
   "NOT_FOUND",
@@ -94,10 +86,6 @@ export class AutomationError extends Schema.TaggedError<AutomationError>()("Auto
   /** Structured, secret-free context such as ids, the current revision, or the oldest cursor. */
   detail: Schema.optional(JsonRecord),
 }) {}
-
-// ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
 
 /**
  * Event types the server produces itself. `privileged` types state facts only
@@ -336,10 +324,6 @@ export const EventConsumer = Schema.Struct({
 });
 export type EventConsumer = typeof EventConsumer.Type;
 
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
-
 export const HookRetryPolicy = Schema.Struct({
   maxAttempts: PositiveInt.check(Schema.isLessThanOrEqualTo(20)),
   initialDelayMs: PositiveInt,
@@ -486,10 +470,6 @@ export const HookDeliveryPayload = Schema.Struct({
 });
 export type HookDeliveryPayload = typeof HookDeliveryPayload.Type;
 
-// ---------------------------------------------------------------------------
-// Pending requests and responsibility claims
-// ---------------------------------------------------------------------------
-
 export const ResponsibilityOwner = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("user") }),
   Schema.Struct({
@@ -597,10 +577,6 @@ export const ClaimTransferInput = Schema.Struct({
   reason: Schema.optional(TrimmedNonEmptyString),
 });
 export type ClaimTransferInput = typeof ClaimTransferInput.Type;
-
-// ---------------------------------------------------------------------------
-// Orchestrators
-// ---------------------------------------------------------------------------
 
 export const OrchestratorScope = Schema.Literals(["local", "global"]);
 export type OrchestratorScope = typeof OrchestratorScope.Type;
@@ -858,10 +834,6 @@ export const OrchestratorHandoff = Schema.Struct({
 });
 export type OrchestratorHandoff = typeof OrchestratorHandoff.Type;
 
-// ---------------------------------------------------------------------------
-// Delegated tasks
-// ---------------------------------------------------------------------------
-
 /**
  * Reported and validated are different facts. A provider's final answer moves a
  * task to `reported`; only checking the acceptance criteria moves it to
@@ -1038,10 +1010,6 @@ export const ThreadTreeNode = Schema.Struct({
 });
 export type ThreadTreeNode = typeof ThreadTreeNode.Type;
 
-// ---------------------------------------------------------------------------
-// Execution nodes and jobs
-// ---------------------------------------------------------------------------
-
 export const ExecutionNodeTransport = Schema.Union([
   /** The machine running the environment's server. */
   Schema.Struct({ type: Schema.Literal("local") }),
@@ -1178,10 +1146,6 @@ export const JobLogsResult = Schema.Struct({
   complete: Schema.Boolean,
 });
 export type JobLogsResult = typeof JobLogsResult.Type;
-
-// ---------------------------------------------------------------------------
-// Peers
-// ---------------------------------------------------------------------------
 
 export const PeerAction = Schema.Literals([
   "message.send",
@@ -1369,10 +1333,6 @@ export const PeerDeliverResult = Schema.Struct({
   ),
 });
 export type PeerDeliverResult = typeof PeerDeliverResult.Type;
-
-// ---------------------------------------------------------------------------
-// Aggregation and diagnostics
-// ---------------------------------------------------------------------------
 
 /** Attached to any answer assembled from more than one environment. */
 export const AggregationCoverage = Schema.Struct({

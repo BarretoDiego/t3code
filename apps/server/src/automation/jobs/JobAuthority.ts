@@ -37,12 +37,13 @@ export const layer = Layer.effect(
     const orchestrators = yield* OrchestratorService.OrchestratorService;
     const projects = yield* ProjectStore.ProjectStoreV2;
     return JobAuthority.of({
-      orchestratorPermissions: (orchestratorId) =>
+      orchestratorPermissions: Effect.fn("JobAuthority.orchestratorPermissions")((orchestratorId) =>
         Effect.map(
           orchestrators.list(internalCaller("jobs")),
           (list) => list.find((entry) => entry.id === orchestratorId)?.permissions ?? null,
         ),
-      projectRoots: (projectIds) =>
+      ),
+      projectRoots: Effect.fn("JobAuthority.projectRoots")((projectIds) =>
         projectIds.length === 0
           ? Effect.succeed([])
           : projects.list({ projectIds }).pipe(
@@ -51,6 +52,7 @@ export const layer = Layer.effect(
                 automationError("INTERNAL", "Could not read the projects a job may run in."),
               ),
             ),
+      ),
     });
   }),
 );

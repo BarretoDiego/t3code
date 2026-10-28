@@ -1,7 +1,10 @@
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
+import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "@t3tools/shared/hostClassification";
 import { isHostOnlyNetworkInterface } from "@t3tools/shared/networkInterfaces";
 import { QrCode } from "@t3tools/shared/qrCode";
+import { buildPairingAppLink } from "@t3tools/shared/remote";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
@@ -37,6 +40,29 @@ export const isWildcardHost = (host: string | undefined): boolean =>
 export const formatHostForUrl = (host: string): string =>
   host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 
+/**
+ * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
+ * plain or IPv4-mapped IPv6 form.
+ */
+export const isPrivateNetworkAddress = (address: string): boolean => {
+  const ipv4 = address.replace(/^::ffff:/i, "");
+  return NodeNet.isIPv4(ipv4) && !ipv4.startsWith("169.254.") && isPrivateNetworkHost(ipv4);
+};
+
+/**
+ * A private-network listener binds every interface but serves only
+ * connections that stay on loopback, a LAN, or the tailnet. Both ends must be
+ * private: a cloud VM or a router port forward hands public clients to a
+ * private local address.
+ */
+export const acceptsPrivateNetworkConnection = (socket: {
+  readonly localAddress?: string | undefined;
+  readonly remoteAddress?: string | undefined;
+}): boolean =>
+  [socket.localAddress, socket.remoteAddress].every(
+    (address) => address !== undefined && isPrivateNetworkAddress(address),
+  );
+
 export const loopbackUrlHostForAddress = (address: NetAddress.InetAddress): string =>
   address._tag === "InetAddressV6" && NetAddress.isLoopback(address.address)
     ? "[::1]"
@@ -51,7 +77,8 @@ const isIpv6Family = (family: string | number): boolean => family === "IPv6" || 
 
 const resolveHeadlessConnectionHost = (
   host: string | undefined,
-  interfaces: NetworkInterfacesMap = NodeOS.networkInterfaces(),
+  interfaces: NetworkInterfacesMap,
+  privateNetworkOnly: boolean,
 ): string => {
   if (!host) {
     return "localhost";
@@ -64,11 +91,22 @@ const resolveHeadlessConnectionHost = (
   const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries = []]) =>
     isHostOnlyNetworkInterface(name, entries) ? [] : entries,
   );
-  const externalIpv4 = interfaceEntries.find(
-    (entry) => !entry.internal && isIpv4Family(entry.family),
+  const externalIpv4Entries = interfaceEntries.filter(
+    (entry) =>
+      !entry.internal &&
+      isIpv4Family(entry.family) &&
+      (!privateNetworkOnly || isPrivateNetworkAddress(entry.address)),
   );
+  // A tailnet or other CGNAT address reaches fewer devices than the LAN one.
+  const externalIpv4 = privateNetworkOnly
+    ? (externalIpv4Entries.find((entry) => !isSharedAddressSpaceHost(entry.address)) ??
+      externalIpv4Entries[0])
+    : externalIpv4Entries[0];
   if (externalIpv4) {
     return externalIpv4.address;
+  }
+  if (privateNetworkOnly) {
+    return "localhost";
   }
 
   const externalIpv6 = interfaceEntries.find(
@@ -80,9 +118,16 @@ const resolveHeadlessConnectionHost = (
 export const resolveHeadlessConnectionString = (
   host: string | undefined,
   port: number,
-  interfaces: NetworkInterfacesMap = NodeOS.networkInterfaces(),
+  options: {
+    readonly interfaces?: NetworkInterfacesMap;
+    readonly privateNetworkOnly?: boolean | undefined;
+  } = {},
 ): string => {
-  const connectionHost = resolveHeadlessConnectionHost(host, interfaces);
+  const connectionHost = resolveHeadlessConnectionHost(
+    host,
+    options.interfaces ?? NodeOS.networkInterfaces(),
+    options.privateNetworkOnly === true,
+  );
   return `http://${formatHostForUrl(connectionHost)}:${port}`;
 };
 
@@ -134,6 +179,7 @@ export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): 
     `Connection string: ${accessInfo.connectionString}`,
     `Token: ${accessInfo.token}`,
     `Pairing URL: ${accessInfo.pairingUrl}`,
+    `App link: ${buildPairingAppLink(accessInfo.pairingUrl)}`,
     "",
     renderTerminalQrCode(accessInfo.pairingUrl),
     "",
@@ -146,6 +192,7 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
   const connectionString = resolveHeadlessConnectionString(
     serverConfig.host,
     resolveListeningPort(httpServer.address, serverConfig.port),
+    { privateNetworkOnly: serverConfig.privateNetworkOnly },
   );
   const issued = yield* serverAuth.issueStartupPairingCredential();
 

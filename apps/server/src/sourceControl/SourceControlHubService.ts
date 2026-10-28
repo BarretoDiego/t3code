@@ -9,10 +9,7 @@ import {
   type ProjectId,
   type SourceControlRepositoryMappingInput,
 } from "@t3tools/contracts";
-import {
-  normalizeGitRemoteUrl,
-  detectSourceControlProviderFromGitRemoteUrl,
-} from "@t3tools/shared/git";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as Cache from "effect/Cache";
@@ -25,6 +22,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
+import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 import { parseWorktreeInventory } from "../git/worktreeInventory.ts";
@@ -37,12 +37,14 @@ const decodeRepositoryList = Schema.decodeUnknownEffect(
   Schema.fromJsonString(RemoteRepositoryListInput),
 );
 const decodeRefList = Schema.decodeUnknownEffect(Schema.fromJsonString(RemoteGitRefListInput));
+const encodeRepositoryList = Schema.encodeEffect(Schema.fromJsonString(RemoteRepositoryListInput));
+const encodeRefList = Schema.encodeEffect(Schema.fromJsonString(RemoteGitRefListInput));
 const failure = () =>
   new SourceControlHubError({
     message: "Could not read source control data. Check the environment and repository access.",
   });
 export function repositoryRefFromRemote(url: string) {
-  const provider = detectSourceControlProviderFromGitRemoteUrl(url)?.kind;
+  const provider = sourceControlDefinitions.recognizeRemote(url)?.kind;
   if (provider !== "github" && provider !== "bitbucket") return null;
   const [host, ...path] = normalizeGitRemoteUrl(url).split("/");
   if (!host || path.length !== 2) return null;
@@ -189,8 +191,14 @@ export const make = Effect.gen(function* () {
   }, Effect.mapError(failure));
   return SourceControlHubService.of({
     browser,
-    repositories: (input) => Cache.get(repositories, JSON.stringify(input)),
-    refs: (input) => Cache.get(refs, JSON.stringify(input)),
+    repositories: Effect.fn("SourceControlHubService.repositories")(function* (input) {
+      const key = yield* encodeRepositoryList(input).pipe(Effect.mapError(failure));
+      return yield* Cache.get(repositories, key);
+    }),
+    refs: Effect.fn("SourceControlHubService.refs")(function* (input) {
+      const key = yield* encodeRefList(input).pipe(Effect.mapError(failure));
+      return yield* Cache.get(refs, key);
+    }),
     clones,
     cloneState,
     mapRepository: Effect.fn(function* (input) {
@@ -220,6 +228,13 @@ export const make = Effect.gen(function* () {
     }),
   });
 });
+// Forge drivers keep their REST clients private, so the hub builds the two it browses with.
+const layerRepositoryClients = Layer.mergeAll(
+  GitHubRest.layerWithDependencies,
+  BitbucketApi.layer,
+).pipe(Layer.provide(ServerSourceControlHost.layer), Layer.provide(SourceControlRateLimit.layer));
+
 export const layer = Layer.effect(SourceControlHubService, make).pipe(
   Layer.provide(ProjectStore.layer),
+  Layer.provide(layerRepositoryClients),
 );

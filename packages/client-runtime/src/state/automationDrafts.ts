@@ -20,13 +20,10 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 /**
- * Editor drafts for orchestrators, hooks, peers and execution nodes.
- *
- * A draft holds what the form shows, as the strings the user typed. Turning it
- * into a command input validates it against the contract schema, so a form can
- * never send something the server would reject for its shape. Fields a form
- * does not show travel through the draft untouched, so editing a record made
- * by the CLI does not strip them.
+ * Editor drafts for orchestrators, hooks, peers and execution nodes. A draft holds
+ * the strings the user typed; converting it to a command input validates against
+ * the contract schema. Fields a form does not show travel through untouched, so
+ * editing a CLI-made record does not strip them.
  */
 
 export type AutomationDraftResult<Input> =
@@ -147,10 +144,6 @@ function modelKey(selection: ModelSelection): string {
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
-
-// ---------------------------------------------------------------------------
-// Orchestrators
-// ---------------------------------------------------------------------------
 
 export interface OrchestratorDraft {
   readonly editingId: string | null;
@@ -291,10 +284,6 @@ export function orchestratorDraftToInput(
     errors,
   );
 }
-
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
 
 export interface HookDraft {
   readonly editingId: string | null;
@@ -588,10 +577,6 @@ export function summarizeHookTarget(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Peers
-// ---------------------------------------------------------------------------
-
 /** A new peer may ask for nothing until it is given permissions. */
 const DEFAULT_PEER_PERMISSIONS = { inbound: [], forwardEventTypes: [] } as const;
 
@@ -701,10 +686,6 @@ export function peerEditDraftToInput(
     ? { ...result, changed: nameChanged || urlChanged || permissionsChanged }
     : result;
 }
-
-// ---------------------------------------------------------------------------
-// Execution nodes
-// ---------------------------------------------------------------------------
 
 export interface ExecutionNodeDraft {
   readonly editingId: string | null;

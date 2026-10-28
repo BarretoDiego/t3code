@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   formatAutomationAge,
@@ -24,7 +25,7 @@ import {
   Settings2Icon,
   XIcon,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import {
@@ -44,7 +45,6 @@ import {
   ObservationLabel,
 } from "../automation/AutomationStatus";
 import { reportAutomationFailure } from "../automation/automationCommands";
-import { useRelativeTimeTick } from "../settings/settingsLayout";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
@@ -89,10 +89,7 @@ export function ThreadOrchestratorPanel(props: {
   readonly threadId: ThreadId;
   readonly density: "full" | "compact" | "essential";
 }) {
-  const threadRef = useMemo(
-    () => scopeThreadRef(props.environmentId, props.threadId),
-    [props.environmentId, props.threadId],
-  );
+  const threadRef = scopeThreadRef(props.environmentId, props.threadId);
   const view = useThreadOrchestrator(threadRef);
   if (view === null || props.density === "essential") return null;
   return <OrchestratorSection view={view} detailed={props.density === "full"} />;
@@ -107,7 +104,7 @@ function OrchestratorSection({
 }) {
   const { orchestrator, environmentId } = view;
   const navigate = useNavigate();
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const { environments } = useEnvironments();
   const setState = useAtomCommand(automationEnvironment.setOrchestratorState, {
     label: "orchestrator set state",
@@ -446,13 +443,9 @@ function OrchestratorTasks({
     }),
   );
   const peersQuery = useEnvironmentQuery(automationEnvironment.peers({ environmentId, input: {} }));
-  const rows = useMemo(
-    () => presentDelegatedTasks({ tasks: tasksQuery.data?.tasks ?? [], environmentId }),
-    [environmentId, tasksQuery.data],
-  );
-  const loadedThreadKeys = useMemo(
-    () => new Set(threadShells.map((thread) => `${thread.environmentId}:${thread.id}`)),
-    [threadShells],
+  const rows = presentDelegatedTasks({ tasks: tasksQuery.data?.tasks ?? [], environmentId });
+  const loadedThreadKeys = new Set(
+    threadShells.map((thread) => `${thread.environmentId}:${thread.id}`),
   );
   if (tasksQuery.error === null && rows.length === 0) return null;
   const shown = rows.slice(0, TASK_ROWS);

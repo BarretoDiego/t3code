@@ -156,9 +156,6 @@ const writeOut = (text: string) =>
     Stream.make(text).pipe(Stream.run(stdio.stdout({ endOnDone: false }))),
   );
 
-// ---------------------------------------------------------------------------
-// Commands
-
 const listCommand = Command.make("list", {
   ...environmentTargetFlags,
   thread: Flag.String("thread").pipe(

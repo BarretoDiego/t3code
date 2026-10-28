@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import {
   readConfirmDialogState,
-  registerConfirmDialogHost,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
+  subscribeConfirmDialogHost,
 } from "../confirmDialog";
 import { confirmThreadInterruption, isIntentionalInterruption } from "./threadInterruption";
 
@@ -11,7 +11,7 @@ afterEach(resetConfirmDialogForTests);
 
 describe("thread interruption guard", () => {
   it("waits for approval and cancellation does not authorize interruption", async () => {
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     const result = confirmThreadInterruption("environment:thread", "My task", true);
     expect(readConfirmDialogState().status).toBe("confirming");
     respondToConfirmDialog(false);
@@ -19,7 +19,7 @@ describe("thread interruption guard", () => {
   });
 
   it("authorizes only the confirmed request and ignores duplicate clicks", async () => {
-    registerConfirmDialogHost();
+    subscribeConfirmDialogHost(() => {});
     const first = confirmThreadInterruption("environment:thread", "My task", true);
     await expect(confirmThreadInterruption("environment:thread", "My task", true)).resolves.toBe(
       false,

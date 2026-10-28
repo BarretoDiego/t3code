@@ -1,17 +1,8 @@
 /**
- * Agent Profiles — named, reusable execution presets for the composer.
- *
- * A profile is an *intent* ("reviewer", "fast", "deep"), not a model: it
- * carries provider-independent preferences (reasoning effort, mini skills,
- * instructions, prompt template) plus per-instance routes that map the intent
- * onto concrete model candidates for each provider instance. Resolution
- * adapts the profile to whatever backend the thread is using — a profile
- * never switches providers on its own.
- *
- * Profiles are global user configuration (server settings, shared-settings
- * sync). Unlike thread mini skills they are not snapshotted: editing a
- * profile affects future sends, while each sent turn keeps its own record of
- * what was resolved (see `ThreadTurnStartCommand.agentProfile`).
+ * Agent Profiles: named, reusable execution presets for the composer. A profile is
+ * an intent ("reviewer", "fast"), not a model: per-instance routes map it onto
+ * model candidates and it never switches providers. Profiles are global settings,
+ * not snapshotted; each sent turn records what was resolved (`ThreadTurnStartCommand.agentProfile`).
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

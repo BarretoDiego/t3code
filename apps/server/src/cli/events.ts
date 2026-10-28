@@ -45,9 +45,6 @@ export class AutomationCliError extends Schema.TaggedError<AutomationCliError>()
 
 const fail = (detail: string) => Effect.fail(new AutomationCliError({ detail }));
 
-// ---------------------------------------------------------------------------
-// JSON bodies
-
 export const bodyFileFlag = Flag.String("file").pipe(
   Flag.withDescription("Path of a JSON file, or - to read the JSON from stdin."),
 );
@@ -85,16 +82,13 @@ export const decodeBody = <S extends Schema.Top>(
   decodeJsonObject(text).pipe(
     Effect.mapError(() => new AutomationCliError({ detail: "The body is not a JSON object." })),
     Effect.flatMap((body) =>
-      Schema.decodeUnknownEffect(schema)({ ...defaults, ...body }).pipe(
+      Schema.decodeEffect(schema)({ ...defaults, ...body }).pipe(
         Effect.mapError(
           (error) => new AutomationCliError({ detail: `The body is not valid: ${error.message}` }),
         ),
       ),
     ),
   );
-
-// ---------------------------------------------------------------------------
-// Filters and formatting
 
 const repeated = (name: string, description: string) =>
   Flag.String(name).pipe(Flag.withDescription(description), Flag.atLeast(0));
@@ -173,9 +167,6 @@ const cursorFlag = Flag.Int("cursor").pipe(
   Flag.withDescription("Start after this cursor (exclusive). 0 starts at the first event."),
   Flag.optional,
 );
-
-// ---------------------------------------------------------------------------
-// Commands
 
 const watchCommand = Command.make("watch", {
   ...environmentTargetFlags,

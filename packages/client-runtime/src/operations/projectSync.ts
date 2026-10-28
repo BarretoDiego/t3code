@@ -87,11 +87,9 @@ export function computeProjectSyncPlan(
 }
 
 /**
- * Groups manifest entries to copy into batches bounded by both total bytes
- * and file count, so a single request/response pair never has to hold an
- * entire (potentially huge) project in memory. A single entry larger than
- * `maxBytes` still gets its own one-entry batch rather than being split or
- * dropped.
+ * Groups manifest entries to copy into batches bounded by total bytes and file
+ * count so one request never holds a huge project in memory. An entry larger than
+ * `maxBytes` still gets its own one-entry batch.
  */
 export function batchProjectSyncEntries(
   entries: ReadonlyArray<ProjectSyncManifestEntry>,

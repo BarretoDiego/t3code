@@ -472,8 +472,8 @@ const makeTwoServices = (contextDriver?: string) =>
       ...f.ports,
       ...common,
       query: {
-        getThread: () => Effect.succeed(Option.some(thread)),
-        getProject: () => Effect.succeed(Option.some(project(sourceRoot))),
+        getThread: () => Effect.succeedSome(thread),
+        getProject: () => Effect.succeedSome(project(sourceRoot)),
       },
       history: {
         read: ({ throughSequence }) =>
@@ -525,7 +525,7 @@ const makeTwoServices = (contextDriver?: string) =>
       changes: destinationChanges,
       query: {
         getThread: () => Effect.sync(() => Option.fromUndefinedOr(activatedThread)),
-        getProject: () => Effect.succeed(Option.some(project(destinationRoot))),
+        getProject: () => Effect.succeedSome(project(destinationRoot)),
       },
       history: {
         read: () => Effect.succeed([]),

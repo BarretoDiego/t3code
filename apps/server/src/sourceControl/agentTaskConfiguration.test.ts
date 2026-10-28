@@ -14,7 +14,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { resolveAgentTaskConfiguration } from "./agentTaskConfiguration.ts";
 const id = ProviderInstanceId.make("local-opencode");
 const skillId = MiniSkillId.make("security");
-const profile = Schema.decodeUnknownSync(AgentProfile)({
+const profile = Schema.decodeSync(AgentProfile)({
   id: "reviewer",
   slug: "reviewer",
   name: "PR Reviewer",

@@ -44,6 +44,7 @@ import {
 } from "./ComputeValidation.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 
 const decodeJob = Schema.decodeUnknownEffect(GenerationJob);
 const decodeSnapshot = Schema.decodeUnknownEffect(ComputeProviderSnapshot);
@@ -101,6 +102,7 @@ export const makeComputeService = Effect.gen(function* () {
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const adapters = yield* ComputeProviderAdapterRegistry;
+  const documents = yield* DocumentText.DocumentText;
   const environmentId = yield* environment.getEnvironmentId;
   const directory = path.join(config.baseDir, "compute-providers");
   const configPath = path.join(directory, "providers.json");
@@ -234,6 +236,7 @@ export const makeComputeService = Effect.gen(function* () {
       Effect.provideService(Path.Path, path),
       Effect.provideService(ServerConfig, config),
       Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(DocumentText.DocumentText, documents),
     );
     yield* repository
       .saveJob(job)
@@ -366,52 +369,54 @@ export const makeComputeService = Effect.gen(function* () {
     return next;
   }, refreshGate.withPermits(1));
   const list: ComputeServiceShape["list"] = (force = false) => refresh(force);
-  const saveProvider: ComputeServiceShape["saveProvider"] = (input) =>
-    Effect.gen(function* () {
-      const validated = yield* validateProviderConfiguration(input);
-      if (validated.environmentId && validated.environmentId !== environmentId)
+  const saveProvider: ComputeServiceShape["saveProvider"] = Effect.fn(
+    "ComputeService.saveProvider",
+  )(function* (input) {
+    const validated = yield* validateProviderConfiguration(input);
+    if (validated.environmentId && validated.environmentId !== environmentId)
+      return yield* error(
+        "Configure the provider on its owning environment.",
+        "environment-mismatch",
+      );
+    const provider = { ...validated, environmentId };
+    const current = yield* load();
+    const existing = current.find((candidate) => candidate.id === provider.id);
+    if (existing && !NodeUtil.isDeepStrictEqual(existing, provider)) {
+      const jobs = yield* repository
+        .listPendingJobs()
+        .pipe(Effect.mapError(() => error("Could not read active jobs.", "persistence-failed")));
+      if (jobs.some((job) => job.providerId === provider.id))
         return yield* error(
-          "Configure the provider on its owning environment.",
-          "environment-mismatch",
+          "Provider has unfinished jobs; keep its execution identity stable until they settle.",
+          "provider-in-use",
         );
-      const provider = { ...validated, environmentId };
-      const current = yield* load();
-      const existing = current.find((candidate) => candidate.id === provider.id);
-      if (existing && !NodeUtil.isDeepStrictEqual(existing, provider)) {
-        const jobs = yield* repository
-          .listPendingJobs()
-          .pipe(Effect.mapError(() => error("Could not read active jobs.", "persistence-failed")));
-        if (jobs.some((job) => job.providerId === provider.id))
-          return yield* error(
-            "Provider has unfinished jobs; keep its execution identity stable until they settle.",
-            "provider-in-use",
-          );
-        const adapter = adapters.get(existing.type);
-        if (adapter) yield* adapter.disconnect(existing.id);
-      }
-      yield* persist([...current.filter((candidate) => candidate.id !== provider.id), provider]);
-      return yield* refresh(true);
-    }).pipe(configurationGate.withPermits(1));
-  const removeProvider: ComputeServiceShape["removeProvider"] = (providerId) =>
-    Effect.gen(function* () {
-      const current = yield* load();
-      const provider = current.find((candidate) => candidate.id === providerId);
-      if (!provider) return yield* error("Provider not found.", "provider-not-found");
-      if (
-        (yield* repository
-          .listPendingJobs()
-          .pipe(
-            Effect.mapError(() => error("Could not read active jobs.", "persistence-failed")),
-          )).some((job) => job.providerId === providerId)
-      )
-        return yield* error("Provider has unfinished jobs.", "provider-in-use");
-      const adapter = adapters.get(provider.type);
-      if (adapter) yield* adapter.disconnect(provider.id);
-      yield* persist(current.filter((candidate) => candidate.id !== providerId));
-      return yield* refresh(true);
-    }).pipe(configurationGate.withPermits(1));
-  const submit: ComputeServiceShape["submit"] = (input) =>
-    Effect.gen(function* () {
+      const adapter = adapters.get(existing.type);
+      if (adapter) yield* adapter.disconnect(existing.id);
+    }
+    yield* persist([...current.filter((candidate) => candidate.id !== provider.id), provider]);
+    return yield* refresh(true);
+  }, configurationGate.withPermits(1));
+  const removeProvider: ComputeServiceShape["removeProvider"] = Effect.fn(
+    "ComputeService.removeProvider",
+  )(function* (providerId) {
+    const current = yield* load();
+    const provider = current.find((candidate) => candidate.id === providerId);
+    if (!provider) return yield* error("Provider not found.", "provider-not-found");
+    if (
+      (yield* repository
+        .listPendingJobs()
+        .pipe(
+          Effect.mapError(() => error("Could not read active jobs.", "persistence-failed")),
+        )).some((job) => job.providerId === providerId)
+    )
+      return yield* error("Provider has unfinished jobs.", "provider-in-use");
+    const adapter = adapters.get(provider.type);
+    if (adapter) yield* adapter.disconnect(provider.id);
+    yield* persist(current.filter((candidate) => candidate.id !== providerId));
+    return yield* refresh(true);
+  }, configurationGate.withPermits(1));
+  const submit: ComputeServiceShape["submit"] = Effect.fn("ComputeService.submit")(
+    function* (input) {
       const current = yield* refresh(false);
       let request = yield* decodeRequest(input.request).pipe(
         Effect.mapError(() => error("Invalid compute request.", "request-invalid")),
@@ -491,45 +496,44 @@ export const makeComputeService = Effect.gen(function* () {
       };
       yield* applyJob(job, true);
       return { job, adapter };
-    }).pipe(
-      configurationGate.withPermits(1),
-      // Release configuration lock after durable reservation; remote jobs may submit concurrently.
-      Effect.flatMap(({ job, adapter }) =>
-        adapter.submit(job).pipe(
-          Effect.timeout("30 seconds"),
-          Effect.flatMap((accepted) => applyJob(accepted)),
-          Effect.catch(() =>
-            Effect.gen(function* () {
-              const latest = yield* getJob({ jobId: job.id });
-              if (!isTerminal(latest.status))
-                yield* applyJob({
-                  ...latest,
-                  error: {
-                    code: "submission-uncertain",
-                    message:
-                      "Submission acknowledgement was not persisted. Reconcile; do not resubmit.",
-                    retryable: false,
-                  },
-                });
-              return yield* new ComputeError({
-                code: "submission-uncertain",
-                jobId: job.id,
-                message:
-                  "Submission outcome is uncertain. Inspect the persisted job before retrying.",
+    },
+    configurationGate.withPermits(1),
+    // Release configuration lock after durable reservation; remote jobs may submit concurrently.
+    Effect.flatMap(({ job, adapter }) =>
+      adapter.submit(job).pipe(
+        Effect.timeout("30 seconds"),
+        Effect.flatMap((accepted) => applyJob(accepted)),
+        Effect.catch(() =>
+          Effect.gen(function* () {
+            const latest = yield* getJob({ jobId: job.id });
+            if (!isTerminal(latest.status))
+              yield* applyJob({
+                ...latest,
+                error: {
+                  code: "submission-uncertain",
+                  message:
+                    "Submission acknowledgement was not persisted. Reconcile; do not resubmit.",
+                  retryable: false,
+                },
               });
-            }),
-          ),
+            return yield* new ComputeError({
+              code: "submission-uncertain",
+              jobId: job.id,
+              message:
+                "Submission outcome is uncertain. Inspect the persisted job before retrying.",
+            });
+          }),
         ),
       ),
-    );
+    ),
+  );
   const getJob: ComputeServiceShape["getJob"] = (input) =>
     repository.getJob(input).pipe(
       Effect.mapError(() => error("Could not read compute job history.", "persistence-failed")),
       Effect.flatMap((job) =>
-        Option.match(job, {
-          onNone: () => Effect.fail(error("Job not found.", "job-not-found")),
-          onSome: Effect.succeed,
-        }),
+        Effect.fromOption(job).pipe(
+          Effect.mapError(() => error("Job not found.", "job-not-found")),
+        ),
       ),
     );
   const listJobs: ComputeServiceShape["listJobs"] = (input) =>
@@ -545,8 +549,8 @@ export const makeComputeService = Effect.gen(function* () {
           ),
       ),
     );
-  const cancel: ComputeServiceShape["cancel"] = (input) =>
-    Effect.gen(function* () {
+  const cancel: ComputeServiceShape["cancel"] = Effect.fn("ComputeService.cancel")(
+    function* (input) {
       const job = yield* getJob(input);
       if (isTerminal(job.status)) return job;
       const provider = (yield* refresh(false)).providers.find(
@@ -575,7 +579,8 @@ export const makeComputeService = Effect.gen(function* () {
       if (!updated)
         return yield* error("Provider lost the job during cancellation.", "job-not-found");
       return yield* applyJob(updated);
-    });
+    },
+  );
   const unsubscriptions = yield* Effect.forEach(adapters.all, (adapter) =>
     adapter.subscribe
       ? adapter.subscribe((job) =>

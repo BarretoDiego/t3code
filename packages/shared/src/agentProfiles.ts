@@ -1,11 +1,7 @@
 /**
  * Agent profile resolution and prompt composition.
- *
- * Resolution is pure: the same (profile, instance, available models, current
- * composer state) inputs always produce the same effective execution config,
- * so the composer, the settings editor, and tests all share one code path.
- * Prompt composition delegates mini skill rendering to `./miniSkills.ts` —
- * there is exactly one skills renderer.
+ * Resolution is pure so the composer, the settings editor, and tests share one
+ * code path. Mini skill rendering is delegated to `./miniSkills.ts`.
  */
 import {
   AGENT_PROFILE_INSTRUCTIONS_PLACEHOLDER,
@@ -95,17 +91,10 @@ export type AgentProfileResolution =
     };
 
 /**
- * Resolve a profile against the composer's current state.
- *
- * Precedence (documented in docs/user/agent-profiles.md):
- * - Provider instance: never changed; the profile adapts to it.
- * - Model: matching route's first available candidate → otherwise the current
- *   composer model (inherit). A matching route whose candidates are all
- *   unavailable resolves "unavailable" instead of silently picking anything.
- * - Reasoning effort: route override → profile base → current composer value.
- *   An effort the resolved model does not list is dropped with a diagnostic.
- * - Mini skills / instructions / template: provider-independent; mini skills
- *   unknown to the library are skipped with a diagnostic.
+ * Resolve a profile against the composer's current state. The provider instance
+ * never changes. Model: the matching route's first available candidate, else the
+ * current composer model; a route with no available candidate resolves
+ * "unavailable" rather than picking silently. Effort: route, then profile, then composer.
  */
 export function resolveAgentProfile(input: {
   readonly profile: AgentProfile;
@@ -134,7 +123,6 @@ export function resolveAgentProfile(input: {
 
   // Model: route candidates with availability fallback, else inherit current.
   let resolvedModel = input.currentModelSelection.model;
-  let modelFromRoute = false;
   if (route !== null && route.modelCandidates.length > 0) {
     const available = new Set(input.availableModelSlugs);
     const candidateIndex = route.modelCandidates.findIndex((slug) => available.has(slug));
@@ -148,7 +136,6 @@ export function resolveAgentProfile(input: {
       };
     }
     resolvedModel = route.modelCandidates[candidateIndex]!;
-    modelFromRoute = true;
     diagnostics.fallbackIndex = candidateIndex;
   }
 

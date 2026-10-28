@@ -11,10 +11,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  detectProjectSyncStreamingUploadSupport,
-  planProjectSync,
   ProjectSyncAbortedError,
-  ProjectSyncTransferError,
   runProjectSync,
   type ProjectSyncDeps,
   type ProjectSyncProgress,

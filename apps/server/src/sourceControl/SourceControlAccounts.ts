@@ -77,7 +77,7 @@ export const make = Effect.gen(function* () {
   }).pipe(Effect.mapError(failure));
   return SourceControlAccounts.of({
     mappings,
-    saveMapping: (input) =>
+    saveMapping: Effect.fn("SourceControlAccounts.saveMapping")((input) =>
       gate
         .withPermit(
           Effect.gen(function* () {
@@ -98,8 +98,9 @@ export const make = Effect.gen(function* () {
           }),
         )
         .pipe(Effect.mapError(failure)),
+    ),
     credential,
-    connect: (input) =>
+    connect: Effect.fn("SourceControlAccounts.connect")((input) =>
       gate
         .withPermit(
           Effect.gen(function* () {
@@ -117,6 +118,7 @@ export const make = Effect.gen(function* () {
           }),
         )
         .pipe(Effect.mapError((error) => (isHubError(error) ? error : failure()))),
+    ),
     list: Effect.all([credential("github"), credential("bitbucket")]).pipe(
       Effect.map((accounts) =>
         accounts.flatMap((account) =>
@@ -151,7 +153,7 @@ export const make = Effect.gen(function* () {
             ],
       ),
     ),
-    save: (input) =>
+    save: Effect.fn("SourceControlAccounts.save")((input) =>
       gate
         .withPermit(
           Effect.gen(function* () {
@@ -165,8 +167,10 @@ export const make = Effect.gen(function* () {
           }),
         )
         .pipe(Effect.mapError(failure)),
-    remove: (provider) =>
+    ),
+    remove: Effect.fn("SourceControlAccounts.remove")((provider) =>
       gate.withPermit(secrets.remove(key(provider))).pipe(Effect.mapError(failure)),
+    ),
   });
 });
 export const layer = Layer.effect(SourceControlAccounts, make);

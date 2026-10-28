@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { SparklesIcon } from "lucide-react";
 import type { EnvironmentId, MiniSkillId } from "@t3tools/contracts";
@@ -38,15 +38,12 @@ export const MiniSkillsMenuContent = memo(function MiniSkillsMenuContent(props: 
   );
   const setSelectedMiniSkillIds = useComposerDraftStore((store) => store.setSelectedMiniSkillIds);
 
-  const toggleSkill = useCallback(
-    (skillId: MiniSkillId, checked: boolean) => {
-      const next = checked
-        ? [...selectedMiniSkillIds, skillId]
-        : selectedMiniSkillIds.filter((id) => id !== skillId);
-      setSelectedMiniSkillIds(props.composerDraftTarget, next);
-    },
-    [props.composerDraftTarget, selectedMiniSkillIds, setSelectedMiniSkillIds],
-  );
+  const toggleSkill = (skillId: MiniSkillId, checked: boolean) => {
+    const next = checked
+      ? [...selectedMiniSkillIds, skillId]
+      : selectedMiniSkillIds.filter((id) => id !== skillId);
+    setSelectedMiniSkillIds(props.composerDraftTarget, next);
+  };
 
   if (miniSkills.length === 0) {
     return (

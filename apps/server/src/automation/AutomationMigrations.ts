@@ -6,12 +6,8 @@ import Migration0010 from "./Migrations/010_JournalDedup.ts";
 import Migration0020 from "./Migrations/020_OrchestratorRuntime.ts";
 
 /**
- * Automation schema lives in its own ledger. The main ledger keys on the id
- * alone, so a fork migration there is masked by any later upstream migration
- * that takes the same id; a separate table has no ids to collide with.
- *
- * The migrator skips every id at or below the highest one recorded, so a new
- * migration always takes an id above the current maximum, whatever it is about.
+ * Automation schema lives in its own ledger. The main ledger keys on id alone, so a fork migration there is masked by any later upstream migration with the same id.
+ * The migrator skips every id at or below the highest one recorded, so a new migration always takes an id above the current maximum.
  */
 export const AUTOMATION_MIGRATIONS_TABLE = "t3_automation_migrations";
 

@@ -78,19 +78,18 @@ const makeComputeJobRepository = Effect.gen(function* () {
   });
   const writeArtifact = SqlSchema.void({
     Request: PersistedComputeArtifact,
-    execute: ({ artifact, metadata, createdAt }) =>
-      Effect.gen(function* () {
-        const existing = yield* sql<{
-          readonly job_id: string;
-        }>`SELECT job_id FROM compute_artifacts WHERE artifact_id = ${artifact.id}`;
-        if (existing[0] && existing[0].job_id !== metadata.generationJobId)
-          return yield* toPersistenceSqlError("ComputeJobRepository.artifactOwnership")(
-            new Error("Artifact belongs to another job."),
-          );
-        const parents = yield* encodeParents(metadata.parentArtifacts ?? []);
-        const decodedArtifact = yield* decodeArtifact(artifact);
-        const encoded = yield* encodeArtifact({ artifact: decodedArtifact, metadata });
-        yield* sql`
+    execute: Effect.fn("execute")(function* ({ artifact, metadata, createdAt }) {
+      const existing = yield* sql<{
+        readonly job_id: string;
+      }>`SELECT job_id FROM compute_artifacts WHERE artifact_id = ${artifact.id}`;
+      if (existing[0] && existing[0].job_id !== metadata.generationJobId)
+        return yield* toPersistenceSqlError("ComputeJobRepository.artifactOwnership")(
+          new Error("Artifact belongs to another job."),
+        );
+      const parents = yield* encodeParents(metadata.parentArtifacts ?? []);
+      const decodedArtifact = yield* decodeArtifact(artifact);
+      const encoded = yield* encodeArtifact({ artifact: decodedArtifact, metadata });
+      yield* sql`
       INSERT INTO compute_artifacts (artifact_id, job_id, parent_artifact_ids_json, artifact_json, created_at)
       VALUES (
         ${artifact.id}, ${metadata.generationJobId},
@@ -102,7 +101,7 @@ const makeComputeJobRepository = Effect.gen(function* () {
         parent_artifact_ids_json = excluded.parent_artifact_ids_json,
         artifact_json = excluded.artifact_json
     `;
-      }),
+    }),
   });
 
   const upsertJob: ComputeJobRepositoryShape["upsertJob"] = (job) =>

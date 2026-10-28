@@ -530,7 +530,7 @@ const make = Effect.gen(function* () {
     page,
     findByEventId,
     live: PubSub.subscribe(live),
-    onCommitted: (listener) =>
+    onCommitted: Effect.fn("JournalStore.onCommitted")((listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
           listeners.add(listener);
@@ -540,6 +540,7 @@ const make = Effect.gen(function* () {
             listeners.delete(listener);
           }),
       ),
+    ),
     flush,
     prune,
   });

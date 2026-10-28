@@ -39,12 +39,13 @@ export class WebhookTransport extends Context.Service<
 const make = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   return WebhookTransport.of({
-    resolve: (hostname) =>
+    resolve: Effect.fn("WebhookTransport.resolve")((hostname) =>
       Effect.tryPromise({
         try: () => NodeDnsPromises.lookup(hostname, { all: true }),
         catch: () => new WebhookTransportError({ reason: `Could not resolve ${hostname}.` }),
       }).pipe(Effect.map((addresses) => addresses.map((entry) => entry.address))),
-    post: (request) =>
+    ),
+    post: Effect.fn("WebhookTransport.post")((request) =>
       client
         .execute(
           HttpClientRequest.post(request.url).pipe(
@@ -63,6 +64,7 @@ const make = Effect.gen(function* () {
           ),
           Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
         ),
+    ),
   });
 });
 

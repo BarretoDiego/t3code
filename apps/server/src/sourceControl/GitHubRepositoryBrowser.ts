@@ -76,139 +76,132 @@ export function makeGitHubRepositoryBrowser(
           new SourceControlHubError({ message: "This account supports github.com repositories." }),
         );
   return {
-    listRepositories: (input) =>
-      Effect.gen(function* () {
-        const page = pageNumber(input.cursor);
-        const rows = yield* json(
-          `/user/repos?per_page=50&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
-          Schema.Array(Repository),
-        );
-        return {
-          items: rows
-            .filter(
-              (row) =>
-                !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
-            )
-            .map((row) => ({
-              provider: SourceControlProviderKind.make("github"),
-              nameWithOwner: row.full_name,
-              url: row.html_url,
-              sshUrl: row.ssh_url,
-              host: "github.com",
-              defaultBranch: row.default_branch,
-              description: row.description ?? "",
-              private: row.private,
-            })),
-          nextCursor: rows.length === 50 ? String(page + 1) : null,
-        };
-      }),
-    listRefs: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const page = pageNumber(input.cursor);
-        const rows = yield* json(
-          `${repositoryPath(input)}/${input.kind === "branch" ? "branches" : "tags"}?per_page=50&page=${page}`,
-          Schema.Array(GitRef),
-        );
-        return {
-          items: rows.map((row) => ({
-            name: row.name,
-            sha: row.commit.sha,
-            kind: input.kind,
-            author: null,
-            createdAt: null,
+    listRepositories: Effect.fn("listRepositories")(function* (input) {
+      const page = pageNumber(input.cursor);
+      const rows = yield* json(
+        `/user/repos?per_page=50&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
+        Schema.Array(Repository),
+      );
+      return {
+        items: rows
+          .filter(
+            (row) =>
+              !input.query || row.full_name.toLowerCase().includes(input.query.toLowerCase()),
+          )
+          .map((row) => ({
+            provider: SourceControlProviderKind.make("github"),
+            nameWithOwner: row.full_name,
+            url: row.html_url,
+            sshUrl: row.ssh_url,
+            host: "github.com",
+            defaultBranch: row.default_branch,
+            description: row.description ?? "",
+            private: row.private,
           })),
-          nextCursor: rows.length === 50 ? String(page + 1) : null,
-        };
-      }),
-    revisions: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const pr = yield* json(`${repositoryPath(input)}/pulls/${input.number}`, PullRequest);
-        return {
-          baseSha: pr.base.sha,
-          headSha: pr.head.sha,
-          headRepository: pr.head.repo?.full_name ?? input.repository,
-        };
-      }),
-    compare: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        // GitHub compares through the merge base. An incremental comparison is only
-        // exact when the previous head is an ancestor; reject rebases explicitly.
-        if (input.mode === "incremental") {
-          const comparison = yield* json(
-            `${repositoryPath(input)}/compare/${encodeURIComponent(input.baseSha)}...${encodeURIComponent(input.headSha)}`,
-            Schema.Struct({ merge_base_commit: Schema.Struct({ sha: Schema.String }) }),
-          );
-          if (comparison.merge_base_commit.sha !== input.baseSha)
-            return yield* new SourceControlHubError({
-              message:
-                "The PR history was rewritten. Run a full review to establish a new baseline.",
-            });
-        }
-        const result = yield* rawRequest(
+        nextCursor: rows.length === 50 ? String(page + 1) : null,
+      };
+    }),
+    listRefs: Effect.fn("listRefs")(function* (input) {
+      yield* supported(input);
+      const page = pageNumber(input.cursor);
+      const rows = yield* json(
+        `${repositoryPath(input)}/${input.kind === "branch" ? "branches" : "tags"}?per_page=50&page=${page}`,
+        Schema.Array(GitRef),
+      );
+      return {
+        items: rows.map((row) => ({
+          name: row.name,
+          sha: row.commit.sha,
+          kind: input.kind,
+          author: null,
+          createdAt: null,
+        })),
+        nextCursor: rows.length === 50 ? String(page + 1) : null,
+      };
+    }),
+    revisions: Effect.fn("revisions")(function* (input) {
+      yield* supported(input);
+      const pr = yield* json(`${repositoryPath(input)}/pulls/${input.number}`, PullRequest);
+      return {
+        baseSha: pr.base.sha,
+        headSha: pr.head.sha,
+        headRepository: pr.head.repo?.full_name ?? input.repository,
+      };
+    }),
+    compare: Effect.fn("compare")(function* (input) {
+      yield* supported(input);
+      // GitHub compares through the merge base. An incremental comparison is only
+      // exact when the previous head is an ancestor; reject rebases explicitly.
+      if (input.mode === "incremental") {
+        const comparison = yield* json(
           `${repositoryPath(input)}/compare/${encodeURIComponent(input.baseSha)}...${encodeURIComponent(input.headSha)}`,
-          undefined,
-          true,
+          Schema.Struct({ merge_base_commit: Schema.Struct({ sha: Schema.String }) }),
         );
-        return { patch: result.body, truncated: result.truncated };
-      }),
-    readFile: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const path = yield* Effect.try({
-          try: () => encodeRepositoryFilePath(input.path),
-          catch: failure,
+        if (comparison.merge_base_commit.sha !== input.baseSha)
+          return yield* new SourceControlHubError({
+            message: "The PR history was rewritten. Run a full review to establish a new baseline.",
+          });
+      }
+      const result = yield* rawRequest(
+        `${repositoryPath(input)}/compare/${encodeURIComponent(input.baseSha)}...${encodeURIComponent(input.headSha)}`,
+        undefined,
+        true,
+      );
+      return { patch: result.body, truncated: result.truncated };
+    }),
+    readFile: Effect.fn("readFile")(function* (input) {
+      yield* supported(input);
+      const path = yield* Effect.try({
+        try: () => encodeRepositoryFilePath(input.path),
+        catch: failure,
+      });
+      const file = yield* json(
+        `${repositoryPath(input)}/contents/${path}?ref=${encodeURIComponent(input.sha)}`,
+        Schema.Struct({
+          type: Schema.String,
+          encoding: Schema.String,
+          content: Schema.String,
+          size: Schema.Number,
+        }),
+      );
+      if (file.type !== "file" || file.encoding !== "base64")
+        return yield* new SourceControlHubError({
+          message: "File content is unavailable or too large.",
         });
-        const file = yield* json(
-          `${repositoryPath(input)}/contents/${path}?ref=${encodeURIComponent(input.sha)}`,
-          Schema.Struct({
-            type: Schema.String,
-            encoding: Schema.String,
-            content: Schema.String,
-            size: Schema.Number,
-          }),
+      const bytes = Buffer.from(file.content, "base64");
+      if (bytes.includes(0))
+        return yield* new SourceControlHubError({
+          message: "Binary file content is omitted from review context.",
+        });
+      return {
+        content: bytes.subarray(0, 64_000).toString("utf8"),
+        truncated: file.size > 64_000,
+      };
+    }),
+    createPullRequest: Effect.fn("createPullRequest")(function* (input) {
+      yield* supported(input);
+      const pr = yield* json(`${repositoryPath(input)}/pulls`, PullRequest, {
+        title: input.title,
+        body: input.body,
+        head: input.source,
+        base: input.target,
+        draft: input.draft,
+      });
+      const warnings: string[] = [];
+      // A failed reviewer request must not turn successful creation into a retry.
+      if (input.reviewers.length)
+        yield* request(`${repositoryPath(input)}/pulls/${pr.number}/requested_reviewers`, {
+          reviewers: input.reviewers,
+        }).pipe(
+          Effect.catch(() =>
+            Effect.sync(() => {
+              warnings.push(
+                "The pull request was created, but reviewers could not be assigned. Check their repository access.",
+              );
+            }),
+          ),
         );
-        if (file.type !== "file" || file.encoding !== "base64")
-          return yield* new SourceControlHubError({
-            message: "File content is unavailable or too large.",
-          });
-        const bytes = Buffer.from(file.content, "base64");
-        if (bytes.includes(0))
-          return yield* new SourceControlHubError({
-            message: "Binary file content is omitted from review context.",
-          });
-        return {
-          content: bytes.subarray(0, 64_000).toString("utf8"),
-          truncated: file.size > 64_000,
-        };
-      }),
-    createPullRequest: (input) =>
-      Effect.gen(function* () {
-        yield* supported(input);
-        const pr = yield* json(`${repositoryPath(input)}/pulls`, PullRequest, {
-          title: input.title,
-          body: input.body,
-          head: input.source,
-          base: input.target,
-          draft: input.draft,
-        });
-        const warnings: string[] = [];
-        // A failed reviewer request must not turn successful creation into a retry.
-        if (input.reviewers.length)
-          yield* request(`${repositoryPath(input)}/pulls/${pr.number}/requested_reviewers`, {
-            reviewers: input.reviewers,
-          }).pipe(
-            Effect.catch(() =>
-              Effect.sync(() => {
-                warnings.push(
-                  "The pull request was created, but reviewers could not be assigned. Check their repository access.",
-                );
-              }),
-            ),
-          );
-        return { number: pr.number, url: pr.html_url, warnings };
-      }),
+      return { number: pr.number, url: pr.html_url, warnings };
+    }),
   };
 }

@@ -1,10 +1,6 @@
 /**
- * Small errno helpers shared by the project sync filesystem paths.
- *
- * A sync walks a live working tree while an agent may be editing it, so
- * "the entry vanished" and "we may not look at it" are normal outcomes to skip
- * past rather than failures to abort the whole transfer on.
- *
+ * Small errno helpers shared by the project sync filesystem paths. A sync walks a live working tree an agent may be editing,
+ * so "the entry vanished" and "we may not look at it" are outcomes to skip past, not reasons to abort the transfer.
  * @module projectSyncErrno
  */
 import * as Predicate from "effect/Predicate";

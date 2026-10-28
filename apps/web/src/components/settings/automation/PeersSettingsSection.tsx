@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../../hooks/useNowMinute";
 import {
   emptyPeerAddDraft,
   peerAddDraftToInput,
@@ -19,7 +20,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useCopyToClipboard } from "../../../hooks/useCopyToClipboard";
 import { ensureLocalApi } from "../../../localApi";
@@ -50,7 +51,7 @@ import {
   automationEnvironmentAvailability,
   AUTOMATION_SETTINGS_ANCHORS,
 } from "../automationSettings.logic";
-import { SettingsRow, SettingsSection, useRelativeTimeTick } from "../settingsLayout";
+import { SettingsRow, SettingsSection } from "../settingsLayout";
 import {
   AutomationEnvironmentSection,
   DraftErrors,
@@ -69,9 +70,9 @@ export function PeersSettingsSection({
   readonly environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
   const [editor, setEditor] = useState<PeerEditor | null>(null);
-  const openForEdit = useCallback((environmentId: EnvironmentId, peer: Peer) => {
+  const openForEdit = (environmentId: EnvironmentId, peer: Peer) => {
     setEditor({ kind: "edit", environmentId, peer });
-  }, []);
+  };
   const creatable = environments.filter(
     (environment) => automationEnvironmentAvailability(environment) === "ready",
   );
@@ -166,7 +167,7 @@ function PeerRows({
   readonly environmentId: EnvironmentId;
   readonly onEdit: (environmentId: EnvironmentId, peer: Peer) => void;
 }) {
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const query = useEnvironmentQuery(automationEnvironment.peers({ environmentId, input: {} }));
   return (
     <QueryRows

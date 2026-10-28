@@ -327,7 +327,7 @@ const fetchLiveOrchestrationSnapshot = Effect.fn("project.fetchLiveOrchestration
   function* (
     origin: string,
     bearerToken: string,
-    timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+    _timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
   ) {
     const client = yield* makeLiveServerClient(origin);
     return yield* client.projects.snapshot({
@@ -343,7 +343,7 @@ const dispatchLiveOrchestrationCommand = Effect.fn("project.dispatchLiveOrchestr
     origin: string,
     bearerToken: string,
     command: ProjectCliDispatchCommand,
-    timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+    _timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
   ) {
     const client = yield* makeLiveServerClient(origin);
     yield* client.projects.mutate({

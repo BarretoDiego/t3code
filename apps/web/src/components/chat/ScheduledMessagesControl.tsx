@@ -43,6 +43,7 @@ export function ScheduledMessagesControl(props: {
   const listId = useId();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const hasScheduledMessages = scheduledMessages.length > 0;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the countdown on an interval and on visibilitychange (background tabs throttle timers); both cleared on cleanup
   useEffect(() => {
     if (!hasScheduledMessages) return;
     const syncNow = () => setNowMs(Date.now());

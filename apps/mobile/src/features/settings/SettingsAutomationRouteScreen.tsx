@@ -31,7 +31,12 @@ import {
 import type { EnvironmentId, OrchestratorId } from "@t3tools/contracts";
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { type StaticScreenProps, useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  StackActions,
+  type StaticScreenProps,
+  useFocusEffect,
+  useNavigation,
+} from "@react-navigation/native";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Alert, AppState, Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -235,12 +240,9 @@ function EnvironmentOrchestrators(props: {
               first={index === 0}
               accessibilityLabel={`${orchestrator.name}, ${row.state.label}. Open details`}
               onPress={() =>
-                navigation.navigate("SettingsSheet", {
-                  screen: "SettingsContent",
-                  params: {
-                    screen: "SettingsAutomationOrchestrator",
-                    params: { environmentId, orchestratorId: orchestrator.id },
-                  },
+                navigation.navigate("SettingsAutomationOrchestrator", {
+                  environmentId,
+                  orchestratorId: orchestrator.id,
                 })
               }
             >
@@ -550,7 +552,9 @@ function OrchestratorDetail({ view }: { readonly view: OrchestratorView }) {
       (entry) => entry.environmentId === threadEnvironmentId && entry.id === threadId,
     );
     if (!thread) return;
-    navigation.navigate("Thread", { environmentId: thread.environmentId, threadId: thread.id });
+    navigation.dispatch(
+      StackActions.push("Thread", { environmentId: thread.environmentId, threadId: thread.id }),
+    );
   };
 
   const change = async (desiredState: "active" | "paused") => {

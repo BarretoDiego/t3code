@@ -140,7 +140,7 @@ export function ThreadHandoffDialog({
     warnings?: readonly string[];
   } | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const initializedTransferMode = useRef(false);
+  const [initializedTransferMode, setInitializedTransferMode] = useState(false);
   const inFlight = useRef(false);
   const sourceEnvironment = environments.find(
     (entry) => entry.environmentId === threadRef.environmentId,
@@ -156,12 +156,11 @@ export function ThreadHandoffDialog({
             provider.supportsSessionHandoff === true,
         )) ??
     false;
-  useEffect(() => {
-    if (!source || initializedTransferMode.current) return;
-    initializedTransferMode.current = true;
-    // Initialize from the completed inspection without making provider snapshots retrigger it.
+  // Initialize once from the completed inspection without letting provider snapshots retrigger it.
+  if (source && !initializedTransferMode) {
+    setInitializedTransferMode(true);
     setTransferMode(supportsNative ? "native" : "context");
-  }, [source, supportsNative]);
+  }
   const selectedEnvironment = environments.find((entry) => entry.environmentId === destinationId);
   const destinationProjects = projects.filter((project) => project.environmentId === destinationId);
   const providers =
@@ -248,6 +247,7 @@ export function ThreadHandoffDialog({
     }
     onTransferred?.(destinationRef);
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the source thread inspection over RPC and ignores late responses after close or thread change
   useEffect(() => {
     if (!open || inFlight.current) return;
     let active = true;
@@ -266,6 +266,7 @@ export function ThreadHandoffDialog({
       active = false;
     };
   }, [open, deps, threadRef.environmentId, threadRef.threadId]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the destination preflight over RPC and ignores late responses after the selection changes
   useEffect(() => {
     if (!open || busy || !source || !destination || !eligible) return;
     let active = true;
@@ -702,6 +703,7 @@ export function ThreadHandoffDialog({
 export function ThreadHandoffDialogHost() {
   const [threadRef, setThreadRef] = useState<ScopedThreadRef | null>(null);
   const [open, setOpen] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for the window-level open-handoff event dispatched by openThreadHandoff, removed on cleanup
   useEffect(() => {
     const listener = (event: Event) => {
       if (!open && event instanceof CustomEvent && isThreadRef(event.detail)) {

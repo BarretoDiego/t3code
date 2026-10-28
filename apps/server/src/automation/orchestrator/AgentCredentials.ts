@@ -59,24 +59,26 @@ export const makeAgentCredentials = Effect.gen(function* () {
   const credentialFile = (orchestratorId: OrchestratorId) =>
     path.join(root, "credentials", `${orchestratorId.replaceAll(/[^A-Za-z0-9_-]/gu, "_")}.json`);
 
-  const writeDocument = (orchestratorId: OrchestratorId, token: string | null) =>
-    Effect.gen(function* () {
-      const state = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath).pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.orElseSucceed(() => Option.none()),
-      );
-      const origin = Option.getOrNull(Option.map(state, (value) => value.origin));
-      const file = credentialFile(orchestratorId);
-      yield* fs.makeDirectory(path.dirname(file), { recursive: true, mode: 0o700 });
-      // Written beside the target and renamed, so a reader never sees half a
-      // credential. One orchestrator has one writer: its turn loop.
-      const temporary = `${file}.tmp`;
-      yield* fs.writeFileString(temporary, yield* encodeDocument({ version: 1, origin, token }), {
-        mode: 0o600,
-      });
-      yield* fs.chmod(temporary, 0o600);
-      yield* fs.rename(temporary, file);
+  const writeDocument = Effect.fn("writeDocument")(function* (
+    orchestratorId: OrchestratorId,
+    token: string | null,
+  ) {
+    const state = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.orElseSucceed(() => Option.none()),
+    );
+    const origin = Option.getOrNull(Option.map(state, (value) => value.origin));
+    const file = credentialFile(orchestratorId);
+    yield* fs.makeDirectory(path.dirname(file), { recursive: true, mode: 0o700 });
+    // Written beside the target and renamed, so a reader never sees half a
+    // credential. One orchestrator has one writer: its turn loop.
+    const temporary = `${file}.tmp`;
+    yield* fs.writeFileString(temporary, yield* encodeDocument({ version: 1, origin, token }), {
+      mode: 0o600,
     });
+    yield* fs.chmod(temporary, 0o600);
+    yield* fs.rename(temporary, file);
+  });
 
   /** The `t3` the agent runs: this server's own entrypoint, whatever is installed globally. */
   const writeShim = Effect.gen(function* () {
@@ -98,25 +100,23 @@ export const makeAgentCredentials = Effect.gen(function* () {
     yield* fs.chmod(shim, 0o755);
   });
 
-  const revokeSession = (orchestratorId: OrchestratorId) =>
-    Effect.gen(function* () {
-      const sessionId = sessionsByOrchestrator.get(orchestratorId);
-      if (sessionId === undefined) return false;
-      sessionsByOrchestrator.delete(orchestratorId);
-      forgetIssuedCredential(sessionId);
-      yield* auth.revokeSession(sessionId).pipe(Effect.ignore({ log: true }));
-      return true;
-    });
+  const revokeSession = Effect.fn("revokeSession")(function* (orchestratorId: OrchestratorId) {
+    const sessionId = sessionsByOrchestrator.get(orchestratorId);
+    if (sessionId === undefined) return false;
+    sessionsByOrchestrator.delete(orchestratorId);
+    forgetIssuedCredential(sessionId);
+    yield* auth.revokeSession(sessionId).pipe(Effect.ignore({ log: true }));
+    return true;
+  });
 
   /**
    * Ends the credential: the session is revoked and the file keeps only a
    * tombstone. A no-op for an orchestrator that holds none.
    */
-  const revoke = (orchestratorId: OrchestratorId) =>
-    Effect.gen(function* () {
-      if (!(yield* revokeSession(orchestratorId))) return;
-      yield* writeDocument(orchestratorId, null).pipe(Effect.ignore({ log: true }));
-    });
+  const revoke = Effect.fn("revoke")(function* (orchestratorId: OrchestratorId) {
+    if (!(yield* revokeSession(orchestratorId))) return;
+    yield* writeDocument(orchestratorId, null).pipe(Effect.ignore({ log: true }));
+  });
 
   /**
    * Starts a turn's credential. The provider process of `threadId` learns where

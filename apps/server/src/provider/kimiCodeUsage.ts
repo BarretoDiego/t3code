@@ -1,27 +1,7 @@
 /**
- * Kimi For Coding plan usage.
- *
- * Claude Code instances pointed at the Kimi Code endpoint
- * (`ANTHROPIC_BASE_URL=https://api.kimi.com/coding/`) never emit
- * `rate_limit_event`s and the SDK `get_usage` control API reports
- * `rate_limits_available: false` for third-party backends — so plan limits
- * for those instances come straight from Kimi's account API instead:
- *
- *   GET {baseUrl}/usages   (Authorization: Bearer <instance API key>)
- *
- * The payload carries stringly-typed numbers and proto-style enums:
- *
- *   {
- *     "user":  { "membership": { "level": "LEVEL_ADVANCED" } },
- *     "usage": { "used": "4", "limit": "100", "resetTime": "..." },   // weekly quota
- *     "limits": [{ "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
- *                  "detail": { "used": "22", "limit": "100", "resetTime": "..." } }],
- *     "boosterWallet": { "balance": { "amountLeft": ... }, ... }       // Extra Usage
- *   }
- *
- * Mirrors the normalization approach of `providerRateLimits.ts`: adapters hand
- * the result to the registry, everything downstream stays provider-agnostic.
- *
+ * Kimi For Coding plan usage. Claude Code instances on the Kimi Code endpoint emit no `rate_limit_event`s and `get_usage` reports `rate_limits_available: false`,
+ * so plan limits come from `GET {baseUrl}/usages` (Bearer instance API key). The payload has stringly-typed numbers and proto-style enums: `user.membership.level`,
+ * weekly `usage` {used, limit, resetTime}, `limits[]` {window{duration, timeUnit}, detail}, and `boosterWallet` (Extra Usage). Adapters hand the normalized result to the registry.
  * @module provider/kimiCodeUsage
  */
 import {
@@ -62,16 +42,9 @@ const trimmed = (value: string | null | undefined): string | undefined => {
 };
 
 /**
- * Detect whether a Claude instance's resolved environment talks to Kimi For
- * Coding, and if so where its usage endpoint lives and with what token.
- *
- * Recognized shapes:
- *   - `ANTHROPIC_BASE_URL=https://api.kimi.com/coding/` (Claude Code guide)
- *   - `ANTHROPIC_BASE_URL=https://api.kimi.ai/coding/`  (mainland-cn mirror)
- *   - `KIMI_CODE_BASE_URL` override (Kimi Code CLI convention) wins outright
- *
- * The token comes from `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, matching
- * what the spawned CLI would authenticate with.
+ * Detects whether a Claude instance's environment talks to Kimi For Coding, and if so where its usage endpoint lives and with what token.
+ * `ANTHROPIC_BASE_URL` of api.kimi.com/coding/ or api.kimi.ai/coding/ (mainland-cn mirror) matches; a `KIMI_CODE_BASE_URL` override wins outright.
+ * The token comes from `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, matching what the spawned CLI authenticates with.
  */
 export function resolveKimiCodeUsageSource(
   environment: NodeJS.ProcessEnv | undefined,
@@ -104,9 +77,7 @@ export function resolveKimiCodeUsageSource(
   };
 }
 
-/* -------------------------------------------------------------------------- */
 /* Wire payload parsing                                                       */
-/* -------------------------------------------------------------------------- */
 
 interface KimiUsageDetail {
   readonly used: number | null;
@@ -238,9 +209,7 @@ function parseKimiCodeUsagePayload(payload: unknown): KimiCodeUsagePayload {
   };
 }
 
-/* -------------------------------------------------------------------------- */
 /* Normalization                                                              */
-/* -------------------------------------------------------------------------- */
 
 const MINUTES_PER_DAY = 60 * 24;
 
@@ -293,12 +262,8 @@ const describeMembershipLevel = (level: string | null): string | undefined => {
 };
 
 /**
- * Normalize a `/usages` payload into provider-agnostic windows.
- *
- * The payload is a complete observation, so callers replace the instance's
- * previous windows: the weekly summary, every rolling window Kimi reports
- * (the 5-hour window arrives as 300 TIME_UNIT_MINUTE), and the Extra Usage
- * wallet when the account has one.
+ * Normalizes a `/usages` payload into provider-agnostic windows. The payload is a complete observation, so callers replace the instance's previous windows:
+ * the weekly summary, every rolling window Kimi reports (the 5-hour window arrives as 300 TIME_UNIT_MINUTE), and the Extra Usage wallet when present.
  */
 export function normalizeKimiCodeUsage(input: {
   readonly payload: unknown;
@@ -368,9 +333,7 @@ export function normalizeKimiCodeUsage(input: {
   };
 }
 
-/* -------------------------------------------------------------------------- */
 /* Fetch                                                                      */
-/* -------------------------------------------------------------------------- */
 
 export class KimiCodeUsageFetchError extends Schema.TaggedError<KimiCodeUsageFetchError>()(
   "KimiCodeUsageFetchError",

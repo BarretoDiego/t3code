@@ -1,3 +1,4 @@
+import { useNowMinuteMs } from "../../../hooks/useNowMinute";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -31,7 +32,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useEnvironmentSettings } from "../../../hooks/useSettings";
 import { ensureLocalApi } from "../../../localApi";
@@ -77,12 +78,7 @@ import {
   matchesScheduledTaskScope,
   scheduledTaskDefaultModel,
 } from "../scheduledTasksSettings.logic";
-import {
-  SETTINGS_PICKER_TRIGGER_CLASSNAME,
-  SettingsRow,
-  SettingsSection,
-  useRelativeTimeTick,
-} from "../settingsLayout";
+import { SETTINGS_PICKER_TRIGGER_CLASSNAME, SettingsRow, SettingsSection } from "../settingsLayout";
 import { useSettingsScope } from "../SettingsScopeContext";
 import {
   AutomationEnvironmentSection,
@@ -108,9 +104,9 @@ export function OrchestratorsSettingsSection({
   };
 }) {
   const [editor, setEditor] = useState<OrchestratorEditorTarget | null>(null);
-  const openForEdit = useCallback((environmentId: EnvironmentId, orchestrator: Orchestrator) => {
+  const openForEdit = (environmentId: EnvironmentId, orchestrator: Orchestrator) => {
     setEditor({ environmentId, orchestrator });
-  }, []);
+  };
   const creatable = environments.filter(
     (environment) => automationEnvironmentAvailability(environment) === "ready",
   );
@@ -181,25 +177,23 @@ function OrchestratorRows({
   readonly onEdit: (environmentId: EnvironmentId, orchestrator: Orchestrator) => void;
 }) {
   const { scope } = useSettingsScope();
-  const nowMs = useRelativeTimeTick(60_000);
+  const nowMs = useNowMinuteMs();
   const threads = useThreadShells();
   const query = useEnvironmentQuery(
     automationEnvironment.orchestratorsLive({ environmentId, input: {} }),
   );
-  const rows = useMemo(
-    () =>
-      query.data === null
-        ? null
-        : joinOrchestratorsToThreads({
-            snapshot: { environmentId, orchestrators: query.data.orchestrators },
-            threads,
-          }).filter((row) =>
-            matchesScheduledTaskScope(scope, environmentId, row.view.orchestrator.projectId),
-          ),
-    [environmentId, query.data, scope, threads],
-  );
+  const rows =
+    query.data === null
+      ? null
+      : joinOrchestratorsToThreads({
+          snapshot: { environmentId, orchestrators: query.data.orchestrators },
+          threads,
+        }).filter((row) =>
+          matchesScheduledTaskScope(scope, environmentId, row.view.orchestrator.projectId),
+        );
   const linked = rows?.find((row) => row.view.orchestrator.id === linkedOrchestratorId);
   const openedLink = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-shot deep-link: opens the editor once the linked orchestrator has loaded asynchronously, with no user event to hang it on
   useEffect(() => {
     if (!openedLink.current && linked?.view.hostedHere) {
       openedLink.current = true;
@@ -419,24 +413,16 @@ function OrchestratorEditorDialog({
     automationEnvironment.orchestratorsLive({ environmentId, input: {} }),
   );
   const allProjects = useProjects();
-  const projects = useMemo(
-    () =>
-      allProjects.filter(
-        (project) =>
-          project.environmentId === environmentId &&
-          matchesScheduledTaskScope(scope, environmentId, project.id),
-      ),
-    [allProjects, environmentId, scope],
+  const projects = allProjects.filter(
+    (project) =>
+      project.environmentId === environmentId &&
+      matchesScheduledTaskScope(scope, environmentId, project.id),
   );
   const settings = useEnvironmentSettings(environmentId);
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-      ),
-    [providers, settings],
+  const instanceEntries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
   );
   const upsert = useAtomCommand(automationEnvironment.upsertOrchestrator, {
     label: "orchestrator upsert",
@@ -462,9 +448,11 @@ function OrchestratorEditorDialog({
   const activeInstanceId =
     activeSelection?.instanceId ?? instanceEntries[0]?.instanceId ?? ProviderInstanceId.make("");
   const activeModel = activeSelection?.model ?? "";
-  const modelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, providers, activeInstanceId, activeModel),
-    [settings, providers, activeInstanceId, activeModel],
+  const modelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    providers,
+    activeInstanceId,
+    activeModel,
   );
   const latest =
     orchestrator === null

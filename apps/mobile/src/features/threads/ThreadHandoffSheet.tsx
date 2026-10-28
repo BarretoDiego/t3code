@@ -134,7 +134,8 @@ export function ThreadHandoffSheet(props: {
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const abort = useRef<AbortController | null>(null);
-  const initializedTransferMode = useRef(false);
+  const [transferModeSeeded, setTransferModeSeeded] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-shot inspect RPC and recovery-file read on mount, cancelled on unmount; no atom owns this per-sheet handoff state
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -177,12 +178,11 @@ export function ThreadHandoffSheet(props: {
           provider.supportsSessionHandoff === true,
       )) ??
     false;
-  useEffect(() => {
-    if (!source || initializedTransferMode.current) return;
-    initializedTransferMode.current = true;
-    // Initialize from the completed inspection without making provider snapshots retrigger it.
+  // Seed once from the completed inspection so later provider snapshots do not retrigger it.
+  if (source && !transferModeSeeded) {
+    setTransferModeSeeded(true);
     setTransferMode(supportsNative ? "native" : "context");
-  }, [source, supportsNative]);
+  }
   const selectedProjects = projects.filter(
     (project) => project.environmentId === selectedEnvironmentId,
   );

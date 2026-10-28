@@ -13,22 +13,14 @@ import {
 } from "./components/Sidebar.logic";
 
 /**
- * The two aggregate views the breadcrumb points at: everything in one
- * environment, and everything in one project.
- *
- * Both answer "what is in here" for a scope the user just clicked, so the
- * shelves they show and the order inside them follow the sidebar's rules
- * rather than inventing a second definition of what an active thread is.
+ * The two aggregate views the breadcrumb points at: everything in one environment, and everything
+ * in one project. Shelves and ordering follow the sidebar's rules rather than a second
+ * definition of an active thread.
  */
 
 /**
- * The environment label a crumb can actually show, or null when there is
- * nothing worth rendering.
- *
- * A server names itself in its descriptor, and nothing forces that name to be
- * non-empty. A blank chip in the path is worse than no chip at all, so an
- * empty label reads as "no environment to show" rather than rendering an icon
- * with nothing next to it.
+ * The environment label a crumb can show, or null when there is nothing worth rendering. A server
+ * may name itself with an empty string, and a blank chip is worse than none.
  */
 export function resolveScopeEnvironmentLabel(label: string | null | undefined): string | null {
   const trimmed = label?.trim() ?? "";
@@ -42,15 +34,10 @@ export interface ScopeThreadShelves<TThread> {
 }
 
 /**
- * Splits a scope's threads into the shelves the page renders.
- *
- * Deliberately the sidebar's rule: settlement is stamped server-side (manual
- * override or the auto-settle reactor reading the server's own settle
- * settings), so shelving reads the stamp and never re-derives it here.
- *
- * Capability probes are injected because both are per-environment: a server
- * too old to settle or snooze must never have its threads filed under a shelf
- * it cannot undo.
+ * Splits a scope's threads into the page's shelves, by the sidebar's rule: settlement is stamped
+ * server-side, so shelving reads the stamp and never re-derives it. Capability probes are
+ * injected because they are per-environment: a server too old to settle or snooze must never
+ * have threads filed under a shelf it cannot undo.
  */
 export function shelveScopeThreads<TThread extends EnvironmentThreadShell>(input: {
   readonly threads: ReadonlyArray<TThread>;

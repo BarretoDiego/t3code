@@ -1124,6 +1124,19 @@ describe("thread outbox", () => {
     ).toBe("send");
   });
 
+  it("removes a missing-thread message only after a settled family read when idle children can be omitted", () => {
+    const missing = {
+      isCreation: false,
+      threadExists: false,
+      shellStatus: "live",
+      environmentConnected: true,
+      threadBusy: false,
+    } as const;
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "pending" })).toBe("wait");
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "failed" })).toBe("wait");
+    expect(resolveThreadOutboxDeliveryAction({ ...missing, familyRead: "settled" })).toBe("remove");
+  });
+
   it("sends existing-thread messages whenever connected so queued messages can steer", () => {
     expect(
       resolveThreadOutboxDeliveryAction({
@@ -1311,7 +1324,8 @@ describe("thread outbox", () => {
   });
 
   it("waits out an exhausted plan window instead of sending through it", () => {
-    const resetAt = new Date(Date.now() + 60_000).toISOString();
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    const resetAt = new Date(nowMs + 60_000).toISOString();
     expect(
       resolveThreadOutboxDeliveryAction({
         isCreation: false,
@@ -1320,6 +1334,7 @@ describe("thread outbox", () => {
         environmentConnected: true,
         threadBusy: false,
         rateLimitedUntil: resetAt,
+        nowMs,
       }),
     ).toBe("wait");
     expect(
@@ -1329,7 +1344,8 @@ describe("thread outbox", () => {
         shellStatus: "live",
         environmentConnected: true,
         threadBusy: false,
-        rateLimitedUntil: new Date(Date.now() - 1_000).toISOString(),
+        rateLimitedUntil: new Date(nowMs - 1_000).toISOString(),
+        nowMs,
       }),
     ).toBe("send");
   });

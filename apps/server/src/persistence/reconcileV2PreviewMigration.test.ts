@@ -28,6 +28,11 @@ describe("V2 migration ledger", () => {
         [72, "CodexUsageNativeTurnIndex"],
         [73, "RepairClientSettlementTimestamps"],
         [74, "WebhookDedupe"],
+        [75, "ShellStopRequestIndex"],
+        [76, "ThreadMessageSearch"],
+        [77, "PeerLinks"],
+        [78, "PeerLinkFence"],
+        [79, "WaitingLinkRequestIndex"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`

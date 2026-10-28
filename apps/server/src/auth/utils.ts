@@ -12,12 +12,7 @@ import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
 
-/**
- * Cookies are scoped by host but *not* by port, so any two servers that can be
- * live on one hostname at once need separate names — otherwise the second
- * clobbers the first's session and both sides see "Invalid session token
- * signature" until someone clears cookies by hand.
- */
+/** Cookies span ports; use separate names for servers sharing a hostname. */
 export function resolveSessionCookieName(input: {
   readonly mode: "web" | "desktop";
   readonly port: number;
@@ -96,15 +91,9 @@ export function timingSafeEqualBase64Url(left: string, right: string): boolean {
 }
 
 /**
- * Verifies one `<base64url claims>.<hmac signature>` bearer token and returns
- * its claims, or `null` for any token that is malformed, unsigned, signed with
- * the wrong key, undecodable, or expired.
- *
- * Every family of URL-borne token the server issues (attachment uploads,
- * project sync export/import) shares this shape, and each hand-rolled copy of
- * the check is one place for the families to drift apart on what counts as
- * valid. `secret` is nullable so callers can pass the result of a signing-key
- * load that failed: no key means no valid token.
+ * Verifies one `<base64url claims>.<hmac signature>` bearer token and returns its claims, or `null` for any token that is malformed, unsigned, wrongly signed, undecodable, or expired.
+ * Every family of URL-borne token (attachment uploads, project sync export/import) shares this shape; one shared check keeps the families from drifting on what counts as valid.
+ * `secret` is nullable so callers can pass the result of a failed signing-key load: no key means no valid token.
  */
 export function verifySignedClaims<A extends { readonly expiresAt: number }>(input: {
   readonly token: string;

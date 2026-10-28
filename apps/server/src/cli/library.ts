@@ -51,9 +51,6 @@ const loadSettings = (client: EnvironmentRpcClient) => client[WS_METHODS.serverG
 const updateSettings = (client: EnvironmentRpcClient, patch: ServerSettingsPatch) =>
   client[WS_METHODS.serverUpdateSettings]({ patch });
 
-// ---------------------------------------------------------------------------
-// Lookup
-
 /** Finds a library entry by exact id, unique id prefix, or exact name/slug (case-insensitive). */
 function findEntry<T extends { readonly id: string; readonly name: string }>(
   entries: ReadonlyArray<T>,
@@ -84,9 +81,6 @@ export const findMiniSkill = (settings: ServerSettings, identifier: string) =>
 
 export const findAgentProfile = (settings: ServerSettings, identifier: string) =>
   findEntry(settings.agentProfiles, identifier.replace(/^#/, ""), "profile", (entry) => entry.slug);
-
-// ---------------------------------------------------------------------------
-// Text input
 
 /** Opens `$VISUAL`/`$EDITOR` on `initial` and returns the saved text. */
 const editInEditor = (initial: string, suffix: string) =>
@@ -154,9 +148,6 @@ const booleanChoice = (name: string, description: string) =>
     Flag.map((value) => value === "true"),
     Flag.optional,
   );
-
-// ---------------------------------------------------------------------------
-// Mini skills
 
 function skillSummary(skill: MiniSkill) {
   return {
@@ -347,9 +338,6 @@ export const skillCommand = Command.make("skill").pipe(
     skillDeleteCommand,
   ]),
 );
-
-// ---------------------------------------------------------------------------
-// Agent profiles
 
 function profileSummary(profile: AgentProfile) {
   return {
@@ -670,7 +658,6 @@ export const profileCommand = Command.make("profile").pipe(
   ]),
 );
 
-// ---------------------------------------------------------------------------
 // Using skills and profiles in a turn
 
 /** What `thread new`/`send` add to a turn for `--skill` and `--profile`. */

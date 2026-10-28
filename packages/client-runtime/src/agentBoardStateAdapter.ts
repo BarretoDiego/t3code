@@ -51,12 +51,9 @@ function firstValidTimestamp(
 
 /**
  * The only pre-feature-1 classifier used by the Board. Its precedence is the
- * compatibility contract: direct user requests, failure, liveness, review,
- * completion/lifecycle, then quiet history.
- *
- * Reads the v2 presentation shell: `runtime` carries the activity-owning run
- * status (or idle), `latestRun` the latest root run, and post-settlement
- * background work arrives as `pendingBackgroundTasks`.
+ * compatibility contract: user requests, failure, liveness, review, lifecycle,
+ * then quiet history. Reads the v2 shell: `runtime` is the activity-owning run
+ * status, `latestRun` the latest root run, `pendingBackgroundTasks` post-settlement work.
  */
 export function deriveAgentOperationalState(
   shell: Pick<

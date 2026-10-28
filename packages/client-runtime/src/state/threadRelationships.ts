@@ -223,11 +223,8 @@ function threadCreatedAtMillis(node: ThreadRelationshipNode | undefined): number
 }
 
 /**
- * Web-specific by design: the panel pins the parent row first and a distinct
- * merge-back target second so their actions stay where the user expects, and
- * only then falls back to newest-created-first. Mobile does not share that
- * exception, so this is not the canonical relationship order and should not be
- * reused as one.
+ * Web pins the parent and distinct merge-back target before newest-created-first ordering.
+ * Mobile does not share this exception; do not reuse it as the canonical relationship order.
  */
 export function orderWebThreadLineageRows(input: {
   readonly graph: ThreadRelationshipGraph;
@@ -256,13 +253,10 @@ export function orderWebThreadLineageRows(input: {
 }
 
 /**
- * Thread list nesting: subagent threads shown under the thread that spawned
- * them. Web and mobile build their lists from this one forest so a parent and
- * its children land in the same place on every client.
- *
- * Only `subagent` lineage nests. A fork is a conversation the user drives on
- * its own, with its own pin, order, and settlement, so it keeps a top-level
- * row and its lineage stays in the thread details panel.
+ * Thread list nesting: subagent threads shown under their spawning thread, built
+ * from one forest so web and mobile agree. Only `subagent` lineage nests; a fork is
+ * driven on its own (pin, order, settlement), so it keeps a top-level row and its
+ * lineage stays in the details panel.
  */
 export type ThreadNestingSignal = "approval" | "input" | "failed" | "working";
 
@@ -393,18 +387,10 @@ function summarizeThreadNestingCounts(counted: ThreadNestingCounts): ThreadNesti
 }
 
 /**
- * Places every listed thread either at the top level or under its parent.
- *
- * - `threads` is every loaded shell, archived ones included, so a child can
- *   tell an archived parent from one that is not loaded.
- * - `isListed` is the list's own filter (archive, project scope, provider,
- *   search). An unlisted thread gets no row.
- *
- * A child follows its parent's row wherever that row is. Lists keep the
- * whole family visible while its summary has live work, even when the
- * parent is settled or snoozed. A child takes its own top-level row when
- * the parent is missing or filtered out. Quiet children of an unlisted
- * archived parent leave with it; explicitly listed archived parents retain their family.
+ * Places every listed thread at the top level or under its parent. `threads` is
+ * every loaded shell, archived included, so a child can tell an archived parent from
+ * an unloaded one; `isListed` is the list's own filter. A child follows its parent's
+ * row, or takes its own top-level row when the parent is missing or filtered out; quiet children leave with an unlisted archived parent.
  */
 export function buildThreadNesting<T extends ThreadNestingThread>(input: {
   readonly threads: ReadonlyArray<T>;
@@ -592,16 +578,10 @@ export interface ThreadNestingDisplay<T> {
 }
 
 /**
- * The rows to draw under one top-level thread, in order, or null when it has
- * no children.
- *
- * A collapsed parent still shows the path to the open thread, so the row for
- * what the user is looking at never disappears. An expanded parent with more
- * than `childLimit` children keeps every child that has something to report
- * and fills the rest with the newest quiet ones; the remainder waits behind a
- * `more` row until its parent is in `showAllKeys`. Settled children keep their
- * lineage inside a separate collapsible group; a new signal on them or their
- * descendants brings them back above that group.
+ * The rows to draw under one top-level thread, or null with no children. A collapsed
+ * parent still shows the path to the open thread. An expanded parent over
+ * `childLimit` keeps children with something to report plus the newest quiet ones,
+ * the rest behind a `more` row; settled children sit in a collapsible group.
  */
 export function flattenThreadNesting<T extends ThreadNestingThread>(input: {
   readonly node: ThreadNestingNode<T>;
