@@ -22,7 +22,8 @@ block. What you typed is what the agent receives, markers and numbering
 included, and `#1234` without a space still looks up a pull request.
 
 Enter sends. In a list or quote, **Shift+Enter** continues it, and Shift+Enter
-on an empty line leaves it; **Tab** nests a list item. In a code block, Enter
+on an empty line moves out one level, then leaves it; **Tab** nests a list item
+under the one above. In a code block, Enter
 starts a new line at the current indentation, **Tab** and **Shift+Tab** indent
 the selected lines, and a closing ` ``` ` followed by Enter, or two blank lines
 at the end, leave the block. **Backspace** at the start of a code block turns it
@@ -83,13 +84,15 @@ run after the thread continues. See
 when the window resets.
 
 To send later on purpose, use the clock button in the composer of a started
-thread. Pick 5, 15, 30, or 60 minutes, or choose a custom date and time. The
-environment stores the message and sends it even if you switch threads or close
-the client. It must remain running; after a restart it resumes overdue schedules.
-If the agent is still working at that time, the message steers the running turn
-or waits behind it, depending on what the provider supports. Scheduled messages
-appear above the composer with a countdown: send one now, change its time, or
-cancel it.
+thread. Choose **In…** for a wait ("in 1 h 30 min"), **At…** for a time of day,
+or **On reset** to send two minutes after the selected provider's usage window
+resets (offered when the provider reports one). The environment stores the
+message and sends it even if you switch threads or close the client. It must
+remain running; after a restart it resumes overdue schedules. If the agent is
+still working at that time, the message steers the running turn or waits behind
+it, depending on what the provider supports. Scheduled messages appear above the
+composer like queued ones, with a countdown: send one now, edit its text, change
+its time, or cancel it.
 
 ## Queue messages offline on mobile
 

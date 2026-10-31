@@ -1,7 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationManifest, ORCHESTRATION_V2_MIGRATION_ID, runMigrations } from "./Migrations.ts";
@@ -44,6 +47,9 @@ describe("runMigrations", () => {
         [77, "PeerLinks"],
         [78, "PeerLinkFence"],
         [79, "WaitingLinkRequestIndex"],
+        [80, "ActiveTurnItemIndexes"],
+        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [82, "SubagentDeliveryState"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);
@@ -152,3 +158,21 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });
+
+// The fork registers upstream files under its own ids and names, so compare the directory to the
+// imports in Migrations.ts rather than to the manifest's upstream numbering.
+it.effect("registers every migration file", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = path.join(import.meta.dirname, "Migrations");
+    const source = yield* fs.readFileString(path.join(import.meta.dirname, "Migrations.ts"));
+    const files = (yield* fs.readDirectory(dir)).flatMap((name) =>
+      /^\d+_\w+\.ts$/.test(name) ? [name] : [],
+    );
+    const imports = [...source.matchAll(/"\.\/Migrations\/(\d+_\w+\.ts)"/g)].flatMap((match) =>
+      match[1] === undefined ? [] : [match[1]],
+    );
+    assert.deepStrictEqual(files.toSorted(), imports.toSorted());
+  }).pipe(Effect.provide(NodeServices.layer)),
+);

@@ -421,7 +421,7 @@ export function validateProviderTemplateInputs(input: {
     const environmentFallback = input.payload.environment
       .filter((variable) => variable.input === definition.id)
       .map((variable) => existingByName.get(variable.name))
-      .find((value) => value !== undefined && value.length > 0);
+      .find((value): value is string => typeof value === "string" && value.length > 0);
     const value = supplied ?? environmentFallback ?? definition.default ?? "";
     if (definition.required && value.length === 0) {
       return Effect.fail(
@@ -1469,7 +1469,9 @@ const make = Effect.gen(function* () {
           : {
               control: "text",
               required: false,
-              ...(variable.value.length > 0 ? { default: variable.value } : {}),
+              ...(typeof variable.value === "string" && variable.value.length > 0
+                ? { default: variable.value }
+                : {}),
             }),
       };
     });

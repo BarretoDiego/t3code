@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  MessageId,
   ProviderInstanceId,
   RuntimeRequestId,
   ThreadId,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { isThreadSettledForWait, resolveThreadStatus, type ThreadStatusInput } from "./thread.ts";
+import {
+  conversationMessages,
+  isThreadSettledForWait,
+  resolveThreadStatus,
+  type ThreadStatusInput,
+} from "./thread.ts";
 
 const at = (iso: string) => DateTime.makeUnsafe(iso);
 const PREVIOUS_MESSAGE_AT = at("2026-10-02T11:30:00.000Z");
@@ -103,5 +110,59 @@ describe("isThreadSettledForWait", () => {
   it("returns when the run fails", () => {
     const thread = makeThread({ status: "failed", latestUserMessageAt: SENT_MESSAGE_AT });
     expect(isThreadSettledForWait(thread, PREVIOUS_MESSAGE_AT)).toBe(true);
+  });
+});
+
+describe("conversationMessages", () => {
+  const message = (
+    id: number,
+    role: OrchestrationV2ConversationMessage["role"],
+  ): OrchestrationV2ConversationMessage => ({
+    id: MessageId.make(`message-${id}`),
+    threadId: ThreadId.make("thread-1"),
+    runId: null,
+    nodeId: null,
+    createdBy: "user",
+    creationSource: "server",
+    role,
+    text: `Text ${id}`,
+    attachments: [],
+    streaming: false,
+    createdAt: SENT_MESSAGE_AT,
+    updatedAt: SENT_MESSAGE_AT,
+  });
+
+  it("counts messages independently of turns and excludes system messages", () => {
+    const projection = {
+      messages: [
+        message(0, "user"),
+        message(1, "assistant"),
+        message(2, "user"),
+        message(3, "assistant"),
+        message(4, "assistant"),
+        message(5, "system"),
+      ],
+      turnItems: [],
+    };
+    expect(conversationMessages(projection, 1).map((entry) => entry.id)).toEqual([
+      "message-2",
+      "message-3",
+      "message-4",
+    ]);
+    expect(conversationMessages(projection, 1, 2).map((entry) => entry.id)).toEqual([
+      "message-3",
+      "message-4",
+    ]);
+    expect(conversationMessages(projection, 1, 10)).toHaveLength(5);
+    expect(conversationMessages(projection, 1, 0)).toEqual([]);
+    expect(conversationMessages({ messages: [], turnItems: [] }, 1, 10)).toEqual([]);
+  });
+
+  it("handles a message count larger than one call can spread", () => {
+    const messages = Array.from({ length: 200_000 }, (_, index) => message(index, "assistant"));
+    const result = conversationMessages({ messages, turnItems: [] }, 1, 200_000);
+    expect(result).toHaveLength(200_000);
+    expect(result[0]?.id).toBe("message-0");
+    expect(result.at(-1)?.id).toBe("message-199999");
   });
 });

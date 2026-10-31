@@ -345,13 +345,22 @@ function summarizeThread(
 
 type ThreadSummary = ReturnType<typeof summarizeThread>;
 
-/** User and assistant messages from the `turns` most recent user messages on. */
-function conversationMessages(projection: OrchestrationV2ThreadProjection, turns: number) {
+/** Recent turns, or an explicit count of user and assistant messages. */
+export function conversationMessages(
+  projection: Pick<OrchestrationV2ThreadProjection, "messages" | "turnItems">,
+  turns: number,
+  count?: number,
+) {
   const visible = projection.messages.filter(
     (message) => message.role === "user" || message.role === "assistant",
   );
   const userIndexes = visible.flatMap((message, index) => (message.role === "user" ? [index] : []));
-  const start = userIndexes.length > turns ? (userIndexes[userIndexes.length - turns] ?? 0) : 0;
+  const start =
+    count !== undefined
+      ? Math.max(0, visible.length - Math.max(0, count))
+      : userIndexes.length > turns
+        ? (userIndexes[userIndexes.length - turns] ?? 0)
+        : 0;
   const promptContexts = new Map(
     projection.turnItems.flatMap((item) =>
       item.type === "user_message" && item.promptContext !== undefined
@@ -981,6 +990,10 @@ const showCommand = Command.make("show", {
     Flag.withDescription("How many recent turns of conversation to include."),
     Flag.withDefault(5),
   ),
+  messages: Flag.Int("messages").pipe(
+    Flag.withDescription("How many of the latest messages to print instead of counting turns."),
+    Flag.optional,
+  ),
   json: jsonFlag,
 }).pipe(
   Command.withDescription(
@@ -992,7 +1005,11 @@ const showCommand = Command.make("show", {
         const { thread, project } = yield* resolveThread(client, flags.thread);
         const detail = yield* loadThreadDetail(client, thread.id);
         const summary = summarizeThread(thread, project);
-        const messages = conversationMessages(detail, Math.max(1, flags.turns));
+        const messages = conversationMessages(
+          detail,
+          Math.max(1, flags.turns),
+          Option.getOrUndefined(flags.messages),
+        );
         const attention = threadAttention(detail);
         if (flags.json) return yield* printJson({ thread: summary, messages, ...attention });
         const lines = [

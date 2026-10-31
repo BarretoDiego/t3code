@@ -6,6 +6,7 @@ import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
   latestProviderTurnForAttempt,
   OrchestrationV2ProviderCapabilities,
+  OrchestrationV2MessageDispatchCommand,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
   OrchestrationV2RpcSchemas,
@@ -16,6 +17,7 @@ import {
   OrchestrationV2TurnItem,
   OrchestrationV2TurnItemJson,
 } from "./orchestrationV2.ts";
+import { ScheduledMessage } from "./scheduledMessages.ts";
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 
@@ -34,7 +36,52 @@ const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
   OrchestrationV2ProviderCapabilities,
 );
 
+const decodeDispatch = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input);
+const decodeScheduledMessage = Schema.decodeUnknownSync(ScheduledMessage);
+const encodeScheduledMessage = Schema.encodeSync(ScheduledMessage);
+const decodeDispatchCommand = Schema.decodeUnknownSync(OrchestrationV2MessageDispatchCommand);
+
 describe("orchestration V2 contracts", () => {
+  it.each([false, true])(
+    "preserves message metadata through dispatch and scheduled storage (fork fields: %s)",
+    (withForkFields) => {
+      const command = {
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "mobile",
+        commandId: "command-1",
+        threadId: "thread-1",
+        messageId: "message-1",
+        text: "Review this change",
+        attachments: [],
+        titleSeed: "Review",
+        deliveryIntent: "auto",
+        dispatchMode: { type: "start_immediately" },
+        ...(withForkFields
+          ? {
+              miniSkillIds: ["review"],
+              agentProfile: {
+                profileId: "reviewer",
+                profileName: "Reviewer",
+                instructions: "Check regressions",
+                promptTemplate: "{{profile_instructions}}\n{{user_message}}",
+              },
+            }
+          : {}),
+      };
+      const sendAt = "2026-10-31T12:00:00.000Z";
+      const scheduled = { command, sendAt, error: null };
+      const stored = decodeScheduledMessage(scheduled);
+      expect(encodeScheduledMessage(stored)).toEqual(scheduled);
+      expect(decodeDispatch({ ...command, sendAt })).toEqual({ ...stored.command, sendAt });
+      expect(decodeDispatchCommand(command)).toEqual(stored.command);
+      expect(stored.command).not.toHaveProperty("sendAt");
+      for (const invalid of [{ sendAt: null }, { miniSkillIds: [""] }, { agentProfile: null }]) {
+        expect(() => decodeDispatch({ ...command, ...invalid })).toThrow();
+      }
+    },
+  );
+
   it("decodes thread event types from a newer server as skippable items", () => {
     const decodeWireItems = Schema.decodeUnknownSync(
       Schema.toCodecJson(Schema.Array(OrchestrationV2RpcSchemas.subscribeThread.output)),
@@ -358,6 +405,9 @@ describe("orchestration V2 contracts", () => {
               index: 1,
               label: "Member",
               state: "completed" as const,
+              model: "claude-opus-5[1m]",
+              effort: "xhigh",
+              speed: "standard",
               prompt: preview,
               result: preview,
             },
@@ -379,10 +429,16 @@ describe("orchestration V2 contracts", () => {
         expect(decode(json).workflow?.agents[0]).toMatchObject({
           prompt: preview,
           result: preview,
+          model: "claude-opus-5[1m]",
+          effort: "xhigh",
+          speed: "standard",
         });
         expect(decode(incoming).workflow?.agents[0]).toMatchObject({
           prompt: preview,
           result: preview,
+          model: "claude-opus-5[1m]",
+          effort: "xhigh",
+          speed: "standard",
         });
       }
     },

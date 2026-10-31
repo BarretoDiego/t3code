@@ -377,9 +377,12 @@ export function createThreadHandoffService(
       typeof saved.config.homePath === "string"
         ? saved.config.homePath
         : undefined;
+    const configDirValue = saved?.environment?.find(
+      (entry) => entry.name === "CLAUDE_CONFIG_DIR",
+    )?.value;
+    // A secret-backed directory cannot be read here, so only literal values override the config.
     const home =
-      saved?.environment?.find((entry) => entry.name === "CLAUDE_CONFIG_DIR")?.value ||
-      configuredHome;
+      (typeof configDirValue === "string" ? configDirValue : undefined) || configuredHome;
     const driver = (ports.nativeDriver ?? getNativeHandoffDriver)({
       driver: source.driver,
       threadId: source.owner.threadId,

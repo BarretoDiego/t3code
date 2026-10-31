@@ -217,7 +217,8 @@ const layerProjectCliRuntime = RuntimeLayer.layerProjectService.pipe(
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 
-const PROJECT_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(1);
+const PROJECT_CLI_LIVE_SERVER_PROBE_TIMEOUT = Duration.seconds(1);
+const PROJECT_CLI_LIVE_SERVER_REQUEST_TIMEOUT = Duration.seconds(10);
 const PROJECT_CLI_REMOTE_SERVER_TIMEOUT = Duration.seconds(20);
 const withProjectCliSessionToken = <A, E, R>(
   environmentAuth: EnvironmentAuth.EnvironmentAuth["Service"],
@@ -324,17 +325,13 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
 });
 
 const fetchLiveOrchestrationSnapshot = Effect.fn("project.fetchLiveOrchestrationSnapshot")(
-  function* (
-    origin: string,
-    bearerToken: string,
-    _timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
-  ) {
+  function* (origin: string, bearerToken: string, _timeout?: Duration.Duration) {
     const client = yield* makeLiveServerClient(origin);
     return yield* client.projects.snapshot({
       headers: { authorization: `Bearer ${bearerToken}` },
     });
   },
-  (effect, _origin, _bearerToken, timeout = PROJECT_CLI_LIVE_SERVER_TIMEOUT) =>
+  (effect, _origin, _bearerToken, timeout = PROJECT_CLI_LIVE_SERVER_REQUEST_TIMEOUT) =>
     effect.pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest)),
 );
 
@@ -343,7 +340,7 @@ const dispatchLiveOrchestrationCommand = Effect.fn("project.dispatchLiveOrchestr
     origin: string,
     bearerToken: string,
     command: ProjectCliDispatchCommand,
-    _timeout: Duration.Duration = PROJECT_CLI_LIVE_SERVER_TIMEOUT,
+    _timeout?: Duration.Duration,
   ) {
     const client = yield* makeLiveServerClient(origin);
     yield* client.projects.mutate({
@@ -351,7 +348,7 @@ const dispatchLiveOrchestrationCommand = Effect.fn("project.dispatchLiveOrchestr
       payload: command,
     } as Parameters<typeof client.projects.mutate>[0]);
   },
-  (effect, _origin, _bearerToken, _command, timeout = PROJECT_CLI_LIVE_SERVER_TIMEOUT) =>
+  (effect, _origin, _bearerToken, _command, timeout = PROJECT_CLI_LIVE_SERVER_REQUEST_TIMEOUT) =>
     effect.pipe(Effect.timeout(timeout), Effect.mapError(projectCommandErrorFromLiveServerRequest)),
 );
 
@@ -371,7 +368,11 @@ const tryResolveLiveProjectExecutionMode = Effect.fn("tryResolveLiveProjectExecu
     }
 
     const attempt = withProjectCliSessionToken(environmentAuth, (token) =>
-      fetchLiveOrchestrationSnapshot(runtimeState.value.origin, token).pipe(
+      fetchLiveOrchestrationSnapshot(
+        runtimeState.value.origin,
+        token,
+        PROJECT_CLI_LIVE_SERVER_PROBE_TIMEOUT,
+      ).pipe(
         Effect.as({
           origin: runtimeState.value.origin,
         }),

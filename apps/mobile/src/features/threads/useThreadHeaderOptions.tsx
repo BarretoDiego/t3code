@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useWorkspaceSidebarHeaderItem } from "../layout/useWorkspaceSidebarHeaderItem";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { threadHeaderAppearance } from "./thread-header-appearance";
@@ -13,6 +12,8 @@ import {
   useThreadGitCenterHeaderItems,
   useThreadGitRightHeaderItems,
 } from "./ThreadGitControls";
+
+type NativeHeaderItems = ReadonlyArray<Record<string, unknown>>;
 
 export function useThreadHeaderOptions(props: {
   readonly title: string;
@@ -33,56 +34,50 @@ export function useThreadHeaderOptions(props: {
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
-  const splitLeftHeaderItems = useMemo(
-    () => [
-      ...(!usesDuoHeader
-        ? [
-            {
-              spacing: 18,
-              type: "spacing" as const,
-            },
-          ]
-        : []),
-      ...(props.onReturnToThread
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
-              icon: { name: "chevron.left", type: "sfSymbol" as const },
-              identifier: "thread-left-return",
-              onPress: props.onReturnToThread,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-      sidebarHeaderItem,
-      ...(!usesDuoHeader && !props.draft
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "New task",
-              icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-              identifier: "thread-left-new-task",
-              label: "New task",
-              onPress: startNewTask,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-    ],
-    [sidebarHeaderItem, props.onReturnToThread, props.draft, startNewTask, usesDuoHeader],
-  );
+  const splitLeftHeaderItems: NativeHeaderItems = [
+    ...(!usesDuoHeader
+      ? [
+          {
+            spacing: 18,
+            type: "spacing" as const,
+          },
+        ]
+      : []),
+    ...(props.onReturnToThread
+      ? [
+          withNativeGlassHeaderItem({
+            accessibilityLabel: "Return to chat",
+            icon: { name: "chevron.left", type: "sfSymbol" as const },
+            identifier: "thread-left-return",
+            onPress: props.onReturnToThread,
+            type: "button" as const,
+          }),
+        ]
+      : []),
+    sidebarHeaderItem,
+    ...(!usesDuoHeader && !props.draft
+      ? [
+          withNativeGlassHeaderItem({
+            accessibilityLabel: "New task",
+            icon: { name: "square.and.pencil", type: "sfSymbol" as const },
+            identifier: "thread-left-new-task",
+            label: "New task",
+            onPress: startNewTask,
+            type: "button" as const,
+          }),
+        ]
+      : []),
+  ];
   const canGoBack = navigation.canGoBack();
-  const compactHomeHeaderItems = useMemo(
-    () => [
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to threads list",
-        icon: { name: "list.bullet", type: "sfSymbol" as const },
-        identifier: "thread-left-home",
-        onPress: () => navigation.dispatch(StackActions.replace("Home")),
-        type: "button" as const,
-      }),
-    ],
-    [navigation],
-  );
+  const compactHomeHeaderItems: NativeHeaderItems = [
+    withNativeGlassHeaderItem({
+      accessibilityLabel: "Go to threads list",
+      icon: { name: "list.bullet", type: "sfSymbol" as const },
+      identifier: "thread-left-home",
+      onPress: () => navigation.dispatch(StackActions.replace("Home")),
+      type: "button" as const,
+    }),
+  ];
 
   const handoffItems = [
     ...(props.handoff

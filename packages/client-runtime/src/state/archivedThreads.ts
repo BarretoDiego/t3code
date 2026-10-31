@@ -1,15 +1,8 @@
-import {
-  EnvironmentId,
-  type OrchestrationV2ArchivedShellStreamItem,
-  type OrchestrationV2ArchivedShellSnapshot,
-} from "@t3tools/contracts";
+import { EnvironmentId, type OrchestrationV2ArchivedShellSnapshot } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
-import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import { AsyncResult, Atom } from "effect/reactivity";
-
-import { upsertById } from "./shellReducer.ts";
 
 export interface ArchivedSnapshotEntry {
   readonly environmentId: EnvironmentId;
@@ -57,8 +50,9 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
 
       for (const environmentId of parseArchivedThreadsEnvironmentKey(environmentKey)) {
         const result = get(options.getSnapshotAtom(environmentId));
-        const snapshot = Option.getOrNull(AsyncResult.value(result));
-        isLoading ||= result.waiting && snapshot === null;
+        isLoading ||= result.waiting;
+
+        const snapshot = AsyncResult.getOrElse(result, () => null);
         if (snapshot !== null) {
           snapshots.push({ environmentId, snapshot });
         }
@@ -71,18 +65,4 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
       return { snapshots, error, isLoading };
     }).pipe(Atom.withLabel(`${options.labelPrefix}:${environmentKey}`)),
   );
-}
-
-/** Folds the archive subscription; a fresh snapshot also replaces stale rows after reconnect. */
-export function applyArchivedShellStreamEvent(
-  snapshot: OrchestrationV2ArchivedShellSnapshot | null,
-  event: OrchestrationV2ArchivedShellStreamItem,
-): OrchestrationV2ArchivedShellSnapshot | null {
-  if (event.kind === "snapshot") return event.snapshot;
-  if (snapshot === null || event.sequence <= snapshot.snapshotSequence) return snapshot;
-  const threads =
-    event.kind === "thread.removed"
-      ? snapshot.threads.filter((thread) => thread.id !== event.threadId)
-      : upsertById(snapshot.threads, event.thread);
-  return { ...snapshot, snapshotSequence: event.sequence, threads };
 }

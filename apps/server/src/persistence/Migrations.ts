@@ -83,6 +83,9 @@ import Migration0076 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0077 from "./Migrations/070_PeerLinks.ts";
 import Migration0078 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0079 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0080 from "./Migrations/073_ActiveTurnItemIndexes.ts";
+import Migration0081 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
+import Migration0082 from "./Migrations/075_SubagentDeliveryState.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -178,6 +181,10 @@ const migrationEntries = [
   [77, "PeerLinks", Migration0077],
   [78, "PeerLinkFence", Migration0078],
   [79, "WaitingLinkRequestIndex", Migration0079],
+  // Upstream published these as 73–75; fork ids through 79 were already taken.
+  [80, "ActiveTurnItemIndexes", Migration0080],
+  [81, "ExcludeAttachmentPlaceholdersFromSearch", Migration0081],
+  [82, "SubagentDeliveryState", Migration0082],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

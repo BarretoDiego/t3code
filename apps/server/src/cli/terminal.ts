@@ -461,14 +461,18 @@ const restartCommand = terminalAction(
   "restart",
   "Restart a terminal's shell.",
   (client, target, terminalId) =>
-    client[WS_METHODS.terminalRestart]({
-      threadId: target.threadId,
-      terminalId,
-      cwd: target.cwd,
-      worktreePath: target.worktreePath,
-      cols: DEFAULT_COLS,
-      rows: DEFAULT_ROWS,
-    }),
+    client[WS_METHODS.terminalClose]({ threadId: target.threadId, terminalId }).pipe(
+      Effect.andThen(
+        client[WS_METHODS.terminalOpen]({
+          threadId: target.threadId,
+          terminalId,
+          cwd: target.cwd,
+          worktreePath: target.worktreePath,
+          cols: DEFAULT_COLS,
+          rows: DEFAULT_ROWS,
+        }),
+      ),
+    ),
   "Restarted",
 );
 
