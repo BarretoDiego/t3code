@@ -190,7 +190,6 @@ export function resolveThreadOutboxDeliveryAction(input: {
   readonly threadExists: boolean;
   readonly shellStatus: EnvironmentShellStatus;
   readonly environmentConnected: boolean;
-  readonly threadBusy: boolean;
   readonly rateLimitedUntil?: string | null;
   readonly nowMs?: number;
   /**
@@ -321,3 +320,8 @@ export function resolveThreadOutboxFailureAction(input: {
 export function isUsageLimitOutboxError(error: unknown): boolean {
   return isUsageLimitErrorMessage(errorMessage(error));
 }
+
+export type AcknowledgedThreadMessage = QueuedThreadMessage & {
+  /** The server sequence that committed the message; older servers do not report it. */
+  readonly sequence?: number;
+};

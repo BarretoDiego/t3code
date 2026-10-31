@@ -9,8 +9,6 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { HttpClient } from "effect/http";
 import { Atom } from "effect/reactivity";
-import type { OrchestrationV2ArchivedShellSnapshot } from "@t3tools/contracts";
-import { applyArchivedShellStreamEvent } from "./archivedThreads.ts";
 
 import { applyCommandOutputFrame, EMPTY_COMMAND_OUTPUT } from "./commandOutput.ts";
 
@@ -71,12 +69,6 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
         label: "environment-data:orchestration-v2:dispatch-command",
         tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
       }),
-      threadProjection: createEnvironmentRpcQueryAtomFamily(runtime, {
-        label: "environment-data:orchestration-v2:thread-projection",
-        tag: ORCHESTRATION_V2_WS_METHODS.getThreadProjection,
-        staleTimeMs: 0,
-        idleTtlMs: 0,
-      }),
       shell: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
         label: "environment-data:orchestration-v2:shell",
         tag: ORCHESTRATION_V2_WS_METHODS.subscribeShell,
@@ -115,6 +107,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:stop-workflow",
       tag: ORCHESTRATION_V2_WS_METHODS.stopWorkflow,
     }),
+    forceStopThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:force-stop-thread",
+      tag: ORCHESTRATION_V2_WS_METHODS.forceStopThread,
+    }),
     turnItem: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:turn-item",
       tag: ORCHESTRATION_V2_WS_METHODS.getTurnItem,
@@ -143,21 +139,6 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       tag: ORCHESTRATION_V2_WS_METHODS.searchThreads,
       staleTimeMs: 30_000,
       idleTtlMs: 60_000,
-    }),
-    archivedShell: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:orchestration:archived-shell",
-      tag: ORCHESTRATION_V2_WS_METHODS.subscribeArchivedShell,
-      idleTtlMs: 0,
-      transform: (stream) =>
-        stream.pipe(
-          Stream.scan(
-            (): OrchestrationV2ArchivedShellSnapshot | null => null,
-            applyArchivedShellStreamEvent,
-          ),
-          Stream.filter(
-            (snapshot): snapshot is OrchestrationV2ArchivedShellSnapshot => snapshot !== null,
-          ),
-        ),
     }),
     archivedShellSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-shell-snapshot",

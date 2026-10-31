@@ -113,7 +113,6 @@ const CORE_RPC_ORCHESTRATOR_RULES: ReadonlyMap<string, "open" | "thread.read" | 
     [V2.subscribeThread, "thread.read"],
     [V2.subscribeShell, "thread.read"],
     [V2.getArchivedShellSnapshot, "thread.read"],
-    [V2.subscribeArchivedShell, "thread.read"],
     [V2.searchThreads, "thread.read"],
     [V2.getTurnDiff, "thread.read"],
     [V2.getFullThreadDiff, "thread.read"],

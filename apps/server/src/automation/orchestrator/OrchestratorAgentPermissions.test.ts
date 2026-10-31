@@ -283,7 +283,7 @@ describe("orchestrator agent permissions", () => {
           const handlers = {
             [WS_METHODS.terminalOpen]: () => Effect.as(record("terminalOpen"), "opened"),
             [WS_METHODS.serverUpdateSettings]: () => Effect.as(record("updateSettings"), "updated"),
-            [WS_METHODS.subscribeTerminalEvents]: () =>
+            [WS_METHODS.subscribeTerminalMetadata]: () =>
               Stream.fromEffect(Effect.as(record("terminalEvents"), "event")),
             [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: () =>
               Effect.as(record("projection"), "projection"),
@@ -296,7 +296,7 @@ describe("orchestrator agent permissions", () => {
           const exits = [
             yield* Effect.exit(guarded[WS_METHODS.terminalOpen]()),
             yield* Effect.exit(guarded[WS_METHODS.serverUpdateSettings]()),
-            yield* Effect.exit(Stream.runCollect(guarded[WS_METHODS.subscribeTerminalEvents]())),
+            yield* Effect.exit(Stream.runCollect(guarded[WS_METHODS.subscribeTerminalMetadata]())),
             // Listed, but it needs thread.read, which this orchestrator lacks.
             yield* Effect.exit(guarded[ORCHESTRATION_V2_WS_METHODS.getThreadProjection]()),
           ];

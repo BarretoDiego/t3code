@@ -33,6 +33,9 @@ describe("V2 migration ledger", () => {
         [77, "PeerLinks"],
         [78, "PeerLinkFence"],
         [79, "WaitingLinkRequestIndex"],
+        [80, "ActiveTurnItemIndexes"],
+        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [82, "SubagentDeliveryState"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
@@ -58,6 +61,24 @@ describe("V2 migration ledger", () => {
         yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
         history,
       );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("upgrades a published fork ledger at 79 without changing its history", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 79 });
+      const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+      assert.deepStrictEqual(yield* runMigrations(), [
+        [80, "ActiveTurnItemIndexes"],
+        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [82, "SubagentDeliveryState"],
+      ]);
+      assert.deepStrictEqual(
+        yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
+        history,
+      );
+      assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });
