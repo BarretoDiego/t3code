@@ -395,7 +395,7 @@ export function QueuedRunsControl({
 type QueuedRunMessage = NonNullable<ThreadQueueProjection["messages"][number]>;
 
 /** A queued turn wears its sent form's attribution; only the dashed edge and controls differ. */
-function QueuedMessage(props: {
+export function QueuedMessage(props: {
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage | undefined;
   readonly previewText: string;
@@ -403,6 +403,8 @@ function QueuedMessage(props: {
   readonly isEditing: boolean;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** Replaces the message text while it is being edited in place. */
+  readonly editor?: ReactNode;
   readonly children: ReactNode;
 }) {
   const presentation = props.message ? resolveUserMessagePresentation(props.message) : null;
@@ -450,7 +452,7 @@ function QueuedMessage(props: {
               ? "border-guest/50 text-muted-foreground"
               : "border-muted-foreground/40 text-muted-foreground",
           fold === null && "px-3 py-2",
-          fold !== null && expanded && "w-full",
+          ((fold !== null && expanded) || props.editor !== undefined) && "w-full",
         )}
       >
         {fold ? (
@@ -490,9 +492,10 @@ function QueuedMessage(props: {
               </span>
             ) : null}
             {/* In full, like a sent turn: a queued message is read before it is sent. */}
-            {props.previewText ? (
-              <p className="whitespace-pre-wrap wrap-anywhere">{props.previewText}</p>
-            ) : null}
+            {props.editor ??
+              (props.previewText ? (
+                <p className="whitespace-pre-wrap wrap-anywhere">{props.previewText}</p>
+              ) : null)}
           </div>
         ) : null}
       </div>

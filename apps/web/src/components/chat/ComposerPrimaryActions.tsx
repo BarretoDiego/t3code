@@ -364,12 +364,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         shape="pill"
         {...pointerFocusProps}
         onClick={onScheduleSend}
-        disabled={
-          !hasSendableContent ||
-          isSendBusy ||
-          isSendDisabled ||
-          isEnvironmentUnavailable
-        }
+        disabled={!hasSendableContent || isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         aria-label="Schedule send"
         title="Schedule send"
       >

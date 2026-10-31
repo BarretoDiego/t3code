@@ -42,7 +42,6 @@ import {
   type TimelineEntry,
   type WorkLogEntry,
 } from "../../session-logic";
-import type { ScheduledMessage } from "@t3tools/contracts";
 import {
   type ChatMessage,
   type ProposedPlan,
@@ -623,13 +622,6 @@ type MessagesTimelineRowContent =
       id: string;
       createdAt: string;
       proposedPlan: ProposedPlan;
-    }
-  | {
-      /** A message the server holds until `sendAt`; renders after the live rows. */
-      kind: "scheduled-message";
-      id: string;
-      createdAt: string;
-      scheduledMessage: ScheduledMessage;
     }
   | {
       kind: "html-render";
@@ -2371,23 +2363,6 @@ export function deriveMessagesTimelineRowsWithState(
   };
 }
 
-/** Scheduled messages trail the conversation in send order, after any live rows. */
-export function appendScheduledMessageRows(
-  rows: MessagesTimelineRow[],
-  scheduledMessages: ReadonlyArray<ScheduledMessage>,
-): MessagesTimelineRow[] {
-  if (scheduledMessages.length === 0) return rows;
-  const scheduledRows = [...scheduledMessages]
-    .toSorted((left, right) => left.sendAt.localeCompare(right.sendAt))
-    .map((scheduledMessage): MessagesTimelineRow => ({
-      kind: "scheduled-message",
-      id: `scheduled-message:${scheduledMessage.command.commandId}`,
-      createdAt: scheduledMessage.sendAt,
-      scheduledMessage,
-    }));
-  return [...rows, ...scheduledRows];
-}
-
 export function computeStableMessagesTimelineRows(
   rows: MessagesTimelineRow[],
   previous: StableMessagesTimelineRowsState,
@@ -2463,8 +2438,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
 
-    case "scheduled-message":
-      return a.scheduledMessage === (b as typeof a).scheduledMessage;
     case "html-render": {
       // Tool updates rebuild entries; preserve frames for unchanged pages.
       const bh = b as typeof a;

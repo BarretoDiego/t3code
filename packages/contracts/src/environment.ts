@@ -85,6 +85,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequests: Schema.optionalKey(Schema.Boolean),
   pullRequestChecks: Schema.optionalKey(Schema.Boolean),
   scheduledMessages: Schema.optionalKey(Schema.Boolean),
+  /** Serves `edit` on a scheduled message; hide Edit where it is absent. */
+  scheduledMessageEdit: Schema.optionalKey(Schema.Boolean),
   /** Every protocol-2 server sends this; older mobile builds still read it. */
   inlineMessageContext: Schema.optionalKey(Schema.Boolean),
   requiredWorktreeBootstrap: Schema.optionalKey(Schema.Boolean),

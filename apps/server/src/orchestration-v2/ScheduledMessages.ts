@@ -173,6 +173,16 @@ export const makeScheduledMessages = Effect.fnUntraced(function* <
                 message: "Cancel the failed schedule and submit the message again.",
               });
             }
+            if (request.action === "edit") {
+              const text = request.text?.trim() ?? "";
+              if (text.length === 0 && entry.command.attachments.length === 0) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: "A scheduled message needs text or an attachment.",
+                });
+              }
+              yield* save({ ...entry, command: { ...entry.command, text } });
+              return;
+            }
             const sendAt =
               request.action === "send" ? DateTime.formatIso(yield* DateTime.now) : request.sendAt;
             if (!sendAt)

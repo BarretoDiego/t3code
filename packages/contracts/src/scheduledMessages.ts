@@ -16,7 +16,9 @@ export type ScheduledMessage = typeof ScheduledMessage.Type;
 export const ScheduledMessageUpdate = Schema.Struct({
   threadId: ThreadId,
   commandId: CommandId,
-  action: Schema.Literals(["cancel", "send", "reschedule"]),
+  action: Schema.Literals(["cancel", "send", "reschedule", "edit"]),
   sendAt: Schema.optional(IsoDateTime),
+  /** The replacement message text for `edit`; attachments stay as scheduled. */
+  text: Schema.optional(Schema.String),
 });
 export type ScheduledMessageUpdate = typeof ScheduledMessageUpdate.Type;

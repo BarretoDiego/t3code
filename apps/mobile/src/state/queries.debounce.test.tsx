@@ -87,7 +87,7 @@ it("keeps the original search deadline when rerenders have equivalent targets", 
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: target.environmentId,
-    input: { cwd: target.cwd, query: target.query, limit: 20 },
+    input: { cwd: target.cwd, query: target.query, limit: 20, includeRepositories: true },
   });
 });
 
@@ -110,7 +110,7 @@ it.each([
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: changed.environmentId,
-    input: { cwd: changed.cwd, query: changed.query, limit: 20 },
+    input: { cwd: changed.cwd, query: changed.query, limit: 20, includeRepositories: true },
   });
 });
 

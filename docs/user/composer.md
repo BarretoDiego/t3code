@@ -84,13 +84,15 @@ run after the thread continues. See
 when the window resets.
 
 To send later on purpose, use the clock button in the composer of a started
-thread. Pick 5, 15, 30, or 60 minutes, or choose a custom date and time. The
-environment stores the message and sends it even if you switch threads or close
-the client. It must remain running; after a restart it resumes overdue schedules.
-If the agent is still working at that time, the message steers the running turn
-or waits behind it, depending on what the provider supports. Scheduled messages
-appear above the composer with a countdown: send one now, change its time, or
-cancel it.
+thread. Choose **In…** for a wait ("in 1 h 30 min"), **At…** for a time of day,
+or **On reset** to send two minutes after the selected provider's usage window
+resets (offered when the provider reports one). The environment stores the
+message and sends it even if you switch threads or close the client. It must
+remain running; after a restart it resumes overdue schedules. If the agent is
+still working at that time, the message steers the running turn or waits behind
+it, depending on what the provider supports. Scheduled messages appear above the
+composer like queued ones, with a countdown: send one now, edit its text, change
+its time, or cancel it.
 
 ## Queue messages offline on mobile
 

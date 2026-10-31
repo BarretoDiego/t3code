@@ -119,6 +119,30 @@ it.effect("honors rescheduling and cancellation across clients", () =>
   }).pipe(Effect.provide(database)),
 );
 
+it.effect("sends the edited text and refuses an edit that empties the message", () =>
+  Effect.gen(function* () {
+    yield* migration;
+    const received: Array<OrchestrationV2MessageDispatchCommand> = [];
+    const scheduler = yield* makeScheduledMessages({
+      threadState: ready,
+      dispatch: (value) => Effect.sync(() => received.push(value)),
+    });
+    const scheduled = command();
+    yield* scheduler.schedule(scheduled);
+    yield* scheduler.update({ ...scheduled, action: "edit", text: "  Run the full suite  " });
+    const emptied = yield* Effect.flip(
+      scheduler.update({ ...scheduled, action: "edit", text: "   " }),
+    );
+    assert.instanceOf(emptied, OrchestrationDispatchCommandError);
+    yield* TestClock.adjust("1 minute");
+    yield* scheduler.runDue;
+    assert.deepEqual(
+      received.map((value) => value.text),
+      ["Run the full suite"],
+    );
+  }).pipe(Effect.provide(database)),
+);
+
 it.effect("waits for a busy thread and wakes on its orchestration events without a client", () =>
   Effect.gen(function* () {
     yield* migration;

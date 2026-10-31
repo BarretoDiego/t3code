@@ -394,7 +394,14 @@ export function usePaginatedBranches(target: VcsRefTarget) {
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   const query = normalizeComposerPathSearchQuery(target.query);
-  const normalizedTarget = { environmentId: target.environmentId, cwd: target.cwd, query };
+  // An empty query still searches, so `@` alone lists the project's repositories; only a missing
+  // query (no mention being typed) does not. It debounces with the rest so the search waits too.
+  const normalizedTarget = {
+    environmentId: target.environmentId,
+    cwd: target.cwd,
+    query,
+    searching: target.query !== null,
+  };
   const debouncedTarget = useDebouncedValue(normalizedTarget, COMPOSER_PATH_SEARCH_DEBOUNCE_MS);
   const fileAccessSession = useEnvironmentQuery(
     debouncedTarget.environmentId === null
@@ -410,7 +417,9 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   });
   const { canReadFiles } = fileAccess;
   const searchTarget =
-    debouncedTarget.environmentId !== null && debouncedTarget.cwd !== null && target.query !== null
+    debouncedTarget.environmentId !== null &&
+    debouncedTarget.cwd !== null &&
+    debouncedTarget.searching
       ? {
           environmentId: debouncedTarget.environmentId,
           input: {

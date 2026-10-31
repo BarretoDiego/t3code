@@ -1,6 +1,5 @@
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type {
-  CommandId,
   ProviderApprovalDecision,
   RuntimeRequestId,
   WorktreeSetupSnapshot,
@@ -98,9 +97,6 @@ export interface TimelineRowSharedState {
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
-  onSendScheduledMessageNow: (commandId: CommandId) => void;
-  onRescheduleScheduledMessage: (commandId: CommandId) => void;
-  onCancelScheduledMessage: (commandId: CommandId) => void;
 }
 
 export interface TimelineRowActivityState {

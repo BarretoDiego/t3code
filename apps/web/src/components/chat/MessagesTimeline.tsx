@@ -1,10 +1,3 @@
-import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ArrowUpIcon, CalendarClockIcon, ClockIcon, XIcon } from "lucide-react";
-import type { CommandId, ScheduledMessage } from "@t3tools/contracts";
-import { formatRateLimitResetCountdown } from "@t3tools/shared/providerRateLimits";
-import { appendScheduledMessageRows } from "./MessagesTimeline.logic";
-import { UserMessageBody } from "./TimelineUserMessageRow";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -37,8 +30,6 @@ const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
 const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds"] = [];
 
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
-const EMPTY_SCHEDULED_MESSAGES: ReadonlyArray<ScheduledMessage> = [];
-const NOOP_SCHEDULED_MESSAGE_ACTION = (_commandId: CommandId) => {};
 
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
@@ -307,15 +298,6 @@ interface MessagesTimelineProps {
   emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
-  /**
-   * Messages the server holds until their `sendAt`. They render as dashed
-   * bubbles with a live countdown after the live rows.
-   */
-  scheduledMessages?: ReadonlyArray<ScheduledMessage>;
-  onSendScheduledMessageNow?: (commandId: CommandId) => void;
-  /** Opens the schedule dialog to pick a new send time. */
-  onRescheduleScheduledMessage?: (commandId: CommandId) => void;
-  onCancelScheduledMessage?: (commandId: CommandId) => void;
   findExpanded?: boolean;
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
@@ -410,10 +392,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
-  scheduledMessages = EMPTY_SCHEDULED_MESSAGES,
-  onSendScheduledMessageNow = NOOP_SCHEDULED_MESSAGE_ACTION,
-  onRescheduleScheduledMessage = NOOP_SCHEDULED_MESSAGE_ACTION,
-  onCancelScheduledMessage = NOOP_SCHEDULED_MESSAGE_ACTION,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
@@ -704,8 +682,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
 
-  const scheduledRows = appendScheduledMessageRows(rawRows, scheduledMessages);
-  const rows = useStableRows(scheduledRows, listIdentityKey);
+  const rows = useStableRows(rawRows, listIdentityKey);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -1076,9 +1053,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
-    onSendScheduledMessageNow,
-    onRescheduleScheduledMessage,
-    onCancelScheduledMessage,
   };
   const compactionAwaitingRow =
     isCompacting &&
@@ -1531,7 +1505,6 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
       {row.kind === "event" ? <V2EventTimelineRow row={row} /> : null}
-      {row.kind === "scheduled-message" ? <ScheduledMessageTimelineRow row={row} /> : null}
     </div>
   );
 });
@@ -1555,131 +1528,6 @@ function WorktreeSetupTimelineRow({
       }
       onOpenTerminal={onOpenTerminal}
     />
-  );
-}
-
-/**
- * A message the server holds until its `sendAt`: a dashed user bubble with a
- * live countdown and icon actions (reschedule, send now, cancel) inside it.
- */
-function ScheduledMessageTimelineRow({
-  row,
-}: {
-  row: Extract<TimelineRow, { kind: "scheduled-message" }>;
-}) {
-  const ctx = use(TimelineRowCtx);
-  const { scheduledMessage } = row;
-  const { command } = scheduledMessage;
-  const attachmentCount = command.attachments.length;
-  const text = command.text.trim();
-  // Live countdown to the scheduled instant. Ticks once per second like the
-  // mobile Limits screen; unmounts with the bubble so no timer outlives it.
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const waitUntil = scheduledMessage.sendAt;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives the scheduled bubble's one-second countdown clock
-  useEffect(() => {
-    const syncNow = () => setNowMs(Date.now());
-    const timer = window.setInterval(syncNow, 1_000);
-    // Browsers throttle intervals in background tabs. The server owns sending,
-    // but the label catches up immediately when this timeline becomes visible.
-    document.addEventListener("visibilitychange", syncNow);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", syncNow);
-    };
-  }, []);
-  const waitCountdown = formatRateLimitResetCountdown(waitUntil, nowMs) ?? null;
-  const statusLabel = scheduledMessage.error
-    ? `Could not send: ${scheduledMessage.error}`
-    : waitCountdown
-      ? `Scheduled in ${waitCountdown}. Sends even with this window closed.`
-      : "Scheduled. Waiting for the current turn to finish.";
-  return (
-    <div className="flex flex-col items-end" data-scheduled-message-id={command.commandId}>
-      <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
-        {text.length > 0 ? (
-          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
-        ) : null}
-        {attachmentCount > 0 ? (
-          <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
-            {`${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`}
-          </div>
-        ) : null}
-        <div
-          className="mt-2 flex items-center gap-4 text-secondary-label text-xs"
-          data-scroll-anchor-ignore
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={<span className="inline-flex h-6 items-center gap-1" />}
-              aria-label={`Scheduled. ${statusLabel}.`}
-            >
-              <ClockIcon className="size-3.5" aria-hidden />
-              {scheduledMessage.error
-                ? "Not sent"
-                : waitCountdown
-                  ? `Sends in ${waitCountdown}`
-                  : "Scheduled"}
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
-          </Tooltip>
-          <div className="ml-auto flex items-center gap-0.5">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => ctx.onRescheduleScheduledMessage(command.commandId)}
-                    aria-label="Change scheduled time"
-                  />
-                }
-              >
-                <CalendarClockIcon className="size-3.5" aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom">Change scheduled time</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-micro"
-                    variant="ghost-muted"
-                    className="size-6"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => ctx.onSendScheduledMessageNow(command.commandId)}
-                    aria-label="Send now"
-                  />
-                }
-              >
-                <ArrowUpIcon className="size-3.5" aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom">Send now</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => ctx.onCancelScheduledMessage(command.commandId)}
-                    aria-label="Cancel scheduled message"
-                  />
-                }
-              >
-                <XIcon className="size-3.5" aria-hidden />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom">Cancel scheduled message</TooltipPopup>
-            </Tooltip>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

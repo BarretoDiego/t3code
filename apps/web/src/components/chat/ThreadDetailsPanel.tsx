@@ -21,6 +21,7 @@ import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
+import { ThreadOrchestratorPanel } from "./ThreadOrchestratorPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
@@ -197,6 +198,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         displayMode="panel"
                         scripts={props.activeProjectScripts}
                         fileScripts={fileScripts}
+                        {...(props.gitCwd
+                          ? { workspace: { environmentId: props.environmentId, cwd: props.gitCwd } }
+                          : {})}
                         preferredScriptId={props.preferredScriptId}
                         onRunScript={props.onRunProjectScript}
                         onAddScript={props.onAddProjectScript}
@@ -232,6 +236,14 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     ) : null}
                   </div>
                 </ThreadDetailsSection>
+              ) : null}
+
+              {!props.draftId ? (
+                <ThreadOrchestratorPanel
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                  density={density}
+                />
               ) : null}
 
               {density === "full" && !props.draftId && visible.servers ? (

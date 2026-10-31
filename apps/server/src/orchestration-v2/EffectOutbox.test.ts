@@ -41,9 +41,7 @@ it.effect(
         ],
       );
       assert.strictEqual(Option.getOrThrow(yield* outbox.get("checkpoint")).attemptCount, 0);
-      const claimed = Option.getOrThrow(
-        yield* outbox.claimNext({ workerId: "worker" }),
-      );
+      const claimed = Option.getOrThrow(yield* outbox.claimNext({ workerId: "worker" }));
       assert.strictEqual(claimed.id, "checkpoint");
       assert.strictEqual((yield* outbox.pendingWork).effects[0]?.status, "running");
       yield* outbox.retry({

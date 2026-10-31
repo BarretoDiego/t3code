@@ -36,6 +36,11 @@ const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
   OrchestrationV2ProviderCapabilities,
 );
 
+const decodeDispatch = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input);
+const decodeScheduledMessage = Schema.decodeUnknownSync(ScheduledMessage);
+const encodeScheduledMessage = Schema.encodeSync(ScheduledMessage);
+const decodeDispatchCommand = Schema.decodeUnknownSync(OrchestrationV2MessageDispatchCommand);
+
 describe("orchestration V2 contracts", () => {
   it.each([false, true])(
     "preserves message metadata through dispatch and scheduled storage (fork fields: %s)",
@@ -64,15 +69,12 @@ describe("orchestration V2 contracts", () => {
             }
           : {}),
       };
-      const decodeDispatch = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input);
       const sendAt = "2026-10-31T12:00:00.000Z";
       const scheduled = { command, sendAt, error: null };
-      const stored = Schema.decodeUnknownSync(ScheduledMessage)(scheduled);
-      expect(Schema.encodeSync(ScheduledMessage)(stored)).toEqual(scheduled);
+      const stored = decodeScheduledMessage(scheduled);
+      expect(encodeScheduledMessage(stored)).toEqual(scheduled);
       expect(decodeDispatch({ ...command, sendAt })).toEqual({ ...stored.command, sendAt });
-      expect(Schema.decodeUnknownSync(OrchestrationV2MessageDispatchCommand)(command)).toEqual(
-        stored.command,
-      );
+      expect(decodeDispatchCommand(command)).toEqual(stored.command);
       expect(stored.command).not.toHaveProperty("sendAt");
       for (const invalid of [{ sendAt: null }, { miniSkillIds: [""] }, { agentProfile: null }]) {
         expect(() => decodeDispatch({ ...command, ...invalid })).toThrow();

@@ -305,6 +305,7 @@ import {
 import { QueuedRunsControl, type QueuedRunsControlHandle } from "./chat/QueuedRunsControl";
 import { requestScheduleSend } from "./chat/ScheduleSendDialog";
 import { ScheduledMessagesControl } from "./chat/ScheduledMessagesControl";
+import { scheduleWindowOptions } from "./chat/scheduleSend.logic";
 import { useThreadLinkedPullRequest } from "./pullRequest/useThreadLinkedPullRequest";
 import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
@@ -2919,7 +2920,13 @@ export default function ChatView(props: ChatViewProps) {
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx?.providerAvailable || sendCtx.multipleModelSelections !== null) return;
-    const choice = await requestScheduleSend();
+    const sendProvider = providerStatuses.find(
+      (status) => status.instanceId === sendCtx.selectedModelSelection.instanceId,
+    );
+    const choice = await requestScheduleSend({
+      // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
+      windows: scheduleWindowOptions(sendProvider?.rateLimits?.windows, Date.now()),
+    });
     if (!choice?.sendAt || currentRouteThreadKeyRef.current !== routeThreadKey) return;
     await onSend(undefined, "auto", "foreground", undefined, { sendAt: choice.sendAt });
   };
@@ -2969,6 +2976,13 @@ export default function ChatView(props: ChatViewProps) {
           <ScheduledMessagesControl
             environmentId={activeThread.environmentId}
             threadId={activeThread.id}
+            windows={scheduleWindowOptions(
+              activeProviderStatus?.rateLimits?.windows,
+              Date.parse(nowMinute),
+            )}
+            canEdit={serverConfig?.environment.capabilities.scheduledMessageEdit === true}
+            timestampFormat={timestampFormat}
+            onOpenThread={onOpenRelatedThreadStable}
           />
         ) : null}
         <QueuedRunsControl

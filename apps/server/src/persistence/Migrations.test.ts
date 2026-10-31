@@ -47,6 +47,9 @@ describe("runMigrations", () => {
         [77, "PeerLinks"],
         [78, "PeerLinkFence"],
         [79, "WaitingLinkRequestIndex"],
+        [80, "ActiveTurnItemIndexes"],
+        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [82, "SubagentDeliveryState"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);
@@ -156,19 +159,20 @@ describe("runMigrations", () => {
   );
 });
 
-// The npm launcher reads the highest migration id from these file names.
+// The fork registers upstream files under its own ids and names, so compare the directory to the
+// imports in Migrations.ts rather than to the manifest's upstream numbering.
 it.effect("registers every migration file", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const dir = path.join(import.meta.dirname, "Migrations");
-    const files = (yield* fs.readDirectory(dir)).flatMap((name) => {
-      const match = /^(\d+)_(\w+)\.ts$/.exec(name);
-      return match ? [[Number(match[1]), match[2]] as const] : [];
-    });
-    assert.deepStrictEqual(
-      files.toSorted(([a], [b]) => a - b),
-      migrationManifest,
+    const source = yield* fs.readFileString(path.join(import.meta.dirname, "Migrations.ts"));
+    const files = (yield* fs.readDirectory(dir)).flatMap((name) =>
+      /^\d+_\w+\.ts$/.test(name) ? [name] : [],
     );
+    const imports = [...source.matchAll(/"\.\/Migrations\/(\d+_\w+\.ts)"/g)].flatMap((match) =>
+      match[1] === undefined ? [] : [match[1]],
+    );
+    assert.deepStrictEqual(files.toSorted(), imports.toSorted());
   }).pipe(Effect.provide(NodeServices.layer)),
 );
