@@ -22,6 +22,11 @@ vi.mock("../hooks/useSettings", async (original) => ({
   ...(await original<typeof import("../hooks/useSettings")>()),
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
 }));
+// The fork keeps SyncProjectDialog for cross-environment project sync. It mounts its own
+// settings/session hooks that this add-project composition test doesn't exercise, so stub it out.
+vi.mock("./SyncProjectDialog", () => ({
+  SyncProjectDialog: () => null,
+}));
 vi.mock("../hooks/useScratchProject", () => ({
   useScratchProject: () => ({ scratchEnvironmentId: () => null }),
 }));

@@ -23,6 +23,10 @@ vi.mock(import("../../state/environments"), () => ({
   useEnvironment: (() => null) as never,
   useEnvironmentProviders: (() => new Map()) as never,
 }));
+vi.mock(import("../../hooks/useSettings"), () => ({
+  useClientSettings: ((select: (settings: { confirmBeforeInterrupt: boolean }) => unknown) =>
+    select({ confirmBeforeInterrupt: false })) as never,
+}));
 vi.mock(import("../../lib/archivedThreadsState"), () => ({
   useArchivedThreadSnapshots: (() => ({ snapshots: [] })) as never,
 }));
