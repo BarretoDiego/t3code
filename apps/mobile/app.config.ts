@@ -490,14 +490,13 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    ...(!isForkBuild
-      ? {
-          eas: {
-            projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-            observe: { endpointUrl: observeEndpointUrl },
-          },
-        }
-      : {}),
+    eas: {
+      // expo-observe throws at startup without a project ID, leaving forks stuck on the splash.
+      projectId: isForkBuild
+        ? "00000000-0000-0000-0000-000000000000"
+        : "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+      observe: { endpointUrl: observeEndpointUrl },
+    },
   },
   ...(!isForkBuild ? { owner: "pingdotgg" } : {}),
   experiments: {

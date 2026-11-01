@@ -123,6 +123,7 @@ jobs:
           PY
           unzip -l "$apk" > "$RUNNER_TEMP/apk-files.txt"
           grep -q 'assets/index.android.bundle' "$RUNNER_TEMP/apk-files.txt"
+          unzip -p "$apk" assets/app.config | python3 -c 'import json, sys; assert json.load(sys.stdin)["extra"]["eas"]["projectId"]'
           mkdir -p release-assets
           cp "$apk" "release-assets/T3-Code-Fork-${T3CODE_MOBILE_VERSION}.apk"
           cd release-assets
