@@ -86,6 +86,7 @@ import Migration0079 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 import Migration0080 from "./Migrations/073_ActiveTurnItemIndexes.ts";
 import Migration0081 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
 import Migration0082 from "./Migrations/075_SubagentDeliveryState.ts";
+import Migration0083 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -185,6 +186,8 @@ const migrationEntries = [
   [80, "ActiveTurnItemIndexes", Migration0080],
   [81, "ExcludeAttachmentPlaceholdersFromSearch", Migration0081],
   [82, "SubagentDeliveryState", Migration0082],
+  // Upstream published this as 76; fork ids through 82 were already taken.
+  [83, "ProjectionProjectsPinArchive", Migration0083],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

@@ -953,6 +953,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }
       : baseStatusLabel;
   const recede = shouldRecedeThreadRow({ status, selected });
+  const isRegeneratingTitle = thread.titleRegeneration != null;
+  const accessibilityTitle =
+    thread.lineage.relationshipToParent === "subagent" ? `Subagent: ${thread.title}` : thread.title;
+  const rowAccessibilityLabel = `${accessibilityTitle}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
@@ -1097,7 +1101,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       { id: "rename", title: "Rename", image: "square.and.pencil" },
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
-        isRegenerating: thread.titleRegeneration != null,
+        isRegenerating: isRegeneratingTitle,
       }),
       ...(canTurnIntoProject
         ? [
@@ -1110,12 +1114,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           ]
         : []),
     ],
-    [
-      canTurnIntoProject,
-      props.titleRegenerationSupported,
-      thread.runtime,
-      thread.titleRegeneration,
-    ],
+    [canTurnIntoProject, props.titleRegenerationSupported, thread.runtime, isRegeneratingTitle],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -1307,8 +1306,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   // Null for every ordinary thread; reads a derived atom, not a subscription.
   const orchestratorMarker = useOrchestratorThreadMarker(thread.environmentId, thread.id);
-  const accessibilityTitle =
-    thread.lineage.relationshipToParent === "subagent" ? `Subagent: ${thread.title}` : thread.title;
   const nestedToggle =
     props.nested != null && props.onToggleNested !== undefined ? (
       <ThreadListV2NestedToggle
@@ -1352,6 +1349,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             selected
               ? selectedThreadRowColors.foregroundClassName
               : rowAppearance.foregroundClassName,
+            isRegeneratingTitle && "opacity-55",
           )}
           numberOfLines={2}
         >
@@ -1575,11 +1573,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         className={rowAppearance.className}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages
-            ? `${accessibilityTitle}, messages queued to send`
-            : accessibilityTitle
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityActions={rowAccessibilityActions}
@@ -1610,11 +1604,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionClassName={rowAppearance.interactionClassName}
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages
-            ? `${accessibilityTitle}, messages queued to send`
-            : accessibilityTitle
-        }
+        accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
@@ -1653,6 +1643,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 selected
                   ? selectedThreadRowColors.foregroundClassName
                   : rowAppearance.mutedForegroundClassName,
+                isRegeneratingTitle && "opacity-55",
               )}
               numberOfLines={1}
             >

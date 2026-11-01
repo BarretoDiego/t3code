@@ -15,6 +15,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
@@ -212,7 +213,7 @@ const openSocket = Effect.fn("openSocket")(function* <Client>(
   const protocol = yield* Layer.build(
     RpcClient.layerProtocolSocket({ retryTransientErrors: false }).pipe(
       Layer.provide(
-        Socket.layerWebSocket(webSocketUrl(origin, ticket)).pipe(
+        Socket.layerWebSocket(webSocketUrl(origin, Redacted.value(ticket))).pipe(
           Layer.provide(NodeSocket.layerWebSocketConstructorWS),
         ),
       ),

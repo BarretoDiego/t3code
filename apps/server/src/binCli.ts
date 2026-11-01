@@ -16,7 +16,6 @@ import { authCommand } from "./cli/auth.ts";
 import { environmentCommand } from "./cli/environment.ts";
 import { appCommand } from "./cli/app.ts";
 import { browserCommand } from "./cli/browser.ts";
-import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { peerCommand } from "./cli/peer.ts";
 import { nodeCommand } from "./cli/node.ts";
@@ -49,6 +48,7 @@ import { taskCommand } from "./cli/task.ts";
 import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
+import { connectCommand, setupStatusCommand, upCommand } from "./cli/up.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -78,7 +78,9 @@ const connectUnavailableCommand = Command.make("connect", {
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
   const command = Command.make("t3", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the T3 Code server."),
+    Command.withDescription(
+      "Run T3 Code in this terminal and open it in your browser. To use it from your other devices, run `t3 up`.",
+    ),
     Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
       Command.make("help").pipe(
@@ -98,6 +100,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       browserCommand,
       projectCommand,
       threadCommand,
+      upCommand,
       taskCommand,
       terminalCommand,
       scheduleCommand,
@@ -107,7 +110,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       jobCommand,
       eventsCommand,
       hooksCommand,
-      statusCommand,
+      statusCommand.pipe(Command.withSubcommands([setupStatusCommand])),
       rpcCommand,
       skillCommand,
       profileCommand,

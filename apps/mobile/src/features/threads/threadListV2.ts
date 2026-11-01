@@ -38,7 +38,7 @@ import {
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
@@ -277,17 +277,19 @@ export function getThreadListV2OrderedSection(input: {
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): EnvironmentThreadShell[] {
+  const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const isParked = (thread: EnvironmentThreadShell) =>
     ((input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
       thread.settledOverride === "settled" &&
-      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true) ||
+      queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true) ||
     ((input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
       effectiveSnoozed(thread, { now: input.now }));
   // Nested subagents are placed by their parent, so only top-level rows have
   // a slot to move.
   const threads = buildThreadNesting({
     threads: input.threads,
-    isListed: (thread) => thread.archivedAt === null,
+    // Subagents stay in the forest so they nest under their parent; side chats never list.
+    isListed: (thread) => thread.archivedAt === null && thread.lineage.sideChat !== true,
   })
     .roots.filter(
       ({ thread, summary }) =>
@@ -868,8 +870,10 @@ export function buildThreadListV2Items(input: {
   const settled: EnvironmentThreadShell[] = [];
   const snoozed: EnvironmentThreadShell[] = [];
   let nextSnoozeWakeAt: string | null = null;
+  const queuedThreadKeys = input.queuedThreadKeys?.size ? input.queuedThreadKeys : undefined;
   const isListed = (thread: EnvironmentThreadShell) =>
     thread.archivedAt === null &&
+    thread.lineage.sideChat !== true &&
     (input.environmentId === null || thread.environmentId === input.environmentId) &&
     (projectKeys === null || projectKeys.has(`${thread.environmentId}:${thread.projectId}`));
   const listedThreads = input.threads.filter(isListed);
@@ -894,7 +898,7 @@ export function buildThreadListV2Items(input: {
   const isSettled = (thread: EnvironmentThreadShell) =>
     (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
     thread.settledOverride === "settled" &&
-    input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true;
+    queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true;
   // Subagent threads ride under the thread that spawned them (the same forest
   // the web sidebar builds), so only its top-level rows are sectioned. Search
   // results stay flat, subagents included, in rank order.

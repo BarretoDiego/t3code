@@ -45,6 +45,7 @@ import type {
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
+  latestProviderVersionCacheKeys,
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import type { ProviderSnapshotSource } from "./builtInProviderCatalog.ts";
 
@@ -782,9 +783,11 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             yield* instance.invalidateCaches ?? Effect.void;
             const maintenance = yield* instance.snapshot.resolveMaintenance({ fresh: true });
-            if (maintenance.packageName) {
-              yield* latestVersions.invalidate(maintenance.packageName);
-            }
+            yield* Effect.forEach(
+              latestProviderVersionCacheKeys(maintenance),
+              latestVersions.invalidate,
+              { discard: true },
+            );
           }).pipe(Effect.catchCause((cause) => recoverInstanceFailure(instance.instanceId, cause))),
         { concurrency: "unbounded", discard: true },
       );

@@ -19,7 +19,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   showInteractionModeToggle: boolean;
-  traitsMenuContent?: ReactNode;
   miniSkillsMenuContent?: ReactNode;
   agentProfileMenuContent?: ReactNode;
   showPermissions?: boolean;
@@ -47,14 +46,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             size={size}
             className="shrink-0"
             aria-label="More composer controls"
-            data-composer-shortcut={
-              [
-                props.showPermissions !== false ? "composer.mode" : null,
-                props.traitsMenuContent ? "composer.effort" : null,
-              ]
-                .filter(Boolean)
-                .join(" ") || undefined
-            }
+            data-composer-shortcut={props.showPermissions !== false ? "composer.mode" : undefined}
           />
         }
       >
@@ -69,14 +61,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <>
             {props.agentProfileMenuContent}
             <MenuDivider />
-          </>
-        ) : null}
-        {props.traitsMenuContent ? (
-          <>
-            {props.traitsMenuContent}
-            {props.showInteractionModeToggle || props.showPermissions !== false ? (
-              <MenuDivider />
-            ) : null}
           </>
         ) : null}
         {props.miniSkillsMenuContent ? (

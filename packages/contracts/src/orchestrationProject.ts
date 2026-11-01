@@ -18,6 +18,9 @@ export const OrchestrationProjectShell = Schema.Struct({
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
   linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   scripts: Schema.Array(ProjectScript),
+  // Pinned projects lead project pickers; archived ones leave them. Optional so older servers decode.
+  pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

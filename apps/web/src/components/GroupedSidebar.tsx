@@ -135,6 +135,9 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
+import { useProjectPin } from "../hooks/useProjectGroupUpdate";
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings, updateClientSettings } from "../hooks/useSettings";
@@ -226,6 +229,7 @@ import {
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
+import { isProjectPinShortcut, ProjectPinButton } from "./ProjectPinButton";
 import {
   Combobox,
   ComboboxEmpty,
@@ -1699,17 +1703,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <TooltipPopup side="top">Un-settle thread</TooltipPopup>
                 </Tooltip>
               ) : (
-                <button
-                  type="button"
-                  aria-label="Settle thread"
-                  onClick={handleSettleClick}
-                  className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
-                  )}
-                >
-                  <CheckIcon className="size-3" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Settle thread"
+                        onClick={handleSettleClick}
+                        className={cn(
+                          "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                          isWoke && "group-hover/sidebar-row:static",
+                        )}
+                      />
+                    }
+                  >
+                    <CheckIcon className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">Settle thread</TooltipPopup>
+                </Tooltip>
               )}
             </span>
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -2389,24 +2400,37 @@ export default function Sidebar() {
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const highlightedProjectScopeKeyRef = useRef<string | null>(null);
   // {value, label} items let Base UI drive the combobox selection contract
   // while the popup search filters the same collection.
-  const projectScopeItems = (() => [
+  const lookupProjectScopeItems = (() => [
     { value: "all", label: "All projects" },
-    ...projectGroups.map((project) => ({
+    ...pickableProjectGroups(projectGroups).map((project) => ({
       value: project.projectKey,
       label: project.displayName,
     })),
   ])();
   const projectGroupByScopeKey = (() =>
     new Map(projectGroups.map((project) => [project.projectKey, project] as const)))();
-  const selectedProjectScopeItem = (() =>
-    projectScopeItems.find((item) => item.value === (projectScopeKey ?? "all")) ??
-    projectScopeItems[0]!)();
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
     reduceSidebarProjectScopeMenuState,
     { open: false, query: "" },
   );
+  // Pinning from a row keeps rows in place while the menu is open.
+  const projectScopeItems = useOrderWhileOpen(
+    lookupProjectScopeItems,
+    (item) => item.value,
+    projectScopeMenuState.open,
+  );
+  const selectedProjectScopeItem = (() =>
+    projectScopeItems.find((item) => item.value === (projectScopeKey ?? "all")) ??
+    projectScopeItems[0]!)();
+  const scopeGroups = pickableProjectGroups(projectGroups);
+  const {
+    canPinProjectGroup: canPinProject,
+    setProjectGroupPinned,
+    toggleProjectGroupPin,
+  } = useProjectPin();
   const projectScopeFilter = useComboboxFilter();
   // Filtering derives from the state that controls the input, so the visible query and list never
   // desync. "All projects" is a scope reset, not a searchable entry: it shows only while a project
@@ -2422,7 +2446,7 @@ export default function Sidebar() {
   const scopedProjectGroup = (() =>
     projectScopeKey === null
       ? null
-      : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null))();
+      : (scopeGroups.find((project) => project.projectKey === projectScopeKey) ?? null))();
   const scopedProjectKeys = (() =>
     scopedProjectGroup === null
       ? null
@@ -2573,6 +2597,8 @@ export default function Sidebar() {
     const nesting = buildThreadNesting({
       threads,
       isListed: (thread) =>
+        // Side chats open from their parent thread and never get a sidebar row.
+        thread.lineage.sideChat !== true &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)) &&
         (threadProviderFilter === null ||
@@ -3786,12 +3812,14 @@ export default function Sidebar() {
             canOperate: readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope),
             isArchived: thread.archivedAt !== null,
             branch: thread.branch ?? null,
-            projectFilter: threadProjectGroup
-              ? {
-                  label: threadProjectGroup.displayName,
-                  isActive: projectScopeKey === threadProjectGroup.projectKey,
-                }
-              : null,
+            // An archived project is not a filter choice.
+            projectFilter:
+              threadProjectGroup && !threadProjectGroup.archived
+                ? {
+                    label: threadProjectGroup.displayName,
+                    isActive: projectScopeKey === threadProjectGroup.projectKey,
+                  }
+                : null,
             isPinned,
             isSettled,
             autoSettleEnabled: thread.autoSettleDisabledAt == null,
@@ -4105,13 +4133,22 @@ export default function Sidebar() {
     // One project: nothing to pick, create immediately. Shift+click creates
     // directly in the current project even with several projects, skipping
     // the palette picker.
-    if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
+    if (
+      shouldCreateNewThreadInCurrentProject(
+        event?.shiftKey ?? false,
+        scopeGroups.length,
+        projectGroups.length,
+      )
+    ) {
       if (isMobile) setOpenMobile(false);
+      // With no current or open project, such as when every project is archived, pick one.
       void startNewThreadFromContext({
         activeDraftThread: newThreadContext.activeDraftThread,
         activeThread: newThreadContext.activeThread ?? undefined,
         defaultProjectRef: newThreadContext.defaultProjectRef,
         handleNewThread: newThreadContext.handleNewThread,
+      }).then((started) => {
+        if (!started) openCommandPalette({ open: "new-thread-in" });
       });
       return;
     }
@@ -4124,7 +4161,9 @@ export default function Sidebar() {
   // line (multi-project only) advertises shift+click and its keyboard twin chat.newLocal.
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.new") ??
-    (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
+    (shouldCreateNewThreadInCurrentProject(false, scopeGroups.length, projectGroups.length)
+      ? shortcutLabelForCommand(keybindings, "chat.newLocal")
+      : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
@@ -4202,7 +4241,11 @@ export default function Sidebar() {
                     />
                   </TooltipTrigger>
                   <TooltipPopup side="right">
-                    {projectGroups.length > 1 ? (
+                    {!shouldCreateNewThreadInCurrentProject(
+                      false,
+                      scopeGroups.length,
+                      projectGroups.length,
+                    ) ? (
                       <span className="flex flex-col gap-0.5">
                         <span>
                           {newThreadShortcutLabel
@@ -4244,6 +4287,9 @@ export default function Sidebar() {
                   onValueChange={(item) => {
                     if (!item) return;
                     setProjectScopeKey(item.value === "all" ? null : item.value);
+                  }}
+                  onItemHighlighted={(item) => {
+                    highlightedProjectScopeKeyRef.current = item?.value ?? null;
                   }}
                 >
                   <ComboboxTrigger
@@ -4296,6 +4342,21 @@ export default function Sidebar() {
                               query: event.target.value,
                             })
                           }
+                          onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                            const scopeKey = highlightedProjectScopeKeyRef.current;
+                            const project = scopeKey ? projectGroupByScopeKey.get(scopeKey) : null;
+                            // The thread pin shortcut pins the highlighted project here.
+                            if (
+                              project &&
+                              canPinProject(project) &&
+                              isProjectPinShortcut(event, keybindings)
+                            ) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleProjectGroupPin(project);
+                            }
+                          }}
                         />
                       </div>
                     </div>
@@ -4323,13 +4384,21 @@ export default function Sidebar() {
                                 machineByEnvironmentId={environmentMachineById}
                               />
                             ) : null}
+                            {project && canPinProject(project) ? (
+                              <ProjectPinButton
+                                name={project.displayName}
+                                pinned={project.pinned}
+                                shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
+                                onToggle={() => toggleProjectGroupPin(project)}
+                              />
+                            ) : null}
                             {project ? (
                               <Button
                                 size="icon-xs"
                                 variant="sidebar-icon"
                                 aria-label={`Project settings for ${project.displayName}`}
                                 title={`Project settings for ${project.displayName}`}
-                                className="ml-auto size-6"
+                                className={cn("size-6", !canPinProject(project) && "ml-auto")}
                                 onPointerDown={(event) => event.stopPropagation()}
                                 onClick={(event) => {
                                   void handleProjectSettings(event, project);
@@ -4710,6 +4779,21 @@ export default function Sidebar() {
                                 ...(projectGroup === null
                                   ? []
                                   : [
+                                      ...(canPinProject(projectGroup)
+                                        ? [
+                                            projectGroup.pinned
+                                              ? {
+                                                  id: "unpin" as const,
+                                                  label: "Unpin project",
+                                                  icon: "pin-off" as const,
+                                                }
+                                              : {
+                                                  id: "pin" as const,
+                                                  label: "Pin project",
+                                                  icon: "pin" as const,
+                                                },
+                                          ]
+                                        : []),
                                       { id: "settings" as const, label: "Project settings" },
                                       {
                                         id: "remove" as const,
@@ -4745,6 +4829,12 @@ export default function Sidebar() {
                           case "new-thread":
                             if (projectRef !== null) {
                               void handleNewThread(projectRef);
+                            }
+                            return;
+                          case "pin":
+                          case "unpin":
+                            if (projectGroup) {
+                              setProjectGroupPinned(projectGroup, clicked.value === "pin");
                             }
                             return;
                           case "settings":

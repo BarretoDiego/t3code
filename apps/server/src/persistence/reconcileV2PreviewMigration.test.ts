@@ -36,6 +36,7 @@ describe("V2 migration ledger", () => {
         [80, "ActiveTurnItemIndexes"],
         [81, "ExcludeAttachmentPlaceholdersFromSearch"],
         [82, "SubagentDeliveryState"],
+        [83, "ProjectionProjectsPinArchive"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
@@ -73,12 +74,24 @@ describe("V2 migration ledger", () => {
         [80, "ActiveTurnItemIndexes"],
         [81, "ExcludeAttachmentPlaceholdersFromSearch"],
         [82, "SubagentDeliveryState"],
+        [83, "ProjectionProjectsPinArchive"],
       ]);
       assert.deepStrictEqual(
         yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
         history,
       );
       assert.deepStrictEqual(yield* runMigrations(), []);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("adds project pin and archive to a published fork ledger at 82", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 82 });
+      assert.deepStrictEqual(yield* runMigrations(), [[83, "ProjectionProjectsPinArchive"]]);
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
+      const names = columns.map((column) => column.name);
+      assert.isTrue(names.includes("pinned_at") && names.includes("archived_at"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

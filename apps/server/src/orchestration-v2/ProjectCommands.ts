@@ -40,6 +40,8 @@ export interface ProjectMetaUpdateCommand {
   // Absent = leave unchanged; null = unlink from other environments.
   readonly linkKey?: string | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly pinned?: boolean;
+  readonly archived?: boolean;
 }
 
 export interface ProjectDeleteCommand {
@@ -213,6 +215,13 @@ export function planProjectCommand(input: {
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.linkKey === undefined ? {} : { linkKey: command.linkKey }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
+          // Repeating a pin or archive keeps the original time.
+          ...(command.pinned === undefined
+            ? {}
+            : { pinnedAt: command.pinned ? (project.pinnedAt ?? occurredAt) : null }),
+          ...(command.archived === undefined
+            ? {}
+            : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null }),
           updatedAt: occurredAt,
         },
       });

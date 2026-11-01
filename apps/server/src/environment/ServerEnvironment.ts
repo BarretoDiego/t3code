@@ -225,6 +225,7 @@ export const make = Effect.gen(function* () {
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       pullRequestChecks: true,
+      sideChats: true,
       inlineMessageContext: true,
       scheduledMessages: true,
       scheduledMessageEdit: true,
@@ -273,8 +274,10 @@ export const make = Effect.gen(function* () {
       projectCloneTracking: true,
       automation: true,
       federationProtocolVersions: [FEDERATION_PROTOCOL_VERSION],
+      projectOrganization: true,
       ignoredFileListing: true,
       triage: true,
+      npmReleaseLookup: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate

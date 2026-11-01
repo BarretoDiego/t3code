@@ -62,6 +62,8 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   updatedAt: IsoDateTime,
 });
 export type ApplicationProjectMetaUpdatedPayload = typeof ApplicationProjectMetaUpdatedPayload.Type;

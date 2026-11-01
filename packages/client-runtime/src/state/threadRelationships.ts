@@ -91,7 +91,12 @@ export function deriveThreadRelationshipGraph(input: {
     );
   };
 
-  for (const thread of threads) {
+  const selectedThread = input.projection?.thread;
+  const lineageThreads =
+    selectedThread !== undefined && !threadsById.has(selectedThread.id)
+      ? [...threads, { ...selectedThread, activityRunStatus: null, status: null }]
+      : threads;
+  for (const thread of lineageThreads) {
     const parentThreadId = resolveThreadParentThreadId(thread);
     if (parentThreadId === null) continue;
     addEdge({

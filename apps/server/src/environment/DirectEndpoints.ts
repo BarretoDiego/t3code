@@ -14,6 +14,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   isHostOnlyNetworkInterface,
   isTailscaleNetworkInterface,
@@ -43,12 +44,16 @@ export class DirectEndpoints extends Context.Service<
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
+// Windows adapter names are mutable; Linux bridges can inherit these MACs.
+const WINDOWS_HOST_ADAPTER_MAC = /^(0a:00:27|00:50:56:c0:00):/i;
+
 /**
  * Plain HTTP endpoints for the private addresses a server bound to `host`
  * accepts. IPv4 only: link-local and temporary IPv6 addresses change too
  * often to be worth saving.
  */
 export function resolveBoundEndpoints(input: {
+  readonly platform: NodeJS.Platform;
   readonly host: string | undefined;
   readonly port: number;
   readonly interfaces: NetworkInterfacesMap;
@@ -68,7 +73,10 @@ export function resolveBoundEndpoints(input: {
         )
         .filter(
           (entry) =>
-            !entry.internal && entry.family === "IPv4" && isAdvertisableAddress(entry.address),
+            !entry.internal &&
+            entry.family === "IPv4" &&
+            isAdvertisableAddress(entry.address) &&
+            !(input.platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
         )
         .map((entry) => entry.address)
     : [input.host!].filter(isAdvertisableAddress);
@@ -112,6 +120,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
+  const platform = yield* HostProcess.Platform;
   // Only the service default listens on every interface without being asked,
   // so only it checks once whether it runs in a cloud. The check starts now so
   // the first client does not wait for its timeout.
@@ -123,6 +132,7 @@ export const make = Effect.gen(function* () {
   const resolve = Effect.gen(function* () {
     const endpoints = [
       ...resolveBoundEndpoints({
+        platform,
         host: config.host,
         port: config.port,
         interfaces: NodeOS.networkInterfaces(),
