@@ -51,8 +51,11 @@ describe("orchestrator instructions", () => {
       const resolved = resolve(words);
       expect(resolved, `t3 ${words.join(" ")}`).toBeDefined();
       const { entry, args, flags } = resolved!;
-      // A leaf command, not a group that would only print help.
-      expect(entry.subcommands, `t3 ${words.join(" ")}`).toEqual([]);
+      // A leaf command, not a group that would only print help. A command that also has
+      // subcommands is fine when the invocation passes it flags or arguments to run with.
+      if (flags.length === 0 && args.length === 0) {
+        expect(entry.subcommands, `t3 ${words.join(" ")}`).toEqual([]);
+      }
       const known = entry.flags.map((flag) => flag.flag);
       for (const flag of flags) expect(known, `t3 ${words.join(" ")}`).toContain(flag);
       // The placeholders left are exactly the arguments the command requires.
