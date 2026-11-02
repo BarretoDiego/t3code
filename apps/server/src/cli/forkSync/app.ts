@@ -68,7 +68,7 @@ export interface AppProcess {
  * pattern match reads as a group and then never finds the app. `self` is left
  * out, because this CLI may be running from the very bundle it replaces.
  */
-export function appProcesses(psOutput: string, prefix: string, self: number): Array<AppProcess> {
+function appProcesses(psOutput: string, prefix: string, self: number): Array<AppProcess> {
   return psOutput.split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
     if (match === null) return [];
@@ -83,7 +83,7 @@ export function appProcesses(psOutput: string, prefix: string, self: number): Ar
  * The app's main process. The app starts its server from the same executable,
  * so the main one is the process whose parent is not itself part of the app.
  */
-export function mainProcess(processes: ReadonlyArray<AppProcess>): number | null {
+function mainProcess(processes: ReadonlyArray<AppProcess>): number | null {
   const pids = new Set(processes.map((entry) => entry.pid));
   return processes.find((entry) => !pids.has(entry.ppid))?.pid ?? null;
 }
@@ -234,7 +234,7 @@ const startAppLinux = Effect.fn("startAppLinux")(function* (run: Run) {
  * Without it the artifact carries the raw package version, cannot be told from
  * the stable build, and picks the stable channel's icons and label.
  */
-export function nightlyVersion(packageVersion: string, date: string, commitCount: number): string {
+function nightlyVersion(packageVersion: string, date: string, commitCount: number): string {
   const [major = "0", minor = "0", patch = "0"] = packageVersion.split(".");
   return `${major}.${minor}.${(Number.parseInt(patch, 10) || 0) + 1}-nightly.${date}.${commitCount}`;
 }

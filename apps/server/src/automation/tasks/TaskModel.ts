@@ -46,14 +46,6 @@ export const MANAGED_THREAD_CAPABILITIES: DelegatedTask["capabilities"] = {
   read: true,
 };
 
-/** A subagent the provider runs on its own can only be watched. */
-export const NATIVE_SUBAGENT_CAPABILITIES: DelegatedTask["capabilities"] = {
-  send: false,
-  answer: false,
-  cancel: false,
-  read: true,
-};
-
 export const isTerminalTaskStatus = (status: DelegatedTaskStatus) =>
   DELEGATED_TASK_TERMINAL_STATUSES.includes(status);
 

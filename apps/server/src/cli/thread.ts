@@ -76,7 +76,7 @@ const fail = (reason: ThreadCliError["reason"], detail: string) =>
   Effect.fail(new ThreadCliError({ reason, detail }));
 
 /** Every value `thread.status` can take, in the order `--status` lists them. */
-export const THREAD_STATUSES = [
+const THREAD_STATUSES = [
   "queued",
   "starting",
   "running",

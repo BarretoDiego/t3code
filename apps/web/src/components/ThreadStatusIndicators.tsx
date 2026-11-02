@@ -319,7 +319,7 @@ function PullRequestBadge({
   );
 }
 
-export function ThreadPullRequestsMiniList({
+function ThreadPullRequestsMiniList({
   pullRequests,
   onOpenPullRequest,
 }: {

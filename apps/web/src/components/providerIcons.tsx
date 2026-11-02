@@ -103,7 +103,7 @@ export const PROVIDER_ICON_CHOICES: ReadonlyArray<ProviderIconChoice> = [
   { key: "pi", label: "Pi", Icon: Pi },
 ];
 
-export const PROVIDER_ICON_CHOICES_BY_KEY: ReadonlyMap<string, ProviderIconChoice> = new Map(
+const PROVIDER_ICON_CHOICES_BY_KEY: ReadonlyMap<string, ProviderIconChoice> = new Map(
   PROVIDER_ICON_CHOICES.map((choice) => [choice.key, choice]),
 );
 

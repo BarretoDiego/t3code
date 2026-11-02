@@ -9,9 +9,7 @@ import {
   type ProviderRateLimits,
   type ProviderRateLimitWindow,
 } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest } from "effect/http";
 
 import { describeRateLimitWindowDuration } from "./providerRateLimits.ts";
 
@@ -20,8 +18,6 @@ const KIMI_CODE_HOSTS = new Set(["api.kimi.com", "api.kimi.ai"]);
 
 /** Same override the Kimi Code CLI honors (`KIMI_CODE_BASE_URL`). */
 const KIMI_CODE_BASE_URL_OVERRIDE = "KIMI_CODE_BASE_URL";
-
-const USAGE_FETCH_TIMEOUT_MS = 8_000;
 
 /** The fixed-point scale Kimi money fields use: 1_000_000 = one cent. */
 const KIMI_FIXED_POINT_CENTS = 1_000_000;
@@ -342,40 +338,3 @@ export class KimiCodeUsageFetchError extends Schema.TaggedError<KimiCodeUsageFet
     status: Schema.optionalKey(Schema.Number),
   },
 ) {}
-
-/**
- * Reads the account's current plan usage from Kimi. Transport and HTTP errors
- * arrive as `KimiCodeUsageFetchError`; callers re-raise them in the
- * provider-adapter error vocabulary.
- */
-export const fetchKimiCodeUsage = Effect.fn("fetchKimiCodeUsage")(function* (
-  source: KimiCodeUsageSource,
-): Effect.fn.Return<unknown, KimiCodeUsageFetchError, HttpClient.HttpClient> {
-  const client = yield* HttpClient.HttpClient;
-  const response = yield* client
-    .execute(HttpClientRequest.bearerToken(HttpClientRequest.get(source.usagesUrl), source.token))
-    .pipe(
-      Effect.timeout(USAGE_FETCH_TIMEOUT_MS),
-      Effect.mapError(
-        (cause) =>
-          new KimiCodeUsageFetchError({ message: `Kimi usage request failed: ${cause.message}` }),
-      ),
-    );
-  if (response.status === 401) {
-    return yield* new KimiCodeUsageFetchError({
-      message: "Kimi rejected the instance API key.",
-      status: response.status,
-    });
-  }
-  if (response.status < 200 || response.status >= 300) {
-    return yield* new KimiCodeUsageFetchError({
-      message: `Kimi usage endpoint answered HTTP ${response.status}.`,
-      status: response.status,
-    });
-  }
-  return yield* response.json.pipe(
-    Effect.mapError(
-      () => new KimiCodeUsageFetchError({ message: "Kimi usage endpoint returned invalid JSON." }),
-    ),
-  );
-});

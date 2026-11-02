@@ -47,7 +47,6 @@ import { legacyProjectCwdPreferenceKey } from "../uiStateStore";
 
 /** Compatibility alias for legacy sidebar callers that use the settled-row label helper. */
 export const resolveSettledTimestamp = resolveSettledThreadTimestamp;
-export { planPinnedReorder };
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -66,18 +65,6 @@ export function shouldNavigateAfterThreadPark(input: {
 }
 
 const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
-
-export function resolveSidebarRowAccessibility(input: {
-  readonly title: string;
-  readonly statusLabel: string | null;
-  readonly projectDisplayName: string | null;
-  readonly isActive: boolean;
-}): { readonly label: string; readonly current: "page" | undefined } {
-  return {
-    label: [input.title, input.statusLabel, input.projectDisplayName].filter(Boolean).join(", "),
-    current: input.isActive ? "page" : undefined,
-  };
-}
 
 // Each prewarm retains growing thread detail and a live subscription, multiplying heap and server load.
 const SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX = 160;
@@ -172,7 +159,7 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 }
 
 // Sortable owns drag transforms; replaying committed order would animate drops twice.
-export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
+const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false;
 
 // Legacy sidebar variants share the same sortable behavior until they are removed.
@@ -181,17 +168,6 @@ export const animatePinnedLayoutChanges = animateSidebarLayoutChanges;
 // Snoozed rows cannot accept drops without a wake time. Working rows only drag out as chat context.
 
 export type SidebarSection = "pinned" | "active" | "working" | "snoozed" | "settled";
-
-export function resolveSidebarThreadSection(input: {
-  readonly snoozed: boolean;
-  readonly settled: boolean;
-  readonly pinned: boolean;
-}): SidebarSection {
-  if (input.snoozed) return "snoozed";
-  if (input.settled) return "settled";
-  if (input.pinned) return "pinned";
-  return "active";
-}
 
 // Keep cached placement on the first connection attempt, matching mobile's threadRouteIsHydrating.
 export function isSidebarEnvironmentDisconnected(
@@ -335,17 +311,6 @@ export function resolveSidebarSweepKeys(
   const target = orderedKeys.indexOf(targetKey);
   if (origin === -1 || target === -1) return [];
   return orderedKeys.slice(Math.min(origin, target), Math.max(origin, target) + 1).filter(canApply);
-}
-
-export function sidebarThreadKeyAtY(list: HTMLElement, y: number): string | null {
-  const viewport = list.closest('[data-slot="scroll-area-viewport"]')?.getBoundingClientRect();
-  const visibleY = viewport ? Math.min(Math.max(y, viewport.top), viewport.bottom - 1) : y;
-  let key: string | null = null;
-  for (const row of list.querySelectorAll<HTMLElement>("li[data-thread-item]")) {
-    if (key !== null && row.getBoundingClientRect().top > visibleY) break;
-    key = row.dataset.threadItem ?? null;
-  }
-  return key;
 }
 
 export function resolveSidebarReorderableThreadKeys(input: {
@@ -504,43 +469,6 @@ export function planSidebarThreadDrop(input: {
   }
 }
 
-export function applySidebarThreadDrop<
-  T extends Pick<
-    SidebarThreadSummary,
-    | "pinnedAt"
-    | "pinOrderKey"
-    | "activeOrderKey"
-    | "snoozedAt"
-    | "snoozedUntil"
-    | "settledAt"
-    | "settledOverride"
-    | "unsettledAt"
-  >,
->(thread: T, section: "pinned" | "active" | "settled", now: string, orderKey?: string): T {
-  const wasSettled = thread.settledOverride === "settled";
-  const awake = { ...thread, snoozedAt: null, snoozedUntil: null };
-  if (section === "settled") {
-    return {
-      ...awake,
-      pinnedAt: null,
-      pinOrderKey: null,
-      activeOrderKey: null,
-      settledOverride: "settled",
-      settledAt: wasSettled ? (thread.settledAt ?? now) : now,
-      unsettledAt: null,
-    };
-  }
-  const resumed = wasSettled
-    ? { ...awake, settledOverride: "active" as const, settledAt: null, unsettledAt: now }
-    : awake;
-  return {
-    ...resumed,
-    pinnedAt: section === "pinned" ? (thread.pinnedAt ?? now) : null,
-    pinOrderKey: section === "pinned" ? (orderKey ?? thread.pinOrderKey) : null,
-    ...(section === "active" && orderKey !== undefined ? { activeOrderKey: orderKey } : {}),
-  };
-}
-
 type SidebarProject = {
   id: string;
   title: string;
@@ -693,13 +621,6 @@ export function buildBulkTitleRegenerationContextMenuItem(input: {
     id: "regenerate-title",
     label: `Regenerate titles (${input.actionableCount})`,
   };
-}
-
-export function buildBulkUnpinContextMenuItem(input: {
-  pinnedCount: number;
-}): ContextMenuItem<"unpin"> | null {
-  if (input.pinnedCount === 0) return null;
-  return { id: "unpin", label: `Unpin (${input.pinnedCount})` };
 }
 
 export interface ThreadStatusPill {
@@ -1094,10 +1015,7 @@ export function firstValidTimestamp(
 export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 export { sortSettledThreads as sortSettledThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 // The Working section beta folds and orders the inbox the same way on mobile.
-export {
-  sortInboxThreadsByReturn,
-  sortWorkingThreadsBySend,
-} from "@t3tools/client-runtime/state/thread-inbox";
+export { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 const SIDEBAR_THREAD_PREWARM_LIMIT = 3;

@@ -207,7 +207,7 @@ type StreamingRequestInit = RequestInit & { readonly duplex?: "half" };
  * anyway, so a probe is the only signal: a `Request` with a `duplex` getter reads it
  * only when streaming is supported. `RequestCtor`/`ReadableStreamCtor` are injectable for tests.
  */
-export function detectProjectSyncStreamingUploadSupport(
+function detectProjectSyncStreamingUploadSupport(
   RequestCtor: typeof Request = Request,
   ReadableStreamCtor: typeof ReadableStream = ReadableStream,
 ): boolean {

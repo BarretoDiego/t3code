@@ -66,7 +66,7 @@ export function ComposerControlIcon({
   );
 }
 
-export function ComposerControlChevron({
+function ComposerControlChevron({
   className,
   size = "sm",
 }: {

@@ -45,7 +45,7 @@ export const rejectUnknownCommand = Effect.fn("cli.rejectUnknownCommand")(functi
   if (!exists) return yield* new UnknownCommandError({ word });
 });
 
-export const runServerCommand = Effect.fn("server.runServerCommand")(function* (
+const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   flags: CliServerFlags,
   options?: {
     readonly startupPresentation?: ServerConfig.StartupPresentation;

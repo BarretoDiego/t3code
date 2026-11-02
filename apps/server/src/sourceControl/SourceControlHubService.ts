@@ -69,7 +69,7 @@ export class SourceControlHubService extends Context.Service<
   }
 >()("t3/sourceControl/SourceControlHubService") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const registry = yield* SourceControlProviderRegistry;
   const accounts = yield* SourceControlAccounts;
   const projects = yield* ProjectStore.ProjectStoreV2;

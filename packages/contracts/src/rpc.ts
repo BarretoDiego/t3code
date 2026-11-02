@@ -815,16 +815,13 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   error: Schema.Union([EnvironmentAuthorizationError, ProviderSetupError]),
 });
 
-export const WsServerRefreshProviderRateLimitsRpc = Rpc.make(
-  WS_METHODS.serverRefreshProviderRateLimits,
-  {
-    payload: Schema.Struct({
-      instanceId: ProviderInstanceId,
-    }),
-    success: ServerProviderUpdatedPayload,
-    error: Schema.Union([ServerProviderRateLimitsRefreshError, EnvironmentAuthorizationError]),
-  },
-);
+const WsServerRefreshProviderRateLimitsRpc = Rpc.make(WS_METHODS.serverRefreshProviderRateLimits, {
+  payload: Schema.Struct({
+    instanceId: ProviderInstanceId,
+  }),
+  success: ServerProviderUpdatedPayload,
+  error: Schema.Union([ServerProviderRateLimitsRefreshError, EnvironmentAuthorizationError]),
+});
 
 const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   payload: ServerProviderUpdateInput,
@@ -832,58 +829,52 @@ const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
   error: Schema.Union([ServerProviderUpdateError, EnvironmentAuthorizationError]),
 });
 
-export const WsSourceControlHubAccountsRpc = Rpc.make(WS_METHODS.sourceControlHubAccounts, {
+const WsSourceControlHubAccountsRpc = Rpc.make(WS_METHODS.sourceControlHubAccounts, {
   payload: Schema.Struct({}),
   success: Schema.Array(SourceControlAccount),
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubConnectAccountRpc = Rpc.make(
-  WS_METHODS.sourceControlHubConnectAccount,
-  {
-    payload: SourceControlAccountSaveInput,
-    success: Schema.Struct({ accountName: Schema.String }),
-    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
-  },
-);
-export const WsSourceControlHubSaveAccountRpc = Rpc.make(WS_METHODS.sourceControlHubSaveAccount, {
+const WsSourceControlHubConnectAccountRpc = Rpc.make(WS_METHODS.sourceControlHubConnectAccount, {
+  payload: SourceControlAccountSaveInput,
+  success: Schema.Struct({ accountName: Schema.String }),
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlHubSaveAccountRpc = Rpc.make(WS_METHODS.sourceControlHubSaveAccount, {
   payload: SourceControlAccountSaveInput,
   success: Schema.Void,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubRemoveAccountRpc = Rpc.make(
-  WS_METHODS.sourceControlHubRemoveAccount,
-  {
-    payload: Schema.Struct({ provider: Schema.Literals(["github", "bitbucket"]) }),
-    success: Schema.Void,
-    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
-  },
-);
-export const WsSourceControlHubRepositoriesRpc = Rpc.make(WS_METHODS.sourceControlHubRepositories, {
+const WsSourceControlHubRemoveAccountRpc = Rpc.make(WS_METHODS.sourceControlHubRemoveAccount, {
+  payload: Schema.Struct({ provider: Schema.Literals(["github", "bitbucket"]) }),
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlHubRepositoriesRpc = Rpc.make(WS_METHODS.sourceControlHubRepositories, {
   payload: RemoteRepositoryListInput,
   success: RemoteRepositoryPage,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubRefsRpc = Rpc.make(WS_METHODS.sourceControlHubRefs, {
+const WsSourceControlHubRefsRpc = Rpc.make(WS_METHODS.sourceControlHubRefs, {
   payload: RemoteGitRefListInput,
   success: RemoteGitRefPage,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubClonesRpc = Rpc.make(WS_METHODS.sourceControlHubClones, {
+const WsSourceControlHubClonesRpc = Rpc.make(WS_METHODS.sourceControlHubClones, {
   payload: Schema.Struct({}),
   success: Schema.Array(SourceControlLocalClone),
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubCloneStateRpc = Rpc.make(WS_METHODS.sourceControlHubCloneState, {
+const WsSourceControlHubCloneStateRpc = Rpc.make(WS_METHODS.sourceControlHubCloneState, {
   payload: Schema.Struct({ projectId: ProjectId }),
   success: SourceControlCloneState,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubRefreshRpc = Rpc.make(WS_METHODS.sourceControlHubRefresh, {
+const WsSourceControlHubRefreshRpc = Rpc.make(WS_METHODS.sourceControlHubRefresh, {
   payload: Schema.Struct({}),
   success: Schema.Void,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubCreatePullRequestRpc = Rpc.make(
+const WsSourceControlHubCreatePullRequestRpc = Rpc.make(
   WS_METHODS.sourceControlHubCreatePullRequest,
   {
     payload: RemotePullRequestCreateInput,
@@ -892,185 +883,170 @@ export const WsSourceControlHubCreatePullRequestRpc = Rpc.make(
   },
 );
 
-export const WsSourceControlHubPullRequestsRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequests, {
+const WsSourceControlHubPullRequestsRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequests, {
   payload: RemotePullRequestListInput,
   success: RemotePullRequestPage,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubPullRequestRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequest, {
+const WsSourceControlHubPullRequestRpc = Rpc.make(WS_METHODS.sourceControlHubPullRequest, {
   payload: RemotePullRequestRef,
   success: RemotePullRequestDetail,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubActivityRpc = Rpc.make(WS_METHODS.sourceControlHubActivity, {
+const WsSourceControlHubActivityRpc = Rpc.make(WS_METHODS.sourceControlHubActivity, {
   payload: RemotePullRequestRef,
   success: PullRequestActivity,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubDiffRpc = Rpc.make(WS_METHODS.sourceControlHubDiff, {
+const WsSourceControlHubDiffRpc = Rpc.make(WS_METHODS.sourceControlHubDiff, {
   payload: RemotePullRequestDiffInput,
   success: PullRequestDiffResult,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubRevisionsRpc = Rpc.make(WS_METHODS.sourceControlHubRevisions, {
+const WsSourceControlHubRevisionsRpc = Rpc.make(WS_METHODS.sourceControlHubRevisions, {
   payload: RemotePullRequestRef,
   success: PullRequestRevisions,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubSubmitReviewRpc = Rpc.make(WS_METHODS.sourceControlHubSubmitReview, {
+const WsSourceControlHubSubmitReviewRpc = Rpc.make(WS_METHODS.sourceControlHubSubmitReview, {
   payload: RemotePullRequestReviewInput,
   success: Schema.Void,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubMergeRpc = Rpc.make(WS_METHODS.sourceControlHubMerge, {
+const WsSourceControlHubMergeRpc = Rpc.make(WS_METHODS.sourceControlHubMerge, {
   payload: RemotePullRequestMergeInput,
   success: Schema.Void,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubReviewStartRpc = Rpc.make(WS_METHODS.sourceControlHubReviewStart, {
+const WsSourceControlHubReviewStartRpc = Rpc.make(WS_METHODS.sourceControlHubReviewStart, {
   payload: AiReviewStartInput,
   success: AiReviewRun,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubReviewHistoryRpc = Rpc.make(
-  WS_METHODS.sourceControlHubReviewHistory,
-  {
-    payload: RemotePullRequestRef,
-    success: Schema.Array(AiReviewRun),
-    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
-  },
-);
-export const WsSourceControlHubReviewEditRpc = Rpc.make(WS_METHODS.sourceControlHubReviewEdit, {
+const WsSourceControlHubReviewHistoryRpc = Rpc.make(WS_METHODS.sourceControlHubReviewHistory, {
+  payload: RemotePullRequestRef,
+  success: Schema.Array(AiReviewRun),
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlHubReviewEditRpc = Rpc.make(WS_METHODS.sourceControlHubReviewEdit, {
   payload: AiReviewEditInput,
   success: AiReviewRun,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubReviewPublishRpc = Rpc.make(
-  WS_METHODS.sourceControlHubReviewPublish,
-  {
-    payload: AiReviewPublishInput,
-    success: AiReviewRun,
-    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
-  },
-);
-export const WsSourceControlHubReviewCancelRpc = Rpc.make(WS_METHODS.sourceControlHubReviewCancel, {
+const WsSourceControlHubReviewPublishRpc = Rpc.make(WS_METHODS.sourceControlHubReviewPublish, {
+  payload: AiReviewPublishInput,
+  success: AiReviewRun,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
+const WsSourceControlHubReviewCancelRpc = Rpc.make(WS_METHODS.sourceControlHubReviewCancel, {
   payload: Schema.Struct({ id: TrimmedNonEmptyString }),
   success: Schema.Void,
   error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
 });
-export const WsSourceControlHubReviewSubscribeRpc = Rpc.make(
-  WS_METHODS.sourceControlHubReviewSubscribe,
-  {
-    payload: Schema.Struct({}),
-    success: AiReviewRun,
-    error: EnvironmentAuthorizationError,
-    stream: true,
-  },
-);
+const WsSourceControlHubReviewSubscribeRpc = Rpc.make(WS_METHODS.sourceControlHubReviewSubscribe, {
+  payload: Schema.Struct({}),
+  success: AiReviewRun,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
 
-export const WsSourceControlHubMapRepositoryRpc = Rpc.make(
-  WS_METHODS.sourceControlHubMapRepository,
-  {
-    payload: SourceControlRepositoryMappingInput,
-    success: Schema.Void,
-    error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
-  },
-);
+const WsSourceControlHubMapRepositoryRpc = Rpc.make(WS_METHODS.sourceControlHubMapRepository, {
+  payload: SourceControlRepositoryMappingInput,
+  success: Schema.Void,
+  error: Schema.Union([SourceControlHubError, EnvironmentAuthorizationError]),
+});
 
-export const WsSourceControlHubCommitPreviewRpc = Rpc.make(
-  WS_METHODS.sourceControlHubCommitPreview,
-  {
-    payload: SourceControlCommitPreviewInput,
-    success: SourceControlCommitPreview,
-    error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
-  },
-);
+const WsSourceControlHubCommitPreviewRpc = Rpc.make(WS_METHODS.sourceControlHubCommitPreview, {
+  payload: SourceControlCommitPreviewInput,
+  success: SourceControlCommitPreview,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
 
-export const WsAiRuntimesListRpc = Rpc.make(WS_METHODS.aiRuntimesList, {
+const WsAiRuntimesListRpc = Rpc.make(WS_METHODS.aiRuntimesList, {
   payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
 });
-export const WsAiRuntimesSubscribeRpc = Rpc.make(WS_METHODS.aiRuntimesSubscribe, {
+const WsAiRuntimesSubscribeRpc = Rpc.make(WS_METHODS.aiRuntimesSubscribe, {
   payload: Schema.Struct({}),
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
   stream: true,
 });
-export const WsAiRuntimesSaveRpc = Rpc.make(WS_METHODS.aiRuntimesSave, {
+const WsAiRuntimesSaveRpc = Rpc.make(WS_METHODS.aiRuntimesSave, {
   payload: AiRuntimeSaveInput,
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
 });
-export const WsAiRuntimesRemoveRpc = Rpc.make(WS_METHODS.aiRuntimesRemove, {
+const WsAiRuntimesRemoveRpc = Rpc.make(WS_METHODS.aiRuntimesRemove, {
   payload: Schema.Struct({ runtimeId: AiRuntimeId }),
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
 });
-export const WsAiRuntimesActionRpc = Rpc.make(WS_METHODS.aiRuntimesAction, {
+const WsAiRuntimesActionRpc = Rpc.make(WS_METHODS.aiRuntimesAction, {
   payload: AiRuntimeActionInput,
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
 });
-export const WsAiRuntimesBindRpc = Rpc.make(WS_METHODS.aiRuntimesBind, {
+const WsAiRuntimesBindRpc = Rpc.make(WS_METHODS.aiRuntimesBind, {
   payload: AiRuntimeBindInput,
   success: AiRuntimeSnapshot,
   error: Schema.Union([AiRuntimeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeListRpc = Rpc.make(WS_METHODS.computeList, {
+const WsComputeListRpc = Rpc.make(WS_METHODS.computeList, {
   payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
   success: ComputeSnapshot,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeSubscribeRpc = Rpc.make(WS_METHODS.computeSubscribe, {
+const WsComputeSubscribeRpc = Rpc.make(WS_METHODS.computeSubscribe, {
   payload: Schema.Struct({}),
   success: ComputeSnapshot,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
   stream: true,
 });
-export const WsComputeEventsSubscribeRpc = Rpc.make(WS_METHODS.computeEventsSubscribe, {
+const WsComputeEventsSubscribeRpc = Rpc.make(WS_METHODS.computeEventsSubscribe, {
   payload: Schema.Struct({}),
   success: ComputeEvent,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
-export const WsComputeSaveProviderRpc = Rpc.make(WS_METHODS.computeSaveProvider, {
+const WsComputeSaveProviderRpc = Rpc.make(WS_METHODS.computeSaveProvider, {
   payload: ComputeProviderSaveInput,
   success: ComputeSnapshot,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeRemoveProviderRpc = Rpc.make(WS_METHODS.computeRemoveProvider, {
+const WsComputeRemoveProviderRpc = Rpc.make(WS_METHODS.computeRemoveProvider, {
   payload: ComputeProviderRemoveInput,
   success: ComputeSnapshot,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeListJobsRpc = Rpc.make(WS_METHODS.computeListJobs, {
+const WsComputeListJobsRpc = Rpc.make(WS_METHODS.computeListJobs, {
   payload: ComputeJobListInput,
   success: Schema.Array(GenerationJob),
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeGetJobRpc = Rpc.make(WS_METHODS.computeGetJob, {
+const WsComputeGetJobRpc = Rpc.make(WS_METHODS.computeGetJob, {
   payload: ComputeJobGetInput,
   success: GenerationJob,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeSubmitRpc = Rpc.make(WS_METHODS.computeSubmit, {
+const WsComputeSubmitRpc = Rpc.make(WS_METHODS.computeSubmit, {
   payload: ComputeJobSubmitInput,
   success: GenerationJob,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsComputeCancelJobRpc = Rpc.make(WS_METHODS.computeCancelJob, {
+const WsComputeCancelJobRpc = Rpc.make(WS_METHODS.computeCancelJob, {
   payload: ComputeJobCancelInput,
   success: GenerationJob,
   error: Schema.Union([ComputeError, EnvironmentAuthorizationError]),
 });
-export const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
+const WsMarketplaceListRpc = Rpc.make(WS_METHODS.marketplaceList, {
   payload: Schema.Struct({}),
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceGetPackageRpc = Rpc.make(WS_METHODS.marketplaceGetPackage, {
+const WsMarketplaceGetPackageRpc = Rpc.make(WS_METHODS.marketplaceGetPackage, {
   payload: Schema.Struct({
     sourceId: MarketplaceId,
     packageId: MarketplacePackageId,
@@ -1079,43 +1055,43 @@ export const WsMarketplaceGetPackageRpc = Rpc.make(WS_METHODS.marketplaceGetPack
   error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceAddSourceRpc = Rpc.make(WS_METHODS.marketplaceAddSource, {
+const WsMarketplaceAddSourceRpc = Rpc.make(WS_METHODS.marketplaceAddSource, {
   payload: Schema.Struct({ url: Schema.String }),
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceRemoveSourceRpc = Rpc.make(WS_METHODS.marketplaceRemoveSource, {
+const WsMarketplaceRemoveSourceRpc = Rpc.make(WS_METHODS.marketplaceRemoveSource, {
   payload: Schema.Struct({ sourceId: MarketplaceId }),
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceInstallRpc = Rpc.make(WS_METHODS.marketplaceInstall, {
+const WsMarketplaceInstallRpc = Rpc.make(WS_METHODS.marketplaceInstall, {
   payload: MarketplaceInstallInput,
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceUpdateRpc = Rpc.make(WS_METHODS.marketplaceUpdate, {
+const WsMarketplaceUpdateRpc = Rpc.make(WS_METHODS.marketplaceUpdate, {
   payload: MarketplaceUpdateInput,
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceUninstallRpc = Rpc.make(WS_METHODS.marketplaceUninstall, {
+const WsMarketplaceUninstallRpc = Rpc.make(WS_METHODS.marketplaceUninstall, {
   payload: Schema.Struct({ installationId: MarketplaceInstallationId }),
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, ServerSettingsError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceSetAutoUpdateRpc = Rpc.make(WS_METHODS.marketplaceSetAutoUpdate, {
+const WsMarketplaceSetAutoUpdateRpc = Rpc.make(WS_METHODS.marketplaceSetAutoUpdate, {
   payload: MarketplaceSetAutoUpdateInput,
   success: MarketplaceSnapshot,
   error: Schema.Union([MarketplaceError, EnvironmentAuthorizationError]),
 });
 
-export const WsMarketplaceExportProviderTemplateRpc = Rpc.make(
+const WsMarketplaceExportProviderTemplateRpc = Rpc.make(
   WS_METHODS.marketplaceExportProviderTemplate,
   {
     payload: MarketplaceExportProviderTemplateInput,
@@ -1807,37 +1783,37 @@ const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
 });
 
-export const WsProjectSyncManifestRpc = Rpc.make(WS_METHODS.projectSyncManifest, {
+const WsProjectSyncManifestRpc = Rpc.make(WS_METHODS.projectSyncManifest, {
   payload: ProjectSyncManifestInput,
   success: ProjectSyncManifestResult,
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
 });
-export const WsThreadHandoffWatchRpc = Rpc.make(WS_METHODS.threadHandoffWatch, {
+const WsThreadHandoffWatchRpc = Rpc.make(WS_METHODS.threadHandoffWatch, {
   payload: Schema.Struct({ threadId: ThreadId }),
   success: Schema.NullOr(ThreadHandoffRecord),
   error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
   stream: true,
 });
 
-export const WsThreadHandoffRpc = Rpc.make(WS_METHODS.threadHandoffRequest, {
+const WsThreadHandoffRpc = Rpc.make(WS_METHODS.threadHandoffRequest, {
   payload: ThreadHandoffRequest,
   success: ThreadHandoffResponse,
   error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
 });
 
-export const WsProjectSyncCreateExportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateExportUrl, {
+const WsProjectSyncCreateExportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateExportUrl, {
   payload: ProjectSyncCreateExportUrlInput,
   success: ProjectSyncCreateUrlResult,
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
 });
 
-export const WsProjectSyncCreateImportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateImportUrl, {
+const WsProjectSyncCreateImportUrlRpc = Rpc.make(WS_METHODS.projectSyncCreateImportUrl, {
   payload: ProjectSyncCreateImportUrlInput,
   success: ProjectSyncCreateUrlResult,
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),
 });
 
-export const WsProjectSyncApplyDeletionsRpc = Rpc.make(WS_METHODS.projectSyncApplyDeletions, {
+const WsProjectSyncApplyDeletionsRpc = Rpc.make(WS_METHODS.projectSyncApplyDeletions, {
   payload: ProjectSyncApplyDeletionsInput,
   success: ProjectSyncApplyDeletionsResult,
   error: Schema.Union([ProjectSyncError, EnvironmentAuthorizationError]),

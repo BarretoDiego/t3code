@@ -625,5 +625,3 @@ export function flattenSidebarThreadGroups<TThread extends GroupableThread>(
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
-
-export { UNKNOWN_PROVIDER_DRIVER };

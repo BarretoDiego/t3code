@@ -293,7 +293,7 @@ export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope 
   return requiredScope;
 }
 
-export const rpcAuthorizationError = (requiredScope: AuthEnvironmentScope) =>
+const rpcAuthorizationError = (requiredScope: AuthEnvironmentScope) =>
   new EnvironmentAuthorizationError({
     message: `The authenticated token is missing required scope: ${requiredScope}.`,
     ...authScopeRequiredResponse(requiredScope),

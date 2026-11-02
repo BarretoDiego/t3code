@@ -81,7 +81,7 @@ export const SourceControlReviewSettings = Schema.Struct({
   includeGenerated: Schema.Boolean,
   publication: Schema.Literal("draft"),
 });
-export const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
+const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
   prompt: DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
   tier: "standard",
   profileId: null,
@@ -118,7 +118,7 @@ const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
  */
 export const SidebarSectionOrderMode = Schema.Literals(["activity", "alphabetical", "manual"]);
 export type SidebarSectionOrderMode = typeof SidebarSectionOrderMode.Type;
-export const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
+const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -126,12 +126,12 @@ export const SidebarProjectGroupingMode = Schema.Literals([
   "separate",
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
-export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 
 /** The sidebar implementation shown in the desktop and web clients. */
 export const SidebarExperience = Schema.Literals(["grouped", "original", "legacy"]);
 export type SidebarExperience = typeof SidebarExperience.Type;
-export const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
+const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
 
 /**
  * Axis the sidebar inbox groups threads along. `none` keeps the list flat
@@ -151,8 +151,8 @@ export type SidebarThreadGroupingAxis = typeof SidebarThreadGroupingAxis.Type;
 // keeps a row whether or not it has threads, and that row is where its New
 // thread and settings buttons live — so the default has to be a layout that
 // actually has project rows in it.
-export const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
-export const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
+const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
+const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(

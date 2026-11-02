@@ -92,7 +92,7 @@ export interface ComputeServiceShape {
 const error = (message: string, code?: string) =>
   new ComputeError({ message, ...(code ? { code } : {}) });
 
-export const makeComputeService = Effect.gen(function* () {
+const makeComputeService = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig;

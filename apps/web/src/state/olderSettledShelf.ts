@@ -5,7 +5,6 @@ import {
   settledShelfFrontier,
   sortOlderSettledScopes,
   unloadedOlderSettledCount,
-  wantedOlderSettledPages,
   type OlderSettledScope,
 } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -19,7 +18,7 @@ const NO_PAGES: ReadonlyMap<EnvironmentId, number> = new Map();
 /**
  * The Settled shelf for one scope when shells leave older settled threads out: which rows it may
  * list, how many threads it holds in all, and the pages read below each environment's cut, whose
- * rows merge into the thread list. `useOlderSettledShelfGrowth` reads the next pages.
+ * rows merge into the thread list.
  */
 export function useOlderSettledShelf(input: {
   readonly scopes: ReadonlyArray<OlderSettledScope>;
@@ -78,24 +77,6 @@ export function useOlderSettledShelf(input: {
       }
     },
   };
-}
-
-/** Reads the next pages while the shelf lists fewer rows than it shows. */
-export function useOlderSettledShelfGrowth(
-  shelf: ReturnType<typeof useOlderSettledShelf>,
-  listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>,
-) {
-  const wanted = wantedOlderSettledPages({
-    requested: shelf.pages,
-    environments: shelf.environments,
-    listedCount: listedSettledThreads.length,
-    visibleCount: shelf.visibleCount,
-  });
-  const { grow, pages } = shelf;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests more older settled pages when the listed threads cannot fill the visible count
-  useEffect(() => {
-    if (wanted !== pages) grow(wanted);
-  }, [wanted, pages, grow]);
 }
 
 /**

@@ -150,7 +150,7 @@ export interface HandoffThread {
 
 const toHandoffError = (cause: unknown) => normalize(cause);
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const secretStore = yield* ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;

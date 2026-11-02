@@ -47,7 +47,7 @@ export function reuseUnchangedThreadShells(
   return changed ? { ...next, threads } : next;
 }
 
-export function upsertById<T extends { readonly id: unknown }>(
+function upsertById<T extends { readonly id: unknown }>(
   items: ReadonlyArray<T>,
   item: T,
 ): ReadonlyArray<T> {

@@ -49,7 +49,7 @@ export type CliErrorCode = AutomationErrorCode | "WAIT_TIMEOUT";
  * Process exit code for each error code. Documented in docs/user/cli.md and
  * `t3 guide`; scripts rely on them, so a code never changes its number.
  */
-export const CLI_EXIT_CODES = {
+const CLI_EXIT_CODES = {
   INTERNAL: 1,
   INVALID_INPUT: 2,
   NOT_FOUND: 3,
@@ -160,7 +160,7 @@ const TAG_CODES: Record<string, CliErrorCode> = {
  * server gave them; a domain rejection without one is a `CONFLICT` (the
  * command was understood and refused); anything unrecognized is `INTERNAL`.
  */
-export function toCliFailure(error: unknown): CliFailure {
+function toCliFailure(error: unknown): CliFailure {
   if (isCliFailure(error)) return error;
   const tag = stringField(error, "_tag");
   const message =

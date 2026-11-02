@@ -485,4 +485,3 @@ export function createAgentBoardProjector() {
 }
 
 export type { AgentOperationalState } from "./agentBoardStateAdapter.ts";
-export { deriveAgentOperationalState } from "./agentBoardStateAdapter.ts";
