@@ -41,6 +41,7 @@ import * as SessionStore from "../../../auth/SessionStore.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
+import * as ManagedPolicy from "../../../policy/ManagedPolicy.ts";
 import * as Scheduler from "../../../scheduling/Scheduler.ts";
 import {
   type AutomationCaller,
@@ -508,6 +509,7 @@ const environmentLayer = (world: EnvironmentWorld, network: Network) =>
       ),
     ),
     Layer.provideMerge(EnvironmentAuth.layer),
+    Layer.provideMerge(ManagedPolicy.layerTest()),
     Layer.provideMerge(
       Layer.mergeAll(
         ServerSecretStore.layer,

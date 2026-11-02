@@ -319,7 +319,7 @@ function PullRequestBadge({
   );
 }
 
-export function ThreadPullRequestsMiniList({
+function ThreadPullRequestsMiniList({
   pullRequests,
   onOpenPullRequest,
 }: {
@@ -693,6 +693,8 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     thread.environmentId,
     thread.linkedPullRequest,
     leaseLiveStatus,
+    thread.pullRequests,
+    thread.branchPullRequest,
   );
   const gitStatus = useEnvironmentQuery(
     leaseLiveStatus &&
@@ -715,8 +717,11 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     linkedPullRequest: thread.linkedPullRequest,
     linkedPullRequestStatus: linkedPullRequest,
   };
-  const pr = resolveDisplayedThreadPr(displayedPrInput);
-  const prStatus = prStatusIndicator(pr, resolveDisplayedThreadPrProvider(displayedPrInput));
+  const pr = linkedPullRequest?.pr ?? resolveDisplayedThreadPr(displayedPrInput);
+  const prStatus = prStatusIndicator(
+    pr,
+    linkedPullRequest?.sourceControlProvider ?? resolveDisplayedThreadPrProvider(displayedPrInput),
+  );
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,

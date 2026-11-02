@@ -15,7 +15,7 @@ import { readPreparedConnection } from "./session";
 /** Per-environment RPC atoms for the four project-sync methods. Instantiated
     once against the shared connection runtime, same as every other
     environment-scoped atom family in `state/`. */
-export const projectSyncEnvironment = createProjectSyncEnvironmentAtoms(connectionAtomRuntime);
+const projectSyncEnvironment = createProjectSyncEnvironmentAtoms(connectionAtomRuntime);
 
 /**
  * Builds the `ProjectSyncDeps` for `runProjectSync` (client-runtime project-sync): the four RPCs

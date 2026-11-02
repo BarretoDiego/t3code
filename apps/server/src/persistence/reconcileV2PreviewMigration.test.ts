@@ -37,6 +37,7 @@ describe("V2 migration ledger", () => {
         [81, "ExcludeAttachmentPlaceholdersFromSearch"],
         [82, "SubagentDeliveryState"],
         [83, "ProjectionProjectsPinArchive"],
+        [84, "RepairBooleanSettledOverride"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
@@ -75,6 +76,7 @@ describe("V2 migration ledger", () => {
         [81, "ExcludeAttachmentPlaceholdersFromSearch"],
         [82, "SubagentDeliveryState"],
         [83, "ProjectionProjectsPinArchive"],
+        [84, "RepairBooleanSettledOverride"],
       ]);
       assert.deepStrictEqual(
         yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
@@ -88,7 +90,10 @@ describe("V2 migration ledger", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 82 });
-      assert.deepStrictEqual(yield* runMigrations(), [[83, "ProjectionProjectsPinArchive"]]);
+      assert.deepStrictEqual(yield* runMigrations(), [
+        [83, "ProjectionProjectsPinArchive"],
+        [84, "RepairBooleanSettledOverride"],
+      ]);
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       const names = columns.map((column) => column.name);
       assert.isTrue(names.includes("pinned_at") && names.includes("archived_at"));

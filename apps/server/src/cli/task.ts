@@ -36,7 +36,7 @@ const M = AUTOMATION_WS_METHODS;
  * Statuses at which a waiter has something to act on: the task reported, ended,
  * or cannot go on without someone (blocked, or its outcome is unknown).
  */
-export const TASK_WAIT_STATUSES: ReadonlyArray<DelegatedTask["status"]> = [
+const TASK_WAIT_STATUSES: ReadonlyArray<DelegatedTask["status"]> = [
   "reported",
   "blocked",
   "unknown",

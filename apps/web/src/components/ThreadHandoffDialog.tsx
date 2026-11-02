@@ -90,7 +90,7 @@ export interface ThreadHandoffDialogProps {
   readonly threadRef: ScopedThreadRef;
   readonly onTransferred?: (destination: ScopedThreadRef) => void;
 }
-export function ThreadHandoffDialog({
+function ThreadHandoffDialog({
   open,
   onOpenChange,
   threadRef,

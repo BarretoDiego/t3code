@@ -37,7 +37,7 @@ export const ProviderRateLimitStatus = Schema.Literals(["ok", "warning", "exhaus
 export type ProviderRateLimitStatus = typeof ProviderRateLimitStatus.Type;
 
 /** Percentage at which a window stops being comfortable. */
-export const PROVIDER_RATE_LIMIT_WARNING_PERCENT = 80;
+const PROVIDER_RATE_LIMIT_WARNING_PERCENT = 80;
 
 /**
  * Map a used percentage onto a status. Adapters that receive an explicit

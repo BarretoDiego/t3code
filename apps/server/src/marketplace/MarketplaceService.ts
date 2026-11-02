@@ -199,7 +199,7 @@ function errorDetail(cause: unknown): string {
 }
 
 /** Render an arbitrary instance id as a valid lowercase marketplace package id. */
-export function sanitizeMarketplacePackageId(raw: string): string {
+function sanitizeMarketplacePackageId(raw: string): string {
   const slug = raw
     .trim()
     .toLowerCase()

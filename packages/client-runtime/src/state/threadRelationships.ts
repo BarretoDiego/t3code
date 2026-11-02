@@ -45,7 +45,7 @@ export function resolveMergeBackTargetThreadId(
 }
 
 /** The thread a shell hangs from: the run it was forked from when recorded, else its lineage parent. */
-export function resolveThreadParentThreadId(
+function resolveThreadParentThreadId(
   thread: Pick<OrchestrationV2ThreadShell, "forkedFrom" | "lineage">,
 ): ThreadId | null {
   return thread.forkedFrom?.type === "run"
@@ -287,7 +287,7 @@ export interface ThreadNesting<T> {
   readonly nodeByKey: ReadonlyMap<string, ThreadNestingNode<T>>;
 }
 
-export function threadNestingKey(thread: Pick<ThreadNestingThread, "environmentId" | "id">) {
+function threadNestingKey(thread: Pick<ThreadNestingThread, "environmentId" | "id">) {
   return `${thread.environmentId}:${thread.id}`;
 }
 

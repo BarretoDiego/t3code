@@ -20,7 +20,7 @@ import { errnoCode, isMissingOrUnreadable } from "./projectSyncErrno.ts";
  * own runtime directory, and macOS folder metadata. Mirrors the guarantee the
  * `ProjectSyncManifestInput` contract makes to clients.
  */
-export const PROJECT_SYNC_ALWAYS_IGNORED_SEGMENTS = ["node_modules", ".t3", ".DS_Store"] as const;
+const PROJECT_SYNC_ALWAYS_IGNORED_SEGMENTS = ["node_modules", ".t3", ".DS_Store"] as const;
 
 /** Bounded so a manifest of a large repository does not saturate the disk
     queue and starve every other request the server is serving. */

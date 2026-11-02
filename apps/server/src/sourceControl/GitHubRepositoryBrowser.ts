@@ -36,7 +36,7 @@ const failure = () =>
   });
 const repositoryPath = (ref: RemoteRepositoryRef) =>
   `/repos/${ref.repository.split("/").map(encodeURIComponent).join("/")}`;
-export const pageNumber = (cursor?: string) =>
+const pageNumber = (cursor?: string) =>
   cursor && /^[1-9]\d{0,6}$/.test(cursor) ? Number(cursor) : 1;
 
 export function makeGitHubRepositoryBrowser(

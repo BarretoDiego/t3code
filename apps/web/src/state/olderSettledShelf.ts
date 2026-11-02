@@ -3,8 +3,8 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import {
   isListedSettledThread,
   settledShelfFrontier,
+  sortOlderSettledScopes,
   unloadedOlderSettledCount,
-  wantedOlderSettledPages,
   type OlderSettledScope,
 } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -18,7 +18,7 @@ const NO_PAGES: ReadonlyMap<EnvironmentId, number> = new Map();
 /**
  * The Settled shelf for one scope when shells leave older settled threads out: which rows it may
  * list, how many threads it holds in all, and the pages read below each environment's cut, whose
- * rows merge into the thread list. `useOlderSettledShelfGrowth` reads the next pages.
+ * rows merge into the thread list.
  */
 export function useOlderSettledShelf(input: {
   readonly scopes: ReadonlyArray<OlderSettledScope>;
@@ -27,10 +27,11 @@ export function useOlderSettledShelf(input: {
   /** Rows the shelf shows; pages are read until it lists that many. */
   readonly visibleCount: number;
 }) {
-  const scopeKey = JSON.stringify(input.scopes);
+  const scopes = sortOlderSettledScopes(input.scopes);
+  const scopeKey = JSON.stringify(scopes);
   const [requested, setRequested] = useState({ scopeKey, pages: NO_PAGES });
   const pages = requested.scopeKey === scopeKey && input.expanded ? requested.pages : NO_PAGES;
-  const shelfScopes = input.scopes.map((scope) => ({
+  const shelfScopes = scopes.map((scope) => ({
     scope,
     pages: pages.get(scope.environmentId) ?? 0,
   }));
@@ -67,7 +68,7 @@ export function useOlderSettledShelf(input: {
     isListed: (thread: EnvironmentThreadShell) => isListedSettledThread(thread.source, frontier),
     /** Older settled threads in scope that are not local; add it to the local Settled rows. */
     unloadedCount: (threads: ReadonlyArray<EnvironmentThreadShell>) =>
-      unloadedOlderSettledCount({ olderSettled: olderOf, scopes: input.scopes, threads }),
+      unloadedOlderSettledCount({ olderSettled: olderOf, scopes, threads }),
     loading: loaded.some(({ scope }) => pagesOf(scope.environmentId)?.status === "pending"),
     failed: loaded.some(({ scope }) => pagesOf(scope.environmentId)?.status === "failed"),
     retry: () => {
@@ -76,24 +77,6 @@ export function useOlderSettledShelf(input: {
       }
     },
   };
-}
-
-/** Reads the next pages while the shelf lists fewer rows than it shows. */
-export function useOlderSettledShelfGrowth(
-  shelf: ReturnType<typeof useOlderSettledShelf>,
-  listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>,
-) {
-  const wanted = wantedOlderSettledPages({
-    requested: shelf.pages,
-    environments: shelf.environments,
-    listedCount: listedSettledThreads.length,
-    visibleCount: shelf.visibleCount,
-  });
-  const { grow, pages } = shelf;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests more older settled pages when the listed threads cannot fill the visible count
-  useEffect(() => {
-    if (wanted !== pages) grow(wanted);
-  }, [wanted, pages, grow]);
 }
 
 /**

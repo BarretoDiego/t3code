@@ -76,10 +76,10 @@ function findEntry<T extends { readonly id: string; readonly name: string }>(
   );
 }
 
-export const findMiniSkill = (settings: ServerSettings, identifier: string) =>
+const findMiniSkill = (settings: ServerSettings, identifier: string) =>
   findEntry(settings.miniSkills, identifier, "skill");
 
-export const findAgentProfile = (settings: ServerSettings, identifier: string) =>
+const findAgentProfile = (settings: ServerSettings, identifier: string) =>
   findEntry(settings.agentProfiles, identifier.replace(/^#/, ""), "profile", (entry) => entry.slug);
 
 /** Opens `$VISUAL`/`$EDITOR` on `initial` and returns the saved text. */

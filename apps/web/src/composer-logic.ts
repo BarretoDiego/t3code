@@ -323,10 +323,8 @@ export function isCollapsedCursorAdjacentToInlineToken(
   return false;
 }
 
-export const isCollapsedCursorAdjacentToMention = isCollapsedCursorAdjacentToInlineToken;
-
 /** Expanded prompt offsets that sit inside a fenced block's content. */
-export function isExpandedCursorInsideCodeBlock(text: string, cursor: number): boolean {
+function isExpandedCursorInsideCodeBlock(text: string, cursor: number): boolean {
   return findComposerCodeBlocks(text).some(
     (block) => block.start + block.prefixLength <= cursor && cursor <= block.end,
   );

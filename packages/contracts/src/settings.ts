@@ -27,6 +27,7 @@ import {
 } from "./miniSkills.ts";
 import { AgentProfile, AgentProfileId, DEFAULT_AGENT_PROFILE_WRAPPER } from "./agentProfiles.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
+import { UsageModelFilter } from "./usage.ts";
 import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
@@ -80,7 +81,7 @@ export const SourceControlReviewSettings = Schema.Struct({
   includeGenerated: Schema.Boolean,
   publication: Schema.Literal("draft"),
 });
-export const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
+const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
   prompt: DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
   tier: "standard",
   profileId: null,
@@ -117,7 +118,7 @@ const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
  */
 export const SidebarSectionOrderMode = Schema.Literals(["activity", "alphabetical", "manual"]);
 export type SidebarSectionOrderMode = typeof SidebarSectionOrderMode.Type;
-export const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
+const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -125,12 +126,12 @@ export const SidebarProjectGroupingMode = Schema.Literals([
   "separate",
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
-export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
+const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 
 /** The sidebar implementation shown in the desktop and web clients. */
 export const SidebarExperience = Schema.Literals(["grouped", "original", "legacy"]);
 export type SidebarExperience = typeof SidebarExperience.Type;
-export const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
+const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
 
 /**
  * Axis the sidebar inbox groups threads along. `none` keeps the list flat
@@ -150,8 +151,8 @@ export type SidebarThreadGroupingAxis = typeof SidebarThreadGroupingAxis.Type;
 // keeps a row whether or not it has threads, and that row is where its New
 // thread and settings buttons live — so the default has to be a layout that
 // actually has project rows in it.
-export const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
-export const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
+const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
+const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
@@ -1393,6 +1394,18 @@ export const ServerSettings = Schema.Struct({
   snoozePresets: SnoozePresetSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
   ),
+  /** Clients hide threads with these tags while `hideTaggedThreads` is on. Bad entries drop alone, so a hand edit cannot reset settings. */
+  hiddenThreadTags: Schema.Array(Schema.Unknown).pipe(
+    Schema.decodeTo(
+      Schema.Array(Schema.String),
+      SchemaTransformation.transform<ReadonlyArray<string>, ReadonlyArray<unknown>>({
+        decode: (values) => values.filter((value) => typeof value === "string"),
+        encode: (values) => values,
+      }),
+    ),
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
   guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
@@ -1542,6 +1555,9 @@ export const ServerSettings = Schema.Struct({
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+
+  /** Sent by the Usage tab with each summary request to this environment; edit in settings.json. Invalid values are ignored. */
+  usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1663,8 +1679,14 @@ export const ServerSettingsOperation = Schema.Literals([
   "write-secret-provider",
   "write-file",
   "prepare-directory",
+  "write-managed-setting",
+  "use-disallowed-provider",
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
+
+/** Why a provider the administrator's policy leaves out cannot be used. */
+export const disallowedProviderMessage = (organization: string | undefined, label: string) =>
+  `${organization === undefined ? "Your organization" : `${organization}'s`} policy does not allow the ${label} provider.`;
 
 export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>()(
   "ServerSettingsError",
@@ -1673,10 +1695,24 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
     operation: ServerSettingsOperation,
     providerInstanceId: Schema.optional(Schema.String),
     environmentVariable: Schema.optional(Schema.String),
+    /** For `write-managed-setting`: the locked dot path and who manages it. */
+    managedSetting: Schema.optional(Schema.String),
+    managedBy: Schema.optional(Schema.String),
+    /** For `use-disallowed-provider`: the provider's name as users know it. */
+    providerLabel: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
+    if (this.operation === "write-managed-setting") {
+      return `${this.managedSetting ?? "This setting"} is managed by ${this.managedBy ?? "your organization"} and cannot be changed.`;
+    }
+    if (this.operation === "use-disallowed-provider") {
+      return disallowedProviderMessage(
+        this.managedBy,
+        this.providerLabel ?? this.providerInstanceId ?? "this",
+      );
+    }
     const provider =
       this.providerInstanceId === undefined ? "" : ` for provider ${this.providerInstanceId}`;
     const variable =
@@ -1796,6 +1832,8 @@ export const ServerSettingsPatch = Schema.Struct({
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
+  hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
+  hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
   guestSharingEnabled: Schema.optionalKey(Schema.Boolean),
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(

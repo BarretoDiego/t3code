@@ -3,12 +3,12 @@ import type { ProjectSyncManifestEntry } from "@t3tools/contracts";
 /** Bytes-per-batch ceiling used when the caller does not override it. Bounds
     peak memory for a single transfer to a small, predictable amount, since a
     project can otherwise be arbitrarily large. */
-export const DEFAULT_PROJECT_SYNC_BATCH_MAX_BYTES = 32 * 1024 * 1024;
+const DEFAULT_PROJECT_SYNC_BATCH_MAX_BYTES = 32 * 1024 * 1024;
 
 /** Files-per-batch ceiling used when the caller does not override it. Keeps
     the export/import URL request payload (one path per file) small even for
     projects with many tiny files. */
-export const DEFAULT_PROJECT_SYNC_BATCH_MAX_FILES = 500;
+const DEFAULT_PROJECT_SYNC_BATCH_MAX_FILES = 500;
 
 export interface ProjectSyncPlan {
   /** Manifest entries present in the source that are missing, or changed,
