@@ -21,6 +21,7 @@ vi.mock("../hooks/useEnvironmentTheme", () => ({ useEnvironmentThemeDefinitions:
 vi.mock("../hooks/useSettings", async (original) => ({
   ...(await original<typeof import("../hooks/useSettings")>()),
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
+  useUpdateEnvironmentSettings: () => () => undefined,
 }));
 // The fork keeps SyncProjectDialog for cross-environment project sync. It mounts its own
 // settings/session hooks that this add-project composition test doesn't exercise, so stub it out.
@@ -71,6 +72,10 @@ vi.mock("../state/entities", async (original) => ({
   ...(await original<typeof import("../state/entities")>()),
   useProjects: () => [],
   useThreadShells: () => [],
+  useVisibleThreadShells: () => [],
+  useHiddenThreadKeys: () => new Set(),
+  useAnyEnvironmentHiding: () => false,
+  useEnvironmentThreadRefs: () => [],
   useServerConfigs: () => new Map(),
   waitForProject: async () => undefined,
 }));

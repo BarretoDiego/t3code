@@ -87,6 +87,7 @@ import Migration0080 from "./Migrations/073_ActiveTurnItemIndexes.ts";
 import Migration0081 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
 import Migration0082 from "./Migrations/075_SubagentDeliveryState.ts";
 import Migration0083 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
+import Migration0084 from "./Migrations/077_RepairBooleanSettledOverride.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -188,6 +189,8 @@ const migrationEntries = [
   [82, "SubagentDeliveryState", Migration0082],
   // Upstream published this as 76; fork ids through 82 were already taken.
   [83, "ProjectionProjectsPinArchive", Migration0083],
+  // Upstream published this as 77; fork ids through 83 were already taken.
+  [84, "RepairBooleanSettledOverride", Migration0084],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

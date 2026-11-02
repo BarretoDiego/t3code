@@ -51,6 +51,7 @@ describe("runMigrations", () => {
         [81, "ExcludeAttachmentPlaceholdersFromSearch"],
         [82, "SubagentDeliveryState"],
         [83, "ProjectionProjectsPinArchive"],
+        [84, "RepairBooleanSettledOverride"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);
