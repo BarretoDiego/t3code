@@ -99,6 +99,7 @@ function formatInterval(everyMs: number): string {
 export function describeSchedule(schedule: ScheduledTask["schedule"]): string {
   if (schedule.type === "interval") return `every ${formatInterval(schedule.everyMs)}`;
   if (schedule.type === "webhook") return "on webhook";
+  if (schedule.type === "once") return `once at ${schedule.runAt}`;
   const days = schedule.weekdays ?? [];
   const when =
     days.length === 0 || days.length === 7

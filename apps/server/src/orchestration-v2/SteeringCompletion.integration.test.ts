@@ -449,23 +449,23 @@ const composerSelection = {
   options: [...runSelection.options, { id: "fastMode", value: false }],
 };
 
+interface NextTurnSelectionOptions {
+  readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
+  readonly restart?: boolean;
+  readonly canSteer?: boolean;
+  readonly firstMessageContext?: Pick<
+    OrchestrationV2ConversationMessage,
+    "miniSkillIds" | "agentProfile"
+  >;
+}
+
 const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function* (
   name: string,
-  optionsOrRestart:
-    | boolean
-    | {
-        readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
-        readonly restart?: boolean;
-        readonly canSteer?: boolean;
-        readonly firstMessageContext?: Pick<
-          OrchestrationV2ConversationMessage,
-          "miniSkillIds" | "agentProfile"
-        >;
-      } = {},
+  optionsOrRestart: boolean | NextTurnSelectionOptions = {},
   canSteer = true,
   interruptTurn: Effect.Effect<void> = Effect.void,
 ) {
-  const options =
+  const options: NextTurnSelectionOptions =
     typeof optionsOrRestart === "boolean"
       ? { restart: optionsOrRestart, canSteer }
       : optionsOrRestart;

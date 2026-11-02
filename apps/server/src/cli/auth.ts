@@ -161,9 +161,11 @@ const pairingCreateCommand = Command.make("create", {
   json: jsonFlag,
 }).pipe(
   Command.withDescription("Issue a new client pairing token."),
+  // Effect.gen unions both branches' errors; a bare ternary lets inference keep only one side's.
   Command.withHandler((flags) =>
-    Option.isSome(flags.env)
-      ? runWithRemoteAuth(flags, flags.env.value, ({ auth, headers, origin }) =>
+    Effect.gen(function* () {
+      if (Option.isSome(flags.env)) {
+        return yield* runWithRemoteAuth(flags, flags.env.value, ({ auth, headers, origin }) =>
           Effect.gen(function* () {
             if (Option.isSome(flags.ttl)) {
               yield* Console.error(
@@ -195,27 +197,29 @@ const pairingCreateCommand = Command.make("create", {
               ),
             );
           }),
-        )
-      : runWithEnvironmentAuth(
-          flags,
-          (environmentAuth) =>
-            Effect.gen(function* () {
-              const issued = yield* environmentAuth.createPairingLink({
-                scopes: flags.scopes,
-                subject: "one-time-token",
-                ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
-                ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
-              });
-              const output = formatIssuedPairingCredential(issued, {
-                json: flags.json,
-                ...(Option.isSome(flags.baseUrl) ? { baseUrl: flags.baseUrl.value.href } : {}),
-              });
-              yield* Console.log(output);
-            }),
-          {
-            quietLogs: flags.json,
-          },
-        ),
+        );
+      }
+      return yield* runWithEnvironmentAuth(
+        flags,
+        (environmentAuth) =>
+          Effect.gen(function* () {
+            const issued = yield* environmentAuth.createPairingLink({
+              scopes: flags.scopes,
+              subject: "one-time-token",
+              ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
+              ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
+            });
+            const output = formatIssuedPairingCredential(issued, {
+              json: flags.json,
+              ...(Option.isSome(flags.baseUrl) ? { baseUrl: flags.baseUrl.value.href } : {}),
+            });
+            yield* Console.log(output);
+          }),
+        {
+          quietLogs: flags.json,
+        },
+      );
+    }),
   ),
 );
 

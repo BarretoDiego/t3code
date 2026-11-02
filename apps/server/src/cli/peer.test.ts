@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import { callerFromSession } from "../automation/rpcHandlers.ts";
@@ -30,6 +31,7 @@ import {
 const CALLER = EnvironmentId.make("env-caller");
 
 const authLayer = EnvironmentAuth.layer.pipe(
+  Layer.provide(ManagedPolicy.layerTest()),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(ServerEnvironment.layerIdentity),

@@ -53,6 +53,10 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
 
 const sidebarArchivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
   getSnapshotAtom: archivedSnapshotAtom,
+  hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
+  hiddenThreadKeysAtom: environmentThreadShells.hiddenThreadKeysAtom,
+  liveThreadRefsAtom: environmentThreadShells.threadRefsAtom,
+  anyEnvironmentHidingAtom: environmentThreadShells.anyEnvironmentHidingAtom,
   labelPrefix: "web:sidebar-archived-thread-snapshots",
 });
 

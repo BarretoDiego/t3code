@@ -614,7 +614,7 @@ export const readTailscaleServeRoutesTo = (target: {
   readonly host: string;
   readonly port: number;
 }) =>
-  readTailscaleOutput("serve", ["serve", "status", "--json"]).pipe(
+  readTailscaleOutput("serve", ["serve", "status", "--json"], TAILSCALE_STATUS_TIMEOUT).pipe(
     Effect.flatMap((status) => {
       const routes = parseTailscaleServeRoutesTo(status, target);
       return routes === undefined

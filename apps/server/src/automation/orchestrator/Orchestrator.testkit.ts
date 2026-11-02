@@ -65,6 +65,7 @@ import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunne
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layer as layerProviderRegistryMock } from "../../provider/testUtils/providerRegistryMock.ts";
 import * as Scheduler from "../../scheduling/Scheduler.ts";
+import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
@@ -527,6 +528,7 @@ export function makeEngineLayer(input: {
   // The real session store, so an orchestrator's agent credential is issued,
   // authenticated and revoked exactly as on a server.
   const auth = EnvironmentAuth.layer.pipe(
+    Layer.provide(ManagedPolicy.layerTest()),
     Layer.provide(database),
     Layer.provide(ServerSecretStore.layer),
     Layer.provide(identity),
