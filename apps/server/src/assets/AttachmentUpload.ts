@@ -8,9 +8,10 @@ import {
 } from "@t3tools/contracts";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
@@ -26,15 +27,14 @@ import {
   sweepStalePendingAttachments,
 } from "../attachmentStore.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
-import { base64UrlEncode, signPayload, verifySignedClaims } from "../auth/utils.ts";
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { base64UrlDecodeUtf8, base64UrlEncode } from "../auth/utils.ts";
+import * as AssetSigner from "./AssetSigner.ts";
 import * as ServerConfig from "../config.ts";
 import { inferImageExtension } from "../imageMime.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 
 export const ATTACHMENT_UPLOAD_ROUTE_PREFIX = "/api/attachments/upload";
 
-const SIGNING_SECRET_NAME = "asset-access-signing-key";
 const PENDING_ATTACHMENT_SWEEP_INTERVAL_MS = 15 * 60_000;
 const lastPendingSweepByDirectory = new Map<string, number>();
 
@@ -56,17 +56,17 @@ const attachmentUploadClaimsJson = Schema.fromJsonString(AttachmentUploadClaims)
 const decodeAttachmentUploadClaims = Schema.decodeUnknownOption(attachmentUploadClaimsJson);
 const encodeAttachmentUploadClaims = Schema.encodeSync(attachmentUploadClaimsJson);
 
-const loadSigningSecret = Effect.gen(function* () {
-  const secretStore = yield* ServerSecretStore.ServerSecretStore;
-  return yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
-});
+function decodeClaims(encodedPayload: string): AttachmentUploadClaims | null {
+  try {
+    return Option.getOrNull(decodeAttachmentUploadClaims(base64UrlDecodeUtf8(encodedPayload)));
+  } catch {
+    return null;
+  }
+}
 
 export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(function* (
   input: AttachmentCreateUploadUrlInput,
 ) {
-  const secret = yield* loadSigningSecret.pipe(
-    Effect.mapError((cause) => new AttachmentUploadSigningKeyError({ cause })),
-  );
   const config = yield* ServerConfig.ServerConfig;
   const nowMs = yield* Clock.currentTimeMillis;
   const previousSweep = lastPendingSweepByDirectory.get(config.attachmentsDir);
@@ -106,9 +106,13 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
     }),
   );
 
+  const signer = yield* AssetSigner.AssetSigner;
+  const signature = yield* signer
+    .sign(encodedPayload)
+    .pipe(Effect.mapError((cause) => new AttachmentUploadSigningKeyError({ cause })));
   return {
     attachmentId,
-    relativeUrl: `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/${encodedPayload}.${signPayload(encodedPayload, secret)}`,
+    relativeUrl: `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/${encodedPayload}.${signature}`,
     expiresAt,
   };
 });
@@ -116,19 +120,27 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
 export const validateAttachmentUploadToken = Effect.fn("AttachmentUpload.validateToken")(function* (
   token: string,
 ) {
-  const secret = yield* loadSigningSecret.pipe(
+  const [encodedPayload, signature, unexpectedSegment] = token.split(".");
+  if (!encodedPayload || !signature || unexpectedSegment) {
+    return null;
+  }
+
+  const signer = yield* AssetSigner.AssetSigner;
+  const verified = yield* signer.verify(encodedPayload, signature).pipe(
     Effect.tapError((cause) =>
       Effect.logError("Failed to load the attachment upload signing key.", { cause }),
     ),
-    Effect.orElseSucceed(() => null),
+    Effect.orElseSucceed(() => false),
   );
+  if (!verified) {
+    return null;
+  }
 
-  return verifySignedClaims({
-    token,
-    secret,
-    nowMs: yield* Clock.currentTimeMillis,
-    decode: decodeAttachmentUploadClaims,
-  });
+  const claims = decodeClaims(encodedPayload);
+  if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) {
+    return null;
+  }
+  return claims;
 });
 
 export type StoreAttachmentUploadResult =
@@ -157,8 +169,8 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
     attachmentsDir: config.attachmentsDir,
     relativePath,
   });
-  const crypto = yield* Crypto.Crypto;
-  const partId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+  const random = yield* SecureRandom.SecureRandom;
+  const partId = yield* random.uuidV4();
   const partPath = resolveAttachmentRelativePath({
     attachmentsDir: config.attachmentsDir,
     relativePath: `${relativePath}.${partId}.part`,
@@ -191,7 +203,7 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
     }
     // Publishing without replacement keeps an upload and its cached text immutable.
     const published = yield* fileSystem.link(partPath, finalPath).pipe(
-      Effect.map(() => true),
+      Effect.as(true),
       Effect.catch((error) => {
         if (error.reason._tag === "AlreadyExists") return Effect.succeed(false);
         return Effect.tryPromise({

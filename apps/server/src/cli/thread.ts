@@ -763,10 +763,13 @@ export const readMessage = Effect.fn("cli.thread.readMessage")(function* (
   return text;
 });
 
-function threadTitleFromPrompt(text: string): string {
+export function threadTitleFromPrompt(text: string): string {
   const compact = text.trim().replace(/\s+/g, " ");
   if (compact.length === 0) return "New thread";
-  return compact.length <= 72 ? compact : `${compact.slice(0, 69).trimEnd()}...`;
+  if (compact.length <= 72) return compact;
+  // Half an emoji serializes to a lone surrogate escape, which provider JSON parsers reject.
+  const last = compact.charCodeAt(68);
+  return `${compact.slice(0, last >= 0xd800 && last <= 0xdbff ? 68 : 69).trimEnd()}...`;
 }
 
 const newId = () => NodeCrypto.randomUUID();

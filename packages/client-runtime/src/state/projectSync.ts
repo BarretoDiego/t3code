@@ -154,6 +154,7 @@ export interface ProjectSyncDeps {
   readonly streamingUploadSupported?: boolean;
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off - thrown from promise-based fetch code, never the Effect failure channel; callers branch on instanceof and _tag.
 export class ProjectSyncAbortedError extends Error {
   readonly _tag = "ProjectSyncAbortedError";
   constructor() {
@@ -162,6 +163,7 @@ export class ProjectSyncAbortedError extends Error {
   }
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off - thrown from promise-based fetch code, never the Effect failure channel; callers branch on instanceof and _tag.
 export class ProjectSyncUrlResolutionError extends Error {
   readonly _tag = "ProjectSyncUrlResolutionError";
   readonly environmentId: EnvironmentId;
@@ -172,6 +174,7 @@ export class ProjectSyncUrlResolutionError extends Error {
   }
 }
 
+// @effect-diagnostics-next-line extendsNativeError:off - thrown from promise-based fetch code, never the Effect failure channel; callers branch on instanceof and _tag.
 export class ProjectSyncTransferError extends Error {
   readonly _tag = "ProjectSyncTransferError";
   override readonly cause?: unknown;

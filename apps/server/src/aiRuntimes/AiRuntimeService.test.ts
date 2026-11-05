@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AiRuntimeError,
@@ -34,7 +35,7 @@ const manual: AiRuntimeConfig = {
 };
 const dependencies = Layer.mergeAll(Secrets.layer, Settings.layerTest()).pipe(
   Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "t3-ai-runtimes-test-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const harness = Effect.gen(function* () {
   let online = true;

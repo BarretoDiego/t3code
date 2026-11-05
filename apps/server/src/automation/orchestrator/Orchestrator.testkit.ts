@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AUTOMATION_CONTRACT_VERSION,
@@ -533,7 +534,7 @@ export function makeEngineLayer(input: {
     Layer.provide(ServerSecretStore.layer),
     Layer.provide(identity),
     Layer.provide(serverConfig),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.orDie,
   );
   const engine = layerWithRegistry(
@@ -610,7 +611,8 @@ export function makeEngineLayer(input: {
     serverConfig,
     auth,
     NodeServices.layer,
-  ).pipe(Layer.provide(NodeServices.layer));
+    NodeCrypto.layer,
+  ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 }
 
 /**

@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -25,7 +26,7 @@ const documentTextUnused = Layer.succeed(
 const layer = ComputeService.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(Config.layerTest(process.cwd(), { prefix: "t3-compute-service-test-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provide(Layer.succeed(ServerEnvironment, environment)),
   Layer.provideMerge(documentTextUnused),
 );
@@ -71,7 +72,7 @@ it.effect(
           Layer.succeed(ServerEnvironment, environment),
           documentTextUnused,
           TestClock.layer(),
-        ).pipe(Layer.provideMerge(NodeServices.layer)),
+        ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
     ),
 );

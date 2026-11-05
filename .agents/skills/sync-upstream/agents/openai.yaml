@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Fork With Upstream"
+  short_description: "Merge pingdotgg/t3code into the fork and ship it"
+  default_prompt: "Use $sync-upstream to merge upstream main into the fork, verify it, and open the sync PR."

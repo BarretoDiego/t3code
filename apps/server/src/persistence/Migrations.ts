@@ -88,6 +88,8 @@ import Migration0081 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSea
 import Migration0082 from "./Migrations/075_SubagentDeliveryState.ts";
 import Migration0083 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
 import Migration0084 from "./Migrations/077_RepairBooleanSettledOverride.ts";
+import Migration0085 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
+import Migration0086 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -191,6 +193,9 @@ const migrationEntries = [
   [83, "ProjectionProjectsPinArchive", Migration0083],
   // Upstream published this as 77; fork ids through 83 were already taken.
   [84, "RepairBooleanSettledOverride", Migration0084],
+  // Upstream published these as 78 and 79; fork ids through 84 were already taken.
+  [85, "DropOrchestrationEventCorrelationIndex", Migration0085],
+  [86, "DelegatedRecoveryIndexes", Migration0086],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */

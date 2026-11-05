@@ -93,6 +93,7 @@ const loadConfig = Effect.fn("cli.fork.loadConfig")(function* (configDir: Option
     });
   }
   // A scheduler does not read the shell profile, so the tools' locations come from the config.
+  // @effect-diagnostics-next-line processEnvInEffect:off -- PATH is process-global; the tools spawned later inherit it.
   if (config.extraPath !== "") process.env.PATH = `${config.extraPath}:${process.env.PATH ?? ""}`;
   return config;
 });

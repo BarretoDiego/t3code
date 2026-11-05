@@ -10,6 +10,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -25,6 +26,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";
 import { projectSyncExportRouteLayer, projectSyncImportRouteLayer } from "./http.ts";
@@ -34,9 +36,10 @@ import {
   issueProjectSyncImportUrl,
 } from "./workspace/ProjectSyncTransfer.ts";
 
-const testLayer = ServerSecretStore.layer.pipe(
+const testLayer = AssetSigner.layer.pipe(
+  Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-http-project-sync-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(NodeHttpServer.layerTest),
 );
 

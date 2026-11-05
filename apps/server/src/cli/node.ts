@@ -16,7 +16,7 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
@@ -324,7 +324,7 @@ const execCommand = Command.make("exec", {
           nodeId: ExecutionNodeId.make(node.id),
           idempotencyKey:
             idempotencyKey ??
-            IdempotencyKey.make(`cli-${yield* (yield* Crypto.Crypto).randomUUIDv4()}`),
+            IdempotencyKey.make(`cli-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`),
         });
         if (flags.wait) {
           return yield* reportWaited(yield* waitForJob(client, job.id, flags.timeout), flags.json);

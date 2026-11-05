@@ -17,7 +17,7 @@ import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -79,7 +79,7 @@ function toolText(item: OrchestrationV2TurnItem): string {
 
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   return ReviewAgentExecutor.of({
     execute: Effect.fn("ReviewAgentExecutor.execute")((input) =>
       Effect.scoped(
@@ -88,7 +88,7 @@ export const make = Effect.gen(function* () {
           if (!instance?.enabled)
             return yield* new SourceControlHubError({ message: "Selected agent is unavailable." });
           const adapter = instance.orchestrationAdapter;
-          const id = yield* crypto.randomUUIDv4();
+          const id = yield* random.uuidV4();
           const threadId = ThreadId.make(`ai-review-${id}`);
           const emit = input.onActivity ?? (() => Effect.void);
           // Supervised mode is each provider's read-only sandbox: Codex runs

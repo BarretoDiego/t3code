@@ -90,6 +90,7 @@ const editInEditor = (initial: string, suffix: string) =>
       const file = NodePath.join(directory, `content${suffix}`);
       try {
         NodeFS.writeFileSync(file, initial);
+        // @effect-diagnostics-next-line processEnvInEffect:off -- the editor is whatever the user's shell exported.
         const editor = process.env.VISUAL || process.env.EDITOR || "vi";
         const result = NodeChildProcess.spawnSync(`${editor} "${file}"`, {
           stdio: "inherit",

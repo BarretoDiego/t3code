@@ -4,10 +4,12 @@ import type {
   AuthClientPresentationMetadata,
 } from "@t3tools/contracts";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac or timingSafeEqual.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; the cookie name stays a plain function.
 import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
 import { normalizeHostname } from "@t3tools/shared/hostClassification";
+import * as Mac from "effect/crypto/Mac";
+import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -80,46 +82,43 @@ export function base64UrlDecodeUtf8(input: string): string {
   return Result.getOrThrow(Base64Url.decodeString(input));
 }
 
-export function signPayload(payload: string, secret: Uint8Array): string {
-  return NodeCrypto.createHmac("sha256", Buffer.from(secret)).update(payload).digest("base64url");
-}
-
 export function timingSafeEqualBase64Url(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left, "base64url");
-  const rightBuffer = Buffer.from(right, "base64url");
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-  return NodeCrypto.timingSafeEqual(leftBuffer, rightBuffer);
+  const leftBytes = Base64Url.decode(left);
+  const rightBytes = Base64Url.decode(right);
+  return (
+    Result.isSuccess(leftBytes) &&
+    Result.isSuccess(rightBytes) &&
+    Mac.timingSafeEqual(leftBytes.success, rightBytes.success)
+  );
 }
 
 /**
  * Verifies one `<base64url claims>.<hmac signature>` bearer token and returns its claims, or `null` for any token that is malformed, unsigned, wrongly signed, undecodable, or expired.
  * Every family of URL-borne token (attachment uploads, project sync export/import) shares this shape; one shared check keeps the families from drifting on what counts as valid.
- * `secret` is nullable so callers can pass the result of a failed signing-key load: no key means no valid token.
+ * `verify` is the signer's check; a signer that cannot load its key should answer `false`, so no key means no valid token.
  */
-export function verifySignedClaims<A extends { readonly expiresAt: number }>(input: {
+export const verifySignedClaims = Effect.fn("auth.verifySignedClaims")(function* <
+  A extends { readonly expiresAt: number },
+>(input: {
   readonly token: string;
-  readonly secret: Uint8Array | null;
+  readonly verify: (payload: string, signature: string) => Effect.Effect<boolean>;
   readonly nowMs: number;
   readonly decode: (encoded: unknown) => Option.Option<A>;
-}): A | null {
+}) {
   const [payload, signature, unexpectedSegment] = input.token.split(".");
   if (!payload || !signature || unexpectedSegment !== undefined) {
     return null;
   }
-  if (!input.secret || !timingSafeEqualBase64Url(signature, signPayload(payload, input.secret))) {
+  if (!(yield* input.verify(payload, signature))) {
     return null;
   }
 
-  let claims: A | null;
-  try {
-    claims = Option.getOrNull(input.decode(base64UrlDecodeUtf8(payload)));
-  } catch {
-    return null;
-  }
+  const claims = yield* Effect.try({
+    try: () => Option.getOrNull(input.decode(base64UrlDecodeUtf8(payload))),
+    catch: () => null,
+  }).pipe(Effect.orElseSucceed(() => null));
   return claims && claims.expiresAt > input.nowMs ? claims : null;
-}
+});
 
 function normalizeNonEmptyString(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") {

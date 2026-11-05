@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Synchronous SHA-256 preserves persisted identifiers and byte digests.
 import * as NodeCrypto from "node:crypto";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   MarketplaceId,
@@ -293,7 +294,7 @@ describe("marketplace provider-template lifecycle", () => {
     );
     const testLayer = marketplaceLayer.pipe(
       Layer.provideMerge(dependencies),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer)),
     );
 
     return Effect.gen(function* () {
@@ -387,7 +388,7 @@ describe("marketplace provider-template export", () => {
         unusedHttpLayer,
       ),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer)),
   );
 
   it.effect("exports an instance as a template without leaking secret values", () =>

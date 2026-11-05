@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, type AiRuntime } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -33,7 +35,7 @@ const runtime: AiRuntime = {
   operation: null,
 };
 const dependencies = Config.layerTest(process.cwd(), { prefix: "t3-ollama-lifecycle-" }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const harness = Effect.fn("test.ollamaLifecycle")(function* (managed: boolean) {
   const config = yield* Config.ServerConfig;
@@ -61,7 +63,9 @@ const harness = Effect.fn("test.ollamaLifecycle")(function* (managed: boolean) {
       if (command._tag !== "StandardCommand") return yield* Effect.die("Unexpected pipeline");
       const status = command.args[0] === "status";
       if (!status) {
-        hosts.push(command.options.env?.OLLAMA_HOST ?? "");
+        // Spawn environments may carry secrets as `Redacted`; the host is read back as plain text.
+        const host = command.options.env?.OLLAMA_HOST;
+        hosts.push(Redacted.isRedacted(host) ? Redacted.value(host) : (host ?? ""));
         running = true;
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {

@@ -32,7 +32,8 @@ import {
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -488,7 +489,8 @@ export class MarketplaceService extends Context.Service<
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const digester = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const hostPlatform = yield* HostProcess.Platform;
   const httpClient = yield* HttpClient.HttpClient;
   const config = yield* ServerConfig;
@@ -757,17 +759,7 @@ const make = Effect.gen(function* () {
     }
     const body = yield* fetchText({ url: manifestUrl, sourceId, packageId });
     if (catalog.integrity) {
-      const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(body)).pipe(
-        Effect.mapError((cause) =>
-          error({
-            operation: "validate",
-            reason: "integrity-mismatch",
-            detail: `Could not verify package '${packageId}': ${errorDetail(cause)}`,
-            sourceId,
-            packageId,
-          }),
-        ),
-      );
+      const digest = yield* digester.digest(Digest.sha256, new TextEncoder().encode(body));
       const actual = `sha256-${Hex.encode(digest)}`;
       if (actual !== catalog.integrity) {
         return yield* error({
@@ -1238,19 +1230,7 @@ const make = Effect.gen(function* () {
             packageId: installInput.packageId,
           });
         }
-        const installationId = MarketplaceInstallationId.make(
-          yield* crypto.randomUUIDv4().pipe(
-            Effect.mapError((cause) =>
-              error({
-                operation: "install",
-                reason: "materialization-failed",
-                detail: `Could not create an installation id: ${errorDetail(cause)}`,
-                sourceId: installInput.sourceId,
-                packageId: installInput.packageId,
-              }),
-            ),
-          ),
-        );
+        const installationId = MarketplaceInstallationId.make(yield* random.uuidV4());
         const installed = yield* handler.install({
           detail,
           request: installInput,

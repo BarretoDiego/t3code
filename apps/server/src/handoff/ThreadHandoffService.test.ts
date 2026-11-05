@@ -120,7 +120,7 @@ const fixture = Effect.gen(function* () {
     history: unused(),
     instances: unused(),
     safePoint: unused(),
-    secretStore: unused(),
+    assetSigner: unused(),
   };
   const pendingPath = NodePath.join(stateDir, "handoffs", record.handoffId, "request.json");
   const writePending = Effect.promise(async () => {

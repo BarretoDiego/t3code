@@ -12,7 +12,7 @@ import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -63,7 +63,7 @@ export const makeAiRuntimeService = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore;
   const environment = yield* ServerEnvironment;
   const settings = yield* ServerSettingsService;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const scope = yield* Effect.scope;
   const driver = yield* makeEndpointDriver;
   const ollama = yield* OllamaRuntime;
@@ -93,7 +93,7 @@ export const makeAiRuntimeService = Effect.gen(function* () {
     next: readonly AiRuntimeConfig[],
   ) {
     yield* fs.makeDirectory(directory, { recursive: true });
-    const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.tmp`);
+    const temporary = path.join(directory, `${yield* random.uuidV4()}.tmp`);
     yield* fs.writeFileString(temporary, yield* encodeConfigs(next), { mode: 0o600 });
     yield* fs.rename(temporary, configPath);
     configs = next;
@@ -350,7 +350,7 @@ export const makeAiRuntimeService = Effect.gen(function* () {
             (item) => item.id === input.runtimeId,
           );
           if (!runtime) return yield* new AiRuntimeError({ message: "Runtime not found." });
-          const id = yield* crypto.randomUUIDv4();
+          const id = yield* random.uuidV4();
           let operation: AiRuntimeOperation = {
             id,
             action: input.action,

@@ -16,7 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -97,7 +97,7 @@ const makeComputeService = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig;
   const environment = yield* ServerEnvironment;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const repository = yield* ComputeJobRepository;
   const threads = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -160,7 +160,7 @@ const makeComputeService = Effect.gen(function* () {
     function* (next: readonly ComputeProviderConfig[]) {
       const stored = next;
       yield* fs.makeDirectory(directory, { recursive: true });
-      const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.tmp`);
+      const temporary = path.join(directory, `${yield* random.uuidV4()}.tmp`);
       yield* fs.writeFileString(temporary, yield* encodeProviderConfigs(stored), { mode: 0o600 });
       yield* fs.rename(temporary, configPath);
       configured = stored;
@@ -235,7 +235,7 @@ const makeComputeService = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ServerConfig, config),
-      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(SecureRandom.SecureRandom, random),
       Effect.provideService(DocumentText.DocumentText, documents),
     );
     yield* repository
@@ -475,13 +475,7 @@ const makeComputeService = Effect.gen(function* () {
       const adapter = adapters.get(destination.provider.type);
       if (!adapter) return yield* error("Provider adapter is unavailable.", "adapter-unavailable");
       const createdAt = yield* now;
-      const id = yield* crypto
-        .randomUUIDv4()
-        .pipe(
-          Effect.mapError(() =>
-            error("Could not allocate a compute job id.", "id-allocation-failed"),
-          ),
-        );
+      const id = yield* random.uuidV4();
       const job: GenerationJob = {
         id,
         request: { ...request, providerId: destination.provider.id },
