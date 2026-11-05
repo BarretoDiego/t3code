@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -56,7 +57,7 @@ const peer: Peer = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-it.layer(NodeServices.layer)("peer CLI", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("peer CLI", (it) => {
   it.effect("reads a permissions file and refuses what it does not understand", () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(

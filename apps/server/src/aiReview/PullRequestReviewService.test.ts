@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
@@ -191,7 +192,7 @@ it.effect(
                 ),
         }),
       ),
-    ).pipe(Layer.provideMerge(NodeServices.layer));
+    ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
     return Effect.gen(function* () {
       const service = yield* make;
       const completed = yield* Queue.unbounded<AiReviewRun>();

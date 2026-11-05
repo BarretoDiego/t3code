@@ -31,7 +31,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
-import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
+import * as AssetSigner from "../assets/AssetSigner.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -152,7 +152,7 @@ const toHandoffError = (cause: unknown) => normalize(cause);
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
-  const secretStore = yield* ServerSecretStore;
+  const assetSigner = yield* AssetSigner.AssetSigner;
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const settings = yield* ServerSettingsService;
@@ -236,7 +236,7 @@ const make = Effect.gen(function* () {
     instances,
     journal,
     safePoint,
-    secretStore,
+    assetSigner,
   });
 });
 
@@ -273,7 +273,7 @@ export interface ThreadHandoffServicePorts {
     Effect.Success<typeof makeHandoffSafePoint>,
     "waitForCurrentTurn" | "freeze"
   >;
-  readonly secretStore: ServerSecretStore["Service"];
+  readonly assetSigner: AssetSigner.AssetSigner["Service"];
 }
 
 /** The RPC orchestration uses narrow ports so restart and rollback exercise the
@@ -290,7 +290,7 @@ export function createThreadHandoffService(
     instances,
     journal,
     safePoint,
-    secretStore,
+    assetSigner,
   } = ports;
   let locks = serverLocks.get(config.stateDir);
   if (!locks) {
@@ -1044,7 +1044,7 @@ export function createThreadHandoffService(
         projectId: id,
         workspaceRoot: payload(id),
         entries: request.entries,
-      }).pipe(Effect.provideService(ServerSecretStore, secretStore));
+      }).pipe(Effect.provideService(AssetSigner.AssetSigner, assetSigner));
     }
     if (request.operation === "import") {
       if (
@@ -1058,7 +1058,7 @@ export function createThreadHandoffService(
         workspaceRoot: payload(id),
         fileCount: request.fileCount,
         totalBytes: request.totalBytes,
-      }).pipe(Effect.provideService(ServerSecretStore, secretStore));
+      }).pipe(Effect.provideService(AssetSigner.AssetSigner, assetSigner));
     }
     if (request.operation === "verify") {
       if (record.destinationEnvironmentId !== environmentId || !pending.manifest)

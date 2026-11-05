@@ -1,5 +1,6 @@
 import * as ConfigProvider from "effect/ConfigProvider";
 import { expect, it, vi } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,7 +13,7 @@ const dependencies = Secrets.layer.pipe(
   Layer.provideMerge(
     Config.layerTest(process.cwd(), { prefix: "t3-source-control-accounts-test-" }),
   ),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 it.effect(
   "persists accounts without returning secrets, preserves omitted tokens, and removes credentials",

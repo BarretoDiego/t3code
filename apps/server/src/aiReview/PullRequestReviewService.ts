@@ -16,7 +16,7 @@ import * as DateTime from "effect/DateTime";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -82,7 +82,7 @@ export const make = Effect.gen(function* () {
   const executor = yield* ReviewAgentExecutor;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const scope = yield* Effect.scope;
   const directory = path.join(config.stateDir, "ai-reviews");
   const gate = yield* Semaphore.make(1);
@@ -94,7 +94,7 @@ export const make = Effect.gen(function* () {
     const run = { ...value, updatedAt: DateTime.formatIso(yield* DateTime.now) };
     yield* fs.makeDirectory(directory, { recursive: true });
     const file = path.join(directory, `${run.id}.json`);
-    const temporary = `${file}.${yield* crypto.randomUUIDv4()}.tmp`;
+    const temporary = `${file}.${yield* random.uuidV4()}.tmp`;
     yield* fs.writeFileString(temporary, yield* encode(run), { mode: 0o600 });
     yield* fs.rename(temporary, file);
     yield* PubSub.publish(changes, run);
@@ -303,7 +303,7 @@ export const make = Effect.gen(function* () {
         const context = buildReviewMetadata(run, detail, activity);
         const languageInstruction = `Write all prose (summary, walkthrough, finding titles, descriptions and rationales) in ${reviewSettings.language}. Keep JSON keys, severity values, and file paths unchanged.`;
         const ask = Effect.fn(function* (message: string) {
-          const invocation = yield* crypto.randomUUIDv4();
+          const invocation = yield* random.uuidV4();
           const label = run.progress;
           let emittedAt = -Infinity;
           const onActivity = Effect.fn(function* (event: AiReviewActivity) {
@@ -478,7 +478,7 @@ export const make = Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
             const run: AiReviewRun = {
               ...input,
-              id: `${now}-${yield* crypto.randomUUIDv4()}`,
+              id: `${now}-${yield* random.uuidV4()}`,
               baseSha: "",
               headSha: "",
               comparisonBaseSha: "",

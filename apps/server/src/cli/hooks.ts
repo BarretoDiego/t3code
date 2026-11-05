@@ -254,7 +254,7 @@ const removeCommand = Command.make("remove", {
     withClient(
       Effect.fn("cli.hooks.remove")(function* (client, flags) {
         const existing = yield* resolveHook(client, flags.hook);
-        const result = yield* client[M.hooksDelete]({ hookId: existing.id }).pipe();
+        const result = yield* client[M.hooksDelete]({ hookId: existing.id });
         if (flags.json) return yield* printJson(result);
         yield* Console.log(`Removed ${existing.id} (${existing.name}).`);
       }),

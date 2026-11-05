@@ -13,6 +13,7 @@ import {
   conversationMessages,
   isThreadSettledForWait,
   resolveThreadStatus,
+  threadTitleFromPrompt,
   type ThreadStatusInput,
 } from "./thread.ts";
 
@@ -164,5 +165,12 @@ describe("conversationMessages", () => {
     expect(result).toHaveLength(200_000);
     expect(result[0]?.id).toBe("message-0");
     expect(result.at(-1)?.id).toBe("message-199999");
+  });
+});
+
+describe("threadTitleFromPrompt", () => {
+  it("does not split an emoji when cutting a long prompt", () => {
+    const title = threadTitleFromPrompt(`${"a".repeat(68)}😀 and the rest of a long first line`);
+    expect(title).toBe(`${"a".repeat(68)}...`);
   });
 });

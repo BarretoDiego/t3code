@@ -375,6 +375,10 @@ pairings; revoke a device's session to remove its existing access. Command-line
 management is available through `t3 auth --help`, and from another machine with
 [`--env`](./cli.md#manage-access-remotely).
 
+When the app connects to more than one environment, choose one at the top of the
+page. A desktop app with **Local environment** off can manage a background
+service on the same machine this way, including its T3 Connect link.
+
 A session with an open connection stays listed after its access credential
 expires.
 

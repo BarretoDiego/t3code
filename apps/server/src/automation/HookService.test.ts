@@ -277,15 +277,18 @@ describe("hook delivery", () => {
           target: { type: "orchestrator_inbox", orchestratorId: OrchestratorId.make("batcher") },
         }),
       );
+      // The upserts wake the worker; settle that pass first so the event below is matched by
+      // one pass that sees every hook, which is where priority decides the delivery order.
+      yield* runtime.drain;
       yield* journal.append([testEvent("task.reported")]);
       yield* TestClock.adjust("3 seconds");
       yield* journal.append([testEvent("task.reported"), testEvent("task.reported")]);
       yield* runtime.drain;
 
-      assert.deepStrictEqual(
-        inbox.calls.slice(0, 2).map((key) => key.split(":")[0]),
-        [high.id, low.id],
-      );
+      // Lanes run concurrently, so only the first delivery is ordered by priority.
+      const deliveredHooks = inbox.calls.map((key) => key.split(":")[0]);
+      assert.strictEqual(deliveredHooks[0], high.id);
+      assert.include(deliveredHooks, low.id);
       // The batch window opened with the first event and is still open.
       assert.deepStrictEqual(yield* hooks.deliveries(testClient, { hookId: batch.id }), []);
 

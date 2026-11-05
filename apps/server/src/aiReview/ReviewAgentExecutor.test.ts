@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -173,7 +174,7 @@ it.effect("rejects approvals, reports activity and closes the isolated session",
     expect(activity.some((item) => item.text.includes("private reasoning"))).toBe(false);
     expect(decisions).toEqual(["decline"]);
     expect(stopped).toEqual([opened[0]?.providerSessionId]);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -238,5 +239,5 @@ it.effect.each([
               : "timed out",
       );
     }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

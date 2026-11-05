@@ -692,14 +692,16 @@ export const make = Effect.gen(function* () {
         current.manager;
       for (const [filename, contentsText] of contents) {
         const sourcePath = current.directory ? `${current.directory}/${filename}` : filename;
-        const found = yield* Effect.try(() =>
-          scriptsFromManifest({
-            sourcePath,
-            contents: contentsText,
-            packageManager: manager,
-            platform,
-          }),
-        ).pipe(Effect.orElseSucceed(() => null));
+        const found = yield* Effect.try({
+          try: () =>
+            scriptsFromManifest({
+              sourcePath,
+              contents: contentsText,
+              packageManager: manager,
+              platform,
+            }),
+          catch: () => null,
+        }).pipe(Effect.orElseSucceed(() => null));
         if (found) {
           const remaining = 3_000 - scripts.length;
           if (found.length > remaining) truncated = true;

@@ -199,6 +199,7 @@ import {
   type SnoozePreset,
 } from "./Sidebar.snooze";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
+import { ProjectRowActions } from "./ProjectComboboxRow";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
@@ -1147,16 +1148,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // In-flight rows (working, or waiting on approval/input) fade as a whole: there is nothing for the
   // user to do yet, so prominence is reserved for rows that need a human (done, unsettled, failed,
   // freshly woken). The status label keeps its hue so waiting rows stay findable.
-  const isInFlight = status === "working" || status === "approval" || status === "input";
+  const isInFlight =
+    status === "preparing" || status === "working" || status === "approval" || status === "input";
   const shouldRecede =
     (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
   const topStatus =
-    status === "working"
+    status === "preparing" || status === "working"
       ? {
-          label: "Working",
+          label: status === "preparing" ? "Setting up" : "Working",
           icon: "working" as const,
           // No shimmer: a perpetually animating label is noise in a sidebar and repaints every vsync on
           // high-refresh displays. Working rests at a dim level; only the open thread gets full strength.
@@ -1774,7 +1776,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 wrapper around the ticking duration would make
                 screen readers announce every second. */}
                         <span role="status">{topStatus.label}</span>
-                        {status === "working" ? (
+                        {status === "preparing" || status === "working" ? (
                           <span aria-hidden>
                             <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                           </span>
@@ -3912,7 +3914,7 @@ export default function Sidebar() {
                             ) : (
                               <FolderIcon className="size-4 shrink-0" />
                             )}
-                            <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+                            <span className="min-w-0 truncate text-sm">{item.label}</span>
                             {project ? (
                               <ProjectEnvironmentBadge
                                 group={project}
@@ -3920,29 +3922,40 @@ export default function Sidebar() {
                                 machineByEnvironmentId={environmentMachineById}
                               />
                             ) : null}
-                            {project && canPinProject(project) ? (
-                              <ProjectPinButton
-                                name={project.displayName}
-                                pinned={project.pinned}
-                                shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
-                                onToggle={() => toggleProjectGroupPin(project)}
-                              />
-                            ) : null}
                             {project ? (
-                              <Button
-                                size="icon-xs"
-                                variant="sidebar-icon"
-                                aria-label={`Project settings for ${project.displayName}`}
-                                title={`Project settings for ${project.displayName}`}
-                                className={cn("size-6", !canPinProject(project) && "ml-auto")}
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onClick={(event) => {
-                                  void handleProjectSettings(event, project);
-                                }}
-                              >
-                                <SettingsIcon className="size-3.5" />
-                              </Button>
-                            ) : null}
+                              <ProjectRowActions
+                                pin={
+                                  canPinProject(project) ? (
+                                    <ProjectPinButton
+                                      name={project.displayName}
+                                      pinned={project.pinned}
+                                      shortcutLabel={shortcutLabelForCommand(
+                                        keybindings,
+                                        "thread.pin",
+                                      )}
+                                      onToggle={() => toggleProjectGroupPin(project)}
+                                    />
+                                  ) : null
+                                }
+                                settings={
+                                  <Button
+                                    size="icon-xs"
+                                    variant="sidebar-icon"
+                                    aria-label={`Project settings for ${project.displayName}`}
+                                    title={`Project settings for ${project.displayName}`}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    onClick={(event) => {
+                                      void handleProjectSettings(event, project);
+                                    }}
+                                  >
+                                    <SettingsIcon className="size-3.5" />
+                                  </Button>
+                                }
+                              />
+                            ) : (
+                              // Keeps "All projects" as tall as the project rows.
+                              <span className="ml-auto size-7 shrink-0 sm:size-6" />
+                            )}
                           </ComboboxItem>
                         );
                       }}

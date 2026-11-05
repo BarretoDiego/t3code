@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
  * ProjectSyncTransfer - Issues and validates the signed URLs a project sync transfer runs over, and streams the origin side of an export.
- * Signing follows the asset/attachment precedent: HMAC-SHA256 over a base64url claims blob keyed by `asset-access-signing-key`, with the claim `kind` keeping token families apart.
+ * Signing follows the asset/attachment precedent: HMAC-SHA256 over a base64url claims blob keyed by the shared `AssetSigner` key, with the claim `kind` keeping token families apart.
  * Unlike an attachment upload: the path list can exceed the 4096-character URL limit, so the token carries a random request id and the list stays in a short-lived in-process registry;
  * and the claims carry the resolved `workspaceRoot`, so the HTTP routes never need the projection read model. @module ProjectSyncTransfer
  */
@@ -21,18 +21,14 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { base64UrlEncode, signPayload, verifySignedClaims } from "../auth/utils.ts";
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as AssetSigner from "../assets/AssetSigner.ts";
+import { base64UrlEncode, verifySignedClaims } from "../auth/utils.ts";
 import { isMissingOrUnreadable } from "./projectSyncErrno.ts";
 import {
   ProjectSyncAncestorCache,
   projectSyncAncestorsAreSafe,
   resolveProjectSyncRelativePath,
 } from "./ProjectSyncApply.ts";
-
-/** Shared with asset download and attachment upload tokens; the signed `kind`
-    is what keeps a token from being replayed against another route. */
-const SIGNING_SECRET_NAME = "asset-access-signing-key";
 
 /**
  * Backstop on the pending-export registry. A registration is released when its export finishes streaming, or expires with its URL.
@@ -88,24 +84,31 @@ function sweepPendingExports(nowMs: number): void {
   }
 }
 
-const loadSigningSecret = Effect.gen(function* () {
-  const secretStore = yield* ServerSecretStore.ServerSecretStore;
-  return yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
-}).pipe(
-  Effect.mapError(
-    (cause) =>
-      new ProjectSyncIoError({ message: "Failed to load the project sync signing key.", cause }),
-  ),
-);
+/** Shares the asset and attachment-upload key; the signed `kind` is what keeps a token from being replayed against another route. */
+const signPayload = Effect.fn("ProjectSyncTransfer.signPayload")(function* (payload: string) {
+  const signer = yield* AssetSigner.AssetSigner;
+  return yield* signer.sign(payload).pipe(
+    Effect.mapError(
+      (cause) =>
+        new ProjectSyncIoError({
+          message: "Failed to load the project sync signing key.",
+          cause,
+        }),
+    ),
+  );
+});
 
-/** The signing key, or `null` when it cannot be loaded — in which case no
-    token can be considered valid. */
-const loadSigningSecretOrNull = loadSigningSecret.pipe(
-  Effect.tapError((cause) =>
-    Effect.logError("Failed to load the project sync signing key.", { cause }),
-  ),
-  Effect.orElseSucceed(() => null),
-);
+/** Answers `false` when the signing key cannot be loaded, so no token can be considered valid. */
+const verifySignature = Effect.fn("ProjectSyncTransfer.verifySignature")(function* () {
+  const signer = yield* AssetSigner.AssetSigner;
+  return (payload: string, signature: string) =>
+    signer.verify(payload, signature).pipe(
+      Effect.tapError((cause) =>
+        Effect.logError("Failed to load the project sync signing key.", { cause }),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+});
 
 export const issueProjectSyncExportUrl = Effect.fn("ProjectSyncTransfer.issueExportUrl")(
   function* (input: {
@@ -113,7 +116,6 @@ export const issueProjectSyncExportUrl = Effect.fn("ProjectSyncTransfer.issueExp
     readonly workspaceRoot: string;
     readonly entries: ReadonlyArray<ProjectSyncExportEntry>;
   }) {
-    const secret = yield* loadSigningSecret;
     const nowMs = yield* Clock.currentTimeMillis;
 
     const entries: Array<ProjectSyncExportEntry> = [];
@@ -145,7 +147,7 @@ export const issueProjectSyncExportUrl = Effect.fn("ProjectSyncTransfer.issueExp
     );
 
     return {
-      url: `${PROJECT_SYNC_EXPORT_ROUTE_PREFIX}/${payload}.${signPayload(payload, secret)}`,
+      url: `${PROJECT_SYNC_EXPORT_ROUTE_PREFIX}/${payload}.${yield* signPayload(payload)}`,
       expiresAt,
     };
   },
@@ -159,9 +161,9 @@ export interface ResolvedProjectSyncExport {
 export const resolveProjectSyncExportToken = Effect.fn("ProjectSyncTransfer.resolveExportToken")(
   function* (token: string) {
     const nowMs = yield* Clock.currentTimeMillis;
-    const claims = verifySignedClaims({
+    const claims = yield* verifySignedClaims({
       token,
-      secret: yield* loadSigningSecretOrNull,
+      verify: yield* verifySignature(),
       nowMs,
       decode: decodeExportClaims,
     });
@@ -184,7 +186,6 @@ export const issueProjectSyncImportUrl = Effect.fn("ProjectSyncTransfer.issueImp
     readonly fileCount: number;
     readonly totalBytes: number;
   }) {
-    const secret = yield* loadSigningSecret;
     const nowMs = yield* Clock.currentTimeMillis;
     const expiresAt = nowMs + PROJECT_SYNC_URL_TTL_MS;
 
@@ -201,7 +202,7 @@ export const issueProjectSyncImportUrl = Effect.fn("ProjectSyncTransfer.issueImp
     );
 
     return {
-      url: `${PROJECT_SYNC_IMPORT_ROUTE_PREFIX}/${payload}.${signPayload(payload, secret)}`,
+      url: `${PROJECT_SYNC_IMPORT_ROUTE_PREFIX}/${payload}.${yield* signPayload(payload)}`,
       expiresAt,
     };
   },
@@ -209,9 +210,9 @@ export const issueProjectSyncImportUrl = Effect.fn("ProjectSyncTransfer.issueImp
 
 export const resolveProjectSyncImportToken = Effect.fn("ProjectSyncTransfer.resolveImportToken")(
   function* (token: string) {
-    return verifySignedClaims({
+    return yield* verifySignedClaims({
       token,
-      secret: yield* loadSigningSecretOrNull,
+      verify: yield* verifySignature(),
       nowMs: yield* Clock.currentTimeMillis,
       decode: decodeImportClaims,
     });

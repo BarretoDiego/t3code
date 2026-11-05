@@ -1,4 +1,4 @@
-import * as NodeSocket from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import {
   AuthAccessTokenType,
   AuthEnvironmentBootstrapTokenType,
@@ -214,7 +214,7 @@ const openSocket = Effect.fn("openSocket")(function* <Client>(
     RpcClient.layerProtocolSocket({ retryTransientErrors: false }).pipe(
       Layer.provide(
         Socket.layerWebSocket(webSocketUrl(origin, Redacted.value(ticket))).pipe(
-          Layer.provide(NodeSocket.layerWebSocketConstructorWS),
+          Layer.provide(NodeWS.layerWebSocketConstructor),
         ),
       ),
       Layer.provide(RpcSerialization.layerJson),

@@ -38,6 +38,8 @@ describe("V2 migration ledger", () => {
         [82, "SubagentDeliveryState"],
         [83, "ProjectionProjectsPinArchive"],
         [84, "RepairBooleanSettledOverride"],
+        [85, "DropOrchestrationEventCorrelationIndex"],
+        [86, "DelegatedRecoveryIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
@@ -77,6 +79,8 @@ describe("V2 migration ledger", () => {
         [82, "SubagentDeliveryState"],
         [83, "ProjectionProjectsPinArchive"],
         [84, "RepairBooleanSettledOverride"],
+        [85, "DropOrchestrationEventCorrelationIndex"],
+        [86, "DelegatedRecoveryIndexes"],
       ]);
       assert.deepStrictEqual(
         yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
@@ -93,6 +97,8 @@ describe("V2 migration ledger", () => {
       assert.deepStrictEqual(yield* runMigrations(), [
         [83, "ProjectionProjectsPinArchive"],
         [84, "RepairBooleanSettledOverride"],
+        [85, "DropOrchestrationEventCorrelationIndex"],
+        [86, "DelegatedRecoveryIndexes"],
       ]);
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       const names = columns.map((column) => column.name);

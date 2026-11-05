@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -17,6 +18,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import { applyProjectSyncRecords } from "./ProjectSyncApply.ts";
@@ -29,11 +31,12 @@ import {
   resolveProjectSyncImportToken,
 } from "./ProjectSyncTransfer.ts";
 
-const testLayer = ServerSecretStore.layer.pipe(
+const testLayer = AssetSigner.layer.pipe(
+  Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-sync-transfer-" }),
   ),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const makeTempDir = Effect.gen(function* () {

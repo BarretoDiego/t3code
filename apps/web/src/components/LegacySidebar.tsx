@@ -2,7 +2,7 @@ import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { SidebarSubthreadVisibilityItem } from "./sidebar/SidebarSubthreadVisibilityMenu";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker, ThreadSubagentStatus } from "./sidebar/ThreadSubagentMarker";
-import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
+import { attachSidebarTree } from "../lib/sidebarTree";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { Spinner } from "~/components/ui/spinner";
@@ -136,6 +136,7 @@ import {
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
+import { configuredHostedAppUrl } from "../hostedPairing";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
@@ -712,8 +713,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     >
       <div
         ref={isActive ? (node) => revealActiveRow(node, threadKey) : undefined}
-        role="treeitem"
-        tabIndex={-1}
+        role="button"
+        tabIndex={0}
         data-sidebar-row={threadKey}
         data-sidebar-parent={props.navigationParent}
         aria-current={isActive ? "page" : undefined}
@@ -1145,8 +1146,6 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
         <SidebarMenuSubItem className="w-full">
           <SidebarMenuSubButton
             render={showMoreButtonRender}
-            role="treeitem"
-            tabIndex={-1}
             data-sidebar-row={`project:${projectKey}:more`}
             data-sidebar-parent={`project:${projectKey}`}
             data-thread-selection-safe
@@ -1166,8 +1165,6 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
         <SidebarMenuSubItem className="w-full">
           <SidebarMenuSubButton
             render={showLessButtonRender}
-            role="treeitem"
-            tabIndex={-1}
             data-sidebar-row={`project:${projectKey}:less`}
             data-sidebar-parent={`project:${projectKey}`}
             data-thread-selection-safe
@@ -2406,7 +2403,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
       if (clicked === "copy-thread") {
-        void copyThreadReference(threadChipCopyTarget(threadRef, thread.title));
+        void copyThreadReference(
+          threadChipCopyTarget(threadRef, thread.title, configuredHostedAppUrl()),
+        );
         return;
       }
       if (clicked === "copy-thread-id") {
@@ -2451,8 +2450,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           className={isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : undefined}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.listeners : {})}
-          role="treeitem"
-          tabIndex={-1}
           data-sidebar-row={`project:${project.projectKey}`}
           aria-expanded={projectExpanded}
           aria-label={project.displayName}
@@ -3122,7 +3119,12 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             onDragEnd={handleProjectDragEnd}
             onDragCancel={handleProjectDragCancel}
           >
-            <SidebarMenu {...SIDEBAR_TREE_PROPS} ref={attachSidebarTree}>
+            <SidebarMenu
+              ref={attachSidebarTree}
+              // Presentation flattens VoiceOver's list interaction boundary while preserving descendant
+              // controls.
+              role="presentation"
+            >
               <SortableContext items={sortedProjectKeys} strategy={verticalListSortingStrategy}>
                 {sortedProjects.map((project) => (
                   <SortableProjectItem key={project.projectKey} projectId={project.projectKey}>
@@ -3159,7 +3161,12 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             </SidebarMenu>
           </DndContext>
         ) : (
-          <SidebarMenu {...SIDEBAR_TREE_PROPS} ref={attachTreeRef}>
+          <SidebarMenu
+            ref={attachTreeRef}
+            // Presentation flattens VoiceOver's list interaction boundary while preserving descendant
+            // controls.
+            role="presentation"
+          >
             {sortedProjects.map((project) => (
               <SidebarProjectListRow
                 key={project.projectKey}

@@ -3,6 +3,7 @@
  * that calls the same services as the WebSocket route, on real SQLite and the deterministic test clock. Provider execution is off, so tests state provider facts by writing the events
  * a provider would produce through the event sink. Not exercised: the WebSocket route's own glue in ws.ts (scope checks, shell stream assembly), the socket transport, and authentication.
  */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AUTOMATION_WS_METHODS,
@@ -609,7 +610,7 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
         : [],
       { mergeWithExisting: false },
     ),
-  );
+  ).pipe(Layer.provideMerge(NodeCrypto.layer));
 }
 
 // Running commands
