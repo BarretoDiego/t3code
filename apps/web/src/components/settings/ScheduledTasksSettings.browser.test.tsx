@@ -28,6 +28,7 @@ const task: ScheduledTask = {
   threadId: ThreadId.make("older-thread"),
   workspaceStrategy: { type: "root" },
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+  fallbackModelSelections: [],
   runtimeMode: "full-access",
   interactionMode: "default",
   createdBy: "user",

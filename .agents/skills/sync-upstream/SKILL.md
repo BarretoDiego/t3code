@@ -96,10 +96,14 @@ Done when no `<<<<<<<` / `>>>>>>>` remains and `git diff --name-only --diff-filt
 
 ## 3. Regenerate and verify
 
-Every shell needs the toolchain on PATH (`vp` is a shell function, pnpm lives in `~/Library/pnpm`):
+Every shell needs the toolchain on PATH (`vp` may be a shell function; pnpm lives in `~/Library/pnpm` on macOS).
+Add only the directories that exist; `gate.sh` does this itself:
 
 ```bash
-export PATH="/opt/homebrew/bin:$HOME/Library/pnpm:$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+for d in "$HOME/.local/share/mise/shims" "$HOME/.local/bin" "$HOME/Library/pnpm" /opt/homebrew/bin; do
+  [ -d "$d" ] && PATH="$d:$PATH"
+done
+export PATH
 git checkout --theirs pnpm-lock.yaml apps/web/src/routeTree.gen.ts
 vp i
 ```
@@ -163,7 +167,7 @@ What to expect and how to fix it:
   The fork adds tools, so run it, and write the measured numbers into the JSON.
 - **Tests pinned to migration ids** use fork ids (see the hot spot above).
 - **Environment-only failures on this Mac** (not merge bugs, do not "fix"): tests comparing temp paths without
-  `TMPDIR=/private/tmp/...`, `externalLauncher` VS Code Insiders, `provider-fx` skills (same temp-path issue),
+  a `TMPDIR` that resolves through a symlink (`gate.sh` sets a resolved one), `externalLauncher` VS Code Insiders, `provider-fx` skills (same temp-path issue),
   `promptStashStore` (Node 25 `localStorage`), `usageFormat` DST, `MarketplaceService` manifest test when the cwd
   is not the repo root. A test is environment-only only if it fails identically on `origin/main` or
   `upstream/main`: prove it by running it there, and list the ones you saw in the PR body.
@@ -208,3 +212,15 @@ whatever branch the user had. If the sync taught something new, update this file
 - renumbering or deleting any migration already on `origin/main`;
 - dropping a fork feature because it conflicts with an upstream redesign;
 - force-pushing anything, or merging while typecheck, lint or persistence tests fail.
+
+## Unattended runs
+
+The fork's scheduled tasks run this skill with no human present. Never ask a question: if a step would need
+a decision from the "Ask before" list, or the gate fails, stop where you are, leave the PR open (do not merge),
+and reply with a short report of what is blocking and what you already did.
+
+- **Prepare** (`--no-merge-pr`): keep exactly one open sync PR. If an open `chore/sync-upstream-*` PR exists
+  (preflight lists open PRs), update that branch with the new upstream commits and refresh its body instead of
+  opening another. Stop after the gate passes and the PR is up to date.
+- **Publish**: take the open sync PR (or prepare one if none exists), re-run the gate on its latest commit,
+  and merge only when it passes. With nothing to merge, say so and finish.

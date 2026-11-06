@@ -9,12 +9,18 @@
 # the log path of each failing step. Exit code is 0 only when every selected step passed.
 set -uo pipefail
 
-export PATH="/opt/homebrew/bin:$HOME/Library/pnpm:$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+# Add only the toolchain dirs this machine has (macOS Homebrew/pnpm, Linux ~/.local, mise).
+# Listed lowest precedence first: each existing dir is prepended, so Homebrew ends up first.
+for dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin" "$HOME/Library/pnpm" /opt/homebrew/bin; do
+  [[ -d "$dir" ]] && PATH="$dir:$PATH"
+done
+export PATH
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 LOG_DIR="${GATE_LOG_DIR:-${TMPDIR:-/tmp}/t3sync-gate-$(basename "$ROOT")}"
-SERVER_TMPDIR="${GATE_SERVER_TMPDIR:-/private/tmp/t3tmp}"
+# Resolved with pwd -P: on macOS $TMPDIR sits behind a symlink the server tests compare against.
+SERVER_TMPDIR="${GATE_SERVER_TMPDIR:-$(cd "${TMPDIR:-/tmp}" && pwd -P)/t3tmp}"
 mkdir -p "$LOG_DIR" "$SERVER_TMPDIR"
 
 ALL_STEPS=(typecheck lint fmt knip migrate tests build)
