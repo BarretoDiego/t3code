@@ -1,3 +1,4 @@
+import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMock.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
@@ -32,6 +33,7 @@ it.effect("rejects a stale form save after deletion while preserving explicit-id
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
+      ProviderRegistryMock.layer(),
     );
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
@@ -80,6 +82,7 @@ it.effect("preserves a due run when a save only pads the scheduled hour", () =>
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
+      ProviderRegistryMock.layer(),
     );
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
@@ -135,6 +138,7 @@ it.effect("keeps the task list order when a toggle or edit rewrites updated_at",
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
+      ProviderRegistryMock.layer(),
     );
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
@@ -195,6 +199,7 @@ it.effect(
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({}),
         Layer.mock(SecretRequests.SecretRequests)({}),
+        ProviderRegistryMock.layer(),
       );
       yield* Effect.gen(function* () {
         const service = yield* ScheduledTaskService.ScheduledTaskService;

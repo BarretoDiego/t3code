@@ -253,6 +253,7 @@ describe("shutdown readiness", () => {
           threadId: ThreadId.make("thread-1"),
           workspaceStrategy: { type: "root" },
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+          fallbackModelSelections: [],
           runtimeMode: "full-access",
           interactionMode: "default",
           createdBy: "user",

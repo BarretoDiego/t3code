@@ -149,6 +149,7 @@ const legacyTask: ScheduledTask = {
   threadId: null,
   workspaceStrategy: { type: "worktree", baseRef: "release" },
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+  fallbackModelSelections: [],
   runtimeMode: "full-access",
   interactionMode: "default",
   createdBy: "user",

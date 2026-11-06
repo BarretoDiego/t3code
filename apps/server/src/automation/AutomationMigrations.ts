@@ -4,6 +4,7 @@ import * as Migrator from "effect/sql/Migrator";
 import Migration0001 from "./Migrations/001_AutomationSchema.ts";
 import Migration0010 from "./Migrations/010_JournalDedup.ts";
 import Migration0020 from "./Migrations/020_OrchestratorRuntime.ts";
+import Migration0030 from "./Migrations/030_ScheduledTaskFallbackModels.ts";
 
 /**
  * Automation schema lives in its own ledger. The main ledger keys on id alone, so a fork migration there is masked by any later upstream migration with the same id.
@@ -15,6 +16,7 @@ export const automationMigrationEntries = [
   [1, "AutomationSchema", Migration0001],
   [10, "JournalDedup", Migration0010],
   [20, "OrchestratorRuntime", Migration0020],
+  [30, "ScheduledTaskFallbackModels", Migration0030],
 ] as const;
 
 const run = Migrator.make({});

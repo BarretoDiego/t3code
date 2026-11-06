@@ -267,6 +267,9 @@ function formatTaskDetail(task: ScheduledTask, shell: OrchestrationV2ShellSnapsh
     `  schedule: ${describeSchedule(task.schedule)}`,
     `  runs in:  ${taskTarget(task, shell)}`,
     `  model:    ${formatModel(task.modelSelection)}  (${task.runtimeMode}, ${task.interactionMode})`,
+    ...(task.fallbackModelSelections.length === 0
+      ? []
+      : [`  fallback: ${task.fallbackModelSelections.map(formatModel).join(", ")}`]),
     `  next run: ${task.enabled ? (task.nextRunAt ?? "-") : "paused"}`,
     task.lastRunAt === null
       ? "  last run: never"
@@ -338,6 +341,13 @@ const showCommand = Command.make("show", {
   ),
 );
 
+const fallbackModelFlag = Flag.String("fallback-model").pipe(
+  Flag.withDescription(
+    "Model to use when the provider behind --model is out of quota, as <provider-instance>/<model>. Repeat for several; they are tried in order.",
+  ),
+  Flag.atLeast(0),
+);
+
 const addCommand = Command.make("add", {
   ...environmentTargetFlags,
   prompt: Argument.String("prompt").pipe(
@@ -361,6 +371,7 @@ const addCommand = Command.make("add", {
     Flag.optional,
   ),
   model: modelFlag,
+  fallbackModel: fallbackModelFlag,
   runtimeMode: runtimeModeFlag,
   mode: interactionModeFlag,
   paused: Flag.Boolean("paused").pipe(
@@ -425,7 +436,13 @@ const addCommand = Command.make("add", {
             runtimeMode: Option.getOrElse(flags.runtimeMode, () => defaults.runtimeMode),
           };
         }
-        const { task } = yield* client[WS_METHODS.scheduledTasksUpsert](input);
+        const fallbackModelSelections = yield* Effect.forEach(flags.fallbackModel, (value) =>
+          parseModelSelection(value, input.modelSelection.instanceId),
+        );
+        const { task } = yield* client[WS_METHODS.scheduledTasksUpsert]({
+          ...input,
+          ...(fallbackModelSelections.length === 0 ? {} : { fallbackModelSelections }),
+        });
         yield* printTask(client, task, flags.json, `Scheduled ${task.id}.`);
       }),
     ),
@@ -451,6 +468,11 @@ const editCommand = Command.make("edit", {
   ),
   ...workspaceFlags,
   model: modelFlag,
+  fallbackModel: fallbackModelFlag,
+  clearFallbackModels: Flag.Boolean("clear-fallback-models").pipe(
+    Flag.withDescription("Remove every fallback model."),
+    Flag.withDefault(false),
+  ),
   runtimeMode: runtimeModeFlag,
   mode: interactionModeFlag,
   json: jsonFlag,
@@ -496,6 +518,20 @@ const editCommand = Command.make("edit", {
           };
         }
 
+        if (flags.clearFallbackModels && flags.fallbackModel.length > 0) {
+          return yield* fail("--clear-fallback-models cannot be combined with --fallback-model.");
+        }
+        const modelSelection = Option.isSome(flags.model)
+          ? yield* parseModelSelection(flags.model.value, existing.modelSelection.instanceId)
+          : existing.modelSelection;
+        const fallbackModelSelections = flags.clearFallbackModels
+          ? []
+          : flags.fallbackModel.length > 0
+            ? yield* Effect.forEach(flags.fallbackModel, (value) =>
+                parseModelSelection(value, modelSelection.instanceId),
+              )
+            : undefined;
+
         const { task } = yield* client[WS_METHODS.scheduledTasksUpsert]({
           id: existing.id,
           requireExisting: true,
@@ -507,9 +543,8 @@ const editCommand = Command.make("edit", {
           // A legacy sub-minute interval is kept as-is unless a new schedule is given.
           schedule: Option.getOrElse(schedule, () => existing.schedule),
           ...target,
-          modelSelection: Option.isSome(flags.model)
-            ? yield* parseModelSelection(flags.model.value, existing.modelSelection.instanceId)
-            : existing.modelSelection,
+          modelSelection,
+          ...(fallbackModelSelections === undefined ? {} : { fallbackModelSelections }),
           runtimeMode: Option.getOrElse(flags.runtimeMode, () => existing.runtimeMode),
           interactionMode: Option.getOrElse(flags.mode, () => existing.interactionMode),
           createdBy: existing.createdBy,

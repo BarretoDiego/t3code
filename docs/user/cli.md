@@ -268,6 +268,11 @@ A task runs in one of two places:
 `--paused` creates the task without starting its schedule. The prompt can come
 from stdin with `-`.
 
+`--fallback-model <provider-instance>/<model>` (repeatable) names models to use
+when the provider behind `--model` is out of quota at run time. The first one
+with quota runs; if none has, the task runs on `--model` and fails there.
+`edit --clear-fallback-models` removes them.
+
 `edit` changes only what you pass. `--thread <thread>` moves a task into a
 thread and `--new-thread` moves it back to a new thread per run. `run` starts
 the task immediately and leaves its schedule unchanged; `show` reports the

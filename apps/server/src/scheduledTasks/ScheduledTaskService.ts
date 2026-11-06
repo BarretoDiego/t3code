@@ -47,6 +47,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Metrics from "../observability/Metrics.ts";
@@ -55,6 +56,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as DueHint from "../scheduling/DueHint.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import { pickModelSelection } from "./fallbackModelSelection.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
   redactHeaders,
@@ -184,6 +186,9 @@ const decodeWorkspaceStrategyJson = Schema.decodeUnknownEffect(
 const decodeModelSelectionJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(ScheduledTask.fields.modelSelection),
 );
+const decodeFallbackModelSelectionsJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ScheduledTask.fields.fallbackModelSelections),
+);
 const HeadersJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String));
 const MissingFieldsJson = Schema.fromJsonString(Schema.Array(Schema.String));
 const decodeHeadersJson = Schema.decodeUnknownOption(HeadersJson);
@@ -201,6 +206,7 @@ interface ScheduledTaskRow {
   readonly thread_id: string | null;
   readonly workspace_strategy_json: string;
   readonly model_selection_json: string;
+  readonly fallback_model_selections_json: string;
   readonly runtime_mode: string;
   readonly interaction_mode: string;
   readonly created_by: string;
@@ -364,6 +370,9 @@ const decodeRow = Effect.fnUntraced(
     const webhook = schedule.type === "webhook" ? webhookEndpoint(row, origin) : undefined;
     const workspaceStrategy = yield* decodeWorkspaceStrategyJson(row.workspace_strategy_json);
     const modelSelection = yield* decodeModelSelectionJson(row.model_selection_json);
+    const fallbackModelSelections = yield* decodeFallbackModelSelectionsJson(
+      row.fallback_model_selections_json,
+    );
     return yield* decodeTask({
       id: row.task_id,
       title: row.title,
@@ -374,6 +383,7 @@ const decodeRow = Effect.fnUntraced(
       threadId: row.thread_id,
       workspaceStrategy,
       modelSelection,
+      fallbackModelSelections,
       runtimeMode: row.runtime_mode,
       interactionMode: row.interaction_mode,
       createdBy: row.created_by,
@@ -441,6 +451,7 @@ export const layer = Layer.effect(
     const digest = yield* Digest.Digest;
     const mac = yield* Mac.Mac;
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
+    const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
@@ -496,6 +507,7 @@ export const layer = Layer.effect(
         thread_id,
         workspace_strategy_json,
         model_selection_json,
+        fallback_model_selections_json,
         runtime_mode,
         interaction_mode,
         created_by,
@@ -537,6 +549,7 @@ export const layer = Layer.effect(
         thread_id,
         workspace_strategy_json,
         model_selection_json,
+        fallback_model_selections_json,
         runtime_mode,
         interaction_mode,
         created_by,
@@ -614,6 +627,7 @@ export const layer = Layer.effect(
           thread_id,
           workspace_strategy_json,
           model_selection_json,
+          fallback_model_selections_json,
           runtime_mode,
           interaction_mode,
           created_by,
@@ -638,6 +652,7 @@ export const layer = Layer.effect(
           ${task.threadId},
           ${JSON.stringify(task.workspaceStrategy)},
           ${JSON.stringify(task.modelSelection)},
+          ${JSON.stringify(task.fallbackModelSelections)},
           ${task.runtimeMode},
           ${task.interactionMode},
           ${task.createdBy},
@@ -663,6 +678,7 @@ export const layer = Layer.effect(
           thread_id = excluded.thread_id,
           workspace_strategy_json = excluded.workspace_strategy_json,
           model_selection_json = excluded.model_selection_json,
+          fallback_model_selections_json = excluded.fallback_model_selections_json,
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
           creation_source = excluded.creation_source,
@@ -926,25 +942,42 @@ export const layer = Layer.effect(
         const result =
           active.threadId === null
             ? yield* Effect.exit(
-                threadLaunch
-                  .launch({
-                    commandId,
-                    projectId: active.projectId,
-                    title: active.title,
-                    modelSelection: active.modelSelection,
-                    runtimeMode: active.runtimeMode,
-                    interactionMode: active.interactionMode,
-                    workspaceStrategy: active.workspaceStrategy,
-                    initialMessage: {
-                      messageId,
-                      scheduledTaskId: active.id,
-                      text: prompt,
-                      attachments: [],
-                    },
-                    createdBy: active.createdBy,
-                    creationSource: active.creationSource,
-                  })
-                  .pipe(Effect.map((launched) => launched.threadId)),
+                Effect.gen(function* () {
+                  const modelSelection =
+                    active.fallbackModelSelections.length === 0
+                      ? active.modelSelection
+                      : pickModelSelection(
+                          active.modelSelection,
+                          active.fallbackModelSelections,
+                          yield* providerRegistry.getProviders,
+                        );
+                  if (modelSelection !== active.modelSelection) {
+                    yield* Effect.logInfo("Scheduled task using fallback provider", {
+                      taskId: active.id,
+                      primary: active.modelSelection.instanceId,
+                      fallback: modelSelection.instanceId,
+                    });
+                  }
+                  return yield* threadLaunch
+                    .launch({
+                      commandId,
+                      projectId: active.projectId,
+                      title: active.title,
+                      modelSelection,
+                      runtimeMode: active.runtimeMode,
+                      interactionMode: active.interactionMode,
+                      workspaceStrategy: active.workspaceStrategy,
+                      initialMessage: {
+                        messageId,
+                        scheduledTaskId: active.id,
+                        text: prompt,
+                        attachments: [],
+                      },
+                      createdBy: active.createdBy,
+                      creationSource: active.creationSource,
+                    })
+                    .pipe(Effect.map((launched) => launched.threadId));
+                }),
               )
             : yield* Effect.exit(
                 // The stored selection only seeds fresh threads. A bound run
@@ -1330,6 +1363,8 @@ export const layer = Layer.effect(
         threadId: input.threadId ?? null,
         workspaceStrategy,
         modelSelection: input.modelSelection,
+        fallbackModelSelections:
+          input.fallbackModelSelections ?? existingTask?.fallbackModelSelections ?? [],
         runtimeMode: input.runtimeMode,
         interactionMode: input.interactionMode,
         createdBy: existingTask?.createdBy ?? input.createdBy ?? "user",
