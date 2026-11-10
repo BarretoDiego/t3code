@@ -100,6 +100,8 @@ import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { isPreviewFocused } from "../lib/previewFocus";
+import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { isMacPlatform } from "../lib/utils";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
@@ -220,7 +222,10 @@ import {
   useThreadJumpHintsVisible,
   ThreadStatusPill,
 } from "./Sidebar.logic";
-import { sortThreads } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  resolveThreadActivityTimestamp,
+  sortThreads,
+} from "@t3tools/client-runtime/state/thread-sort";
 import {
   legacyProjectThreadRows,
   legacyStandaloneRow,
@@ -956,6 +961,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     <TooltipTrigger
                       render={
                         <span
+                          data-jump-hint
                           aria-label={jumpLabel}
                           className="inline-flex h-5 items-center rounded-full border border-border/80 bg-background/90 px-1.5 font-mono text-3xs font-medium tracking-tight text-foreground shadow-sm"
                         />
@@ -972,7 +978,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     }`}
                   >
                     <RelativeTime
-                      timestamp={thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt}
+                      timestamp={resolveThreadActivityTimestamp(thread) ?? thread.createdAt}
                     />
                   </span>
                 )}
@@ -3473,6 +3479,9 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
       : false,
   );
+  const routePreviewOpen = useRightPanelStore(
+    (state) => selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview",
+  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>
@@ -3585,6 +3594,8 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
   const sidebarShortcutContext = {
     terminalFocus: terminalFocused,
     terminalOpen: routeTerminalOpen,
+    previewFocus: isPreviewFocused(),
+    previewOpen: routePreviewOpen,
     modelPickerOpen: isModelPickerOpen(),
   };
   const shouldShowThreadJumpHintsNow = shouldShowThreadJumpHintsForModifiers(
@@ -3605,6 +3616,8 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     const shortcutContext = {
       terminalFocus: isTerminalFocused(),
       terminalOpen: routeTerminalOpen,
+      previewFocus: isPreviewFocused(),
+      previewOpen: routePreviewOpen,
       modelPickerOpen: isModelPickerOpen(),
     };
 

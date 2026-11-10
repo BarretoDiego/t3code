@@ -15,6 +15,7 @@ function Textarea({
   size = "default",
   variant = "default",
   unstyled = false,
+  rows,
   ...props
 }: TextareaProps) {
   return (
@@ -34,12 +35,23 @@ function Textarea({
         render={(defaultProps) => (
           <textarea
             className={cn(
-              "field-sizing-content min-h-17.5 max-h-64 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere max-sm:min-h-20.5",
-              size === "sm" &&
-                "min-h-16.5 px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)] max-sm:min-h-19.5",
-              size === "lg" && "min-h-18.5 py-[calc(--spacing(2)-1px)] max-sm:min-h-21.5",
+              "field-sizing-content max-h-64 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere",
+              rows === undefined && "min-h-17.5 max-sm:min-h-20.5",
+              size === "sm" && "px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)]",
+              size === "sm" && rows === undefined && "min-h-16.5 max-sm:min-h-19.5",
+              size === "lg" && "py-[calc(--spacing(2)-1px)]",
+              size === "lg" && rows === undefined && "min-h-18.5 max-sm:min-h-21.5",
             )}
+            // field-sizing: content ignores `rows`, so an explicit row count sets the minimum height.
+            style={
+              rows === undefined
+                ? undefined
+                : {
+                    minHeight: `calc(${rows}lh + 2 * (var(--spacing) * ${size === "sm" ? 1 : size === "lg" ? 2 : 1.5} - 1px))`,
+                  }
+            }
             data-slot="textarea"
+            rows={rows}
             {...mergeProps(defaultProps, props)}
           />
         )}

@@ -143,7 +143,7 @@ export function ProjectLinksSettings({
     >
       <SettingsRow
         title="Link IDs"
-        description="Projects with the same Link ID are linked across environments. Links do not copy files. Copy the configuration to share it with an agent. Removing an ID restores automatic Git grouping. Keep-separate grouping still shows each checkout individually."
+        description="Projects with the same Link ID are linked across environments without copying files. Removing an ID restores automatic Git grouping; Keep-separate grouping still lists each checkout."
         control={
           <div className="flex flex-wrap gap-2">
             <Button

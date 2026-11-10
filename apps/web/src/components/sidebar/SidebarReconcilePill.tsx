@@ -97,9 +97,8 @@ export function SidebarReconcilePill() {
           description: error instanceof Error ? error.message : "An unexpected error occurred.",
         }),
       );
-    } finally {
-      setIsRequestPending(false);
     }
+    setIsRequestPending(false);
   };
 
   return (

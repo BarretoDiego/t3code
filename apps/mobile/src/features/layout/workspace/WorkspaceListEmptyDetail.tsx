@@ -1,0 +1,60 @@
+import { Platform } from "react-native";
+
+import { AppBar } from "../../../components/ui/AppBar";
+import { Toolbar } from "../../../components/ui/Toolbar";
+import { NativeStackScreenOptions } from "../../../native/StackHeader";
+import { useWorkspacePaneState } from "../adaptive-workspace-context";
+import { WorkspaceEmptyDetail } from "../WorkspaceEmptyDetail";
+
+/**
+ * The thread list's route in split view, where the list is the sidebar beside it: an empty
+ * detail. iOS clears the list's bar and keeps only New task.
+ */
+export function WorkspaceListEmptyDetail(props: {
+  readonly hasConnections: boolean;
+  readonly onAddConnection: () => void;
+  /** Agent Operations, beside New task on iOS. */
+  readonly onOpenAgentBoard?: () => void;
+  readonly onStartNewTask: () => void;
+}) {
+  const { panes } = useWorkspacePaneState();
+  return (
+    <>
+      <NativeStackScreenOptions
+        options={{
+          title: "",
+          headerTitle: "",
+          unstable_headerLeftItems: () => [],
+          headerSearchBarOptions: undefined,
+          unstable_headerRightItems: () => [],
+          unstable_headerToolbarItems: () => [],
+        }}
+      />
+      <Toolbar placement="left">
+        {props.onOpenAgentBoard ? (
+          <Toolbar.Button
+            accessibilityLabel="Open Agent Operations"
+            icon="rectangle.3.group"
+            onPress={props.onOpenAgentBoard}
+          />
+        ) : null}
+        <Toolbar.Button
+          accessibilityLabel="New task"
+          icon="square.and.pencil"
+          onPress={props.onStartNewTask}
+        />
+      </Toolbar>
+      <AppBar embedded title="Threads" />
+      <WorkspaceEmptyDetail
+        onAddConnection={
+          Platform.OS === "android" && !props.hasConnections ? props.onAddConnection : undefined
+        }
+        onStartNewTask={
+          Platform.OS === "android" && panes.primarySidebarVisible
+            ? undefined
+            : props.onStartNewTask
+        }
+      />
+    </>
+  );
+}

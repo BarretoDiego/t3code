@@ -17,6 +17,7 @@ import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 
+import { AppBar } from "../../components/ui/AppBar";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
@@ -25,7 +26,6 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useWorkspaceState } from "../../state/workspace";
 import { useThreadListNow } from "../threads/use-thread-list-now";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 
 const COLUMNS = [
   { key: "needsYou", label: "Needs You" },
@@ -178,7 +178,7 @@ export function AgentBoardRouteScreen() {
 
   return (
     <>
-      <NativeStackScreenOptions options={{ title: "Agent Operations" }} />
+      <AppBar title="Agent Operations" onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1 bg-screen"
         contentInsetAdjustmentBehavior="automatic"

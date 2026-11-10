@@ -1,17 +1,27 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it as effectIt } from "@effect/vitest";
 import { describe, expect, it } from "vite-plus/test";
 import {
   MessageId,
+  ProjectId,
   ProviderInstanceId,
   RuntimeRequestId,
   ThreadId,
+  type OrchestrationProjectShell,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 import {
   conversationMessages,
   isThreadSettledForWait,
+  resolveProject,
   resolveThreadStatus,
   threadTitleFromPrompt,
   type ThreadStatusInput,
@@ -173,4 +183,64 @@ describe("threadTitleFromPrompt", () => {
     const title = threadTitleFromPrompt(`${"a".repeat(68)}😀 and the rest of a long first line`);
     expect(title).toBe(`${"a".repeat(68)}...`);
   });
+});
+
+describe("resolveProject", () => {
+  effectIt.effect(
+    "resolves home-relative project paths while preserving ids and relative paths",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs
+          .makeTempDirectoryScoped({ prefix: "t3-thread-project-path-" })
+          .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
+        const home = path.join(root, "home");
+        const cwd = path.join(root, "current");
+        const workspaceRoot = path.join(home, "My Project");
+        const nestedRoot = path.join(workspaceRoot, "nested");
+        yield* fs.makeDirectory(nestedRoot, { recursive: true });
+        yield* fs.makeDirectory(cwd);
+        const project = (id: string, title: string, root: string): OrchestrationProjectShell => ({
+          id: ProjectId.make(id),
+          title,
+          workspaceRoot: root,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-10-02T11:00:00.000Z",
+          updatedAt: "2026-10-02T11:00:00.000Z",
+        });
+        const shell: OrchestrationV2ShellSnapshot = {
+          schemaVersion: 1,
+          snapshotSequence: 0,
+          threads: [],
+          archivedThreads: [],
+          projects: [
+            project("current-project", "Current", cwd),
+            project("home-project", "Home", home),
+            project("intended-project", "Intended", workspaceRoot),
+            project("nested-project", "Nested", nestedRoot),
+            project("~/literal-id", "Exact id", cwd),
+          ],
+        };
+
+        for (const [identifier, expectedProjectId] of [
+          ["intended-project", "intended-project"],
+          ["~/literal-id", "~/literal-id"],
+          [workspaceRoot, "intended-project"],
+          [path.relative(cwd, workspaceRoot), "intended-project"],
+          [".", "current-project"],
+          ["~/My Project", "intended-project"],
+          ["~", "home-project"],
+          ["~/My Project/nested", "nested-project"],
+          ["~/My Project/missing", "intended-project"],
+        ] as const) {
+          const resolved = yield* resolveProject(shell, identifier).pipe(
+            Effect.provideService(HostProcess.HomeDirectory, home),
+            Effect.provideService(HostProcess.WorkingDirectory, cwd),
+          );
+          expect(resolved.id, identifier).toBe(expectedProjectId);
+        }
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 });

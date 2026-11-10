@@ -31,6 +31,7 @@ import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
@@ -39,6 +40,7 @@ import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import { Argument, Command, Flag } from "effect/cli";
 
+import { expandHomePath } from "../os-jank.ts";
 import {
   type CliFailure,
   cliFailure,
@@ -112,7 +114,7 @@ export type ThreadStatusInput = Pick<
 >;
 
 export function resolveThreadStatus(thread: ThreadStatusInput): ThreadStatus {
-  const phase = resolveThreadAwarenessPhaseV2(thread);
+  const phase = resolveThreadAwarenessPhaseV2(thread, false);
   if (phase === "waiting_for_approval" || phase === "waiting_for_input" || phase === "failed") {
     return phase;
   }
@@ -223,23 +225,44 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   identifier: string,
 ) {
   const path = yield* Path.Path;
+  const fileSystem = yield* FileSystem.FileSystem;
   const trimmed = identifier.trim();
-  const byId = matchByIdOrPrefix(shell.projects, trimmed);
-  if (byId.length === 1) return byId[0]!;
-  const resolvedPath = path.resolve(trimmed);
-  const byPath = shell.projects.find(
-    (project) => project.workspaceRoot === resolvedPath || project.workspaceRoot === trimmed,
+  const exactId = shell.projects.find((project) => project.id === trimmed);
+  if (exactId) return exactId;
+  // Stored roots keep the path the project was added with, which may pass
+  // through a symlink (macOS /tmp), so both sides compare as real paths.
+  const realPath = (value: string) =>
+    fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
+  const target = yield* realPath(
+    path.resolve(yield* HostProcess.WorkingDirectory, yield* expandHomePath(trimmed)),
   );
-  if (byPath) return byPath;
+  const roots = yield* Effect.forEach(shell.projects, (project) =>
+    Effect.map(realPath(project.workspaceRoot), (root) => ({ project, root })),
+  );
+  const byPath = roots.find(
+    ({ project, root }) => root === target || project.workspaceRoot === trimmed,
+  );
+  if (byPath) return byPath.project;
+  // After the exact path, so `~` or `.` never resolves as an id prefix.
+  const byIdPrefix = matchByIdOrPrefix(shell.projects, trimmed);
+  if (byIdPrefix.length === 1) return byIdPrefix[0]!;
   const byTitle = shell.projects.filter(
     (project) => project.title.toLowerCase() === trimmed.toLowerCase(),
   );
   if (byTitle.length === 1) return byTitle[0]!;
   // A path inside a project's workspace (e.g. the cwd of a subdirectory).
-  const containing = shell.projects
-    .filter((project) => resolvedPath.startsWith(`${project.workspaceRoot}${path.sep}`))
-    .toSorted((left, right) => right.workspaceRoot.length - left.workspaceRoot.length);
-  if (containing.length > 0) return containing[0]!;
+  const containing = roots
+    .filter(({ root }) => {
+      const relative = path.relative(root, target);
+      return (
+        relative !== "" &&
+        relative !== ".." &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative)
+      );
+    })
+    .toSorted((left, right) => right.root.length - left.root.length);
+  if (containing.length > 0) return containing[0]!.project;
   return yield* fail(
     "project-not-found",
     `No project matches '${trimmed}'. Run \`t3 project list\` to see projects, or \`t3 project add <path>\` to add one.`,

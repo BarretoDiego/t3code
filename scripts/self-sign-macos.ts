@@ -2,10 +2,14 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { sign as signApplication } from "@electron/osx-sign";
+
+const prepareServerCompileCache: (context: AfterPackContext) => Promise<void> =
+  NodeModule.createRequire(import.meta.url)("./prepare-server-compile-cache.cjs");
 
 interface AfterPackContext {
   readonly appOutDir: string;
@@ -27,6 +31,7 @@ const security = (...args: ReadonlyArray<string>) =>
  */
 export default async function selfSignMacApp(context: AfterPackContext): Promise<void> {
   if (context.electronPlatformName !== "darwin") return;
+  await prepareServerCompileCache(context);
   const p12 = process.env.T3CODE_DESKTOP_MAC_SELF_SIGN_P12?.trim();
   if (!p12) return;
 

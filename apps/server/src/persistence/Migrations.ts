@@ -90,6 +90,7 @@ import Migration0083 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
 import Migration0084 from "./Migrations/077_RepairBooleanSettledOverride.ts";
 import Migration0085 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
 import Migration0086 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
+import Migration0087 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -196,6 +197,8 @@ const migrationEntries = [
   // Upstream published these as 78 and 79; fork ids through 84 were already taken.
   [85, "DropOrchestrationEventCorrelationIndex", Migration0085],
   [86, "DelegatedRecoveryIndexes", Migration0086],
+  // Upstream published this as 80; fork ids through 86 are already released.
+  [87, "ScheduledTaskThreadMode", Migration0087],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */
