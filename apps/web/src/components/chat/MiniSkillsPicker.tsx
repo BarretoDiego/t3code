@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { SparklesIcon } from "lucide-react";
+import { PuzzleIcon } from "lucide-react";
 import type { EnvironmentId, MiniSkillId } from "@t3tools/contracts";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
@@ -135,7 +135,7 @@ export const MiniSkillsPicker = memo(function MiniSkillsPicker(props: {
             />
           }
         >
-          <ComposerControlIcon icon={SparklesIcon} size={size} />
+          <ComposerControlIcon icon={PuzzleIcon} size={size} />
           {selectedCount > 0 ? <span>{selectedCount}</span> : null}
         </TooltipTrigger>
         {selectedCount > 0 ? (

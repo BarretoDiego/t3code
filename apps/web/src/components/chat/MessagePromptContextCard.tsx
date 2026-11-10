@@ -1,4 +1,4 @@
-import { ChevronDownIcon, LayersIcon, SparklesIcon, UserCogIcon } from "lucide-react";
+import { ChevronDownIcon, LayersIcon, PuzzleIcon, UserCogIcon } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { MessagePromptContext } from "@t3tools/contracts";
 
@@ -22,10 +22,10 @@ export function MessagePromptContextCard({ context }: { context: MessagePromptCo
           <PromptContextChip accent icon={UserCogIcon} label={context.profileName} />
         ) : null}
         {context.threadSkills.map((name) => (
-          <PromptContextChip key={`thread:${name}`} icon={SparklesIcon} label={name} />
+          <PromptContextChip key={`thread:${name}`} icon={PuzzleIcon} label={name} />
         ))}
         {context.requestSkills.map((name) => (
-          <PromptContextChip key={`request:${name}`} icon={SparklesIcon} label={name} />
+          <PromptContextChip key={`request:${name}`} icon={PuzzleIcon} label={name} />
         ))}
         <span className="ms-auto flex shrink-0 items-center gap-1 text-muted-foreground/70">
           Full prompt

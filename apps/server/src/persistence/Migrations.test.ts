@@ -54,6 +54,7 @@ describe("runMigrations", () => {
         [84, "RepairBooleanSettledOverride"],
         [85, "DropOrchestrationEventCorrelationIndex"],
         [86, "DelegatedRecoveryIndexes"],
+        [87, "ScheduledTaskThreadMode"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);

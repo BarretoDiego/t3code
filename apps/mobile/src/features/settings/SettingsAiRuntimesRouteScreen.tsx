@@ -33,6 +33,7 @@ import { useEnvironments, type EnvironmentPresentation } from "../../state/envir
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 
 const isRuntimeConfig = Schema.is(AiRuntimeConfig);
@@ -613,57 +614,60 @@ export function SettingsAiRuntimesRouteScreen() {
   } | null>(null);
   const [remote, setRemote] = useState<AiRuntime | null>(null);
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 20 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text className="text-sm text-foreground-muted">
-        Model endpoints on your connected environments. Existing agent providers work without
-        configuring runtimes.
-      </Text>
-      {environments.map((environment) => (
-        <EnvironmentRuntimes
-          key={environment.environmentId}
-          environment={environment}
-          onEdit={(environmentId, draft) => setEditor({ environmentId, draft })}
-          onRemote={setRemote}
-        />
-      ))}
-      {remote && (
-        <SettingsSection title="Select consuming node">
-          <View className="gap-2 p-4">
-            {environments
-              .filter(
-                (item) =>
-                  item.environmentId !== remote.environmentId &&
-                  item.connection.phase === "connected" &&
-                  item.serverConfig?.environment.capabilities.aiRuntimes,
-              )
-              .map((item) => (
-                <Button
-                  key={item.environmentId}
-                  label={item.label}
-                  onPress={() => {
-                    setEditor({
-                      environmentId: item.environmentId,
-                      draft: runtimeForConsumer(remote, `remote-${uuidv4()}`),
-                    });
-                    setRemote(null);
-                  }}
-                />
-              ))}
-            <Button label="Cancel" onPress={() => setRemote(null)} />
-          </View>
-        </SettingsSection>
-      )}
-      {editor && (
-        <RuntimeEditor
-          environmentId={editor.environmentId}
-          initial={editor.draft}
-          onClose={() => setEditor(null)}
-        />
-      )}
-    </ScrollView>
+    <SettingsScreen title="AI Runtimes">
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        className="flex-1 bg-background"
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 20 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text className="text-sm text-foreground-muted">
+          Model endpoints on your connected environments. Existing agent providers work without
+          configuring runtimes.
+        </Text>
+        {environments.map((environment) => (
+          <EnvironmentRuntimes
+            key={environment.environmentId}
+            environment={environment}
+            onEdit={(environmentId, draft) => setEditor({ environmentId, draft })}
+            onRemote={setRemote}
+          />
+        ))}
+        {remote && (
+          <SettingsSection title="Select consuming node">
+            <View className="gap-2 p-4">
+              {environments
+                .filter(
+                  (item) =>
+                    item.environmentId !== remote.environmentId &&
+                    item.connection.phase === "connected" &&
+                    item.serverConfig?.environment.capabilities.aiRuntimes,
+                )
+                .map((item) => (
+                  <Button
+                    key={item.environmentId}
+                    label={item.label}
+                    onPress={() => {
+                      setEditor({
+                        environmentId: item.environmentId,
+                        draft: runtimeForConsumer(remote, `remote-${uuidv4()}`),
+                      });
+                      setRemote(null);
+                    }}
+                  />
+                ))}
+              <Button label="Cancel" onPress={() => setRemote(null)} />
+            </View>
+          </SettingsSection>
+        )}
+        {editor && (
+          <RuntimeEditor
+            environmentId={editor.environmentId}
+            initial={editor.draft}
+            onClose={() => setEditor(null)}
+          />
+        )}
+      </ScrollView>
+    </SettingsScreen>
   );
 }

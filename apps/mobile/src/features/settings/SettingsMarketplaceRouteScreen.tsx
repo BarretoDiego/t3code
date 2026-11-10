@@ -33,6 +33,7 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 
 const decodeProviderTemplate = Schema.decodeUnknownOption(ProviderTemplatePayload);
@@ -497,8 +498,9 @@ export function SettingsMarketplaceRouteScreen() {
   };
 
   return (
-    <View className="flex-1 bg-sheet">
+    <SettingsScreen title="Marketplace">
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerClassName="gap-6 px-5 pt-4"
@@ -645,6 +647,6 @@ export function SettingsMarketplaceRouteScreen() {
           onChanged={marketplace.refresh}
         />
       ) : null}
-    </View>
+    </SettingsScreen>
   );
 }
