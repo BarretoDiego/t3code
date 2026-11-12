@@ -79,7 +79,7 @@ it.layer(NodeServices.layer)("service preflight database", (it) => {
         BUILD_MIGRATION_HEAD,
       );
 
-      // Startup reconciles this V2 preview history, so it must not block an update.
+      // Upstream preview ids conflict with the fork's published migration history.
       const preview = path.join(path.dirname(databasePath), "preview.sqlite");
       const previewDb = new NodeSqlite.DatabaseSync(preview);
       previewDb.exec(
@@ -93,10 +93,14 @@ it.layer(NodeServices.layer)("service preflight database", (it) => {
       insertPreview.run(54, "OrchestrationV2");
       insertPreview.run(55, "RemoveRedundantProjectionIndexes");
       previewDb.close();
-      expect(
-        runServicePreflight({ databasePath: preview, launcherProtocol: SERVICE_LAUNCHER_PROTOCOL })
-          .status,
-      ).toBe("ready");
+      const previewResult = runServicePreflight({
+        databasePath: preview,
+        launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+      });
+      expect(previewResult.status).toBe("blocked");
+      expect(previewResult.status === "blocked" ? previewResult.reason : "").toContain(
+        "V2 preview",
+      );
 
       const newerId = Math.max(...migrationManifest.map(([id]) => id)) + 1;
       insert.run(newerId, "FromNightly");
