@@ -1,7 +1,9 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { LegendList } from "@legendapp/list/react-native";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -60,7 +62,9 @@ export function ProjectRepositories(props: {
           {repositories.error ? (
             <Text className="py-2 text-xs text-destructive">{repositories.error}</Text>
           ) : null}
-          <FlatList
+          <LegendList
+            renderScrollComponent={NativeScrollView}
+            extraData={{ addedPath, threadId: props.threadId, environmentId: props.environmentId }}
             style={{ maxHeight: 240 }}
             data={repositories.data?.entries ?? []}
             keyExtractor={(entry) => entry.path}

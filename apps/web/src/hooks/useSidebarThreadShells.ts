@@ -1,3 +1,6 @@
+import { asLaunchingThread } from "@t3tools/client-runtime/state/thread-inbox";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { usePromotingDraftThreadKeys } from "../composerDraftStore";
 import {
   presentThreadShell,
   type EnvironmentThreadShell,
@@ -36,8 +39,19 @@ export function useSidebarThreadShells(refs?: ReadonlyArray<ScopedProjectRef>) {
   const live = useThreadShells(refs === undefined);
   const scopedLive = useThreadShellsForProjectRefs(refs ?? NO_PROJECT_REFS);
   const archives = useSidebarArchives();
+  const promoting = new Set(usePromotingDraftThreadKeys());
   return (() => {
-    const threads = refs === undefined ? live : scopedLive;
+    const source = refs === undefined ? live : scopedLive;
+    const threads =
+      promoting.size === 0
+        ? source
+        : source.map((thread) =>
+            promoting.has(
+              scopedThreadKey({ environmentId: thread.environmentId, threadId: thread.id }),
+            )
+              ? asLaunchingThread(thread)
+              : thread,
+          );
     const archived = archives.snapshots.flatMap(({ environmentId, snapshot }) =>
       snapshot.threads.map((shell) => {
         let byEnvironment = archivedPresentations.get(shell);

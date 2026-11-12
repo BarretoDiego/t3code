@@ -55,6 +55,11 @@ describe("runMigrations", () => {
         [85, "DropOrchestrationEventCorrelationIndex"],
         [86, "DelegatedRecoveryIndexes"],
         [87, "ScheduledTaskThreadMode"],
+        [88, "ProjectionMessageSearchText"],
+        [89, "TurnItemConversationIndex"],
+        [90, "CommandReadIndexes"],
+        [91, "LastExecutedRunIndex"],
+        [92, "TurnItemCounts"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);
@@ -185,6 +190,36 @@ describe("runMigrations", () => {
       );
       assert.notInclude(String(exit), `${V2 + 2}_ScheduledMessagesOrchestrationV2`);
       assert.deepStrictEqual(yield* history, before);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("keeps the migrations that finished before a later one failed", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 88 });
+      yield* sql`CREATE TABLE orchestration_v2_projection_turn_item_counts (thread_id TEXT)`;
+
+      const exit = yield* Effect.exit(runMigrations());
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.deepStrictEqual(
+        yield* history,
+        migrationManifest.filter(([id]) => id <= 91),
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("reapplies peer link migrations whose ledger rows are missing", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 79 });
+      yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id BETWEEN 77 AND 79`;
+
+      assert.deepStrictEqual(
+        yield* runMigrations(),
+        migrationManifest.filter(([id]) => id >= 77),
+      );
+      assert.deepStrictEqual(yield* history, migrationManifest);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 

@@ -531,7 +531,7 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
         id === HARNESS_PROJECT_ID ? Effect.succeedSome(project) : Effect.succeedNone,
       getByWorkspaceRoot: () => Effect.succeedSome(project),
     }),
-    Layer.mock(GitWorkflow.GitWorkflowService)({}),
+    Layer.mock(GitWorkflow.GitWorkflowService)({ currentBranch: () => Effect.succeed(null) }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: () => Effect.succeed({ status: "no-script" as const }),
     }),
@@ -549,7 +549,7 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
   const launch = ThreadLaunch.layer.pipe(
     Layer.provide(threadManagement),
     Layer.provide(IdAllocator.layer),
-    Layer.provide(Layer.mergeAll(externalServices, receipts)),
+    Layer.provide(Layer.mergeAll(externalServices, receipts, orchestrator)),
   );
   const serverConfig = Layer.effect(
     ServerConfig.ServerConfig,

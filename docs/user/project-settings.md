@@ -185,6 +185,7 @@ When adding an action, search scripts declared in `package.json`, `task.yaml`, o
 Taskfiles, including those in subfolders. Selecting one fills in its command and
 working directory. The directory is relative to the checkout, so the same action
 runs in the corresponding folder when using a worktree.
+When a project has several checkouts on one environment, choose one in the scope line at the top to see or change only that checkout's settings.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the

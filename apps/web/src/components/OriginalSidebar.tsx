@@ -1,3 +1,8 @@
+import { withoutRemovedCheckout } from "./Sidebar.logic";
+import { titleRegenerationToast } from "./threadTitleRegenerationToast";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { threadShortcutContext } from "./Sidebar.logic";
+import { SidebarFolderDrop } from "./sidebar/SidebarFolderDrop";
 import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
 import { SidebarSubthreadVisibilityMenu } from "./sidebar/SidebarSubthreadVisibilityMenu";
 import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
@@ -109,18 +114,11 @@ import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
-  shouldShowThreadJumpHintsForModifiers,
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
-import { useShortcutModifierState } from "../shortcutModifierState";
-import { useTerminalFocus } from "../hooks/useTerminalFocus";
-import { isTerminalFocused } from "../lib/terminalFocus";
-import { isPreviewFocused } from "../lib/previewFocus";
-import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { isModelPickerOpen } from "../modelPickerVisibility";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -515,7 +513,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   onDiscard: (draftId: DraftId) => void;
 }) {
   const { composer, draftId, onDiscard, onNavigate, session } = props;
-  const promptPreview = composer.prompt.trim().split("\n", 1)[0] ?? "";
+  const promptPreview =
+    assistantCitationsToPlainText(composer.prompt).trim().split("\n", 1)[0] ?? "";
   // images mirrors persistedAttachments once rehydration finishes; before
   // that only the persisted list is populated, hence max not sum.
   const attachmentCount =
@@ -1139,6 +1138,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
   const pr = linkedPullRequestStatus?.pr ?? null;
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
@@ -1206,9 +1206,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 : null;
   const isWokeStatus = topStatus?.icon === "woke";
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
-    effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
-    activeWorktreePath: thread.worktreePath,
-    activeThreadBranch: thread.branch,
+    effectiveEnvMode: checkoutThread.worktreePath === null ? "local" : "worktree",
+    activeWorktreePath: checkoutThread.worktreePath,
+    activeThreadBranch: checkoutThread.branch,
     currentGitBranch: visibleGitStatus?.refName ?? null,
   });
   const prStatus = prStatusIndicator(pr, linkedPullRequestStatus?.sourceControlProvider);
@@ -1232,7 +1232,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
   const detailsTooltip = (
     <SidebarThreadTooltip
-      thread={thread}
+      thread={checkoutThread}
       projectTitle={props.projectTitle}
       projectCwd={props.projectCwd}
       projectFaviconPath={props.projectFaviconPath}
@@ -1503,7 +1503,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     ) : null;
   const archivedMarker =
     thread.lineage.relationshipToParent === "subagent" ? (
-      <ThreadSubagentStatus thread={thread} />
+      <ThreadSubagentStatus thread={checkoutThread} />
     ) : thread.archivedAt !== null ? (
       <span role="status" className="text-xs text-secondary-label">
         Archived
@@ -1852,10 +1852,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {/* Always the branch. The plan step used to take this slot while
             working, but it truncated to a half-sentence and dropped the
             branch, so the row lost its most stable identifier. */}
-              {thread.branch ? (
+              {checkoutThread.branch ? (
                 <>
-                  <ThreadWorktreeIndicator thread={thread} />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap">{thread.branch}</span>
+                  <ThreadWorktreeIndicator thread={checkoutThread} />
+                  <span className="min-w-0 flex-1 truncate whitespace-nowrap">
+                    {checkoutThread.branch}
+                  </span>
                 </>
               ) : (
                 <span className="flex-1" />
@@ -1957,10 +1959,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     JSON.stringify([thread.environmentId, gitCwd]),
     gitStatus.data,
   );
+  const checkoutThread = withoutRemovedCheckout(thread, visibleGitStatus);
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
-    effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
-    activeWorktreePath: thread.worktreePath,
-    activeThreadBranch: thread.branch,
+    effectiveEnvMode: checkoutThread.worktreePath === null ? "local" : "worktree",
+    activeWorktreePath: checkoutThread.worktreePath,
+    activeThreadBranch: checkoutThread.branch,
     currentGitBranch: visibleGitStatus?.refName ?? null,
   });
   const modelInstanceId = thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -2018,14 +2021,14 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {thread.lineage.relationshipToParent === "subagent" ? (
-              <ThreadSubagentStatus thread={thread} />
+              <ThreadSubagentStatus thread={checkoutThread} />
             ) : (
               threadTimeLabel(thread)
             )}
           </span>
         </TooltipTrigger>
         <SidebarThreadTooltip
-          thread={thread}
+          thread={checkoutThread}
           projectTitle={props.projectTitle}
           projectCwd={props.projectCwd}
           projectFaviconPath={props.projectFaviconPath}
@@ -2070,6 +2073,9 @@ export default function Sidebar() {
     unarchiveThread,
     deleteThread,
   } = useThreadActions();
+  const regenerateThreadTitle = useAtomCommand(threadEnvironment.regenerateTitle, {
+    reportFailure: false,
+  });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -2718,12 +2724,15 @@ export default function Sidebar() {
   };
   const [renamingThreadKey, setRenamingThreadKey] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
+  const renamingOriginalTitleRef = useRef("");
   const startThreadRename = (threadRef: ScopedThreadRef, title: string) => {
     setRenamingThreadKey(scopedThreadKey(threadRef));
     setRenamingTitle(title);
+    renamingOriginalTitleRef.current = title;
   };
   const cancelThreadRename = () => setRenamingThreadKey(null);
-  const commitThreadRename = (threadRef: ScopedThreadRef, title: string, originalTitle: string) => {
+  const commitThreadRename = (threadRef: ScopedThreadRef, title: string) => {
+    const originalTitle = renamingOriginalTitleRef.current;
     void (async () => {
       const trimmed = title.trim();
       setRenamingThreadKey(null);
@@ -3221,25 +3230,18 @@ export default function Sidebar() {
       return;
     }
     if (clicked.value === "regenerate-title") {
-      for (const thread of regeneratableTitleThreads) {
-        const result = await updateThreadMetadata({
-          environmentId: thread.environmentId,
-          input: { threadId: thread.id, regenerateTitle: true },
-        });
-        if (result._tag === "Success") continue;
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to regenerate thread titles",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
-        return;
-      }
       clearSelection();
+      const toast = titleRegenerationToast(
+        await Promise.all(
+          regeneratableTitleThreads.map((thread) =>
+            regenerateThreadTitle({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.id },
+            }),
+          ),
+        ),
+      );
+      if (toast) toastManager.add(toast);
       return;
     }
     if (clicked.value === "settle") {
@@ -3497,20 +3499,13 @@ export default function Sidebar() {
           return;
         case "regenerate-title": {
           if (isRegeneratingTitle) return;
-          const result = await updateThreadMetadata({
-            environmentId: threadRef.environmentId,
-            input: { threadId: threadRef.threadId, regenerateTitle: true },
-          });
-          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to regenerate thread title",
-                description: error instanceof Error ? error.message : "An error occurred.",
-              }),
-            );
-          }
+          const toast = titleRegenerationToast([
+            await regenerateThreadTitle({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId },
+            }),
+          ]);
+          if (toast) toastManager.add(toast);
           return;
         }
         case "mark-unread":
@@ -3599,27 +3594,13 @@ export default function Sidebar() {
   };
   // Thread jump (cmd+1..9) and prev/next traversal reuse the same commands as
   // v1 — the keybinding layer is shared, only the ordered list differs.
-  const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
-  const routePreviewOpen = useRightPanelStore(
-    (state) => selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview",
-  );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window-level keydown listener for thread traversal and jump shortcuts, removed on cleanup
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat) return;
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
-        context: {
-          terminalFocus: isTerminalFocused(),
-          terminalOpen: routeTerminalOpen,
-          previewFocus: isPreviewFocused(),
-          previewOpen: routePreviewOpen,
-          modelPickerOpen: isModelPickerOpen(),
-        },
+        context: threadShortcutContext(routeThreadRef),
       });
       const navigateToThreadKey = (targetThreadKey: string | null) => {
         if (!targetThreadKey) return false;
@@ -3651,32 +3632,15 @@ export default function Sidebar() {
     keybindings,
     navigateToThread,
     orderedThreadKeys,
-    routePreviewOpen,
-    routeTerminalOpen,
     routeThreadKey,
+    routeThreadRef,
     threadByKey,
     topLevelThreadKeys,
   ]);
   // Same predicate as v1: hints show only while the held modifiers exactly
   // match a thread-jump binding. Adding Shift (screenshots) or Alt no
   // longer matches ⌘1..9, so the overlay hides for chords like ⌘⇧4.
-  const shortcutModifiers = useShortcutModifierState();
-  const terminalFocused = useTerminalFocus();
-  const shouldShowJumpHintsNow = shouldShowThreadJumpHintsForModifiers(
-    shortcutModifiers,
-    keybindings,
-    {
-      platform: navigator.platform,
-      context: {
-        terminalFocus: terminalFocused,
-        terminalOpen: routeTerminalOpen,
-        previewFocus: isPreviewFocused(),
-        previewOpen: routePreviewOpen,
-        modelPickerOpen: isModelPickerOpen(),
-      },
-    },
-  );
-  const showThreadJumpHints = useThreadJumpHintsVisible(shouldShowJumpHintsNow);
+  const showThreadJumpHints = useThreadJumpHintsVisible(keybindings, routeThreadRef);
   const attachListAutoAnimateRef = (node: HTMLUListElement | null) => {
     if (!node) return;
     autoAnimate(node, { duration: 150, easing: "ease-out" });
@@ -3722,7 +3686,7 @@ export default function Sidebar() {
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
-    <>
+    <SidebarFolderDrop>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent
         fixedHeader={
@@ -4077,6 +4041,39 @@ export default function Sidebar() {
               </p>
             )
           ) : null}
+          {!isSearchingThreads &&
+          visibleDraftSessionCount === 0 &&
+          pinnedThreads.length + activeThreads.length + snoozedThreads.length === 0 &&
+          (settledThreads.length === 0 || scopedProjectGroup !== null) ? (
+            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
+              {projects.length === 0 ? (
+                <>
+                  <span>No projects yet</span>
+                  <button
+                    type="button"
+                    onClick={openAddProjectCommandPalette}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  >
+                    <PlusIcon className="-mx-0.5 size-3" />
+                    Add project
+                  </button>
+                </>
+              ) : scopedProjectGroup ? (
+                <>
+                  <span>{`No ${settledThreads.length > 0 ? "active threads" : "threads"} in ${scopedProjectGroup.displayName}${settledThreads.length > 0 ? "" : " yet"}`}</span>
+                  <button
+                    type="button"
+                    onClick={() => setProjectScopeKey(null)}
+                    className="cursor-pointer rounded-md border border-sidebar-border px-2.5 py-1 text-2xs hover:bg-sidebar-row-hover"
+                  >
+                    Show all projects
+                  </button>
+                </>
+              ) : (
+                "No threads yet"
+              )}
+            </div>
+          ) : null}
           {!isSearchingThreads ? (
             <TooltipProvider
               key="sidebar-thread-tooltips-150"
@@ -4365,36 +4362,9 @@ export default function Sidebar() {
               </ul>
             </TooltipProvider>
           ) : null}
-          {!isSearchingThreads &&
-          visibleDraftSessionCount === 0 &&
-          pinnedThreads.length +
-            activeThreads.length +
-            snoozedThreads.length +
-            settledThreads.length ===
-            0 ? (
-            <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
-                <>
-                  <span>No projects yet</span>
-                  <button
-                    type="button"
-                    onClick={openAddProjectCommandPalette}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                  >
-                    <PlusIcon className="-mx-0.5 size-3" />
-                    Add project
-                  </button>
-                </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
-              ) : (
-                "No threads yet"
-              )}
-            </div>
-          ) : null}
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
-    </>
+    </SidebarFolderDrop>
   );
 }

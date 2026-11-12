@@ -1,3 +1,4 @@
+import { upstreamThreadStartCommand } from "./upstreamThreadStart.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- CLI flags use synchronous UUID factories and stable keyed identifiers.
 import * as NodeCrypto from "node:crypto";
 import {
@@ -1984,6 +1985,7 @@ export const threadCommand = Command.make("thread").pipe(
     "Drive threads on the running server: list, read, start, message, wait, and answer agents.",
   ),
   Command.withSubcommands([
+    upstreamThreadStartCommand,
     listCommand,
     showCommand,
     treeCommand,

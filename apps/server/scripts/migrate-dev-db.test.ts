@@ -14,8 +14,14 @@ const withDatabase = <A, E>(
   effect: Effect.Effect<A, E, SqlClient.SqlClient>,
 ) => effect.pipe(Effect.provide(NodeSqliteClient.layer({ filename: databasePath })));
 
+const insertPeerLink = (sql: SqlClient.SqlClient) => sql`INSERT INTO peer_environment_links
+  (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
+  VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',
+    '2026-08-01', '2027-08-01')`;
+
 const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(function* (
   baseDir: string,
+  toMigrationInclusive?: number,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -26,12 +32,23 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
     databasePath,
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations();
+      yield* runMigrations({ toMigrationInclusive });
 
+      const scripts = JSON.stringify([
+        { id: "lint", name: "Lint", command: "vp lint", icon: "lint", runOnWorktreeCreate: false },
+        {
+          id: "teardown",
+          name: "Teardown",
+          command: "./teardown",
+          icon: "configure",
+          runOnWorktreeCreate: false,
+          runOnSettle: true,
+        },
+      ]);
       yield* sql`INSERT INTO projection_projects
         (project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at)
         VALUES
-        ('project-kept', 'Kept', '/tmp/kept', '[]', '2026-08-01', '2026-08-01', NULL),
+        ('project-kept', 'Kept', '/tmp/kept', ${scripts}, '2026-08-01', '2026-08-01', NULL),
         ('project-deleted', 'Deleted', '/tmp/deleted', '[]', '2026-08-01', '2026-08-02', '2026-08-02')`;
 
       const forkPayload =
@@ -120,10 +137,7 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
       yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
         VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
-      yield* sql`INSERT INTO peer_environment_links
-        (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
-        VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',
-          '2026-08-01', '2027-08-01')`;
+      if (toMigrationInclusive === undefined) yield* insertPeerLink(sql);
     }),
   );
   return databasePath;
@@ -159,6 +173,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               json_extract(payload_json, '$.pullRequests[0].url') AS url,
               json_extract(payload_json, '$.pullRequests[0].watch') AS watch
             FROM orchestration_v2_projection_threads WHERE thread_id = 'stopped-thread'`;
+          const [project] = yield* sql<{ scripts_json: string }>`
+            SELECT scripts_json FROM projection_projects WHERE project_id = 'project-kept'`;
           const [leftovers] = yield* sql<{
             auth: number;
             tasks: number;
@@ -173,7 +189,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
                 (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
               (SELECT COUNT(*) FROM peer_environment_links) AS links`;
-          return { threads, events, sessions, pullRequest, leftovers };
+          return { threads, events, sessions, pullRequest, project, leftovers };
         }),
       );
       assert.deepStrictEqual(
@@ -192,6 +208,26 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         kept.pullRequest,
         { url: "https://github.com/owner/repo/pull/7", watch: null },
         "copied pull request links keep their history but stop being watched",
+      );
+      assert.deepStrictEqual(
+        JSON.parse(kept.project?.scripts_json ?? "[]"),
+        [
+          {
+            id: "lint",
+            name: "Lint",
+            command: "vp lint",
+            icon: "lint",
+            runOnWorktreeCreate: false,
+          },
+          {
+            id: "teardown",
+            name: "Teardown",
+            command: "./teardown",
+            icon: "configure",
+            runOnWorktreeCreate: false,
+          },
+        ],
+        "copied project scripts stay listed but never run on settle in the original checkout",
       );
       assert.deepStrictEqual(kept.leftovers, {
         auth: 0,
@@ -386,6 +422,40 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       if (error._tag === "MigrateDevDbPhaseError") {
         assert.equal(error.phase, "migrate");
         assert.include(String(error.cause), "67_ThreadSnapshotWindowIndexes");
+      }
+      assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
+      assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);
+    }),
+  );
+
+  it.effect("refuses an upstream peer preview without rewriting the source or destination", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-peer-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-peer-dest-" });
+      const source = yield* createFixtureSource(sourceDir);
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          // Upstream's V2 id 55 and peer preview ids 68-70 conflict with published fork migrations.
+          yield* sql`UPDATE effect_sql_migrations SET name = 'OrchestrationV2' WHERE migration_id = 55`;
+          yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 68`;
+          yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES
+          (68, 'PeerLinks'), (69, 'PeerLinkFence'), (70, 'WaitingLinkRequestIndex')`;
+        }),
+      );
+      const destination = yield* createFixtureSource(destDir);
+      const sourceBefore = yield* fs.readFile(source);
+      const destinationBefore = yield* fs.readFile(destination);
+      const error = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 2 },
+        { sharedHome: sourceDir },
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "MigrateDevDbPhaseError");
+      if (error._tag === "MigrateDevDbPhaseError") {
+        assert.equal(error.phase, "migrate");
+        assert.include(String(error.cause), "migration ids conflict with this build's history");
       }
       assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
       assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);

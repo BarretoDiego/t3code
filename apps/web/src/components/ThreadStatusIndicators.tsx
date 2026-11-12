@@ -8,6 +8,7 @@ import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePull
 import { useStableCallback } from "~/hooks/useStableCallback";
 
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   resolveEnvironmentMachineKind,
   type EnvironmentId,
@@ -22,8 +23,8 @@ import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useProject } from "../state/entities";
 import {
   pullRequestListLines,
-  resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestBadge,
+  resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestChains,
   type ThreadPullRequestBadge,
   visibleThreadPullRequests,
@@ -116,6 +117,41 @@ export function useLinkedThreadPullRequest(
       };
 }
 
+/** The pull request a thread shows: its current link, else the one found for its branch. */
+export function useThreadDisplayedPullRequest(
+  environmentId: EnvironmentId,
+  thread: Pick<
+    EnvironmentThreadShell,
+    "pullRequests" | "linkedPullRequest" | "branchPullRequest"
+  > | null,
+  branchPr: ThreadPr = null,
+  branchSourceControlProvider?: VcsStatusResult["sourceControlProvider"],
+) {
+  const supportsLinks = useSupportsMultiplePullRequests(environmentId);
+  const linkedStatus = useLinkedThreadPullRequest(
+    environmentId,
+    thread?.linkedPullRequest,
+    true,
+    thread?.pullRequests,
+    thread?.branchPullRequest,
+  );
+  const currentLink = supportsLinks
+    ? resolveThreadCurrentPullRequestLink(thread?.pullRequests ?? [])
+    : null;
+  const pr = linkedStatus?.pr ?? (currentLink === null ? branchPr : null);
+  return {
+    currentLink,
+    badge: supportsLinks ? resolveThreadPullRequestBadge(thread?.pullRequests) : null,
+    pr,
+    status: prStatusIndicator(
+      pr,
+      linkedStatus?.sourceControlProvider ?? branchSourceControlProvider,
+    ),
+    number: currentLink?.number ?? pr?.number,
+    url: currentLink?.url ?? pr?.url,
+  };
+}
+
 function linkedPullRequestReference(fallback: ThreadLinkedPullRequest) {
   const host = sourceControlClients.parseChangeRequestUrl(fallback.url)?.link.host;
   return { ...fallback, ...(host === undefined ? {} : { host }) };
@@ -149,10 +185,7 @@ export function linkedPullRequestSnapshotStatus(
   };
 }
 
-export {
-  resolveThreadPullRequestBadge,
-  type ThreadPullRequestBadge,
-} from "@t3tools/client-runtime/thread-pull-requests";
+export { type ThreadPullRequestBadge } from "@t3tools/client-runtime/thread-pull-requests";
 
 export interface ThreadPullRequestBadgePresentation {
   readonly Icon: PullRequestGlyphIcon;
@@ -486,7 +519,7 @@ export function resolveDisplayedThreadPr(input: {
     threadBranch !== null &&
     gitStatus !== null &&
     gitStatus.refName === threadBranch &&
-    gitStatus.pr != null
+    gitStatus.pr?.state === "open"
   ) {
     return gitStatus.pr;
   }
@@ -500,17 +533,12 @@ export function resolveDisplayedThreadPrProvider(input: {
   linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
   linkedPullRequestStatus?: LinkedThreadPullRequestStatus | null | undefined;
 }): VcsStatusResult["sourceControlProvider"] | undefined {
-  const { threadBranch, gitStatus, linkedPullRequest, linkedPullRequestStatus } = input;
+  const { gitStatus, linkedPullRequest, linkedPullRequestStatus } = input;
   if (linkedPullRequest != null) {
     return linkedPullRequestStatus?.sourceControlProvider;
   }
-  if (
-    threadBranch !== null &&
-    gitStatus !== null &&
-    gitStatus.refName === threadBranch &&
-    gitStatus.pr != null
-  ) {
-    return gitStatus.sourceControlProvider;
+  if (resolveDisplayedThreadPr(input) !== null) {
+    return gitStatus?.sourceControlProvider;
   }
 
   return undefined;
