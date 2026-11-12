@@ -693,6 +693,11 @@ describe("DesktopWindow", () => {
         );
         beforeInput(event, { ...input, key: "r", isAutoRepeat: false });
         assert.isFalse(fakeWindow.setIgnoreMenuShortcuts.mock.lastCall?.[0]);
+        fakeWindow.isDestroyed.mockReturnValue(true);
+        fakeWindow.setIgnoreMenuShortcuts.mockImplementation(() => {
+          throw new TypeError("Object has been destroyed");
+        });
+        assert.doesNotThrow(() => beforeInput(event, { ...input, key: "q", type: "keyUp" }));
       }).pipe(Effect.provide(layer));
     }),
   );
