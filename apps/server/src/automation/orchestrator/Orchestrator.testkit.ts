@@ -577,7 +577,7 @@ export function makeEngineLayer(input: {
             : Option.none(),
         ),
     }),
-    Layer.mock(GitWorkflow.GitWorkflowService)({}),
+    Layer.mock(GitWorkflow.GitWorkflowService)({ currentBranch: () => Effect.succeed(null) }),
     Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
       runForThread: () => Effect.succeed({ status: "no-script" as const }),
     }),
