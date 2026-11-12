@@ -41,6 +41,11 @@ describe("V2 migration ledger", () => {
         [85, "DropOrchestrationEventCorrelationIndex"],
         [86, "DelegatedRecoveryIndexes"],
         [87, "ScheduledTaskThreadMode"],
+        [88, "ProjectionMessageSearchText"],
+        [89, "TurnItemConversationIndex"],
+        [90, "CommandReadIndexes"],
+        [91, "LastExecutedRunIndex"],
+        [92, "TurnItemCounts"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
@@ -60,6 +65,7 @@ describe("V2 migration ledger", () => {
       yield* Migrator.make({})({
         loader: Migrator.fromRecord({ "53_OrchestrationV2": OrchestrationV2 }),
       });
+
       const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
       assert.ok(Exit.isFailure(yield* Effect.exit(runMigrations())));
       assert.deepStrictEqual(
@@ -83,6 +89,11 @@ describe("V2 migration ledger", () => {
         [85, "DropOrchestrationEventCorrelationIndex"],
         [86, "DelegatedRecoveryIndexes"],
         [87, "ScheduledTaskThreadMode"],
+        [88, "ProjectionMessageSearchText"],
+        [89, "TurnItemConversationIndex"],
+        [90, "CommandReadIndexes"],
+        [91, "LastExecutedRunIndex"],
+        [92, "TurnItemCounts"],
       ]);
       assert.deepStrictEqual(
         yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
@@ -102,6 +113,11 @@ describe("V2 migration ledger", () => {
         [85, "DropOrchestrationEventCorrelationIndex"],
         [86, "DelegatedRecoveryIndexes"],
         [87, "ScheduledTaskThreadMode"],
+        [88, "ProjectionMessageSearchText"],
+        [89, "TurnItemConversationIndex"],
+        [90, "CommandReadIndexes"],
+        [91, "LastExecutedRunIndex"],
+        [92, "TurnItemCounts"],
       ]);
       const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
       const names = columns.map((column) => column.name);

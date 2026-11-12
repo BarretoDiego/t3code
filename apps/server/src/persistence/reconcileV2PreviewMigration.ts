@@ -22,3 +22,11 @@ export const reconcileV2PreviewMigration = Effect.fn("reconcileV2PreviewMigratio
       "This database was migrated by an upstream T3 Code V2 build whose migration ids conflict with this build's history; it cannot be upgraded in place.",
   });
 });
+
+export function reconciledV2PreviewHistory(
+  history: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+): ReadonlyArray<{ readonly id: number; readonly name: string }> | null {
+  return history.some((row) => row.name === "OrchestrationV2" && [53, 54, 55].includes(row.id))
+    ? null
+    : history;
+}

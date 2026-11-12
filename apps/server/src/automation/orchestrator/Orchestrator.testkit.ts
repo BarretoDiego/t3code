@@ -594,7 +594,9 @@ export function makeEngineLayer(input: {
     }),
   );
   const launch = ThreadLaunch.layer.pipe(
-    Layer.provide(Layer.mergeAll(externalServices, threadManagement, receipts, IdAllocator.layer)),
+    Layer.provide(
+      Layer.mergeAll(externalServices, threadManagement, receipts, engine, IdAllocator.layer),
+    ),
   );
   return Layer.mergeAll(
     database,
