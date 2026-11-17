@@ -85,6 +85,7 @@ import {
   makeReplayServerConfig,
 } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadMessageIntake from "../../orchestration-v2/ThreadMessageIntake.ts";
 import { userFacingDispatchErrorMessage } from "../../orchestration-v2/UserFacingErrors.ts";
@@ -544,6 +545,9 @@ export function makeCliHarness(options: CliHarnessOptions = {}) {
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       folderForThread: () => Effect.succeedNone,
+    }),
+    Layer.mock(CheckpointStore.CheckpointStore)({
+      isGitRepository: () => Effect.succeed(true),
     }),
   );
   const launch = ThreadLaunch.layer.pipe(

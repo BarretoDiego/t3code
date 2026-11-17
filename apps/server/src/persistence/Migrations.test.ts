@@ -60,6 +60,19 @@ describe("runMigrations", () => {
         [90, "CommandReadIndexes"],
         [91, "LastExecutedRunIndex"],
         [92, "TurnItemCounts"],
+        [93, "QueuedTurnInputIndex"],
+        [94, "ProjectionProjectsCustomTitle"],
+        [95, "TurnItemTypeStatusIndex"],
+        [96, "ShellThreadReadIndexes"],
+        [97, "AuthConnectDevices"],
+        [98, "AuthConnectDeniedRequests"],
+        [99, "QueuedTurnInputIndexJsonValid"],
+        [100, "ProviderTurnAttemptIndex"],
+        [101, "TurnItemMessageOrdinalIndex"],
+        [102, "TurnItemInlineWorkOutput"],
+        [103, "RepairStaleTitleRegeneration"],
+        [104, "IssueTrackerBindings"],
+        [105, "ActiveShellIndexIndexes"],
       ]);
       assert.deepStrictEqual((yield* history).slice(0, before.length), before);
       assert.deepStrictEqual(yield* runMigrations(), []);
@@ -111,13 +124,21 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("upgrades a database at the last pre-V2 migration", () =>
-    Effect.gen(function* () {
-      yield* runMigrations({ toMigrationInclusive: PRE_V2 });
-      assert.deepStrictEqual(yield* runMigrations(), v2Migrations);
-      assert.deepStrictEqual(yield* history, migrationManifest);
-      assert.isAbove(yield* v2TableCount, 0);
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  it.effect(
+    "upgrades a database at the last pre-V2 migration, then rechecks it without a write lock",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: PRE_V2 });
+        assert.deepStrictEqual(yield* runMigrations(), v2Migrations);
+        assert.deepStrictEqual(yield* history, migrationManifest);
+        assert.isAbove(yield* v2TableCount, 0);
+
+        // query_only rejects BEGIN IMMEDIATE, which CLI startup would otherwise take on the live database.
+        yield* sql`PRAGMA query_only = ON`;
+        assert.deepStrictEqual(yield* runMigrations(), []);
+        assert.deepStrictEqual(yield* history, migrationManifest);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("drops the unused correlation index and keeps correlation values", () =>

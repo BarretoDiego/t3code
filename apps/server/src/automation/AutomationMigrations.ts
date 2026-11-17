@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import Migration0001 from "./Migrations/001_AutomationSchema.ts";
 import Migration0010 from "./Migrations/010_JournalDedup.ts";
@@ -21,7 +22,23 @@ export const automationMigrationEntries = [
 
 const run = Migrator.make({});
 
+const latestAutomationMigrationId = Math.max(...automationMigrationEntries.map(([id]) => id));
+
+// The migrator writes even when nothing is pending; CLI startup must not take the write lock for a no-op.
+const automationMigrationsPending = Effect.fn("automationMigrationsPending")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${AUTOMATION_MIGRATIONS_TABLE}
+  `;
+  if (tables.length === 0) return true;
+  const [row] = yield* sql<{ readonly latestId: number | null }>`
+    SELECT MAX(migration_id) AS latestId FROM ${sql(AUTOMATION_MIGRATIONS_TABLE)}
+  `;
+  return (row?.latestId ?? 0) < latestAutomationMigrationId;
+});
+
 export const runAutomationMigrations = Effect.fn("runAutomationMigrations")(function* () {
+  if (!(yield* automationMigrationsPending())) return [];
   const executed = yield* run({
     table: AUTOMATION_MIGRATIONS_TABLE,
     loader: Migrator.fromRecord(

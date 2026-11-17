@@ -53,7 +53,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     const resolved = yield* registry.resolve(token);
     expect(resolved?.thread.threadId).toBe(threadId);
     expect(resolved?.capabilities).toEqual(
-      new Set(["compute", "preview", "orchestration", "worktree", "pull-requests"]),
+      new Set(["compute", "preview", "orchestration", "worktree", "pull-requests", "issues"]),
     );
 
     yield* registry.revokeThread(threadId);
@@ -90,6 +90,7 @@ it.effect(
 
       expect(yield* capabilitiesOf(withPreview)).toEqual([
         "compute",
+        "issues",
         "orchestration",
         "preview",
         "pull-requests",
@@ -97,6 +98,7 @@ it.effect(
       ]);
       expect(yield* capabilitiesOf(withoutPreview)).toEqual([
         "compute",
+        "issues",
         "orchestration",
         "pull-requests",
         "worktree",
@@ -104,6 +106,7 @@ it.effect(
       expect(yield* capabilitiesOf(withDevice)).toEqual([
         "compute",
         "device",
+        "issues",
         "orchestration",
         "pull-requests",
         "worktree",

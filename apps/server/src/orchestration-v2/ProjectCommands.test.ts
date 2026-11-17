@@ -26,6 +26,7 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   workspaceRoot: "/tmp/scripts",
   defaultModelSelection: null,
   defaultThreadEnvMode: null,
+  hasCustomTitle: false,
   autoPull: false,
   faviconPath: null,
   projectIcon: null,

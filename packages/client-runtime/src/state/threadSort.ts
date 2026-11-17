@@ -1,12 +1,15 @@
 import type { ProjectId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
-import { PIN_ORDER_DIGITS, pinOrderKeyBetween } from "@t3tools/shared/pinOrderKey";
+import { generateSpreadPinOrderKeys, pinOrderKeyBetween } from "@t3tools/shared/pinOrderKey";
 import type { EnvironmentThreadShell } from "./models.ts";
+
+export { generateSpreadPinOrderKeys, pinOrderKeyBetween } from "@t3tools/shared/pinOrderKey";
 
 export interface ThreadSortInput {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly latestUserMessageAt?: string | null;
+  readonly latestUserAuthoredMessageAt?: string | null;
   readonly messages?: ReadonlyArray<{
     readonly createdAt: string;
     readonly role: string;
@@ -81,6 +84,18 @@ function getFirstSortableTimestamp(...values: Array<string | null | undefined>):
 }
 
 function getLatestUserMessageTimestamp(thread: ThreadSortInput): number {
+  // Agents also post in the user role; only what the user wrote counts. A thread
+  // the user never wrote in counts from its creation; older servers omit the field.
+  if (thread.latestUserAuthoredMessageAt !== undefined) {
+    return (
+      getFirstSortableTimestamp(
+        thread.latestUserAuthoredMessageAt,
+        thread.createdAt,
+        thread.updatedAt,
+      ) ?? Number.NEGATIVE_INFINITY
+    );
+  }
+
   if (thread.latestUserMessageAt) {
     const latestUserMessageTimestamp = toSortableTimestamp(thread.latestUserMessageAt);
     if (latestUserMessageTimestamp !== null) {
@@ -166,34 +181,6 @@ export function getLatestThreadForProject<
     }
   }
   return latest;
-}
-
-// Pinned reorder uses fractional index keys: a drag or Move up/down writes ONE
-// `pinOrderKey` (base-26 string) to ONE thread on its own server, so neighbors on
-// other servers are untouched and every client converges. The key math lives in
-// shared so the server CLI places a pin exactly as clients do.
-export { pinOrderKeyBetween };
-
-export function generateSpreadPinOrderKeys(count: number): string[] {
-  let width = 2;
-  let space = PIN_ORDER_DIGITS.length ** width;
-  while (space <= (count + 1) * 2) {
-    width += 1;
-    space *= PIN_ORDER_DIGITS.length;
-  }
-  const step = space / (count + 1);
-  const keys: string[] = [];
-  for (let i = 0; i < count; i += 1) {
-    let value = Math.round(step * (i + 1));
-    if (value % PIN_ORDER_DIGITS.length === 0) value += 1;
-    let key = "";
-    for (let digit = 0; digit < width; digit += 1) {
-      key = PIN_ORDER_DIGITS.charAt(value % PIN_ORDER_DIGITS.length) + key;
-      value = Math.floor(value / PIN_ORDER_DIGITS.length);
-    }
-    keys.push(key);
-  }
-  return keys;
 }
 
 export function planPinnedReorder(input: {

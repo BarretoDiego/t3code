@@ -4,10 +4,14 @@ import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitation
 import { threadShortcutContext } from "./Sidebar.logic";
 import { SidebarFolderDrop } from "./sidebar/SidebarFolderDrop";
 import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
+import { toServerClock } from "@t3tools/client-runtime/clock";
 import { useSidebarThreadShells } from "../hooks/useSidebarThreadShells";
 import { ThreadNestedSettledHeader } from "./sidebar/ThreadNestedSettledHeader";
 import { ThreadSubagentMarker, ThreadSubagentStatus } from "./sidebar/ThreadSubagentMarker";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ContextMenuSource } from "@t3tools/contracts";
+import { contextMenuSourceOf } from "../contextMenuSource";
+import { ActivityShimmerOverlay } from "./chat/TimelineRowParts";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { readEnvironmentScope } from "../state/session";
 import { isProviderNativeSubagentThread, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { canHandoffThread, openThreadHandoff } from "../state/threadHandoff";
@@ -109,7 +113,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -157,11 +161,8 @@ import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
-import {
-  buildThreadRouteParams,
-  resolveActiveThreadRouteRef,
-  resolveThreadRouteTarget,
-} from "../threadRoutes";
+import { buildThreadRouteParams, resolveActiveThreadRouteRef } from "../threadRoutes";
+import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
@@ -178,7 +179,7 @@ import {
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
   resolveSettledTimestamp,
-  resolveSidebarThreadStatus,
+  resolveSidebarRowStatus,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
@@ -302,12 +303,14 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 // Self-ticking so only this span re-renders each second, not the whole row.
-function WorkingDuration(props: { startedAt: string | null }) {
+function WorkingDuration(props: { environmentId: EnvironmentId; startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
   const nowMs = useNowSecond();
   if (Number.isNaN(startedMs)) return null;
   return (
-    <span className="font-mono tabular-nums">{formatWorkingDurationLabel(nowMs - startedMs)}</span>
+    <span className="font-mono tabular-nums">
+      {formatWorkingDurationLabel(toServerClock(props.environmentId, nowMs) - startedMs)}
+    </span>
   );
 }
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
@@ -403,7 +406,7 @@ function SidebarThreadTooltip({
                 showBadge={showInstanceBadge && providerEntry?.accentColor !== undefined}
                 badgeContent="none"
                 badgeClassName="h-2 min-w-2 px-0"
-                iconClassName="size-3 shrink-0 grayscale opacity-60"
+                iconClassName="size-3 shrink-0 opacity-60"
               />
               <div className="min-w-0 truncate text-foreground/75">
                 {showInstanceBadge && providerEntry
@@ -877,6 +880,7 @@ interface SidebarNestedRowHandlers {
       x: number;
       y: number;
     },
+    source: ContextMenuSource,
   ) => void;
   readonly onToggleNested: (threadKey: string, expanded: boolean) => void;
 }
@@ -957,7 +961,11 @@ const SidebarNestedThreadRow = memo(function SidebarNestedThreadRow(
         }}
         onContextMenu={(event) => {
           event.preventDefault();
-          onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+          onContextMenu(
+            threadRef,
+            { x: event.clientX, y: event.clientY },
+            contextMenuSourceOf(event),
+          );
         }}
       >
         {attention !== null ? (
@@ -1141,6 +1149,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       x: number;
       y: number;
     },
+    source: ContextMenuSource,
   ) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
@@ -1222,7 +1231,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  const status = resolveSidebarRowStatus({ ...thread, lastVisitedAt });
   // A woken thread reappears at its original position (the sort is static), so the pill carries
   // the weight. It clears only when the user re-engages: reading a completion wake, clicking the
   // pill, sending, settling, archiving, or a settling change request. Timer wakes survive a visit;
@@ -1333,7 +1342,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   };
   const handleContextMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
-    onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
+    onContextMenu(threadRef, { x: event.clientX, y: event.clientY }, contextMenuSourceOf(event));
   };
   const handleKeyDown = (event: ReactKeyboardEvent) => {
     if (event.target !== event.currentTarget) return;
@@ -1446,37 +1455,42 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onBlur={handleRenameBlur}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
+      className="-mx-1 min-w-0 flex-1 rounded-sm bg-card px-1 text-sm font-medium text-card-foreground outline-none ring-1 ring-inset ring-input focus:ring-foreground"
     />
   ) : (
     <>
       <span
+        ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
         className={cn(
           "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
           shouldRecede ? "font-normal" : "font-medium",
-          variant === "card"
-            ? cn(
-                "truncate",
-                isUnread || isWoke
-                  ? "text-foreground"
-                  : shouldRecede
-                    ? "text-secondary-label"
-                    : status === "failed"
-                      ? "text-foreground/95"
-                      : "text-foreground/90",
-              )
-            : cn(
-                "truncate group-hover/sidebar-row:text-foreground",
-                props.isActive || isWoke
-                  ? "text-foreground"
-                  : isUnread
-                    ? "text-muted-foreground"
-                    : "text-secondary-label/70",
-              ),
-          isRegeneratingTitle && "opacity-50",
+          isRegeneratingTitle
+            ? "relative truncate text-muted-foreground"
+            : variant === "card"
+              ? cn(
+                  "truncate",
+                  isUnread || isWoke
+                    ? "text-foreground"
+                    : shouldRecede
+                      ? "text-secondary-label"
+                      : status === "failed"
+                        ? "text-foreground/95"
+                        : "text-foreground/90",
+                )
+              : cn(
+                  "truncate group-hover/sidebar-row:text-foreground",
+                  props.isActive || isWoke
+                    ? "text-foreground"
+                    : isUnread
+                      ? "text-muted-foreground"
+                      : "text-secondary-label/70",
+                ),
         )}
       >
         {thread.title}
+        {isRegeneratingTitle ? (
+          <ActivityShimmerOverlay className="truncate">{thread.title}</ActivityShimmerOverlay>
+        ) : null}
       </span>
       <ThreadAutomationMarkers
         environmentId={thread.environmentId}
@@ -1593,7 +1607,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         data-thread-item
         className="relative list-none [content-visibility:auto] [contain-intrinsic-size:auto_34px]"
       >
-        <Tooltip>
+        <Tooltip disabled={isRenaming}>
           <TooltipTrigger
             render={
               <div
@@ -1794,7 +1808,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               <span role="status">{topStatus.label}</span>
               {status === "preparing" || status === "working" ? (
                 <span aria-hidden>
-                  <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                  <WorkingDuration
+                    environmentId={thread.environmentId}
+                    startedAt={resolveWorkingStartedAt(thread)}
+                  />
                 </span>
               ) : null}
             </span>
@@ -1869,7 +1886,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         sortable?.isDragging && "z-20 opacity-80",
       )}
     >
-      <Tooltip>
+      <Tooltip disabled={isRenaming}>
         <TooltipTrigger
           render={
             <div
@@ -2154,6 +2171,9 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
               aria-current={props.isRouteActive ? "page" : undefined}
               aria-label={`${thread.lineage.relationshipToParent === "subagent" ? "Subagent: " : ""}${thread.title}${props.projectTitle ? `, ${props.projectTitle}` : ""}`}
               onMouseMove={props.onHighlight}
+              // Focus stays in the search box, as for Enter. A focused result would lose focus as
+              // the results close, and its recovery scrolls the list away from the opened thread.
+              onPointerDown={(event) => event.preventDefault()}
               onClick={props.onSelect}
               className={cn(
                 "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm outline-none",
@@ -2244,13 +2264,6 @@ export default function Sidebar() {
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{
     path: string;
   }>({
-    onCopy: ({ path }) => {
-      toastManager.add({
-        type: "success",
-        title: "Path copied",
-        description: path,
-      });
-    },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -2265,13 +2278,6 @@ export default function Sidebar() {
     branch: string;
   }>({
     target: "branch name",
-    onCopy: ({ branch }) => {
-      toastManager.add({
-        type: "success",
-        title: "Branch copied",
-        description: branch,
-      });
-    },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -2285,13 +2291,6 @@ export default function Sidebar() {
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{
     threadId: ThreadId;
   }>({
-    onCopy: ({ threadId }) => {
-      toastManager.add({
-        type: "success",
-        title: "Thread ID copied",
-        description: threadId,
-      });
-    },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -2322,14 +2321,19 @@ export default function Sidebar() {
   const acknowledgeWoke = (threadRef: ScopedThreadRef, visitedAt: string) => {
     markThreadVisited(scopedThreadKey(threadRef), visitedAt);
   };
-  const routeTarget = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteTarget(params),
-  });
+  // A Settings or Usage modal keeps the thread behind it current.
+  const routeTarget = useShownThreadRouteTarget().shownTarget;
   const routeDraftThread = useComposerDraftStore((store) =>
     routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
   );
-  const routeThreadRef = (() => resolveActiveThreadRouteRef(routeTarget, routeDraftThread))();
+  const routeDraftRedirect = useComposerDraftStore((store) =>
+    routeTarget?.kind === "draft" ? store.getPromotedDraftRedirect(routeTarget.draftId) : null,
+  );
+  const routeThreadRef = resolveActiveThreadRouteRef(
+    routeTarget,
+    routeDraftThread,
+    routeDraftRedirect,
+  );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
   // Post-settle navigation validates against the CURRENT route, not the one
   // captured when the settle started: if the user navigated elsewhere while
@@ -2754,11 +2758,14 @@ export default function Sidebar() {
     // header can never claim something its rows would not show.
     classifyAttention: (thread) => {
       const shell = thread as EnvironmentThreadShell;
-      const status = resolveSidebarThreadStatus(shell);
+      const threadKey = scopedThreadKey(scopeThreadRef(shell.environmentId, shell.id));
+      const status = resolveSidebarRowStatus({
+        ...shell,
+        lastVisitedAt: threadLastVisitedAtById[threadKey],
+      });
       if (status === "approval" || status === "input" || status === "failed") {
         return status;
       }
-      const threadKey = scopedThreadKey(scopeThreadRef(shell.environmentId, shell.id));
       // A row answers for its nested subagents too, the same way its own
       // count does, so a collapsed section still reports a child that
       // needs the user.
@@ -3563,7 +3570,10 @@ export default function Sidebar() {
     })();
   };
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
-  const handleMultiSelectContextMenu = async (position: { x: number; y: number }) => {
+  const handleMultiSelectContextMenu = async (
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => {
     const api = readLocalApi();
     if (!api) return;
     // One exact actionable set: keys whose rows are actually rendered
@@ -3638,6 +3648,7 @@ export default function Sidebar() {
           { id: "delete", label: `Delete (${count})`, destructive: true },
         ],
         position,
+        source,
       ),
     );
     if (clicked._tag === "Failure") return;
@@ -3779,6 +3790,7 @@ export default function Sidebar() {
       x: number;
       y: number;
     },
+    source: ContextMenuSource,
   ) => {
     void (async () => {
       const api = readLocalApi();
@@ -3786,7 +3798,7 @@ export default function Sidebar() {
       const threadKey = scopedThreadKey(threadRef);
       const selectionState = useThreadSelectionStore.getState();
       if (selectionState.hasSelection() && selectionState.selectedThreadKeys.has(threadKey)) {
-        await handleMultiSelectContextMenu(position);
+        await handleMultiSelectContextMenu(position, source);
         return;
       }
       const thread = readThreadByKey().get(threadKey);
@@ -3859,6 +3871,7 @@ export default function Sidebar() {
               : {}),
           }),
           position,
+          source,
         ),
       );
       if (clicked._tag === "Failure") return;
@@ -4783,6 +4796,7 @@ export default function Sidebar() {
                           readonly x: number;
                           readonly y: number;
                         },
+                        source: ContextMenuSource,
                       ) => {
                         const api = readLocalApi();
                         if (!api) return;
@@ -4849,7 +4863,7 @@ export default function Sidebar() {
                         ];
                         if (menuItems.length === 0) return;
                         const clicked = await settlePromise(() =>
-                          api.contextMenu.show(menuItems, position),
+                          api.contextMenu.show(menuItems, position, source),
                         );
                         if (clicked._tag === "Failure" || !clicked.value) return;
                         switch (clicked.value) {
@@ -5118,6 +5132,7 @@ export default function Sidebar() {
                                         group,
                                         { siblingKeys, index },
                                         { x: event.clientX, y: event.clientY },
+                                        contextMenuSourceOf(event),
                                       );
                                     }}
                                     {...sortable.listeners}

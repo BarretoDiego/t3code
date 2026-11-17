@@ -26,7 +26,7 @@ import {
 import { resolveThreadAwarenessPhaseV2 } from "@t3tools/shared/agentAwareness";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { topOfPinnedOrderKey } from "@t3tools/shared/pinOrderKey";
+import { topOfPinnedRunOrderKey } from "@t3tools/shared/pinOrderKey";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -115,7 +115,7 @@ export type ThreadStatusInput = Pick<
 >;
 
 export function resolveThreadStatus(thread: ThreadStatusInput): ThreadStatus {
-  const phase = resolveThreadAwarenessPhaseV2(thread, false);
+  const phase = resolveThreadAwarenessPhaseV2(thread, null);
   if (phase === "waiting_for_approval" || phase === "waiting_for_input" || phase === "failed") {
     return phase;
   }
@@ -1688,7 +1688,12 @@ const lifecycleCommands = [
     "Pin a thread to the top of the pinned list.",
     (context) => {
       // A fresh pin lands at the top of the arranged run, as in the apps.
-      const orderKey = topOfPinnedOrderKey(context.shell.threads);
+      const orderKey =
+        topOfPinnedRunOrderKey(
+          context.shell.threads.flatMap((thread) =>
+            thread.pinnedAt == null ? [] : [thread.pinOrderKey],
+          ),
+        ) ?? undefined;
       return single(context, (commandId) => ({
         type: "thread.pin",
         commandId,

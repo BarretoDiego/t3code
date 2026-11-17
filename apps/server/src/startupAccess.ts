@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - The private-network gate guards the node:http server.
+import type * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
@@ -7,10 +9,11 @@ import {
   isSharedAddressSpaceHost,
   isWildcardHost,
 } from "@t3tools/shared/hostClassification";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isHostOnlyNetworkInterface } from "@t3tools/shared/networkInterfaces";
-
 import { QrCode } from "@t3tools/shared/qrCode";
 import { buildPairingAppLink } from "@t3tools/shared/remote";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
@@ -41,6 +44,25 @@ export const isLoopbackHost = (host: string | undefined): boolean => {
 };
 
 /**
+ * systemd-nspawn's `ve-*`/`vz-*` and NixOS containers' `vb-*` name host-side
+ * veths after the machine. Windows aliases are user-renameable, so these
+ * prefixes only apply to Linux interface discovery.
+ */
+const LINUX_CONTAINER_INTERFACE = /^(ve-|vb-|vz-)/;
+
+/**
+ * Container, VM, and VPN gateway interfaces (see `isHostOnlyNetworkInterface`)
+ * have addresses only this machine reaches, so they are never advertised.
+ */
+export const isHostOnlyInterface = (
+  name: string,
+  entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
+  platform: NodeJS.Platform,
+): boolean =>
+  isHostOnlyNetworkInterface(name, entries) ||
+  (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
+
+/**
  * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
  * plain or IPv4-mapped IPv6 form.
  */
@@ -63,6 +85,44 @@ export const acceptsPrivateNetworkConnection = (socket: {
     (address) => address !== undefined && isPrivateNetworkAddress(address),
   );
 
+const CLOSED_CONNECTION_LOG_INTERVAL_NANOS = 60_000_000_000n;
+
+/**
+ * Closing is silent to the client, so closed connections are logged with both
+ * addresses: the first at once, then at most one line a minute with a count, so
+ * a connect flood from outside cannot grow the service log without bound.
+ */
+// Untraced: the captured context would otherwise tie every later warning to a span that ended at startup.
+export const closeNonPrivateNetworkConnections = Effect.fnUntraced(function* (
+  server: NodeHttp.Server,
+) {
+  const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+  let nextLogAt: bigint | undefined;
+  let closedSinceLastLog = 0;
+  server.on("connection", (socket) => {
+    if (acceptsPrivateNetworkConnection(socket)) return;
+    // Read before destroy: Node forgets localAddress once the handle closes.
+    const addresses = { localAddress: socket.localAddress, remoteAddress: socket.remoteAddress };
+    socket.destroy();
+    runSync(
+      Effect.gen(function* () {
+        // Monotonic: a wall clock set backwards must not silence the warnings.
+        const now = yield* Clock.monotonicTimeNanos;
+        if (nextLogAt !== undefined && now < nextLogAt) {
+          closedSinceLastLog += 1;
+          return;
+        }
+        nextLogAt = now + CLOSED_CONNECTION_LOG_INTERVAL_NANOS;
+        yield* Effect.logWarning("closed a connection outside the private network", {
+          ...addresses,
+          ...(closedSinceLastLog > 0 ? { closedSinceLastLog } : {}),
+        });
+        closedSinceLastLog = 0;
+      }),
+    );
+  });
+});
+
 export const loopbackUrlHostForAddress = (address: NetAddress.InetAddress): string =>
   NetAddress.isUnspecified(address.address)
     ? "127.0.0.1"
@@ -79,6 +139,7 @@ const resolveHeadlessConnectionHost = (
   host: string | undefined,
   interfaces: NetworkInterfacesMap,
   privateNetworkOnly: boolean,
+  platform: NodeJS.Platform,
 ): string => {
   if (!host) {
     return "localhost";
@@ -89,7 +150,7 @@ const resolveHeadlessConnectionHost = (
   }
 
   const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries = []]) =>
-    isHostOnlyNetworkInterface(name, entries) ? [] : entries,
+    isHostOnlyInterface(name, entries, platform) ? [] : entries,
   );
   const externalIpv4Entries = interfaceEntries.filter(
     (entry) =>
@@ -121,12 +182,14 @@ export const resolveHeadlessConnectionString = (
   options: {
     readonly interfaces?: NetworkInterfacesMap;
     readonly privateNetworkOnly?: boolean | undefined;
-  } = {},
+    readonly platform: NodeJS.Platform;
+  },
 ): string => {
   const connectionHost = resolveHeadlessConnectionHost(
     host,
     options.interfaces ?? NodeOS.networkInterfaces(),
     options.privateNetworkOnly === true,
+    options.platform,
   );
   return `http://${formatHostForUrl(connectionHost)}:${port}`;
 };
@@ -189,10 +252,11 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
   const serverConfig = yield* ServerConfig.ServerConfig;
   const httpServer = yield* HttpServer.HttpServer;
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const platform = yield* HostProcess.Platform;
   const connectionString = resolveHeadlessConnectionString(
     serverConfig.host,
     resolveListeningPort(httpServer.address, serverConfig.port),
-    { privateNetworkOnly: serverConfig.privateNetworkOnly },
+    { privateNetworkOnly: serverConfig.privateNetworkOnly, platform },
   );
   const issued = yield* serverAuth.issueStartupPairingCredential();
 

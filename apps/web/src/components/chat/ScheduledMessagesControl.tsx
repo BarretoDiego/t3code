@@ -1,3 +1,4 @@
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { EnvironmentId, ScheduledMessage, ThreadId } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
@@ -36,6 +37,7 @@ export function ScheduledMessagesControl(props: {
   readonly canEdit: boolean;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly onImageExpand: (preview: ExpandedImagePreview) => void;
 }) {
   const scheduledMessages =
     useEnvironmentQuery(
@@ -154,6 +156,7 @@ export function ScheduledMessagesControl(props: {
                 isEditing={isEditing}
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
+                onImageExpand={props.onImageExpand}
                 editor={
                   isEditing ? (
                     <Textarea

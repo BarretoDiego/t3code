@@ -1,7 +1,9 @@
-// Pinned threads carry an optional pinOrderKey (a base-26 string). The pinned
-// block sorts keyed threads by plain string comparison, so placing a thread
-// writes ONE key to ONE thread on that thread's own server.
-export const PIN_ORDER_DIGITS = "abcdefghijklmnopqrstuvwxyz";
+/**
+ * Fractional order keys for the sidebar's Pinned section. Keys are lowercase
+ * digit strings compared as plain strings; a smaller key sorts higher. Shared
+ * so the server places an agent-issued pin the same way a client pin is placed.
+ */
+const PIN_ORDER_DIGITS = "abcdefghijklmnopqrstuvwxyz";
 
 function isValidPinOrderKey(key: string): boolean {
   if (key.length === 0) return false;
@@ -18,7 +20,6 @@ function isValidPinOrderKey(key: string): boolean {
 function pinOrderMidpoint(a: string, b: string): string {
   if (b !== "" && a >= b) throw new Error("pinOrderMidpoint: bounds out of order");
   if (b !== "") {
-    // Recurse past the longest common prefix ("a" pads the shorter side).
     let n = 0;
     while ((a.charAt(n) || PIN_ORDER_DIGITS[0]) === b.charAt(n)) n += 1;
     if (n > 0) return b.slice(0, n) + pinOrderMidpoint(a.slice(n), b.slice(n));
@@ -28,9 +29,6 @@ function pinOrderMidpoint(a: string, b: string): string {
   if (digitB - digitA > 1) {
     return PIN_ORDER_DIGITS.charAt(Math.round((digitA + digitB) / 2));
   }
-  // Consecutive leading digits: either b has spare digits to shorten into,
-  // or we extend a (never producing a trailing minimum digit — the base
-  // case midpoint("", "") is the middle of the alphabet).
   if (b.length > 1) return b.charAt(0);
   return PIN_ORDER_DIGITS.charAt(digitA) + pinOrderMidpoint(a.slice(1), "");
 }
@@ -48,21 +46,38 @@ export function pinOrderKeyBetween(before: string | null, after: string | null):
   return pinOrderMidpoint(a, b);
 }
 
-/**
- * Key that sorts before every arranged pinned thread, so a fresh pin lands at
- * the top of the run. Undefined (keyless, sorts with the legacy block) when
- * key math cannot produce one: pinning must never fail on placement.
- */
-export function topOfPinnedOrderKey(
-  threads: Iterable<{
-    readonly pinnedAt?: unknown;
-    readonly pinOrderKey?: string | null | undefined;
-  }>,
-): string | undefined {
+/** Key for a newly pinned thread at the top of the pinned run: before the
+    smallest existing key, or a fresh key when there is none. Null when the
+    smallest key is corrupt; callers then send no key. */
+export function topOfPinnedRunOrderKey(
+  existingKeys: Iterable<string | null | undefined>,
+): string | null {
   let firstKey: string | null = null;
-  for (const thread of threads) {
-    if (thread.pinnedAt == null || thread.pinOrderKey == null) continue;
-    if (firstKey === null || thread.pinOrderKey < firstKey) firstKey = thread.pinOrderKey;
+  for (const key of existingKeys) {
+    if (key == null) continue;
+    if (firstKey === null || key < firstKey) firstKey = key;
   }
-  return pinOrderKeyBetween(null, firstKey) ?? undefined;
+  return pinOrderKeyBetween(null, firstKey);
+}
+
+export function generateSpreadPinOrderKeys(count: number): string[] {
+  let width = 2;
+  let space = PIN_ORDER_DIGITS.length ** width;
+  while (space <= (count + 1) * 2) {
+    width += 1;
+    space *= PIN_ORDER_DIGITS.length;
+  }
+  const step = space / (count + 1);
+  const keys: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    let value = Math.round(step * (i + 1));
+    if (value % PIN_ORDER_DIGITS.length === 0) value += 1;
+    let key = "";
+    for (let digit = 0; digit < width; digit += 1) {
+      key = PIN_ORDER_DIGITS.charAt(value % PIN_ORDER_DIGITS.length) + key;
+      value = Math.floor(value / PIN_ORDER_DIGITS.length);
+    }
+    keys.push(key);
+  }
+  return keys;
 }

@@ -33,8 +33,9 @@ import {
   makeWindow,
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, RefreshControl, View } from "react-native";
+import { use, useEffect, useRef, useState, type ReactNode } from "react";
+import { Pressable, View } from "react-native";
+import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -44,6 +45,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
 import { cn } from "../../lib/cn";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
+import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -86,6 +88,7 @@ function UsageScreen(props: {
   readonly tabParam: string | undefined;
 }) {
   const insets = useSafeAreaInsets();
+  const headerOnly = use(NativeWorkspaceTabActivityContext)?.headerOnly === true;
   const [selection, setSelection] = useState(() => ({
     params: props.tabParam,
     view: (props.tabParam === "usage" ? "cost" : "limits") as UsageView,
@@ -113,9 +116,13 @@ function UsageScreen(props: {
   const { merged, environments, selectedEnvironments, isPending, isPartial, refresh } = useUsage(
     window,
     selectedEnvironmentIds,
+    !headerOnly,
   );
   const isFocused = useIsFocused();
-  const limits = useRefreshLimits(selectedEnvironmentIds, isFocused && view === "limits");
+  const limits = useRefreshLimits(
+    selectedEnvironmentIds,
+    isFocused && view === "limits" && !headerOnly,
+  );
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const refreshProviderRateLimits = useAtomCommand(serverEnvironment.refreshProviderRateLimits, {
     reportFailure: false,
@@ -141,7 +148,7 @@ function UsageScreen(props: {
   );
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the reset countdown clock while any provider reports a rate-limit window
   useEffect(() => {
-    if (!hasRateLimitSnapshots) return;
+    if (headerOnly || !hasRateLimitSnapshots) return;
     const tick = () => setRateLimitsNowMs(Date.now());
     // Re-read the clock right after (re)starting without setting state inside the effect body.
     const refreshId = setTimeout(tick, 0);
@@ -150,7 +157,7 @@ function UsageScreen(props: {
       clearTimeout(refreshId);
       clearInterval(intervalId);
     };
-  }, [hasActiveRateLimitCountdown, hasRateLimitSnapshots]);
+  }, [hasActiveRateLimitCountdown, hasRateLimitSnapshots, headerOnly]);
   const refreshPlanLimits = async () => {
     if (refreshingPlanLimitsRef.current || planLimits.refreshTargets.length === 0) return;
     refreshingPlanLimitsRef.current = true;
@@ -279,157 +286,159 @@ function UsageScreen(props: {
       menus={showEnvironmentFilter ? [environmentMenu] : undefined}
       workspaceRoot={props.workspace}
     >
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}
-        className="flex-1"
-        contentContainerClassName="px-5 pt-4"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-        refreshControl={
-          showingLimits || canReadDiagnostics ? (
-            <RefreshControl
-              refreshing={showingLimits ? limits.refreshing : refreshingUsage}
-              onRefresh={showingLimits ? () => void refreshLimits() : refreshWindow}
-            />
-          ) : undefined
-        }
-      >
-        <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
-          {wide ? (
-            <View className="flex-row items-center gap-3">
-              {showingLimits ? (
-                <View className="flex-1" />
-              ) : (
-                <SegmentedControl
-                  options={WINDOW_OPTIONS}
-                  selected={windowDays}
-                  onSelect={selectWindow}
-                  size="compact"
-                  className="flex-1"
-                />
-              )}
-              <SegmentedControl
-                options={VIEW_OPTIONS}
-                selected={view}
-                onSelect={setView}
-                size="compact"
-                role="tab"
-                className="flex-1"
+      {headerOnly ? null : (
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+          className="flex-1"
+          contentContainerClassName="px-5 pt-4"
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+          onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+          refreshControl={
+            showingLimits || canReadDiagnostics ? (
+              <RefreshControl
+                refreshing={showingLimits ? limits.refreshing : refreshingUsage}
+                onRefresh={showingLimits ? () => void refreshLimits() : refreshWindow}
               />
-            </View>
-          ) : (
-            <SegmentedControl
-              options={VIEW_OPTIONS}
-              selected={view}
-              onSelect={setView}
-              role="tab"
-            />
-          )}
-          <Animated.View
-            key={showingLimits ? "limits" : "usage"}
-            entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
-            className="gap-6"
-          >
-            {showingLimits ? (
-              <>
-                <UsageLimitsSection
-                  now={limits.now}
-                  failedLabels={limits.failedLabels}
-                  selectedEnvironmentIds={selectedEnvironmentIds}
-                  wide={wide}
-                />
-                <PlanLimitsSection
-                  isRefreshing={isRefreshingPlanLimits}
-                  refreshFailed={planLimitsRefreshFailed}
-                  view={planLimits}
-                  onRefresh={() => void refreshPlanLimits()}
-                />
-              </>
-            ) : (
-              <>
-                {wide ? null : (
+            ) : undefined
+          }
+        >
+          <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
+            {wide ? (
+              <View className="flex-row items-center gap-3">
+                {showingLimits ? (
+                  <View className="flex-1" />
+                ) : (
                   <SegmentedControl
                     options={WINDOW_OPTIONS}
                     selected={windowDays}
                     onSelect={selectWindow}
                     size="compact"
+                    className="flex-1"
                   />
                 )}
-                <UsageCoverageNotice
-                  environments={selectedEnvironments}
-                  merged={merged}
-                  isPartial={isPartial}
+                <SegmentedControl
+                  options={VIEW_OPTIONS}
+                  selected={view}
+                  onSelect={setView}
+                  size="compact"
+                  role="tab"
+                  className="flex-1"
                 />
-                <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
-                {isPending ? (
-                  <Text className="py-16 text-center text-base text-foreground-muted">
-                    Scanning provider transcripts…
-                  </Text>
-                ) : selectedEnvironments.length === 0 ? (
-                  <Text className="py-16 text-center text-base text-foreground-muted">
-                    {environments.length === 0
-                      ? "Connect an environment to see usage."
-                      : "Select an environment to see usage."}
-                  </Text>
-                ) : !canReadDiagnostics ? (
-                  <View className="gap-2 py-16">
-                    {selectedEnvironments.map((environment) => (
-                      <Text
-                        key={environment.environmentId}
-                        className="text-center text-base text-foreground-muted"
-                      >
-                        {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
-                        {environment.error}
-                      </Text>
-                    ))}
-                  </View>
-                ) : (
-                  <>
-                    {sourceMessages.map((message) => (
-                      <Text key={message} className="text-sm text-foreground-muted">
-                        {message}
-                      </Text>
-                    ))}
-                    <UsageUpdating dimmed={progress.dimmed} label={progress.label}>
-                      {wide ? (
-                        <View className="flex-row gap-6">
-                          <View className="w-72 gap-6">
-                            <View className="rounded-[24px] border-continuous bg-grouped-card p-4">
-                              <UsageSummary merged={merged} metric={metric} />
-                            </View>
-                            {providers}
-                          </View>
-                          <View className="min-w-0 flex-1">
-                            <ChartCard
-                              {...chart}
-                              height={WIDE_CHART_HEIGHT}
-                              fill
-                              title={`${isPast24Hours ? "Hourly" : "Daily"} ${metric === "cost" ? "cost" : "processed tokens"}`}
-                            />
-                          </View>
-                        </View>
-                      ) : (
-                        <>
-                          <ChartCard {...chart} height={CHART_HEIGHT} />
-                          {providers}
-                        </>
-                      )}
-                      <TotalsSection
-                        merged={merged}
-                        isPast24Hours={isPast24Hours}
-                        columns={width >= 900 ? 6 : wide ? 3 : 2}
-                      />
-                      <CostSection merged={merged} wide={wide} />
-                      <ModelsSection merged={merged} metric={metric} columns={wide ? 2 : 1} />
-                    </UsageUpdating>
-                  </>
-                )}
-              </>
+              </View>
+            ) : (
+              <SegmentedControl
+                options={VIEW_OPTIONS}
+                selected={view}
+                onSelect={setView}
+                role="tab"
+              />
             )}
-          </Animated.View>
-        </View>
-      </ScrollView>
+            <Animated.View
+              key={showingLimits ? "limits" : "usage"}
+              entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
+              className="gap-6"
+            >
+              {showingLimits ? (
+                <>
+                  <UsageLimitsSection
+                    now={limits.now}
+                    failedLabels={limits.failedLabels}
+                    selectedEnvironmentIds={selectedEnvironmentIds}
+                    wide={wide}
+                  />
+                  <PlanLimitsSection
+                    isRefreshing={isRefreshingPlanLimits}
+                    refreshFailed={planLimitsRefreshFailed}
+                    view={planLimits}
+                    onRefresh={() => void refreshPlanLimits()}
+                  />
+                </>
+              ) : (
+                <>
+                  {wide ? null : (
+                    <SegmentedControl
+                      options={WINDOW_OPTIONS}
+                      selected={windowDays}
+                      onSelect={selectWindow}
+                      size="compact"
+                    />
+                  )}
+                  <UsageCoverageNotice
+                    environments={selectedEnvironments}
+                    merged={merged}
+                    isPartial={isPartial}
+                  />
+                  <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
+                  {isPending ? (
+                    <Text className="py-16 text-center text-base text-foreground-muted">
+                      Scanning provider transcripts…
+                    </Text>
+                  ) : selectedEnvironments.length === 0 ? (
+                    <Text className="py-16 text-center text-base text-foreground-muted">
+                      {environments.length === 0
+                        ? "Connect an environment to see usage."
+                        : "Select an environment to see usage."}
+                    </Text>
+                  ) : !canReadDiagnostics ? (
+                    <View className="gap-2 py-16">
+                      {selectedEnvironments.map((environment) => (
+                        <Text
+                          key={environment.environmentId}
+                          className="text-center text-base text-foreground-muted"
+                        >
+                          {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
+                          {environment.error}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : (
+                    <>
+                      {sourceMessages.map((message) => (
+                        <Text key={message} className="text-sm text-foreground-muted">
+                          {message}
+                        </Text>
+                      ))}
+                      <UsageUpdating dimmed={progress.dimmed} label={progress.label}>
+                        {wide ? (
+                          <View className="flex-row gap-6">
+                            <View className="w-72 gap-6">
+                              <View className="rounded-[24px] border-continuous bg-grouped-card p-4">
+                                <UsageSummary merged={merged} metric={metric} />
+                              </View>
+                              {providers}
+                            </View>
+                            <View className="min-w-0 flex-1">
+                              <ChartCard
+                                {...chart}
+                                height={WIDE_CHART_HEIGHT}
+                                fill
+                                title={`${isPast24Hours ? "Hourly" : "Daily"} ${metric === "cost" ? "cost" : "processed tokens"}`}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <>
+                            <ChartCard {...chart} height={CHART_HEIGHT} />
+                            {providers}
+                          </>
+                        )}
+                        <TotalsSection
+                          merged={merged}
+                          isPast24Hours={isPast24Hours}
+                          columns={width >= 900 ? 6 : wide ? 3 : 2}
+                        />
+                        <CostSection merged={merged} wide={wide} />
+                        <ModelsSection merged={merged} metric={metric} columns={wide ? 2 : 1} />
+                      </UsageUpdating>
+                    </>
+                  )}
+                </>
+              )}
+            </Animated.View>
+          </View>
+        </ScrollView>
+      )}
     </SettingsScreen>
   );
 }
