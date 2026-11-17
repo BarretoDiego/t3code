@@ -2,6 +2,11 @@ import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import { runAutomationMigrations } from "../automation/AutomationMigrations.ts";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  DATABASE_MIGRATION_PROGRESS_MESSAGE,
+  DATABASE_MIGRATIONS_FINISHED_MESSAGE,
+  DATABASE_MIGRATIONS_STARTED_MESSAGE,
+} from "@t3tools/shared/databaseMigrationLog";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -97,6 +102,19 @@ import Migration0089 from "./Migrations/082_TurnItemConversationIndex.ts";
 import Migration0090 from "./Migrations/083_CommandReadIndexes.ts";
 import Migration0091 from "./Migrations/084_LastExecutedRunIndex.ts";
 import Migration0092 from "./Migrations/085_TurnItemCounts.ts";
+import Migration0093 from "./Migrations/086_QueuedTurnInputIndex.ts";
+import Migration0094 from "./Migrations/087_ProjectionProjectsCustomTitle.ts";
+import Migration0095 from "./Migrations/088_TurnItemTypeStatusIndex.ts";
+import Migration0096 from "./Migrations/089_ShellThreadReadIndexes.ts";
+import Migration0097 from "./Migrations/090_AuthConnectDevices.ts";
+import Migration0098 from "./Migrations/091_AuthConnectDeniedRequests.ts";
+import Migration0099 from "./Migrations/092_QueuedTurnInputIndexJsonValid.ts";
+import Migration0100 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
+import Migration0101 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
+import Migration0102 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
+import Migration0103 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
+import Migration0104 from "./Migrations/097_IssueTrackerBindings.ts";
+import Migration0105 from "./Migrations/098_ActiveShellIndexIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -212,6 +230,21 @@ const migrationEntries = [
   [90, "CommandReadIndexes", Migration0090],
   [91, "LastExecutedRunIndex", Migration0091],
   [92, "TurnItemCounts", Migration0092],
+
+  // Upstream ids 86-98 follow the fork's published ids through 92.
+  [93, "QueuedTurnInputIndex", Migration0093],
+  [94, "ProjectionProjectsCustomTitle", Migration0094],
+  [95, "TurnItemTypeStatusIndex", Migration0095],
+  [96, "ShellThreadReadIndexes", Migration0096],
+  [97, "AuthConnectDevices", Migration0097],
+  [98, "AuthConnectDeniedRequests", Migration0098],
+  [99, "QueuedTurnInputIndexJsonValid", Migration0099],
+  [100, "ProviderTurnAttemptIndex", Migration0100],
+  [101, "TurnItemMessageOrdinalIndex", Migration0101],
+  [102, "TurnItemInlineWorkOutput", Migration0102],
+  [103, "RepairStaleTitleRegeneration", Migration0103],
+  [104, "IssueTrackerBindings", Migration0104],
+  [105, "ActiveShellIndexIndexes", Migration0105],
 ] as const;
 
 /** The id this build records the V2 orchestrator schema under. */
@@ -344,9 +377,13 @@ export function divergentMigrations(
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  // The desktop waits past its readiness budget until the finished line follows this one.
+  const hasPending = yield* hasPendingMigrations();
+  if (hasPending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= ORCHESTRATION_V2_MIGRATION_ID;
-  const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
+  // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.
+  const previewMigrations = includesV2 && hasPending ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
@@ -370,7 +407,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   const executedMigrations: Array<readonly [id: number, name: string]> = [...previewMigrations];
   for (const [index, [id, name]] of pending.entries()) {
     if (latestRecordedId > 0) {
-      yield* Effect.log("Upgrading database").pipe(
+      yield* Effect.log(DATABASE_MIGRATION_PROGRESS_MESSAGE).pipe(
         Effect.annotateLogs({
           migration: `${id}_${name}`,
           progress: `${index + 1} of ${pending.length}`,
@@ -382,7 +419,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")
-    : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
+    : Effect.log(DATABASE_MIGRATIONS_FINISHED_MESSAGE).pipe(Effect.annotateLogs({ migrations }));
 
   const recorded = yield* sql<{
     readonly migration_id: number;

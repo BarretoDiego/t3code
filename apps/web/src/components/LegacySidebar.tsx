@@ -63,6 +63,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthPreviewOperateScope,
   type ContextMenuItem,
+  type ContextMenuSource,
   type EnvironmentId,
   ProjectId,
   type EnvironmentMachineKind,
@@ -254,7 +255,9 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
+import { contextMenuSourceOf } from "../contextMenuSource";
+import { resolveListedAncestorThreadRef } from "@t3tools/client-runtime/state/threads";
 import { type SidebarRouteReveal, useActiveRowReveal } from "./sidebar/routeReveal";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -380,10 +383,14 @@ interface SidebarThreadRowProps {
     orderedProjectThreadKeys: readonly string[],
   ) => void;
   navigateToThread: (threadRef: ScopedThreadRef) => Promise<void>;
-  handleMultiSelectContextMenu: (position: { x: number; y: number }) => Promise<void>;
+  handleMultiSelectContextMenu: (
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => Promise<void>;
   handleThreadContextMenu: (
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
+    source: ContextMenuSource,
   ) => Promise<void>;
   clearSelection: () => void;
   commitRename: (
@@ -590,10 +597,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     if (hasSelection && isSelected) {
       void (async () => {
         const result = await settlePromise(() =>
-          handleMultiSelectContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-          }),
+          handleMultiSelectContextMenu(
+            {
+              x: event.clientX,
+              y: event.clientY,
+            },
+            contextMenuSourceOf(event),
+          ),
         );
         if (result._tag === "Failure") {
           const error = squashAtomCommandFailure(result);
@@ -614,10 +624,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     }
     void (async () => {
       const result = await settlePromise(() =>
-        handleThreadContextMenu(threadRef, {
-          x: event.clientX,
-          y: event.clientY,
-        }),
+        handleThreadContextMenu(
+          threadRef,
+          {
+            x: event.clientX,
+            y: event.clientY,
+          },
+          contextMenuSourceOf(event),
+        ),
       );
       if (result._tag === "Failure") {
         const error = squashAtomCommandFailure(result);
@@ -1020,10 +1034,14 @@ interface SidebarProjectThreadListProps {
   ) => void;
   navigateToThread: (threadRef: ScopedThreadRef) => Promise<void>;
   onFileDropThreads: (threadRef: ScopedThreadRef, files: File[]) => void;
-  handleMultiSelectContextMenu: (position: { x: number; y: number }) => Promise<void>;
+  handleMultiSelectContextMenu: (
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => Promise<void>;
   handleThreadContextMenu: (
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
+    source: ContextMenuSource,
   ) => Promise<void>;
   clearSelection: () => void;
   commitRename: (
@@ -1428,13 +1446,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{
     threadId: ThreadId;
   }>({
-    onCopy: (ctx) => {
-      toastManager.add({
-        type: "success",
-        title: "Thread ID copied",
-        description: ctx.threadId,
-      });
-    },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -1448,13 +1459,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{
     path: string;
   }>({
-    onCopy: (ctx) => {
-      toastManager.add({
-        type: "success",
-        title: "Path copied",
-        description: ctx.path,
-      });
-    },
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -1854,6 +1858,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           x: event.clientX,
           y: event.clientY,
         },
+        contextMenuSourceOf(event),
       );
 
       if (!clicked) {
@@ -1936,7 +1941,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     });
   };
 
-  const handleMultiSelectContextMenu = async (position: { x: number; y: number }) => {
+  const handleMultiSelectContextMenu = async (
+    position: { x: number; y: number },
+    source: ContextMenuSource,
+  ) => {
     const api = readLocalApi();
     if (!api) return;
     const threadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
@@ -1970,6 +1978,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         },
       ],
       position,
+      source,
     );
 
     if (clicked === "mark-unread") {
@@ -2294,7 +2303,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   };
 
   const handleThreadContextMenu = useStableCallback(
-    async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
+    async (
+      threadRef: ScopedThreadRef,
+      position: { x: number; y: number },
+      source: ContextMenuSource,
+    ) => {
       const api = readLocalApi();
       if (!api) return;
       const threadKey = scopedThreadKey(threadRef);
@@ -2335,6 +2348,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           },
         ],
         position,
+        source,
       );
 
       if (clicked === "unarchive") {
@@ -3468,12 +3482,29 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
   const handleNewThread = useNewThreadHandler();
   const { archiveThread, deleteThread, markThreadUnread } = useThreadActions();
   const { isMobile, setOpenMobile } = useSidebar();
-  const routeTarget = useThreadRouteTarget();
+  // A Settings or Usage modal keeps the thread behind it current.
+  const routeTarget = useShownThreadRouteTarget().shownTarget;
   const routeDraftThread = useComposerDraftStore((store) =>
     routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
   );
-  const routeThreadRef = resolveActiveThreadRouteRef(routeTarget, routeDraftThread);
+  const routeDraftRedirect = useComposerDraftStore((store) =>
+    routeTarget?.kind === "draft" ? store.getPromotedDraftRedirect(routeTarget.draftId) : null,
+  );
+  const routeThreadRef = resolveActiveThreadRouteRef(
+    routeTarget,
+    routeDraftThread,
+    routeDraftRedirect,
+  );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  const routeDelegatedUnderParent = useDelegatedUnderParent();
+  const routeRowThreadShells = useSidebarThreadShells();
+  // A task delegated from a listed thread has no row of its own here, so its parent's row stands in.
+  const routeRowThreadKey =
+    routeThreadRef !== null &&
+    routeThreadKey !== null &&
+    routeDelegatedUnderParent.has(routeThreadKey)
+      ? scopedThreadKey(resolveListedAncestorThreadRef(routeThreadRef, routeRowThreadShells))
+      : routeThreadKey;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>
@@ -3510,12 +3541,15 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     sortedProjects,
     physicalToLogicalKey,
     projectPhysicalKeyByScopedRef,
-    routeThreadKey,
+    routeThreadKey: routeRowThreadKey,
     sidebarThreadSortOrder,
     sidebarThreadPreviewCount,
     expandedThreadListsByProject,
   });
-  const revealActiveRow = useActiveRowReveal(routeReveal, routeThreadKey);
+  // The open draft's first send names its thread in place; a finalized draft reached by
+  // navigation resolves through its redirect instead, and still reveals.
+  const routeKeyInPlace = routeDraftThread?.promotedTo != null;
+  const revealActiveRow = useActiveRowReveal(routeReveal, routeRowThreadKey, routeKeyInPlace);
   const newThreadShortcutLabelOptions = {
     platform,
     context: {
@@ -3607,7 +3641,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
     if (traversalDirection !== null) {
       const targetThreadKey = resolveAdjacentThreadId({
         threadIds: orderedSidebarThreadKeys,
-        currentThreadId: routeThreadKey,
+        currentThreadId: routeRowThreadKey,
         direction: traversalDirection,
       });
       if (!targetThreadKey) {
@@ -3813,7 +3847,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
           sortedProjectKeys={sortedProjectKeys}
           expandedThreadListsByProject={expandedThreadListsByProject}
           activeRouteProjectKey={activeRouteProjectKey}
-          routeThreadKey={routeThreadKey}
+          routeThreadKey={routeRowThreadKey}
           openPullRequestsInRightPanel={routeThreadRef !== null}
           newThreadShortcutLabel={newThreadShortcutLabel}
           commandPaletteShortcutLabel={commandPaletteShortcutLabel}

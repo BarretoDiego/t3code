@@ -185,6 +185,8 @@ export const environmentTargetFlags = { baseDir: baseDirFlag, env: environmentFl
 export interface EnvironmentTargetFlags {
   readonly baseDir: Option.Option<string>;
   readonly env: Option.Option<string>;
+  /** Commands with `--json` print to stdout, so logs below errors must stay out of it. */
+  readonly json?: boolean;
 }
 
 function webSocketUrl(origin: string, ticket: string): string {
@@ -260,17 +262,20 @@ interface EnvironmentTarget {
 
 /** Runs `use` with the services that reach environments: local auth, saved environments, HTTP. */
 export const withEnvironmentRuntime = Effect.fn("withEnvironmentRuntime")(function* <A, E, R>(
-  flags: { readonly baseDir: Option.Option<string> },
+  flags: { readonly baseDir: Option.Option<string>; readonly json?: boolean },
   use: (config: ServerConfig.ServerConfig["Service"]) => Effect.Effect<A, E, R>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel);
+  const quietLogs = flags.json === true;
+  const config = yield* resolveCliAuthConfig({ baseDir: flags.baseDir }, logLevel, { quietLogs });
+  const minimumLogLevel = quietLogs ? "Error" : config.logLevel;
   return yield* use(config).pipe(
+    Effect.provideService(References.MinimumLogLevel, minimumLogLevel),
     Effect.provide(
       Layer.mergeAll(EnvironmentAuth.layerRuntime, ServerSecretStore.layer).pipe(
         Layer.provideMerge(FetchHttpClient.layer),
         Layer.provide(ServerConfig.layer(config)),
-        Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
+        Layer.provide(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
       ),
     ),
   );

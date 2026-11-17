@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { CommandId, ThreadId, type OrchestrationV2StoredEvent } from "@t3tools/contracts";
-import { topOfPinnedOrderKey } from "@t3tools/shared/pinOrderKey";
+import { topOfPinnedRunOrderKey } from "@t3tools/shared/pinOrderKey";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -134,7 +134,7 @@ describe("t3 thread organization", () => {
         const firstKey = (yield* shellOf(first))?.pinOrderKey;
         assert.isString(firstKey);
         // The key the app's pin action would send for the same sidebar state.
-        const expected = topOfPinnedOrderKey([{ pinnedAt: "x", pinOrderKey: firstKey }]);
+        const expected = topOfPinnedRunOrderKey([firstKey]);
         yield* thread("pin", second);
         const secondKey = (yield* shellOf(second))?.pinOrderKey;
         assert.equal(secondKey, expected);

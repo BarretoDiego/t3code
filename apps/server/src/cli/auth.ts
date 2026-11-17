@@ -17,6 +17,7 @@ import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
 import {
+  formatConnectDeviceList,
   formatIssuedPairingCredential,
   formatIssuedSession,
   formatPairingCredentialList,
@@ -282,6 +283,82 @@ const pairingCommand = Command.make("pairing").pipe(
   Command.withSubcommands([pairingCreateCommand, pairingListCommand, pairingRevokeCommand]),
 );
 
+const connectDeviceListCommand = Command.make("list", {
+  ...authLocationFlags,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "List T3 Connect devices waiting for approval and those already trusted.",
+  ),
+  Command.withHandler((flags) =>
+    runWithEnvironmentAuth(
+      flags,
+      (environmentAuth) =>
+        Effect.gen(function* () {
+          const waiting = (yield* environmentAuth.listPairingLinks()).flatMap((link) =>
+            link.connectDeviceRequest ? [link.connectDeviceRequest] : [],
+          );
+          const trusted = yield* environmentAuth.listConnectDevices();
+          yield* Console.log(formatConnectDeviceList({ waiting, trusted }, { json: flags.json }));
+        }),
+      { quietLogs: flags.json },
+    ),
+  ),
+);
+
+const verificationCodeArgument = Argument.String("code").pipe(
+  Argument.withDescription("The code the device shows, such as `K7QM-2XFD`."),
+);
+
+const connectDeviceApproveCommand = Command.make("approve", {
+  ...authLocationFlags,
+  code: verificationCodeArgument,
+}).pipe(
+  Command.withDescription("Approve the waiting T3 Connect device that shows this code."),
+  Command.withHandler((flags) =>
+    runWithEnvironmentAuth(flags, (environmentAuth) =>
+      Effect.gen(function* () {
+        const approved = yield* environmentAuth.approveConnectDeviceByCode(flags.code);
+        yield* Console.log(
+          approved
+            ? `Approved ${flags.code}. The device connects on its next try.\n`
+            : `No device waiting for approval shows ${flags.code}.\n`,
+        );
+      }),
+    ),
+  ),
+);
+
+const connectDeviceRevokeCommand = Command.make("revoke", {
+  ...authLocationFlags,
+  code: verificationCodeArgument,
+}).pipe(
+  Command.withDescription("Stop trusting a T3 Connect device and end its sessions."),
+  Command.withHandler((flags) =>
+    runWithEnvironmentAuth(flags, (environmentAuth) =>
+      Effect.gen(function* () {
+        const outcome = yield* environmentAuth.revokeConnectDeviceByCode(flags.code);
+        yield* Console.log(
+          outcome === "revoked"
+            ? `Revoked ${flags.code}. If approval for new devices is off, it can connect again on its own.\n`
+            : outcome === "ambiguous"
+              ? `More than one trusted device shows ${flags.code}; revoke it from a client.\n`
+              : `No trusted device shows ${flags.code}.\n`,
+        );
+      }),
+    ),
+  ),
+);
+
+const connectDeviceCommand = Command.make("connect-device").pipe(
+  Command.withDescription("Approve and revoke devices that reach this host through T3 Connect."),
+  Command.withSubcommands([
+    connectDeviceListCommand,
+    connectDeviceApproveCommand,
+    connectDeviceRevokeCommand,
+  ]),
+);
+
 const sessionIssueCommand = Command.make("issue", {
   ...authLocationFlags,
   scopes: authScopesFlag(AuthStandardClientScopes),
@@ -380,7 +457,7 @@ const sessionCommand = Command.make("session").pipe(
 
 export const authCommand = Command.make("auth").pipe(
   Command.withDescription(
-    "Manage pairing links and sessions for this machine's server, or a saved environment with --env.",
+    "Manage pairing links, sessions, and T3 Connect devices for this machine's server; pairing and sessions also accept a saved environment with --env.",
   ),
-  Command.withSubcommands([pairingCommand, sessionCommand]),
+  Command.withSubcommands([pairingCommand, sessionCommand, connectDeviceCommand]),
 );

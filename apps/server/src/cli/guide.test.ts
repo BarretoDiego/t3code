@@ -13,7 +13,13 @@ const runGuide = (...args: string[]) =>
   NodeChildProcess.spawnSync(
     process.execPath,
     [NodeURL.fileURLToPath(new URL("../bin.ts", import.meta.url)), "guide", ...args],
-    { encoding: "utf8", timeout: 20_000, env: { ...process.env, T3CODE_ENV: "missing-guide-env" } },
+    {
+      encoding: "utf8",
+      timeout: 20_000,
+      // The pretty-printed catalog is over spawnSync's 1 MiB default.
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, T3CODE_ENV: "missing-guide-env" },
+    },
   );
 
 describe("t3 guide", () => {

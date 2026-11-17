@@ -100,6 +100,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     readFileBlockReason,
     buildOutgoingMessageContext,
     isCurrentSend,
+    draftChangedDuringPreparation,
   }: {
     readonly requestContext: {
       readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
@@ -121,6 +122,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     ) => ReturnType<typeof buildMessageContext>;
     /** False once a newer send from this composer started. */
     readonly isCurrentSend: () => boolean;
+    readonly draftChangedDuringPreparation: () => boolean;
   }) => {
     const { attachments: attachmentsSnapshot, messageText } = sendSnapshot;
     const failedSelections: ModelSelection[] = [];
@@ -132,6 +134,8 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     // fails every selection; the draft restore below still runs.
     const sendResult = await settlePromise(async () => {
       const attachments = await attachmentsPromise;
+      if (draftChangedDuringPreparation())
+        throw new Error("Draft changed while preparing this message. Review it and send again.");
       const fileBlockReason = readFileBlockReason();
       if (fileBlockReason !== null) throw new Error(fileBlockReason);
       const context = buildOutgoingMessageContext(

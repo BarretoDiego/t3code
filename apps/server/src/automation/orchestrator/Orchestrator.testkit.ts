@@ -57,6 +57,7 @@ import {
 } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
@@ -591,6 +592,9 @@ export function makeEngineLayer(input: {
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       namedProjectsRoot: "/projects",
       folderForThread: () => Effect.succeedNone,
+    }),
+    Layer.mock(CheckpointStore.CheckpointStore)({
+      isGitRepository: () => Effect.succeed(true),
     }),
   );
   const launch = ThreadLaunch.layer.pipe(

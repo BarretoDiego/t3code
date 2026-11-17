@@ -13,7 +13,7 @@ layer("055_OrchestrationV2", (it) => {
     Effect.sync(() => {
       assert.deepStrictEqual(
         migrationManifest.map(([id]) => id),
-        Array.from({ length: 92 }, (_, index) => index + 1),
+        Array.from({ length: 105 }, (_, index) => index + 1),
       );
     }),
   );
@@ -57,6 +57,19 @@ layer("055_OrchestrationV2", (it) => {
         [90, "CommandReadIndexes"],
         [91, "LastExecutedRunIndex"],
         [92, "TurnItemCounts"],
+        [93, "QueuedTurnInputIndex"],
+        [94, "ProjectionProjectsCustomTitle"],
+        [95, "TurnItemTypeStatusIndex"],
+        [96, "ShellThreadReadIndexes"],
+        [97, "AuthConnectDevices"],
+        [98, "AuthConnectDeniedRequests"],
+        [99, "QueuedTurnInputIndexJsonValid"],
+        [100, "ProviderTurnAttemptIndex"],
+        [101, "TurnItemMessageOrdinalIndex"],
+        [102, "TurnItemInlineWorkOutput"],
+        [103, "RepairStaleTitleRegeneration"],
+        [104, "IssueTrackerBindings"],
+        [105, "ActiveShellIndexIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
 
@@ -115,6 +128,19 @@ layer("055_OrchestrationV2", (it) => {
         { migration_id: 90, name: "CommandReadIndexes" },
         { migration_id: 91, name: "LastExecutedRunIndex" },
         { migration_id: 92, name: "TurnItemCounts" },
+        { migration_id: 93, name: "QueuedTurnInputIndex" },
+        { migration_id: 94, name: "ProjectionProjectsCustomTitle" },
+        { migration_id: 95, name: "TurnItemTypeStatusIndex" },
+        { migration_id: 96, name: "ShellThreadReadIndexes" },
+        { migration_id: 97, name: "AuthConnectDevices" },
+        { migration_id: 98, name: "AuthConnectDeniedRequests" },
+        { migration_id: 99, name: "QueuedTurnInputIndexJsonValid" },
+        { migration_id: 100, name: "ProviderTurnAttemptIndex" },
+        { migration_id: 101, name: "TurnItemMessageOrdinalIndex" },
+        { migration_id: 102, name: "TurnItemInlineWorkOutput" },
+        { migration_id: 103, name: "RepairStaleTitleRegeneration" },
+        { migration_id: 104, name: "IssueTrackerBindings" },
+        { migration_id: 105, name: "ActiveShellIndexIndexes" },
       ]);
 
       const tables = yield* sql<{ readonly name: string }>`

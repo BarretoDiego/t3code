@@ -26,7 +26,7 @@ export function ThreadHeader(props: {
   /** Continues the thread in another environment or with another provider. */
   readonly onOpenHandoff?: () => void;
 }) {
-  const goBack = useWorkspaceBackNavigation("threads");
+  const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
