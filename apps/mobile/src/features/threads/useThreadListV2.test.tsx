@@ -2,7 +2,10 @@ import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RegistryContext } from "@effect/atom-react";
 import type { OlderSettledShelfEnvironment } from "@t3tools/client-runtime/state/threads";
-import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  presentThreadShell,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import * as DateTime from "effect/DateTime";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -12,7 +15,16 @@ import { olderSettledThreads } from "../../state/threads";
 import { makeRawThreadShell } from "../../test-fixtures";
 import { useThreadListV2 } from "./useThreadListV2";
 
+const mockedThreadShells = vi.hoisted(() => ({
+  atom: null as Atom.Writable<ReadonlyArray<EnvironmentThreadShell>> | null,
+}));
+
 vi.mock("../../state/threads", () => ({
+  environmentThreadShells: {
+    get quietThreadShellsAtom() {
+      return mockedThreadShells.atom!;
+    },
+  },
   olderSettledThreads: { shelfAtom: vi.fn() },
   threadFamilies: { mountRows: () => () => {} },
 }));
@@ -38,6 +50,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
       }),
     ),
   );
+  mockedThreadShells.atom = Atom.make<ReadonlyArray<EnvironmentThreadShell>>(threads);
   const environmentIds = new Set([environmentId, otherEnvironmentId]);
   const input: Parameters<typeof useThreadListV2>[0] = {
     threads,

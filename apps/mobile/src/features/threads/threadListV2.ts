@@ -45,7 +45,7 @@ import {
   threadListNestedSummariesAreEqual,
   type ThreadListNestedListItem,
   type ThreadListNestedSummary,
-} from "./threadListNesting";
+} from "./threadListNestingTypes";
 
 import { relativeTime } from "../../lib/time";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";

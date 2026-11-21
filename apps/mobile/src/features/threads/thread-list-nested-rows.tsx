@@ -1,3 +1,5 @@
+import { StackActions, useNavigation } from "@react-navigation/native";
+import { resolveMobileSideThreadPresentation } from "@t3tools/client-runtime/side-thread";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   resolveSubthreadStatusLabel,
@@ -6,19 +8,19 @@ import {
 } from "@t3tools/client-runtime/state/thread-nesting";
 import { useGT, useMessages } from "gt-react-native";
 import { memo } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { useNowAfter } from "../../lib/clock";
 import { cn } from "../../lib/cn";
-import { useOpenThreadInspector } from "./thread-inspector-navigation";
+import { useWorkspacePaneState } from "../layout/adaptive-workspace-context";
 import {
   selectedThreadRowColors,
   THREAD_LIST_V2_ROW_DIVIDERS,
 } from "./thread-list-v2-row-appearance";
-import type { ThreadListNestedListItem, ThreadListNestedSummary } from "./threadListNesting";
+import type { ThreadListNestedListItem, ThreadListNestedSummary } from "./threadListNestingTypes";
 import { setThreadListNestedExpanded } from "./use-thread-list-nesting";
 
 const SIGNAL_CLASS_NAME: Record<ThreadNestingSignal, string> = {
@@ -125,6 +127,24 @@ function useSubthreadStatusNow(snoozedUntil: string | null | undefined): string 
   ).toISOString();
 }
 
+// Reads adaptive-workspace-context directly instead of thread-inspector-navigation because
+// thread-inspector-navigation imports AdaptiveWorkspaceLayout, which mounts the sidebar.
+function isNearestThreadRoute(
+  state:
+    | { readonly routes: ReadonlyArray<{ readonly name: string; readonly params?: object }> }
+    | undefined,
+  thread: { readonly environmentId: string; readonly threadId: string },
+) {
+  const params = state?.routes.findLast((route) => route.name === "Thread")?.params;
+  return (
+    params !== undefined &&
+    "environmentId" in params &&
+    params.environmentId === thread.environmentId &&
+    "threadId" in params &&
+    params.threadId === thread.threadId
+  );
+}
+
 /**
  * A subagent thread under its parent: indented behind a rail, one line, with its own
  * status. Deliberately light (no swipe actions, pull request lookup, or menu), so a
@@ -145,7 +165,8 @@ export const ThreadListNestedThreadRow = memo(function ThreadListNestedThreadRow
   const { thread, rootThread } = props;
   const gt = useGT();
   const messages = useMessages();
-  const openInspector = useOpenThreadInspector();
+  const navigation = useNavigation();
+  const { fileInspector } = useWorkspacePaneState();
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
   const rowAppearance = nestedRowAppearance(sidebarPane);
@@ -156,12 +177,25 @@ export const ThreadListNestedThreadRow = memo(function ThreadListNestedThreadRow
     messages,
   );
   const open = () => {
-    if (
-      openInspector(
-        { environmentId: rootThread.environmentId, threadId: rootThread.id },
-        { type: "thread", environmentId: thread.environmentId, threadId: thread.id },
-      )
-    ) {
+    const presentation = resolveMobileSideThreadPresentation({
+      inspectorAvailable: Platform.OS === "ios" && fileInspector.supported,
+    });
+    const source = { environmentId: rootThread.environmentId, threadId: rootThread.id };
+    if (presentation !== "full-screen" && isNearestThreadRoute(navigation.getState(), source)) {
+      navigation.dispatch(
+        StackActions.popTo(
+          "Thread",
+          {
+            ...source,
+            inspector: {
+              type: "thread",
+              environmentId: thread.environmentId,
+              threadId: thread.id,
+            },
+          },
+          { merge: true },
+        ),
+      );
       return;
     }
     props.onSelectThread(thread);
