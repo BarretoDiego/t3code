@@ -437,6 +437,8 @@ pluginSharedState("shared-preview-feature-owners", () => {
 registerBuiltinFeature("app.banner", EmptyBanner);
 registerBuiltinFeature("chat.banner", EmptyBanner);
 registerBuiltinFeature("chat.composer.banners", EmptyBanner);
+registerBuiltinFeature("sidebar.thread.row.accessories", EmptyBanner);
+registerBuiltinFeature("sidebar.thread.row.children", EmptyBanner);
 
 export function PluginBanner({
   slot = "app.banner",

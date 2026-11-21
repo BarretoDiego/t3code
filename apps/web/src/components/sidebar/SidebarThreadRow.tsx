@@ -133,6 +133,7 @@ import { useThreadHasUnsentDraft } from "../../composerDraftStore";
 import { ThreadDetailsIssueRows } from "../chat/ThreadDetailsIssueRows";
 import { IssueGlyph, issueStatePresentation } from "../issue/issuePresentation";
 import { definePluginComponent } from "~/plugins/features";
+import { SidebarThreadRowSlot } from "./SidebarThreadRowSlot";
 
 export const JumpHintBadge = definePluginComponent(
   "component:components/sidebar/SidebarThreadRow/JumpHintBadge",
@@ -1413,6 +1414,7 @@ const PluginOriginalSidebarThreadRow = memo(function SidebarThreadRow(
               )}
               {draftIndicator}
               {title}
+              <SidebarThreadRowSlot slot="sidebar.thread.row.accessories" threadRef={threadRef} />
               {multiline ? titleLineIcons : null}
               {pinIndicator}
               {multiline ? null : terminalStatusIcon}
@@ -1557,6 +1559,7 @@ const PluginOriginalSidebarThreadRow = memo(function SidebarThreadRow(
           </TooltipTrigger>
           {detailsTooltip}
         </Tooltip>
+        <SidebarThreadRowSlot slot="sidebar.thread.row.children" threadRef={threadRef} />
       </li>
     );
   }
@@ -1760,6 +1763,7 @@ const PluginOriginalSidebarThreadRow = memo(function SidebarThreadRow(
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
               {title}
+              <SidebarThreadRowSlot slot="sidebar.thread.row.accessories" threadRef={threadRef} />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   <T>Regenerating title</T>
@@ -1772,6 +1776,7 @@ const PluginOriginalSidebarThreadRow = memo(function SidebarThreadRow(
         </TooltipTrigger>
         {detailsTooltip}
       </Tooltip>
+      <SidebarThreadRowSlot slot="sidebar.thread.row.children" threadRef={threadRef} />
     </li>
   );
 });

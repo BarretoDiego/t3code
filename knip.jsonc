@@ -165,6 +165,11 @@
       // Source plugins consume the SDK identity helper and public React runtime exports externally.
       "ignoreIssues": { "src/pluginRuntime.ts": ["exports"] },
     },
+    "packages/plugin-subagent-nesting": {
+      // T3 Code loads the extension's web entry from plugin.json at runtime.
+      "includeEntryExports": true,
+      "entry": ["extension/web.tsx"],
+    },
     "packages/effect-acp": {
       "includeEntryExports": true,
       "entry": ["test/fixtures/*.ts"],

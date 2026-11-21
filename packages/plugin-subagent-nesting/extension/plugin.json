@@ -1,0 +1,8 @@
+{
+  "id": "local.subagent-nesting",
+  "apiVersion": 1,
+  "name": "Subagent nesting",
+  "version": "1.0.0",
+  "permissions": ["ui"],
+  "entries": { "web": "web.tsx" }
+}

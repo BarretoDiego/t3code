@@ -112,6 +112,14 @@ This additive slot retains the native composer and other plugins' notices. For u
 or other live data, read it through existing services or `host.invoke`; do not replace
 `chat.composer` to add a banner. Banner items also support actions, children, and dismissal.
 
+Each sidebar thread row has two additive slots: `sidebar.thread.row.accessories` after
+its title and `sidebar.thread.row.children` below it, inside the row's list item. Both
+receive `{threadRef, activeThreadRef, threads}`. `threads` is one store of every loaded
+thread shell, shared by all rows; read it with `useSyncExternalStore` and a selector that
+returns a stable value, or every row re-renders on each shell update. Subagents and side
+chats have no row of their own. Stop pointer and click events in `children` content so
+they do not drag, open, or show the menu of the row above.
+
 Use `host.ui.chat.Thread` with a durable `threadRef` to embed the normal chat view
 in a panel. It keeps the native model, effort, speed, permissions, attachments,
 timeline, and turn controls. An optional `contextThreadRef` includes that thread

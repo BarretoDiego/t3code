@@ -1,5 +1,6 @@
 import type { ComponentProps, ComponentType } from "react";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { SidebarThreadRowContributionProps } from "@t3tools/plugin-sdk/web";
 
 export type { PluginUiApi } from "./ui";
 export type { PluginPanelContext, PluginPanelProps, PluginPanelRegistration } from "./panels";
@@ -64,6 +65,8 @@ export interface PluginFeatureProps extends Record<SettingsFeature, Record<strin
   >;
   "chat.device": ComponentProps<typeof import("../components/device/DevicePanel").DevicePanel>;
   "sidebar.thread": ComponentProps<typeof import("../components/Sidebar").default>;
+  "sidebar.thread.row.accessories": SidebarThreadRowContributionProps;
+  "sidebar.thread.row.children": SidebarThreadRowContributionProps;
   "sidebar.settings": ComponentProps<
     typeof import("../components/settings/SettingsSidebarNav").SettingsSidebarNav
   >;

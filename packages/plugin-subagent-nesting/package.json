@@ -1,0 +1,17 @@
+{
+  "name": "@t3tools/plugin-subagent-nesting",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "devDependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/plugin-sdk": "workspace:*",
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

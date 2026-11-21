@@ -1,4 +1,12 @@
-import type { EnvironmentId, PluginManifest, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2RunStatus,
+  OrchestrationV2ThreadShell,
+  PluginManifest,
+  ProjectId,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as React from "react";
 import type { ComponentType } from "react";
@@ -13,9 +21,56 @@ export interface ComposerBannerContributionProps {
   readonly threadRef: ScopedThreadRef | null;
 }
 
+/** A thread the client has loaded, archived ones included. */
+export interface PluginThreadShell {
+  readonly environmentId: EnvironmentId;
+  readonly id: ThreadId;
+  readonly projectId: ProjectId;
+  readonly title: string;
+  readonly createdAt: string;
+  readonly archivedAt: string | null;
+  readonly lineage: OrchestrationV2ThreadShell["lineage"];
+  readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
+  readonly runtime: { readonly status: OrchestrationV2RunStatus | "idle" } | null;
+  readonly latestRun: {
+    readonly status: OrchestrationV2RunStatus;
+    readonly completedAt: string | null;
+  } | null;
+  readonly hasPendingApprovals: boolean;
+  readonly hasPendingUserInput: boolean;
+  readonly pendingBackgroundTasks: ReadonlyArray<
+    NonNullable<OrchestrationV2ThreadShell["pendingBackgroundTasks"]>[number]
+  >;
+  readonly settledOverride: "settled" | "active" | null;
+  readonly snoozedUntil: string | null;
+  /** Undefined when the environment's server predates visit tracking. */
+  readonly lastVisitedAt?: string | null;
+}
+
+/** Read with `useSyncExternalStore(store.subscribe, store.get)`. */
+export interface PluginStore<Value> {
+  readonly get: () => Value;
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
+/**
+ * Props for `sidebar.thread.row.accessories` (inline after the row's title) and
+ * `sidebar.thread.row.children` (under the row, inside its list item).
+ * `threads` is one store shared by every row, so select from it rather than
+ * copying it into state.
+ */
+export interface SidebarThreadRowContributionProps {
+  readonly threadRef: ScopedThreadRef;
+  /** The thread open in the main view. */
+  readonly activeThreadRef: ScopedThreadRef | null;
+  readonly threads: PluginStore<readonly PluginThreadShell[]>;
+}
+
 /** Add exact slot props with module augmentation; other loaded slots remain discoverable. */
 export interface PluginFeatureProps {
   "chat.composer.banners": ComposerBannerContributionProps;
+  "sidebar.thread.row.accessories": SidebarThreadRowContributionProps;
+  "sidebar.thread.row.children": SidebarThreadRowContributionProps;
   "app.banner": { threadRef?: ScopedThreadRef | null };
   "chat.banner": { threadRef?: ScopedThreadRef | null };
 }
