@@ -58,13 +58,10 @@ const make = Effect.gen(function* () {
 
   // The notice shows host-shell quoting verbatim; desktop needs its launcher because t3 is absent from PATH.
   const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
-    "database",
     "--base-dir",
     config.baseDir,
   ]);
-  // `t3 doctor database --base-dir` repairs <baseDir>/userdata. A dev server without
-  // an explicit home keeps its state in <baseDir>/dev instead, so there the
-  // command would target the live install; publish no status at all.
+  // doctor --base-dir targets userdata, not implicit dev homes; suppress status to avoid touching the live install.
   const doctorTargetsThisDatabase =
     path.resolve(config.dbPath) ===
     path.resolve(config.baseDir, "userdata", path.basename(config.dbPath));

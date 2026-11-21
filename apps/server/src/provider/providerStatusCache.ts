@@ -59,9 +59,7 @@ export const isCachedProviderCorrelated = (input: {
   readonly fallbackProvider: ServerProvider;
 }): boolean =>
   input.cachedProvider.instanceId === input.fallbackProvider.instanceId &&
-  input.cachedProvider.driver === input.fallbackProvider.driver &&
-  (input.fallbackProvider.continuation === undefined ||
-    input.cachedProvider.continuation?.groupKey === input.fallbackProvider.continuation.groupKey);
+  input.cachedProvider.driver === input.fallbackProvider.driver;
 
 export const hydrateCachedProvider = (input: {
   readonly cachedProvider: ServerProvider;
@@ -89,9 +87,6 @@ export const hydrateCachedProvider = (input: {
     checkedAt: input.cachedProvider.checkedAt,
     slashCommands: input.cachedProvider.slashCommands,
     skills: input.cachedProvider.skills,
-    // Rate limits only change when a provider runs, so the cached observation
-    // outlives the process that recorded it.
-    ...(input.cachedProvider.rateLimits ? { rateLimits: input.cachedProvider.rateLimits } : {}),
   };
 
   return input.cachedProvider.message
@@ -99,11 +94,7 @@ export const hydrateCachedProvider = (input: {
     : hydratedProvider;
 };
 
-/**
- * Require matching instanceId, driver, and (when supplied) continuation identity before
- * hydration; filenames alone cannot authorize routing. The continuation group keeps one
- * account's cached plan limits off another account edited in while the server was stopped.
- */
+/** Require matching instanceId and driver before hydration; filenames alone cannot authorize routing. */
 export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCachePath")(
   function* (input: {
     readonly cacheDir: string;

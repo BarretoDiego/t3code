@@ -8,6 +8,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -246,7 +247,6 @@ function layerTest(input: {
   readonly previewZoomReapplies?: number[];
   readonly onReveal?: (window: Electron.BrowserWindow) => void;
   readonly focusedWindow?: Electron.BrowserWindow;
-  readonly quit?: Effect.Effect<void>;
   readonly fallbackWindow?: Electron.BrowserWindow;
   readonly platform?: NodeJS.Platform;
   readonly appearanceWindows?: ReadonlyArray<{
@@ -340,7 +340,7 @@ function layerTest(input: {
         layerDesktopClientSettings,
         layerDesktopServerExposure,
         DesktopState.layer,
-        Layer.mock(ElectronApp.ElectronApp)({ quit: input.quit ?? Effect.void }),
+        layerElectronApp,
         Layer.succeed(ElectronMenu.ElectronMenu, {
           setApplicationMenu: () => Effect.void,
           showContextMenu: () => Effect.succeedNone,
@@ -726,11 +726,6 @@ describe("DesktopWindow", () => {
         );
         beforeInput(event, { ...input, key: "r", isAutoRepeat: false });
         assert.isFalse(fakeWindow.setIgnoreMenuShortcuts.mock.lastCall?.[0]);
-        fakeWindow.isDestroyed.mockReturnValue(true);
-        fakeWindow.setIgnoreMenuShortcuts.mockImplementation(() => {
-          throw new TypeError("Object has been destroyed");
-        });
-        assert.doesNotThrow(() => beforeInput(event, { ...input, key: "q", type: "keyUp" }));
       }).pipe(Effect.provide(layer));
     }),
   );
@@ -782,56 +777,6 @@ describe("DesktopWindow", () => {
         assert.doesNotThrow(() => inputEvent({}, { type: "gestureScrollEnd" }));
       }).pipe(Effect.provide(layer));
     }),
-  );
-
-  it.effect.each(["window", "webContents"] as const)(
-    "stops handling input when quitting destroys the %s",
-    (target) =>
-      Effect.gen(function* () {
-        const fake = makeFakeBrowserWindow();
-        const createCount = yield* Ref.make(0);
-        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-        let destroyed = false;
-        let quitCount = 0;
-        fake.isDestroyed.mockImplementation(() => target === "window" && destroyed);
-        using _contentsDestroyed = vi
-          .spyOn(fake.window.webContents, "isDestroyed")
-          .mockImplementation(() => destroyed);
-        fake.setIgnoreMenuShortcuts.mockImplementation(() => {
-          if (destroyed) throw new TypeError("Object has been destroyed");
-        });
-        yield* Effect.gen(function* () {
-          const windows = yield* DesktopWindow.DesktopWindow;
-          yield* windows.handleBackendReady(new URL("http://127.0.0.1:3773"));
-          const beforeInput = fake.webContentsListeners.get("before-input-event")!;
-          const event = { preventDefault() {} };
-          const input = {
-            type: "keyDown",
-            key: "q",
-            meta: true,
-            control: false,
-            alt: false,
-            shift: false,
-            isAutoRepeat: false,
-          };
-          beforeInput(event, input);
-          assert.doesNotThrow(() => beforeInput(event, input));
-          assert.equal(quitCount, 1);
-          assert.isTrue(destroyed);
-        }).pipe(
-          Effect.provide(
-            layerTest({
-              window: fake.window,
-              createCount,
-              mainWindow,
-              quit: Effect.sync(() => {
-                quitCount += 1;
-                destroyed = true;
-              }),
-            }),
-          ),
-        );
-      }),
   );
 
   // Chromium hands the main window's zoom level down to embedded preview
@@ -934,6 +879,81 @@ describe("DesktopWindow", () => {
         assert.equal(popup.reloadIgnoringCache.mock.calls.length, 0);
         assert.equal(popup.toggleDevTools.mock.calls.length, 0);
       }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reloads only the browser page selected through its context menu", () =>
+    Effect.gen(function* () {
+      const main = makeFakeBrowserWindow();
+      const guest = makeFakeBrowserWindow();
+      const otherGuest = makeFakeBrowserWindow();
+      const popup = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const menus = yield* Queue.unbounded<ElectronMenu.ElectronMenuTemplateInput>();
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const attach = main.webContentsListeners.get("did-attach-webview");
+        if (!attach) return yield* Effect.die("did-attach-webview listener was not registered");
+        attach({}, guest.window.webContents);
+        attach({}, otherGuest.window.webContents);
+        const openPopup = guest.webContentsListeners.get("did-create-window");
+        if (!openPopup) return yield* Effect.die("did-create-window listener was not registered");
+        openPopup(popup.window);
+
+        const pages = [main, guest, otherGuest, popup];
+        for (const page of pages) {
+          const contextMenu = page.webContentsListeners.get("context-menu");
+          if (!contextMenu) return yield* Effect.die("context-menu listener was not registered");
+          contextMenu(
+            { preventDefault: vi.fn() },
+            {
+              misspelledWord: "",
+              linkURL: "",
+              mediaType: "none",
+              editFlags: { canCut: false, canCopy: true, canPaste: false, canSelectAll: true },
+            },
+          );
+          const menu = yield* Queue.take(menus);
+          assert.deepEqual(
+            menu.template.filter((item) => item.role).map((item) => [item.role, item.enabled]),
+            [
+              ["cut", false],
+              ["copy", true],
+              ["paste", false],
+              ["selectAll", true],
+            ],
+          );
+          const reload = menu.template.find((item) => item.label === "Reload");
+          if (page === main) {
+            assert.isUndefined(reload);
+            continue;
+          }
+          if (!reload?.click) return yield* Effect.die("browser context menu has no Reload action");
+          assert.isUndefined(reload.accelerator);
+          reload.click({} as Electron.MenuItem, main.window, {} as KeyboardEvent);
+          assert.equal(page.reload.mock.calls.length, 1);
+          for (const otherPage of pages) {
+            if (otherPage !== page) assert.equal(otherPage.reload.mock.calls.length, 0);
+          }
+          vi.mocked(page.window.webContents.isDestroyed).mockReturnValue(true);
+          reload.click({} as Electron.MenuItem, main.window, {} as KeyboardEvent);
+          assert.equal(page.reload.mock.calls.length, 1);
+          page.reload.mockClear();
+        }
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            window: main.window,
+            createCount,
+            mainWindow,
+            onPopupTemplate: (menu) => Queue.offer(menus, menu).pipe(Effect.asVoid),
+          }),
+        ),
+      );
     }),
   );
 

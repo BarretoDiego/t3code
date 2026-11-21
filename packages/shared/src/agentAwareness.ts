@@ -151,8 +151,7 @@ export function projectThreadAwarenessV2(
   };
 }
 
-// Exported for the CLI, which reports the same phase the awareness surfaces show.
-export function resolveThreadAwarenessPhaseV2(
+function resolveThreadAwarenessPhaseV2(
   thread: ProjectThreadAwarenessV2Input["thread"],
   subagentRequest: SubagentRequestAwareness | null,
 ): AgentAwarenessPhase | null {

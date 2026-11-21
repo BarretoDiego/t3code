@@ -406,9 +406,6 @@ export function applyServerSettingsPatch(
     secretProviders: secretProvidersPatch,
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
-    // Whole-library replacement; deepMerge would merge arrays by index.
-    miniSkills: miniSkillsPatch,
-    agentProfiles: agentProfilesPatch,
     usageModelAliases: usageModelAliasesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
@@ -648,8 +645,6 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
-    ...(miniSkillsPatch !== undefined ? { miniSkills: miniSkillsPatch } : {}),
-    ...(agentProfilesPatch !== undefined ? { agentProfiles: agentProfilesPatch } : {}),
     ...(patch.reviewGuideModelSelection !== undefined
       ? { reviewGuideModelSelection: patch.reviewGuideModelSelection }
       : {}),

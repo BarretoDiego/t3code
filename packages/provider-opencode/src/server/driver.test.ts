@@ -1385,26 +1385,19 @@ it.layer(Layer.mergeAll(layer, Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, op
           Stream.runCollect,
           Effect.forkChild,
         );
-        yield* TestClock.adjust("5 seconds");
         yield* Fiber.join(ready);
-        const read = (cwd: string) =>
-          Effect.gen(function* () {
-            const fiber = yield* Effect.forkChild(instance.snapshotForCwd!(cwd));
-            yield* TestClock.adjust("5 seconds");
-            return yield* Fiber.join(fiber);
-          });
         const slugsOf = (snapshot: { readonly models: ReadonlyArray<{ readonly slug: string }> }) =>
           snapshot.models.map((model) => model.slug).toSorted();
 
-        assert.deepStrictEqual(slugsOf(yield* read(openCode1Project)), [
+        assert.deepStrictEqual(slugsOf(yield* instance.snapshotForCwd!(openCode1Project)), [
           "opencode/big-pickle",
           "uni/medium-gpt",
         ]);
-        const otherSnapshot = yield* read("/work/other-project");
+        const otherSnapshot = yield* instance.snapshotForCwd!("/work/other-project");
         assert.deepStrictEqual(slugsOf(otherSnapshot), ["opencode/big-pickle"]);
         assert.strictEqual(otherSnapshot.workspaceModels, undefined);
         assert.strictEqual(otherSnapshot.workspaceModelsPending, undefined);
-        const unreadable = yield* read(openCode1UnreadableProject);
+        const unreadable = yield* instance.snapshotForCwd!(openCode1UnreadableProject);
         assert.deepStrictEqual(slugsOf(unreadable), ["opencode/big-pickle"]);
         assert.strictEqual(unreadable.workspaceModels, undefined);
         assert.strictEqual(unreadable.workspaceModelsPending, true);

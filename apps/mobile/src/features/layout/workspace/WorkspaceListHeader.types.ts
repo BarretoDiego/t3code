@@ -16,8 +16,6 @@ export interface WorkspaceListHeaderProps {
     readonly customized: boolean;
     readonly items: ReadonlyArray<AppBarMenuItem>;
   };
-  /** Opens Agent Operations. iOS reaches it from the workspace toolbar instead. */
-  readonly onOpenAgentBoard?: () => void;
   /** iOS: a settings button. Android reaches Settings from the workspace navigation. */
   readonly onOpenSettings?: () => void;
   /**

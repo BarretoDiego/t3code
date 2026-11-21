@@ -38,7 +38,10 @@ import {
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import {
+  resolveClaudeModelCatalog,
+  scopeClaudeUpgradeMessageToChannel,
+} from "../ClaudeModelCatalog.ts";
 import {
   makeClaudeCodeModelRoutes,
   resolveClaudeModelSettingsKey,
@@ -101,7 +104,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -150,9 +152,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey,
-      supportsSessionHandoff: true,
     });
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
@@ -327,6 +327,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
             }),
           ),
+          Effect.flatMap((enrichedSnapshot) =>
+            modelCatalog.pipe(
+              Effect.map((catalog) =>
+                scopeClaudeUpgradeMessageToChannel(catalog, enrichedSnapshot),
+              ),
+            ),
+          ),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions),
           Effect.flatMap((enrichedSnapshot) => publishSnapshot(enrichedSnapshot)),
@@ -419,7 +426,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       },
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot,
       invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),

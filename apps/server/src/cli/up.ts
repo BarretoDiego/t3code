@@ -338,7 +338,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
       ? (yield* disconnectCloud({ clearAuthorization: false })).status === "failed"
       : false;
   const previousLan = (yield* CliService.readServiceEnv(baseDir)).entries.T3CODE_LAN;
-  // Also with no service manager: the file records the choice that `t3 status setup` shows.
+  // Also with no service manager: the file records the choice that `t3 status` shows.
   yield* CliService.writeServiceEnv(baseDir, { T3CODE_LAN: String(routes.lan) });
   // When the service step fails, an installed service still runs with the old
   // value, so the file goes back to match it.
@@ -487,7 +487,7 @@ export const upCommand = Command.make("up", {
     { command: "t3 up --lan", description: "Allow LAN access with pairing codes." },
     { command: "t3 up --no-lan", description: "Stop LAN access." },
     { command: "t3 up --yes", description: "Take the defaults with no questions." },
-    { command: "t3 status setup --json", description: "Read the settings from a script." },
+    { command: "t3 status --json", description: "Read the settings from a script." },
   ]),
   Command.withHandler((flags) => runCloudCommand(flags, setUp(flags), { quietLogs: true })),
 );
@@ -507,7 +507,7 @@ export const connectCommand = Command.make("connect", {
   Command.withSubcommands(connectSubcommands),
 );
 
-/** `t3 status setup --json`, for scripts and agents. */
+/** `t3 status --json`, for scripts and agents. */
 const setupJson = (setup: Setup) =>
   JSON.stringify(
     {
@@ -529,8 +529,7 @@ const setupJson = (setup: Setup) =>
     2,
   );
 
-/** Mounted under the fork's `t3 status`, which reports active work. */
-export const setupStatusCommand = Command.make("setup", {
+export const statusCommand = Command.make("status", {
   ...projectLocationFlags,
   json: Flag.Boolean("json").pipe(
     Flag.withDescription("Print the settings as JSON. Does not test connections."),
@@ -539,8 +538,8 @@ export const setupStatusCommand = Command.make("setup", {
 }).pipe(
   Command.withDescription("Show service setup and remote access settings."),
   Command.withExamples([
-    { command: "t3 status setup", description: "Show the settings." },
-    { command: "t3 status setup --json", description: "Print them for scripts and agents." },
+    { command: "t3 status", description: "Show the settings." },
+    { command: "t3 status --json", description: "Print them for scripts and agents." },
   ]),
   Command.withHandler(
     Effect.fn("cli.status")(function* (flags) {

@@ -10,7 +10,6 @@ const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 export interface ProjectScriptInput {
   readonly name: ProjectScript["name"];
   readonly command: ProjectScript["command"];
-  readonly cwd?: ProjectScript["cwd"];
   readonly icon: ProjectScript["icon"];
   readonly runOnWorktreeCreate: ProjectScript["runOnWorktreeCreate"];
   readonly waitForSetup: boolean;
@@ -25,7 +24,6 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
     id,
     name: input.name,
     command: input.command,
-    ...(input.cwd ? { cwd: input.cwd } : {}),
     icon: input.icon,
     runOnWorktreeCreate: input.runOnWorktreeCreate,
     ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),

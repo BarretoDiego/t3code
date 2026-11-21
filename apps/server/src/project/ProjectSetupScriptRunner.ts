@@ -1,7 +1,6 @@
 import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
 import {
   projectScriptRuntimeEnv,
-  projectScriptCwd,
   projectScriptTerminalInput,
   resolveProjectScripts,
   settleProjectScript,
@@ -496,11 +495,7 @@ export const make = Effect.gen(function* () {
       trigger === "settle"
         ? `settle-${script.id}-${(yield* random.uuidV4()).slice(0, 8)}`
         : `setup-${script.id}`;
-    const cwd = projectScriptCwd({
-      project: { cwd: project.workspaceRoot },
-      worktreePath: input.worktreePath,
-      script,
-    });
+    const cwd = input.worktreePath;
     const env = {
       ...projectScriptRuntimeEnv({
         project: { cwd: project.workspaceRoot },

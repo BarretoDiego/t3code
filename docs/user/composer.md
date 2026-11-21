@@ -69,6 +69,10 @@ are saved on the server and can be edited or removed before they send.
 When Enter sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses
 the opposite action: it steers when your default is Queue and queues when your
 default is Steer.
+A slash command such as `/compact` or `/context` waits for the current turn to
+finish, because a command steered into a turn would replace the agent's task.
+Sending a queued command now moves it to the front of the queue. [Goal](#goals)
+commands are the exception: some can stop the current turn.
 If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
 your default follow-up behavior; add **Shift** to use the opposite action. This
 applies only to multiline messages when you choose the multiline send option.
@@ -77,7 +81,17 @@ Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to sen
 the oldest queued message as a steer. This leaves the current draft intact and
 requires an active turn that supports steering. If that shortcut sends the opposite
 action for your draft, move focus outside the composer to steer the queued message. Change
-`thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
+`thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut. To make
+`Cmd+Enter` or `Ctrl+Enter` steer the oldest queued message when the composer is empty, add
+this rule to your [keybindings file](keybindings.md#edit-the-configuration-file):
+
+```json
+{
+  "key": "mod+enter",
+  "command": "thread.steerQueuedMessage",
+  "when": "composerFocus && turnRunning && composerEmpty"
+}
+```
 
 Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the
 start of the composer to edit the most recently queued message. Change
@@ -89,22 +103,6 @@ other action for a single message. From a hardware keyboard, `Cmd+Return`
 (`Ctrl+Return` on Android) uses the other action, or `Cmd+Shift+Return`
 (`Ctrl+Shift+Return`) when Return inserts a new line. The button only offers
 Steer when the running agent supports it.
-
-When a turn stops on an exhausted plan window, queued messages stay saved and
-run after the thread continues. See
-[limited threads](thread-sidebar.md#inspect-agent-work) to resume automatically
-when the window resets.
-
-To send later on purpose, use the clock button in the composer of a started
-thread. Choose **In…** for a wait ("in 1 h 30 min"), **At…** for a time of day,
-or **On reset** to send two minutes after the selected provider's usage window
-resets (offered when the provider reports one). The environment stores the
-message and sends it even if you switch threads or close the client. It must
-remain running; after a restart it resumes overdue schedules. If the agent is
-still working at that time, the message steers the running turn or waits behind
-it, depending on what the provider supports. Scheduled messages appear above the
-composer like queued ones, with a countdown: send one now, edit its text, change
-its time, or cancel it.
 
 ## Queue messages offline on mobile
 
@@ -158,8 +156,12 @@ delete it like other inline context. Copying, reloading, and restoring a
 with its quote, and sending tells the agent which words were quoted and which comment you wrote.
 The quoted text and comment count toward the message limit.
 
-Mobile displays saved quotes and comments, but does not create citations or
-navigate to their sources.
+On mobile, long-press an assistant response, adjust the text selection, and choose
+**Cite** to insert a quote at the composer cursor. If the passage appears more than
+once in that section, choose its source occurrence. Select more surrounding text
+if a short passage appears too often. Tap a quote in a draft to add
+or edit its comment, or to remove it. To open the source message, tap a quote in
+a draft or sent message, then choose **Go to message**.
 
 ## Recall a sent prompt
 
@@ -193,8 +195,10 @@ to its checkpoint from before that message. That also undoes edits you made your
 File restore is only offered for threads running in a worktree, and it is
 refused when another thread or agent session also uses that directory, a folder
 inside it, or a folder that contains it, since
-restoring would erase their changes. A thread that works in the project directory
-rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
+restoring would erase their changes. Completed subagents belonging to the reverting
+thread do not block restoring that same worktree, provided they have no queued or
+active work, pending requests, or background tasks. A thread that works in the project
+directory rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
 resending. Any unsent draft stays above the restored prompt.
 
 This removes the selected message and later conversation from the active thread
@@ -215,8 +219,9 @@ and use **Attach again** or remove the missing file before sending.
 ## Voice input on web and desktop
 
 Use the composer's microphone or `mod+shift+d` to dictate into your draft. Audio
-is transcribed on an environment you choose in **Settings → Voice**; nothing is
-sent until you choose one. See [Voice input](./voice-input.md).
+is transcribed on an environment you choose in **Settings → Voice**, or on the Mac
+with Apple Speech in the macOS desktop app; nothing is sent until you choose one.
+See [Voice input](./voice-input.md).
 
 ## Voice input on mobile
 
@@ -270,8 +275,9 @@ shortcut described above.
 
 On web and desktop, queued messages appear at the end of the thread as dashed messages that have
 not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
-images. **Send now** sends a message right away, into the running turn if there is one. You can
-also edit or remove it.
+images. **Send now** sends a message right away, into the running turn if there is one. While a
+turn runs, a slash command moves to the front of the queue instead. You can also edit or
+remove it.
 
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. For stopped runs and usage limits,
@@ -394,11 +400,6 @@ Copying a message with the copy button, or copying text out of it, gives other a
 Markdown with a link in place of each chip. Older messages that were sent before chips still
 show their context. Stashing a prompt keeps its chips and what they point to; restoring brings
 them back.
-
-A project can be a folder containing several Git repositories. Expand **Repositories** in
-its file browser to see their paths and add a repository mention to the chat. You can
-also type `@` followed by a repository name or path. The mention points the agent to
-that directory in the current environment; it keeps the conversation in the same project.
 
 On mobile, tap a chip to inspect its content. File references open the current file; attached
 files show the copy that was attached to the message.

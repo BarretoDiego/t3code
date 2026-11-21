@@ -3,6 +3,8 @@ import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
+import { withForkBrand } from "./fork.config.ts";
+
 type AppVariant = "development" | "preview" | "production";
 
 const repoEnv = loadRepoEnv();
@@ -11,14 +13,6 @@ Object.assign(process.env, repoEnv);
 process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
-const isForkBuild = repoEnv.T3CODE_FORK_BRAND === "1";
-const forkVersionCode = Number(repoEnv.T3CODE_MOBILE_VERSION_CODE ?? "1");
-if (
-  isForkBuild &&
-  (!Number.isInteger(forkVersionCode) || forkVersionCode < 1 || forkVersionCode > 2_100_000_000)
-) {
-  throw new Error("T3CODE_MOBILE_VERSION_CODE must be an integer between 1 and 2100000000.");
-}
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
@@ -125,28 +119,7 @@ function resolveAppVariant(value: string | undefined): AppVariant {
   }
 }
 
-const baseVariant = VARIANT_CONFIG[APP_VARIANT];
-const variant = isForkBuild
-  ? {
-      ...baseVariant,
-      appName: "T3 Code Fork",
-      scheme: "t3code-fork",
-      iosBundleIdentifier: "com.barretodiego.t3code.fork",
-      androidPackage: "com.barretodiego.t3code.fork",
-      assets: {
-        ...baseVariant.assets,
-        appIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
-        iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
-        splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.forkIconPng),
-        androidAdaptiveForeground: "./assets/android-icon-foreground-fork.png",
-        androidAdaptiveBackgroundColor: "#10182D",
-        androidAdaptiveBackgroundImage: "./assets/android-icon-background-fork.png",
-        androidSplashIcon: "./assets/android-splash-icon-fork.png",
-        androidMonochromeIcon: "./assets/android-icon-mark-fork.png",
-        androidNotificationColor: "#43D9CA",
-      },
-    }
-  : baseVariant;
+const variant = VARIANT_CONFIG[APP_VARIANT];
 // Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
 const HOSTED_APP_HOST = "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
@@ -275,8 +248,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: !isForkBuild && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    ...(!isForkBuild ? { url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454" } : {}),
+    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -286,7 +259,7 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    ...(!isForkBuild ? { appleTeamId: "ARK85ZXQ4Z" } : {}),
+    appleTeamId: "ARK85ZXQ4Z",
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
@@ -306,6 +279,8 @@ const config: ExpoConfig = {
       },
       NSLocalNetworkUsageDescription:
         "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+      // Built with the iOS 27 SDK, only view controllers can hide or style the status bar.
+      UIViewControllerBasedStatusBarAppearance: true,
       NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
       // System picture in picture needs background audio to start and survive outside the app.
       UIBackgroundModes: ["audio"],
@@ -326,7 +301,6 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
-    ...(isForkBuild ? { versionCode: forkVersionCode } : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -374,7 +348,12 @@ const config: ExpoConfig = {
             },
             {
               fontFamily: "DMSans-Bold",
-              fontDefinitions: [{ path: dmSansFonts.bold, weight: 700 }],
+              // Android picks fallback glyphs (such as Vietnamese) at the requested weight, so bold text
+              // asks for 700; the 400 entry lets a relative bold step (Typeface.BOLD) land on 700 too.
+              fontDefinitions: [
+                { path: dmSansFonts.bold, weight: 400 },
+                { path: dmSansFonts.bold, weight: 700 },
+              ],
             },
           ],
         },
@@ -482,7 +461,6 @@ const config: ExpoConfig = {
     // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidNetworkSecurityConfig.cjs",
-    ...(isForkBuild ? ["./plugins/withForkAndroidSigning.cjs"] : []),
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
@@ -495,7 +473,6 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
-    appBrand: isForkBuild ? "fork" : "upstream",
     secretsFeatureEnabled: ["1", "true"].includes(
       process.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),
@@ -518,18 +495,15 @@ const config: ExpoConfig = {
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
     eas: {
-      // expo-observe throws at startup without a project ID, leaving forks stuck on the splash.
-      projectId: isForkBuild
-        ? "00000000-0000-0000-0000-000000000000"
-        : "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
       observe: { endpointUrl: observeEndpointUrl },
     },
   },
-  ...(!isForkBuild ? { owner: "pingdotgg" } : {}),
+  owner: "pingdotgg",
   experiments: {
     // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
     reactCompiler: true,
   },
 };
 
-export default config;
+export default withForkBrand(config, repoEnv);

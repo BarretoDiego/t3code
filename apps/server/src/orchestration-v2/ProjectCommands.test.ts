@@ -1,12 +1,5 @@
-import {
-  ProviderInstanceId,
-  type ModelSelection,
-  CommandId,
-  EventId,
-  ProjectId,
-  type ProjectScript,
-} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import { CommandId, EventId, ProjectId, type ProjectScript } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 
@@ -30,8 +23,8 @@ const row = (overrides: Partial<ProjectRow> = {}): ProjectRow => ({
   autoPull: false,
   faviconPath: null,
   projectIcon: null,
-  linkKey: null,
   scripts: [],
+  trackedFolders: [],
   pinnedAt: null,
   archivedAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -56,22 +49,6 @@ const plan = (command: ProjectCommand, state: Partial<ProjectCommandState> = {})
     now,
   });
 
-const update = (
-  fields: Omit<
-    Extract<ProjectCommand, { type: "project.meta.update" }>,
-    "type" | "commandId" | "projectId"
-  >,
-) =>
-  plan(
-    {
-      type: "project.meta.update",
-      commandId: CommandId.make("cmd-update"),
-      projectId,
-      ...fields,
-    },
-    { project: row() },
-  );
-
 const payloadOf = (result: ReturnType<typeof plan>) => {
   assert.isTrue(Result.isSuccess(result));
   return Result.getOrThrow(result).payload as Record<string, unknown>;
@@ -83,92 +60,6 @@ const failureOf = (result: ReturnType<typeof plan>) => {
 };
 
 describe("planProjectCommand", () => {
-  it("creates projects with empty scripts and no model default", () => {
-    const result = plan({
-      type: "project.create",
-      commandId: CommandId.make("cmd-create"),
-      projectId,
-      title: "Scripts",
-      workspaceRoot: "/tmp/scripts",
-    });
-    const event = Result.getOrThrow(result);
-    assert.equal(event.type, "project.created");
-    assert.equal(event.occurredAt, "2026-01-01T00:00:00.000Z");
-    assert.deepInclude(event.payload, { scripts: [], defaultModelSelection: null });
-  });
-
-  it("only treats metadata updates as explicit model defaults", () => {
-    const selection: ModelSelection = {
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.6-sol",
-      options: [{ id: "reasoningEffort", value: "high" }],
-    };
-    assert.deepEqual(
-      payloadOf(update({ defaultModelSelection: selection })).defaultModelSelection,
-      selection,
-    );
-  });
-
-  it("carries every edited field and omits the rest", () => {
-    const scripts = [script("lint")];
-    const payload = payloadOf(
-      update({
-        scripts,
-        defaultThreadEnvMode: "worktree",
-        autoPull: true,
-        faviconPath: "brand/icon.svg",
-        projectIcon: { kind: "lucide", name: "alarm-clock", color: "violet" },
-      }),
-    );
-    assert.deepInclude(payload, {
-      scripts,
-      defaultThreadEnvMode: "worktree",
-      autoPull: true,
-      faviconPath: "brand/icon.svg",
-      projectIcon: { kind: "lucide", name: "alarm-clock", color: "violet" },
-    });
-    const renamed = payloadOf(update({ title: "Renamed" }));
-    assert.isFalse("defaultThreadEnvMode" in renamed);
-    assert.isNull(payloadOf(update({ defaultThreadEnvMode: null })).defaultThreadEnvMode);
-  });
-
-  it("sets, replaces and clears a project's cross-environment link", () => {
-    const created = payloadOf(
-      plan({
-        type: "project.create",
-        commandId: CommandId.make("cmd-link-create"),
-        projectId,
-        title: "Linked",
-        workspaceRoot: "/tmp/project-linked",
-        linkKey: "link:first",
-      }),
-    );
-    assert.equal(created.linkKey, "link:first");
-
-    assert.equal(
-      payloadOf(update({ linkKey: "github.com/t3tools/t3code" })).linkKey,
-      "github.com/t3tools/t3code",
-    );
-    assert.isFalse("linkKey" in payloadOf(update({ title: "Renamed" })));
-    assert.isNull(payloadOf(update({ linkKey: null })).linkKey);
-  });
-
-  it.each(["install-javascript-dependencies", "A", "a.b", "a b", "-a", "a".repeat(25)])(
-    "rejects a new script ID that cannot have a shortcut: %s",
-    (id) => {
-      const failure = failureOf(update({ scripts: [script("lint"), script(id)] }));
-      assert.equal(failure._tag, "ProjectCommandInvariantError");
-      assert.include(failure.message, "Script ID");
-      assert.include(failure.message, "24");
-      assert.notInclude(failure.message, `'${id}'`);
-    },
-  );
-
-  it("accepts a script ID at the shortcut length limit", () => {
-    const scripts = [script("a".repeat(24))];
-    assert.deepEqual(payloadOf(update({ scripts })).scripts, scripts);
-  });
-
   it("keeps legacy scripts editable and removable while rejecting new invalid ones", () => {
     const legacy = script("install-javascript-dependencies");
     const withLegacy = (scripts: ReadonlyArray<ProjectScript>) =>
@@ -220,6 +111,37 @@ describe("planProjectCommand", () => {
     const untouched = update(organized, {});
     assert.notProperty(untouched, "pinnedAt");
     assert.notProperty(untouched, "archivedAt");
+  });
+
+  it("records tracked folders on create and replaces them on update", () => {
+    const trackedFolders = [{ path: "/tmp/shared", name: "Shared" }];
+    const create = (folders?: typeof trackedFolders) =>
+      payloadOf(
+        plan({
+          type: "project.create",
+          commandId: CommandId.make("cmd-create-tracked"),
+          projectId,
+          title: "Tracked",
+          workspaceRoot: "/tmp/scripts",
+          ...(folders === undefined ? {} : { trackedFolders: folders }),
+        }),
+      );
+    const update = (folders?: typeof trackedFolders) =>
+      payloadOf(
+        plan(
+          {
+            type: "project.meta.update",
+            commandId: CommandId.make("cmd-update-tracked"),
+            projectId,
+            ...(folders === undefined ? {} : { trackedFolders: folders }),
+          },
+          { project: row({ trackedFolders }) },
+        ),
+      );
+    assert.deepEqual(create(trackedFolders).trackedFolders, trackedFolders);
+    assert.notProperty(create(), "trackedFolders");
+    assert.deepEqual(update([]).trackedFolders, []);
+    assert.notProperty(update(), "trackedFolders");
   });
 
   it("rejects a workspace root held by another active project", () => {

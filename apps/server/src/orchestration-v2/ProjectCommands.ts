@@ -6,6 +6,7 @@ import {
   type ProjectIconOverride,
   ProjectId,
   type ProjectScript,
+  type ProjectTrackedFolder,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -22,8 +23,8 @@ export interface ProjectCreateCommand {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
-  readonly linkKey?: string | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
 }
 
 export interface ProjectMetaUpdateCommand {
@@ -37,9 +38,8 @@ export interface ProjectMetaUpdateCommand {
   readonly autoPull?: boolean;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
-  // Absent = leave unchanged; null = unlink from other environments.
-  readonly linkKey?: string | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
 }
@@ -165,8 +165,10 @@ export function planProjectCommand(input: {
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
-          linkKey: command.linkKey ?? null,
           scripts: command.scripts ?? [],
+          ...(command.trackedFolders === undefined || command.trackedFolders.length === 0
+            ? {}
+            : { trackedFolders: command.trackedFolders }),
           createdAt: occurredAt,
           updatedAt: occurredAt,
         },
@@ -213,8 +215,10 @@ export function planProjectCommand(input: {
           ...(command.autoPull === undefined ? {} : { autoPull: command.autoPull }),
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
-          ...(command.linkKey === undefined ? {} : { linkKey: command.linkKey }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
+          ...(command.trackedFolders === undefined
+            ? {}
+            : { trackedFolders: command.trackedFolders }),
           // Repeating a pin or archive keeps the original time.
           ...(command.pinned === undefined
             ? {}

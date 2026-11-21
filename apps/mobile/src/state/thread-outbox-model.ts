@@ -1,4 +1,6 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import { msg } from "gt-react-native";
+import { m } from "../i18n/messages";
 import {
   clampFileAttachmentUploadBytes,
   fileAttachmentTooLargeMessage,
@@ -26,7 +28,6 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { isUsageLimitErrorMessage } from "@t3tools/shared/providerRateLimits";
 import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
 import { withImplicitFastModeSelection } from "../lib/providerOptions";
 import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
@@ -46,6 +47,8 @@ const QueuedThreadCreationSchema = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   startFromOrigin: Schema.optional(Schema.Boolean),
   pullRequestReference: Schema.optional(Schema.String),
+  repositories: Schema.optional(Schema.Array(Schema.String)),
+  startsFromRepositoryDefaults: Schema.optional(Schema.Boolean),
 });
 
 export const QueuedThreadMessageSchema = Schema.Struct({
@@ -55,6 +58,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   messageId: MessageId,
   commandId: CommandId,
   text: Schema.String,
+  restoreToDraft: Schema.optional(Schema.Boolean),
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   modelSelection: Schema.optional(ModelSelection),
@@ -79,6 +83,10 @@ export interface QueuedThreadCreation {
   readonly worktreePath: string | null;
   readonly startFromOrigin?: boolean;
   readonly pullRequestReference?: string;
+  /** Tracked repositories the new worktree takes, by path; absent leaves the choice to the server. */
+  readonly repositories?: ReadonlyArray<string>;
+  /** The project folder is no Git repository, so a new worktree needs no base branch. */
+  readonly startsFromRepositoryDefaults?: boolean;
 }
 
 export interface QueuedThreadMessage {
@@ -87,6 +95,7 @@ export interface QueuedThreadMessage {
   readonly messageId: MessageId;
   readonly commandId: CommandId;
   readonly text: string;
+  readonly restoreToDraft?: boolean;
   readonly context?: OrchestrationMessageContext;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly modelSelection?: ModelSelectionType;
@@ -195,37 +204,17 @@ export function threadOutboxRetryDelayMs(attempt: number): number {
 
 export type ThreadOutboxDeliveryAction = "wait" | "remove" | "send";
 
-/**
- * True while the outbox must wait for an exhausted plan window. The drain
- * loop arms its retry for the reset instant instead of the transport backoff,
- * so a queued message goes out on its own when quota returns. Manual Send
- * now bypasses the gate at the call site; Cancel removes the message.
- */
-export function isOutboxRateLimited(input: {
-  readonly rateLimitedUntil?: string | null;
-  readonly nowMs?: number;
-}): boolean {
-  if (!input.rateLimitedUntil) return false;
-  const resetMs = Date.parse(input.rateLimitedUntil);
-  return Number.isFinite(resetMs) && resetMs > (input.nowMs ?? Date.now());
-}
-
 export function resolveThreadOutboxDeliveryAction(input: {
   readonly isCreation: boolean;
   readonly threadExists: boolean;
   readonly shellStatus: EnvironmentShellStatus;
   readonly environmentConnected: boolean;
-  readonly rateLimitedUntil?: string | null;
-  readonly nowMs?: number;
   /**
    * Set when the shell can leave idle subagent children out: absence alone is not deletion there,
    * only a settled family read without the row is.
    */
   readonly familyRead?: ThreadFamilyRead;
 }): ThreadOutboxDeliveryAction {
-  if (isOutboxRateLimited({ rateLimitedUntil: input.rateLimitedUntil, nowMs: input.nowMs })) {
-    return "wait";
-  }
   if (input.isCreation) {
     if (input.threadExists) {
       return "remove";
@@ -265,7 +254,7 @@ export function resolveThreadOutboxDispatchStep(input: {
   }
   const maxBytes = input.serverConfig.maxFileUploadBytes;
   if (maxBytes === undefined) {
-    return { step: "restore", reason: "This server does not support file attachments." };
+    return { step: "restore", reason: m(msg("This server does not support file attachments.")) };
   }
   const effectiveMaxBytes = clampFileAttachmentUploadBytes(maxBytes);
   const oversized = input.fileAttachments.find(
@@ -284,7 +273,11 @@ export function isQueuedThreadCreationSendable(message: QueuedThreadMessage): bo
   if (!hasContent || message.modelSelection === undefined) {
     return false;
   }
-  return message.creation.workspaceMode !== "worktree" || Boolean(message.creation.branch);
+  return (
+    message.creation.workspaceMode !== "worktree" ||
+    Boolean(message.creation.branch) ||
+    message.creation.startsFromRepositoryDefaults === true
+  );
 }
 
 function errorMessage(error: unknown): string | null {
@@ -327,13 +320,6 @@ export function resolveThreadOutboxFailureAction(input: {
   readonly error: unknown;
   readonly interrupted: boolean;
 }): ThreadOutboxFailureAction {
-  // An exhausted plan window is transport-shaped for retry purposes: the
-  // payload is fine, quota simply returns later. Retrying (with the reset
-  // instant as the delay, resolved by the drain loop) keeps the message
-  // queued with auto-send instead of restoring it into a draft.
-  if (isUsageLimitOutboxError(input.error)) {
-    return "retry";
-  }
   if (
     input.stage === "settings-sync" ||
     input.interrupted ||
@@ -342,11 +328,6 @@ export function resolveThreadOutboxFailureAction(input: {
     return "retry";
   }
   return "restore";
-}
-
-/** True when a dispatch failure reads like an exhausted plan window. */
-export function isUsageLimitOutboxError(error: unknown): boolean {
-  return isUsageLimitErrorMessage(errorMessage(error));
 }
 
 export type AcknowledgedThreadMessage = QueuedThreadMessage & {

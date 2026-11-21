@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
@@ -8,7 +9,6 @@ import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
-import { automationCapableEnvironments } from "./automationSettings.logic";
 import { useEnvironmentScope } from "~/state/session";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
@@ -56,6 +56,7 @@ export function useAvailableSettingsSearchItems() {
   const canManageLocalBackend = !localEnvironmentDisabled && canMaintain;
   const desktopWsl = useEnvironmentQuery(
     isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
+    useMessages(),
   );
   const cloudPublicConfig = hasCloudPublicConfig() === true;
   const wslSettingsRowVisible =
@@ -69,7 +70,6 @@ export function useAvailableSettingsSearchItems() {
     canManageLocalBackend,
     isWslSettingsRowVisible: wslSettingsRowVisible,
     hasThreadAutoSettlement,
-    hasAutomation: automationCapableEnvironments(environments).length > 0,
     managedTunnelActive,
     hasPeerLinkHost,
     hasFastWorktreeCheckoutEnvironment,

@@ -1,20 +1,8 @@
-// @effect-diagnostics nodeBuiltinImport:off
 import { deriveProviderInstanceConfigMap } from "./provider/ProviderInstanceRegistryHydration.ts";
-
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 import {
-  DEFAULT_AGENT_PROFILES,
-  DEFAULT_AGENT_PROFILES_SEEDED_AT,
-  DEFAULT_MINI_SKILLS,
-  DEFAULT_MINI_SKILLS_SEEDED_AT,
-  DEFAULT_REQUEST_MINI_SKILL_WRAPPER,
   DEFAULT_SERVER_SETTINGS,
-  MiniSkillId,
-  type MiniSkill,
   globalIdleCompaction,
   type ManagedPolicyDocument,
   ModelSelection,
@@ -44,6 +32,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SchemaAST from "effect/SchemaAST";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import { sourceControlHostSecretName } from "./sourceControl/sourceControlHostSecrets.ts";
 import * as ServerConfig from "./config.ts";
@@ -2120,131 +2109,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       assert.include(persisted, '"valueRedacted": true');
     }).pipe(Effect.provide(layerServerSettings())),
   );
-
-  it.effect("seeds the built-in mini skills on first start", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-
-      yield* serverSettings.start;
-      const settings = yield* serverSettings.getSettings;
-
-      assert.deepEqual(settings.miniSkills, [...DEFAULT_MINI_SKILLS]);
-      assert.strictEqual(settings.miniSkillsSeededAt, DEFAULT_MINI_SKILLS_SEEDED_AT);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("seeds the built-in agent profiles on first start and never reseeds deletions", () =>
-    Effect.gen(function* () {
-      const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3code-agent-profiles-seed-test-"),
-      );
-      const makeRestartableLayer = () =>
-        ServerSettingsModule.layer.pipe(
-          Layer.provide(ServerSecretStore.layer),
-          Layer.provide(ManagedPolicy.layerTest()),
-          Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
-          Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
-        );
-
-      const deletedId = DEFAULT_AGENT_PROFILES[0]!.id;
-      yield* Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        yield* serverSettings.start;
-        const seeded = yield* serverSettings.getSettings;
-        assert.deepEqual(seeded.agentProfiles, [...DEFAULT_AGENT_PROFILES]);
-        assert.strictEqual(seeded.agentProfilesSeededAt, DEFAULT_AGENT_PROFILES_SEEDED_AT);
-
-        yield* serverSettings.updateSettings({
-          agentProfiles: seeded.agentProfiles.filter((profile) => profile.id !== deletedId),
-        });
-      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
-
-      // A fresh service over the same state directory simulates a restart.
-      yield* Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        yield* serverSettings.start;
-        const settings = yield* serverSettings.getSettings;
-
-        assert.strictEqual(settings.agentProfiles.length, DEFAULT_AGENT_PROFILES.length - 1);
-        assert.isFalse(settings.agentProfiles.some((profile) => profile.id === deletedId));
-      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
-    }),
-  );
-
-  it.effect("does not reseed mini skills the user deleted, across restarts", () =>
-    Effect.gen(function* () {
-      const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3code-mini-skills-seed-test-"),
-      );
-      const makeRestartableLayer = () =>
-        ServerSettingsModule.layer.pipe(
-          Layer.provide(ServerSecretStore.layer),
-          Layer.provide(ManagedPolicy.layerTest()),
-          Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
-          Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
-        );
-
-      const deletedId = DEFAULT_MINI_SKILLS[0]!.id;
-      yield* Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        yield* serverSettings.start;
-        const seeded = yield* serverSettings.getSettings;
-        assert.strictEqual(seeded.miniSkills.length, DEFAULT_MINI_SKILLS.length);
-
-        yield* serverSettings.updateSettings({
-          miniSkills: seeded.miniSkills.filter((skill) => skill.id !== deletedId),
-        });
-      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
-
-      // A fresh service over the same state directory simulates a restart.
-      yield* Effect.gen(function* () {
-        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-        yield* serverSettings.start;
-        const settings = yield* serverSettings.getSettings;
-
-        assert.strictEqual(settings.miniSkills.length, DEFAULT_MINI_SKILLS.length - 1);
-        assert.isFalse(settings.miniSkills.some((skill) => skill.id === deletedId));
-      }).pipe(Effect.provide(makeRestartableLayer()), Effect.scoped);
-    }),
-  );
-
-  it.effect("replaces the mini skill library wholesale and merges wrapper patches", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const serverConfig = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const skill: MiniSkill = {
-        id: MiniSkillId.make("skill-always-run-tests"),
-        name: "Always Run Tests",
-        description: "Run the test suite before finishing.",
-        content: "Run the relevant tests before declaring the task done.",
-        enabledByDefaultForNewThreads: true,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-
-      yield* serverSettings.updateSettings({ miniSkills: [skill] });
-      yield* serverSettings.updateSettings({
-        miniSkillPromptWrappers: { thread: "THREAD PREFS\n\n{{skills}}" },
-      });
-
-      const settings = yield* serverSettings.getSettings;
-      assert.deepEqual(settings.miniSkills, [skill]);
-      assert.strictEqual(settings.miniSkillPromptWrappers.thread, "THREAD PREFS\n\n{{skills}}");
-      // Untouched sibling wrapper keeps its current value.
-      assert.strictEqual(
-        settings.miniSkillPromptWrappers.request,
-        DEFAULT_REQUEST_MINI_SKILL_WRAPPER,
-      );
-
-      // The library survives outside the defaults-stripping write path.
-      const persisted = JSON.parse(
-        yield* fileSystem.readFileString(serverConfig.settingsPath),
-      ) as Record<string, unknown>;
-      assert.deepEqual(persisted.miniSkills, [skill]);
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
   it.effect("rolls back provider secret changes when the settings file commit fails", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -3257,4 +3121,176 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }).pipe(Effect.provide(layerServerSettings(policy))),
     );
   },
+);
+
+it.live("reloads a symlinked settings file after its target directory is replaced", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const service = yield* ServerSettingsModule.ServerSettingsService;
+    const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+    const active = path.join(dotfiles, "active");
+    const restored = path.join(dotfiles, "restored");
+    yield* fs.makeDirectory(active);
+    yield* fs.makeDirectory(restored);
+    yield* fs.writeFileString(
+      path.join(active, "settings.json"),
+      `{ "responseStreamingMode": "turn" }`,
+    );
+    yield* fs.writeFileString(
+      path.join(restored, "settings.json"),
+      `{ "responseStreamingMode": "turn" }`,
+    );
+    yield* fs.remove(config.settingsPath, { force: true });
+    yield* fs.symlink(path.join(active, "settings.json"), config.settingsPath);
+    yield* service.start;
+    const changes = yield* service.subscribeChanges;
+
+    yield* fs.writeFileString(
+      path.join(restored, "settings.json"),
+      `{ "responseStreamingMode": "turn", "defaultAutoPull": true }`,
+    );
+    yield* fs.rename(active, path.join(dotfiles, "previous"));
+    yield* fs.rename(restored, active);
+
+    const restoredSettings = yield* changes.pipe(
+      Stream.filter((settings) => settings.defaultAutoPull),
+      Stream.runHead,
+    );
+    assert.isTrue(Option.isSome(restoredSettings));
+
+    yield* fs.writeFileString(
+      path.join(active, "settings.json"),
+      `{ "responseStreamingMode": "paragraph" }`,
+    );
+
+    const reloaded = yield* changes.pipe(
+      Stream.filter((settings) => settings.responseStreamingMode === "paragraph"),
+      Stream.runHead,
+    );
+    assert.isTrue(Option.isSome(reloaded));
+  }).pipe(
+    Effect.scoped,
+    // @effect-diagnostics-next-line multipleEffectProvide:off -- the settings layer reads the Node services provided below.
+    Effect.provide(layerServerSettings()),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  ),
+);
+
+it.effect("starts with symlinked settings when the settings directory watch fails", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    let settingsDirectory: string | undefined;
+    const watchFailure = PlatformError.systemError({
+      _tag: "Unknown",
+      module: "FileSystem",
+      method: "watch",
+      description: "No file watches available.",
+    });
+    const failingFileSystem = FileSystem.FileSystem.of({
+      ...fs,
+      watch: (directory, options) =>
+        directory === settingsDirectory ? Stream.fail(watchFailure) : fs.watch(directory, options),
+    });
+    const settingsLayer = layerServerSettings().pipe(
+      Layer.provide(Layer.succeed(FileSystem.FileSystem, failingFileSystem)),
+    );
+
+    yield* Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      settingsDirectory = path.dirname(config.settingsPath);
+      const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+      const target = path.join(dotfiles, "settings.json");
+      yield* fs.writeFileString(target, `{ "responseStreamingMode": "paragraph" }`);
+      yield* fs.remove(config.settingsPath, { force: true });
+      yield* fs.symlink(target, config.settingsPath);
+
+      yield* service.start;
+
+      const settings = yield* service.getSettings;
+      assert.equal(settings.responseStreamingMode, "paragraph");
+    }).pipe(Effect.provide(settingsLayer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("publishes edits made before the restored settings watch is registered", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dotfiles = yield* fs.makeTempDirectoryScoped({ prefix: "t3-settings-dotfiles-" });
+    const active = path.join(dotfiles, "active");
+    const restored = path.join(dotfiles, "restored");
+    const target = path.join(active, "settings.json");
+    yield* fs.makeDirectory(active);
+    yield* fs.makeDirectory(restored);
+    yield* fs.writeFileString(target, `{ "responseStreamingMode": "turn" }`);
+    yield* fs.writeFileString(
+      path.join(restored, "settings.json"),
+      `{ "responseStreamingMode": "turn" }`,
+    );
+
+    const replaced = yield* Deferred.make<void>();
+    const registering = yield* Deferred.make<void>();
+    const allowRegistration = yield* Deferred.make<void>();
+    const settingsLayer = layerServerSettings().pipe(
+      Layer.provide(
+        Layer.succeed(
+          FileSystem.FileSystem,
+          FileSystem.FileSystem.of({
+            ...fs,
+            watch: (directory, options) =>
+              Stream.unwrap(
+                Effect.gen(function* () {
+                  if (directory === dotfiles) {
+                    options?.onReady?.();
+                    return Stream.fromEffect(Deferred.await(replaced)).pipe(
+                      Stream.as({ _tag: "Create", path: "active" } as const),
+                      Stream.concat(Stream.never),
+                    );
+                  }
+                  if (directory !== active) return fs.watch(directory, options);
+                  if (yield* Deferred.isDone(replaced)) {
+                    yield* Deferred.succeed(registering, undefined);
+                    yield* Deferred.await(allowRegistration);
+                  }
+                  options?.onReady?.();
+                  return Stream.never;
+                }),
+              ),
+          }),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.symlink(target, config.settingsPath);
+      yield* service.start;
+      const changes = yield* service.subscribeChanges;
+
+      yield* fs.rename(active, path.join(dotfiles, "previous"));
+      yield* fs.rename(restored, active);
+      // Deliver the event on the test clock so it drains the watcher and any eager debounce.
+      yield* Deferred.succeed(replaced, undefined).pipe(
+        Effect.delay(1),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* TestClock.adjust("1 second");
+      yield* Deferred.await(registering);
+      yield* service.withSettingsSnapshot(() => Effect.void);
+      yield* fs.writeFileString(target, `{ "responseStreamingMode": "paragraph" }`);
+      yield* Deferred.succeed(allowRegistration, undefined).pipe(
+        Effect.delay(1),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* TestClock.adjust("1 second");
+
+      const published = yield* changes.pipe(Stream.runHead);
+      assert.equal(Option.getOrThrow(published).responseStreamingMode, "paragraph");
+    }).pipe(Effect.provide(settingsLayer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

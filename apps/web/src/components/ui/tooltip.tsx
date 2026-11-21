@@ -125,7 +125,6 @@ function TooltipPopup({
   sideOffset = 4,
   side = "top",
   variant = "default",
-  padding = "default",
   anchor,
   children,
   ...props
@@ -134,7 +133,6 @@ function TooltipPopup({
   side?: TooltipPrimitive.Positioner.Props["side"];
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
   variant?: "default" | "glass" | "code";
-  padding?: "default" | "none";
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
 }) {
   return (
@@ -154,10 +152,7 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div
-            className={cn("min-w-0 px-2 py-1", padding === "none" && "p-0")}
-            data-slot="tooltip-viewport"
-          >
+          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
             {children}
           </div>
         </TooltipPrimitive.Popup>

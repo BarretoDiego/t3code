@@ -48,6 +48,11 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Projects with several repositories
+
+A project covers every repository inside its folder, and any folder you add under **Settings →
+Projects → Repositories**; see [Projects with several repositories](multi-repo-projects.md).
+
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the
@@ -182,12 +187,8 @@ project crumb.
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
-`t3.json` actions can be imported there.
-When adding an action, search scripts declared in `package.json`, `task.yaml`, or
-Taskfiles, including those in subfolders. Selecting one fills in its command and
-working directory. The directory is relative to the checkout, so the same action
-runs in the corresponding folder when using a worktree.
-When a project has several checkouts on one environment, choose one in the scope line at the top to see or change only that checkout's settings.
+`t3.json` actions can be imported there. When a project has several checkouts on one environment,
+choose one in the scope line at the top to see or change only that checkout's settings.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the
@@ -298,23 +299,3 @@ On mobile, use **Settings → Source control & issues** to change selected envir
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
-
-## Linking projects across environments
-
-T3 Code groups a project's checkouts by their Git remote. A folder without a remote shows up as a
-separate project on each environment. To treat two of them as one, open the project's settings,
-go to **Project links → Link to another project** and choose the other checkout by its environment
-and path. Search by name, environment, path, or Link ID. The list includes individual projects,
-even when the sidebar groups them. Connect an offline environment before changing its links.
-Linking a project to one
-that has a remote adds it to that repository's group. The link is stored on each environment, so
-every client can use the same grouping. In **Project links**, view and copy each checkout's
-**Link ID**, generate missing IDs, or paste and save an existing ID to link a checkout directly.
-**Generate missing IDs** preserves the selected group's identity and existing IDs. **Unlink**
-clears one checkout's ID; **Remove links** clears IDs for the selected scope. Removing an explicit
-link restores automatic Git grouping, so checkouts with matching remotes may remain grouped.
-On mobile, these controls are in **Settings → Project overview → Project links**.
-Use **Copy configuration** to share the known projects' environments, paths, and Link IDs with an
-agent when planning a configuration.
-Sending a project to another environment links the copy automatically. Linking has no effect when
-grouping is set to keep checkouts separate; the stored IDs remain visible in project settings.

@@ -1,6 +1,11 @@
+import { assert, it as effectIt } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vite-plus/test";
+
+import { OrchestrationProjectShell } from "./orchestrationProject.ts";
+
 import {
-  ProjectSearchContentsInput,
-  ProjectSearchEntriesInput,
   ProjectFaviconPath,
   ReceivedProjectIcon,
   StoredProjectIcon,
@@ -13,67 +18,13 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
-  ProjectScriptDirectory,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
-import { assert, it as effectIt } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vite-plus/test";
-
-import { OrchestrationProjectShell } from "./orchestrationProject.ts";
 
 const decodeProjectCreatePayload = Schema.decodeUnknownSync(ProjectCreatePayload);
 const decodeProjectUpdatePayload = Schema.decodeUnknownSync(ProjectUpdatePayload);
 const decodeProjectMutation = Schema.decodeUnknownSync(ProjectMutation);
-const decodeSearchEntriesInput = Schema.decodeUnknownSync(ProjectSearchEntriesInput);
-const decodeSearchContentsInput = Schema.decodeUnknownSync(ProjectSearchContentsInput);
-const isScriptDirectory = Schema.is(ProjectScriptDirectory);
-
-describe("project action working directory", () => {
-  it.each([".", "apps/web", "apps\\web", "packages/my app"])(
-    "accepts checkout-relative directory %s",
-    (cwd) => {
-      expect(isScriptDirectory(cwd)).toBe(true);
-    },
-  );
-  it.each([
-    "/tmp/project",
-    "C:\\project",
-    "\\\\server\\share",
-    "../outside",
-    "apps/../../outside",
-    "apps\\..\\outside",
-    "apps\nweb",
-  ])("rejects directory outside the checkout %s", (cwd) => {
-    expect(isScriptDirectory(cwd)).toBe(false);
-  });
-});
-
-describe("project search inputs", () => {
-  it("allows an empty entries query for bounded frecency browsing", () => {
-    const decoded = decodeSearchEntriesInput({
-      cwd: "/workspace",
-      query: "   ",
-      limit: 10,
-      kind: "file",
-    });
-    expect(decoded.query).toBe("");
-  });
-
-  it("preserves whitespace in content search queries", () => {
-    const decoded = decodeSearchContentsInput({
-      cwd: "/workspace",
-      query: " foo ",
-      limit: 10,
-      caseSensitive: false,
-      wholeWord: false,
-      useRegex: false,
-    });
-    expect(decoded.query).toBe(" foo ");
-  });
-});
 
 describe("project RPC errors", () => {
   it("keeps whitespace in file paths across the wire", () => {

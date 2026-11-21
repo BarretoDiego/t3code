@@ -1,6 +1,7 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
+import { T, useGT } from "gt-react";
 import { PanelLeftCloseIcon, PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 import { cn } from "~/lib/utils";
@@ -293,6 +294,7 @@ function Sidebar({
   resizable?: boolean | SidebarResizableOptions;
 }) {
   const { isMobile, state, openMobile, setOpenMobile, setMobileSheetMounted } = useSidebar();
+  const gt = useGT();
   // Not usePanelAnimationSettings: its navigation suppression would snap the sheet shut mid-exit when an item navigates.
   const panelAnimationDurationMs = useClientSettings(
     (settings) => settings.panelAnimationDurationMs,
@@ -351,8 +353,10 @@ function Sidebar({
             }
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>{props["aria-label"] ?? "Sidebar"}</SheetTitle>
-              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+              <SheetTitle>{props["aria-label"] ?? gt("Sidebar")}</SheetTitle>
+              <SheetDescription>
+                <T>Displays the mobile sidebar.</T>
+              </SheetDescription>
             </SheetHeader>
             <div
               className={cn(
@@ -444,7 +448,9 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       {...props}
     >
       {isOpen ? <PanelLeftCloseIcon className="size-4" /> : <PanelLeftIcon className="size-4" />}
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">
+        <T>Toggle Sidebar</T>
+      </span>
     </Button>
   );
 }
@@ -464,12 +470,13 @@ function SidebarRail({
   ...props
 }: React.ComponentProps<"button">) {
   const { open, toggleSidebar, onCollapse } = useSidebar();
+  const gt = useGT();
   const sidebarInstance = React.use(SidebarInstanceContext);
   const suppressClickRef = React.useRef(false);
   const resolvedResizable = sidebarInstance?.resizable ?? null;
   const canResize = resolvedResizable !== null && open;
-  const railLabel = canResize ? "Resize Sidebar" : "Toggle Sidebar";
-  const railTitle = canResize ? "Drag to resize sidebar" : "Toggle Sidebar";
+  const railLabel = canResize ? gt("Resize Sidebar") : gt("Toggle Sidebar");
+  const railTitle = canResize ? gt("Drag to resize sidebar") : gt("Toggle Sidebar");
   const resize = useResizeDrag<HTMLButtonElement>((event) => {
     const options = resolvedResizable;
     if (!options || !open) return null;
@@ -709,22 +716,11 @@ function SidebarContent({
   );
 }
 
-function SidebarGroup({
-  className,
-  spacing = "default",
-  inset = "default",
-  ...props
-}: React.ComponentProps<"div"> & {
-  spacing?: "default" | "sm";
-  inset?: "default" | "content";
-}) {
+function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
         "relative flex w-full min-w-0 flex-col p-[var(--sidebar-content-inset)]",
-        spacing === "sm" && "gap-1",
-        inset === "content" &&
-          "ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0",
         className,
       )}
       data-sidebar="group"
@@ -767,8 +763,6 @@ const sidebarMenuButtonVariants = cva(
       size: {
         default:
           "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm",
-        content:
-          "h-auto min-h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm",
         icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
         lg: "h-12 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-sm group-data-[collapsible=icon]:p-0!",
         sm: "h-7 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-xs",
@@ -786,26 +780,17 @@ function SidebarMenuButton({
   variant = "default",
   size = "default",
   tooltip,
-  focusRing = "default",
-  inset = "default",
   className,
   render,
   ...props
 }: useRender.ComponentProps<"button"> & {
   isActive?: boolean;
   tooltip?: string | React.ComponentProps<typeof TooltipPopup>;
-  focusRing?: "default" | "sidebar";
-  inset?: "default" | "row";
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const { isMobile, state } = useSidebar();
 
   const defaultProps = {
-    className: cn(
-      sidebarMenuButtonVariants({ size, variant }),
-      focusRing === "sidebar" && "focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
-      inset === "row" && "ps-[calc(var(--sidebar-row-content-inset)-1px)]",
-      className,
-    ),
+    className: cn(sidebarMenuButtonVariants({ size, variant }), className),
     "data-active": isActive,
     "data-sidebar": "menu-button",
     "data-size": size,

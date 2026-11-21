@@ -1,3 +1,5 @@
+import { useGT, useMessages } from "gt-react-native";
+
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
 import {
@@ -21,42 +23,27 @@ export function ThreadHeader(props: {
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
   readonly onOpenFilesInspector: () => void;
-  /** Opens the thread's orchestrator; the label names its current state. */
-  readonly orchestrator?: { readonly label: string; readonly onPress: () => void } | undefined;
-  /** Continues the thread in another environment or with another provider. */
-  readonly onOpenHandoff?: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
-  const terminalMenu = threadTerminalMenu(props.gitControls);
+  const terminalMenu = threadTerminalMenu(props.gitControls, m);
   const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-  const actions: AppBarAction[] = [];
-  if (props.orchestrator) {
-    actions.push({
-      accessibilityLabel: props.orchestrator.label,
-      icon: "point.3.connected.trianglepath.dotted",
-      onPress: props.orchestrator.onPress,
-    });
-  }
-  if (props.onOpenHandoff) {
-    actions.push({
-      accessibilityLabel: "Continue on…",
-      icon: "arrow.left.arrow.right",
-      onPress: props.onOpenHandoff,
-    });
-  }
-  if (props.hasThreadCwd) {
-    actions.push({
-      accessibilityLabel: filesVisible ? "Close files" : "Open files",
-      icon: "folder",
-      selected: filesVisible,
-      disabled: !props.gitControls.canOpenFiles,
-      separateBackground: false,
-      onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
-    });
-  }
+  const actions: AppBarAction[] = props.hasThreadCwd
+    ? [
+        {
+          accessibilityLabel: filesVisible ? gt("Close files") : gt("Open files"),
+          icon: "folder",
+          selected: filesVisible,
+          disabled: !props.gitControls.canOpenFiles,
+          separateBackground: false,
+          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+        },
+      ]
+    : [];
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (
@@ -68,7 +55,7 @@ export function ThreadHeader(props: {
       backInSplitView={
         props.onReturnToThread
           ? {
-              accessibilityLabel: "Return to chat",
+              accessibilityLabel: gt("Return to chat"),
               icon: "chevron.left",
               onPress: props.onReturnToThread,
             }

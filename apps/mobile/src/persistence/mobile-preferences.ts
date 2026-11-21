@@ -177,9 +177,6 @@ export interface Preferences {
   }>;
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
-  /** The user's show/hide choice for a thread's nested subagents, keyed by
-      `environmentId:threadId`. Absent = decided from the subagents' status. */
-  readonly threadListNestedExpandedByKey?: Readonly<Record<string, boolean>>;
   readonly threadListWorkingShelfExpanded?: boolean;
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
@@ -267,7 +264,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     modelFavorites?: Preferences["modelFavorites"];
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
-    threadListNestedExpandedByKey?: Record<string, boolean>;
     threadListWorkingShelfExpanded?: boolean;
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
@@ -420,17 +416,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
     preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
-  }
-  if (
-    typeof parsed.threadListNestedExpandedByKey === "object" &&
-    parsed.threadListNestedExpandedByKey !== null &&
-    !Array.isArray(parsed.threadListNestedExpandedByKey)
-  ) {
-    preferences.threadListNestedExpandedByKey = Object.fromEntries(
-      Object.entries(parsed.threadListNestedExpandedByKey).filter(
-        (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
-      ),
-    );
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;

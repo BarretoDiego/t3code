@@ -103,7 +103,7 @@ it.each([
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: target.environmentId,
-    input: { cwd: target.cwd, query: expected, limit: 20, includeRepositories: true },
+    input: { cwd: target.cwd, query: expected, limit: 20 },
   });
 });
 
@@ -131,12 +131,7 @@ it.each([
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: changed.environmentId,
-    input: {
-      cwd: changed.cwd,
-      query: changed.query.slice(0, 256),
-      limit: 20,
-      includeRepositories: true,
-    },
+    input: { cwd: changed.cwd, query: changed.query.slice(0, 256), limit: 20 },
   });
 });
 

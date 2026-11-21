@@ -3,7 +3,6 @@ import type { EnvironmentId } from "@t3tools/contracts";
 export interface ComposerPathSearchEntry {
   readonly path: string;
   readonly kind: "file" | "directory";
-  readonly repository?: boolean;
   readonly parentPath?: string;
 }
 

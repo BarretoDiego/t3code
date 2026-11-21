@@ -1298,6 +1298,19 @@ describe("thread outbox", () => {
         creation: { ...creationMessage.creation, branch: "" },
       }),
     ).toBe(false);
+    const plainFolderCreation = {
+      ...creationMessage,
+      creation: {
+        ...creationMessage.creation,
+        branch: null,
+        repositories: ["/workspace/api"],
+        startsFromRepositoryDefaults: true,
+      },
+    } satisfies QueuedThreadMessage;
+    expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(plainFolderCreation))).toEqual(
+      plainFolderCreation,
+    );
+    expect(isQueuedThreadCreationSendable(plainFolderCreation)).toBe(true);
     expect(isQueuedThreadCreationSendable({ ...creationMessage, modelSelection: undefined })).toBe(
       false,
     );
@@ -1385,48 +1398,6 @@ describe("thread outbox", () => {
         new EnvironmentNotRegisteredError({ environmentId: EnvironmentId.make("environment-1") }),
       ),
     ).toBe(true);
-  });
-
-  it("waits out an exhausted plan window instead of sending through it", () => {
-    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
-    const resetAt = new Date(nowMs + 60_000).toISOString();
-    expect(
-      resolveThreadOutboxDeliveryAction({
-        isCreation: false,
-        threadExists: true,
-        shellStatus: "live",
-        environmentConnected: true,
-        rateLimitedUntil: resetAt,
-        nowMs,
-      }),
-    ).toBe("wait");
-    expect(
-      resolveThreadOutboxDeliveryAction({
-        isCreation: false,
-        threadExists: true,
-        shellStatus: "live",
-        environmentConnected: true,
-        rateLimitedUntil: new Date(nowMs - 1_000).toISOString(),
-        nowMs,
-      }),
-    ).toBe("send");
-  });
-
-  it("retries usage-limit failures so the drain can park them on the reset", () => {
-    expect(
-      resolveThreadOutboxFailureAction({
-        stage: "start-turn",
-        error: new Error("Codex usage limit reached. Send the message again once it resets."),
-        interrupted: false,
-      }),
-    ).toBe("retry");
-    expect(
-      resolveThreadOutboxFailureAction({
-        stage: "start-turn",
-        error: new Error("Thread no longer exists"),
-        interrupted: false,
-      }),
-    ).toBe("restore");
   });
 
   it("retains queued messages when settings synchronization fails before startTurn", () => {

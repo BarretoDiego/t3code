@@ -4,11 +4,10 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import * as Path from "effect/Path";
 import * as Tracer from "effect/Tracer";
-
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -35,10 +34,6 @@ const storageLayer = <E>(
     Layer.provideMerge(config),
     Layer.provide(NodeServices.layer),
   );
-
-const currentStatus = Effect.flatMap(DatabaseStorage.DatabaseStorage, (storage) =>
-  storage.status.pipe(Stream.take(1), Stream.runHead),
-);
 
 const testConfig = ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-" });
 
@@ -74,57 +69,6 @@ it.effect("a new database returns freed pages online without losing data", () =>
     assert.equal(yield* freePages, 0);
     assert.deepEqual(yield* sql`SELECT value FROM retained`, [{ value: "keep" }]);
   }).pipe(Effect.provide(storageLayer(testConfig))),
-);
-
-it.effect("publishes file accounting and the doctor command after each pass", () =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const config = yield* ServerConfig.ServerConfig;
-    yield* sql`CREATE TABLE discarded (value BLOB)`;
-    yield* sql`INSERT INTO discarded VALUES (zeroblob(1048576))`;
-    yield* TestClock.adjust("1 minute");
-    const before = (yield* currentStatus).pipe(Option.getOrThrow);
-    assert.isNotNull(before);
-    assert.isAbove(before!.databaseBytes, 1048576);
-    assert.isTrue(before!.incrementalVacuumEnabled);
-    // Quoting follows the host shell, so check each word on its own.
-    assert.include(before!.compactCommand, "doctor database");
-    assert.include(before!.compactCommand, "--base-dir");
-    assert.include(before!.compactCommand, config.baseDir);
-
-    // The next reclaim pass frees the dropped table and republishes.
-    yield* sql`DROP TABLE discarded`;
-    yield* TestClock.adjust("1 minute");
-    const storage = yield* DatabaseStorage.DatabaseStorage;
-    const after = yield* storage.status.pipe(
-      Stream.filter((status) => status !== null && status.databaseBytes < before!.databaseBytes),
-      Stream.runHead,
-      Effect.map(Option.getOrThrow),
-    );
-    assert.isAtMost(after!.databaseBytes, before!.databaseBytes - 1048576);
-    assert.equal(after!.reclaimableBytes, 0);
-  }).pipe(Effect.provide(storageLayer(testConfig))),
-);
-
-it.effect("publishes nothing when doctor would repair a different database", () =>
-  Effect.gen(function* () {
-    yield* TestClock.adjust("1 minute");
-    assert.deepEqual(yield* currentStatus, Option.some(null));
-  }).pipe(
-    Effect.provide(
-      storageLayer(
-        // A dev server without an explicit home keeps state in <baseDir>/dev,
-        // while `doctor database --base-dir` targets <baseDir>/userdata.
-        Layer.effect(
-          ServerConfig.ServerConfig,
-          Effect.gen(function* () {
-            const config = yield* ServerConfig.ServerConfig;
-            return { ...config, dbPath: `${config.baseDir}/dev/statev2.sqlite` };
-          }),
-        ).pipe(Layer.provide(testConfig)),
-      ),
-    ),
-  ),
 );
 
 const compactionLayer = (

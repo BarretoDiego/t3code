@@ -166,6 +166,7 @@ export const layerExecutor: Layer.Layer<
               ...(effect.request.processLossCount === undefined
                 ? {}
                 : { processLossCount: effect.request.processLossCount }),
+              ...(effect.request.cause === undefined ? {} : { cause: effect.request.cause }),
             }).pipe(
               Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
               Effect.provideService(ServerSettings.ServerSettingsService, settings),
@@ -399,18 +400,11 @@ export const layerExecutor: Layer.Layer<
                         text: message.text,
                         ...(message.context ? { context: message.context } : {}),
                         attachments: message.attachments,
-                        ...(message.miniSkillIds === undefined
-                          ? {}
-                          : { miniSkillIds: message.miniSkillIds }),
-                        ...(message.agentProfile === undefined
-                          ? {}
-                          : { agentProfile: message.agentProfile }),
                         ...(error.steerDeclined && effect.request.modelSelection !== undefined
                           ? { modelSelection: effect.request.modelSelection }
                           : message.delegatedCompletion === undefined
                             ? {}
                             : { modelSelection: run.modelSelection }),
-
                         dispatchMode: {
                           type: queued ? "queue_after_active" : "start_immediately",
                         },
@@ -556,6 +550,7 @@ export const layerExecutor: Layer.Layer<
                 providerThreadId: effect.request.providerThreadId,
                 checkpointId: effect.request.checkpointId,
                 scopeId: effect.request.scopeId,
+                requestId: effect.commandId,
                 ...(effect.request.restoreFiles === undefined
                   ? {}
                   : { restoreFiles: effect.request.restoreFiles }),

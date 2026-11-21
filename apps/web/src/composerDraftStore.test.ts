@@ -1,25 +1,3 @@
-import {
-  composerDraftHasUserContent,
-  checkoutPullRequestUrlToLink,
-  COMPOSER_DRAFT_STORAGE_KEY,
-  subscribeComposerDraftModelReconciliation,
-  deriveEffectiveComposerModelState,
-  clearComposerDraftsEnvironment,
-  beginBackgroundDraftSubmissionByRef,
-  clearBackgroundDraftSubmissionByRef,
-  finalizePromotedDraftThreadByRef,
-  markPromotedDraftThreadByRef,
-  resolveDraftPromotionNavigationTarget,
-  restoreFailedDraftThread,
-  subscribeDraftThreadPromotion,
-  type ComposerFileAttachment,
-  type ComposerImageAttachment,
-  composerFileNeedsReattach,
-  hydrateImagesFromPersisted,
-  partializeComposerDraftStoreState,
-  useComposerDraftStore,
-  DraftId,
-} from "./composerDraftStore";
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import { createEnvironmentThreadShellAtoms } from "@t3tools/client-runtime/state/threads";
 import {
@@ -41,11 +19,9 @@ import {
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import {
   defaultInstanceIdForDriver,
-  AgentProfileId,
-  EnvironmentId,
-  MiniSkillId,
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
+  EnvironmentId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -100,6 +76,27 @@ function selectionsByProvider(
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { createMemoryStorage } from "./lib/storage";
 
+import {
+  COMPOSER_DRAFT_STORAGE_KEY,
+  subscribeComposerDraftModelReconciliation,
+  deriveEffectiveComposerModelState,
+  checkoutPullRequestUrlToLink,
+  clearComposerDraftsEnvironment,
+  beginBackgroundDraftSubmissionByRef,
+  clearBackgroundDraftSubmissionByRef,
+  finalizePromotedDraftThreadByRef,
+  markPromotedDraftThreadByRef,
+  resolveDraftPromotionNavigationTarget,
+  restoreFailedDraftThread,
+  subscribeDraftThreadPromotion,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+  composerFileNeedsReattach,
+  hydrateImagesFromPersisted,
+  partializeComposerDraftStoreState,
+  useComposerDraftStore,
+  DraftId,
+} from "./composerDraftStore";
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
 import { insertInlineContextReference } from "./lib/composerContextReferences";
 import {
@@ -344,114 +341,6 @@ describe("composerDraftStore copied attachments", () => {
 
     rememberCopiedComposerAttachments(TEST_ENVIRONMENT_ID, new Map());
     expect(copiedComposerAttachmentFile(TEST_ENVIRONMENT_ID, second.id)).toBeUndefined();
-  });
-});
-
-describe("composerDraftStore mini skill selection", () => {
-  const threadId = ThreadId.make("thread-mini-skills");
-  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-  const skillA = MiniSkillId.make("skill-a");
-  const skillB = MiniSkillId.make("skill-b");
-
-  beforeEach(() => {
-    resetComposerDraftStore();
-  });
-
-  it("stores, dedupes, and clears the request-scoped selection", () => {
-    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, [skillA, skillB, skillA]);
-    expect(
-      useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedMiniSkillIds,
-    ).toEqual([skillA, skillB]);
-
-    // The selection alone is an execution parameter, not user content.
-    expect(
-      composerDraftHasUserContent(useComposerDraftStore.getState().getComposerDraft(threadRef)),
-    ).toBe(false);
-
-    // A cleared selection removes an otherwise-empty draft.
-    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, []);
-    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
-  });
-
-  it("persists the selection with the draft and hydrates it back", () => {
-    useComposerDraftStore.getState().setPrompt(threadRef, "implement the feature");
-    useComposerDraftStore.getState().setSelectedMiniSkillIds(threadRef, [skillA, skillB]);
-
-    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-    const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(persisted.draftsByThreadKey[key]?.selectedMiniSkillIds).toEqual([skillA, skillB]);
-  });
-
-  it("clears selected mini skills with the submitted prompt", () => {
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(threadRef, "implement the feature");
-    store.setSelectedMiniSkillIds(threadRef, [skillA, skillB]);
-
-    store.clearComposerContent(threadRef);
-
-    expect(store.getComposerDraft(threadRef)).toBeNull();
-    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-    expect(
-      persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)],
-    ).toBeUndefined();
-  });
-
-  it("clears request mini skills while keeping the active agent profile", () => {
-    const store = useComposerDraftStore.getState();
-    const profileId = AgentProfileId.make("profile-mini-skills");
-    store.setPrompt(threadRef, "review the change");
-    store.setSelectedMiniSkillIds(threadRef, [skillA]);
-    store.setSelectedProfileId(threadRef, profileId);
-
-    store.clearComposerContent(threadRef);
-
-    expect(store.getComposerDraft(threadRef)?.selectedMiniSkillIds).toEqual([]);
-    expect(store.getComposerDraft(threadRef)?.selectedProfileId).toBe(profileId);
-  });
-});
-
-describe("composerDraftStore agent profile selection", () => {
-  const threadId = ThreadId.make("thread-agent-profiles");
-  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-  const profileA = AgentProfileId.make("profile-a");
-  const profileB = AgentProfileId.make("profile-b");
-
-  beforeEach(() => {
-    resetComposerDraftStore();
-  });
-
-  it("keeps the selected profile per thread and survives content clears", () => {
-    useComposerDraftStore.getState().setPrompt(threadRef, "review this diff");
-    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileA);
-
-    // Sending clears content, not the profile: the profile is a per-thread mode.
-    useComposerDraftStore.getState().clearComposerContent(threadRef);
-    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedProfileId).toBe(
-      profileA,
-    );
-
-    const otherThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-other"));
-    expect(
-      useComposerDraftStore.getState().getComposerDraft(otherThreadRef)?.selectedProfileId ?? null,
-    ).toBeNull();
-
-    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileB);
-    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.selectedProfileId).toBe(
-      profileB,
-    );
-
-    // Back to Custom removes an otherwise-empty draft.
-    useComposerDraftStore.getState().setSelectedProfileId(threadRef, null);
-    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
-  });
-
-  it("persists the selected profile with the draft", () => {
-    useComposerDraftStore.getState().setPrompt(threadRef, "review this diff");
-    useComposerDraftStore.getState().setSelectedProfileId(threadRef, profileA);
-
-    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-    const key = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(persisted.draftsByThreadKey[key]?.selectedProfileId).toBe(profileA);
   });
 });
 
@@ -3008,9 +2897,19 @@ describe("composerDraftStore checkout pull request", () => {
     store().setDraftThreadContext(draftId, { checkoutPullRequest: null });
     expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
 
-    store().setDraftThreadContext(draftId, { checkoutPullRequest: checkout });
+    store().setDraftThreadContext(draftId, {
+      checkoutPullRequest: checkout,
+      worktreeRepositories: ["/work/api"],
+    });
+    // An unrelated change keeps the repository choice; an empty choice is still a choice.
+    store().setDraftThreadContext(draftId, { envMode: "worktree" });
+    expect(store().getDraftSession(draftId)?.worktreeRepositories).toEqual(["/work/api"]);
+    store().setDraftThreadContext(draftId, { worktreeRepositories: [] });
+    expect(store().getDraftSession(draftId)?.worktreeRepositories).toEqual([]);
+
     store().setDraftThreadContext(draftId, { projectRef: otherProjectRef });
     expect(store().getDraftSession(draftId)?.checkoutPullRequest).toBeUndefined();
+    expect(store().getDraftSession(draftId)?.worktreeRepositories).toBeUndefined();
   });
 
   it("persists the pull request and still restores drafts saved without one", async () => {
@@ -3039,7 +2938,11 @@ describe("composerDraftStore checkout pull request", () => {
         state: {
           draftsByThreadKey: {},
           draftThreadsByThreadKey: {
-            [draftId]: { ...persistedDraftThread(threadId), checkoutPullRequest: checkout },
+            [draftId]: {
+              ...persistedDraftThread(threadId),
+              checkoutPullRequest: checkout,
+              worktreeRepositories: ["/work/api"],
+            },
             [legacyDraftId]: persistedDraftThread(ThreadId.make("thread-legacy")),
           },
           logicalProjectDraftThreadKeyByLogicalProjectKey: {
@@ -3057,7 +2960,8 @@ describe("composerDraftStore checkout pull request", () => {
       expect(checkoutPullRequestUrlToLink(legacy)).toBeNull();
       expect(
         partializeComposerDraftStoreState(store()).draftThreadsByThreadKey[draftId],
-      ).toMatchObject({ checkoutPullRequest: checkout });
+      ).toMatchObject({ checkoutPullRequest: checkout, worktreeRepositories: ["/work/api"] });
+      expect(legacy).not.toHaveProperty("worktreeRepositories");
     } finally {
       await useComposerDraftStore.persist.clearStorage();
       vi.useRealTimers();

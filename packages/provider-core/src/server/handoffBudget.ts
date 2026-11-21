@@ -8,8 +8,8 @@ import type {
   OrchestrationV2ProviderThread,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
+import { withMessageSenderNote } from "@t3tools/contracts";
 
-import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import * as Config from "effect/Config";
 
 export const DEFAULT_HANDOFF_TOKEN_CAP = 16_000;
@@ -137,21 +137,9 @@ export function historicalMessage(
 ): OrchestrationV2HistoricalMessage | null {
   let text: string;
   switch (item.type) {
-    case "user_message": {
-      // Hand over what the agent originally read: composer context resolved,
-      // attachments named (their bytes are not replayed).
-      const attachments = item.attachments.map(
-        (attachment) => `${attachment.type} ${JSON.stringify(attachment.name)}`,
-      );
-      text = [
-        projectComposerContextForProvider({
-          text: item.text,
-          records: item.context?.records ?? [],
-        }),
-        ...(attachments.length === 0 ? [] : [`[Attachments: ${attachments.join(", ")}]`]),
-      ].join("\n");
+    case "user_message":
+      text = withMessageSenderNote(item, item.text);
       break;
-    }
     case "assistant_message":
       text = item.text;
       break;

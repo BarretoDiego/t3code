@@ -3,8 +3,6 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 import type {
-  ProjectDiscoverScriptsInput,
-  ProjectDiscoverScriptsResult,
   FilesystemEntryMetadata,
   FilesystemGetMetadataInput,
   FilesystemGetMetadataResult,
@@ -17,7 +15,6 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isNetworkPath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
-import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -29,14 +26,8 @@ import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
-import {
-  SCRIPT_MANIFEST_NAMES,
-  PACKAGE_MANAGER_LOCKS,
-  packageManagerFromManifest,
-  scriptsFromManifest,
-} from "./projectScriptDiscovery.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
-import { toWslDrivePath } from "./wslDrivePath.ts";
+import { toHostDrivePath } from "./hostDrivePath.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
@@ -122,12 +113,6 @@ export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
 export class WorkspaceFileSystem extends Context.Service<
   WorkspaceFileSystem,
   {
-    readonly discoverScripts: (
-      input: ProjectDiscoverScriptsInput,
-    ) => Effect.Effect<
-      ProjectDiscoverScriptsResult,
-      WorkspacePaths.WorkspacePathsError | WorkspaceFileSystemOperationError
-    >;
     readonly getMetadata: (
       input: FilesystemGetMetadataInput,
     ) => Effect.Effect<FilesystemGetMetadataResult>;
@@ -178,12 +163,11 @@ export const make = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const knownWorkspaces = yield* KnownWorkspaces.KnownWorkspaces;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-  const platform = yield* HostProcess.Platform;
   const isServerInternalPath = yield* makeIsServerInternalPath;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
   const toHostPath = (requestedPath: string) =>
-    toWslDrivePath(requestedPath).pipe(
+    toHostDrivePath(requestedPath).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
 
@@ -658,124 +642,7 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath };
   });
 
-  const discoverScripts: WorkspaceFileSystem["Service"]["discoverScripts"] = Effect.fn(
-    "WorkspaceFileSystem.discoverScripts",
-  )(function* (input) {
-    const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
-    const excluded = new Set([
-      ".git",
-      "node_modules",
-      ".t3",
-      ".cache",
-      ".next",
-      ".turbo",
-      ".repos",
-      ".kilo",
-      "dist",
-      "build",
-      "coverage",
-      "vendor",
-      ".venv",
-      "venv",
-      "target",
-    ]);
-    const pending = [{ directory: "", manager: "npm" }];
-    const scripts: ProjectDiscoverScriptsResult["scripts"][number][] = [];
-    const unreadablePaths: string[] = [];
-    let truncated = false;
-    let scanned = 0;
-    let manifests = 0;
-    const startedAt = yield* Clock.currentTimeMillis;
-    while (scanned < pending.length) {
-      const now = yield* Clock.currentTimeMillis;
-      if (
-        scanned >= 10_000 ||
-        manifests >= 512 ||
-        scripts.length >= 3_000 ||
-        now - startedAt > 5_000
-      ) {
-        truncated = true;
-        break;
-      }
-      const current = pending[scanned++]!;
-      const children = yield* Effect.tryPromise({
-        try: () => NodeFSP.readdir(path.join(cwd, current.directory), { withFileTypes: true }),
-        catch: (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: cwd,
-            relativePath: current.directory || ".",
-            resolvedPath: path.join(cwd, current.directory),
-            operationPath: path.join(cwd, current.directory),
-            operation: "read",
-            cause,
-          }),
-      }).pipe(
-        Effect.catch((error) => {
-          if (!current.directory) return Effect.fail(error);
-          unreadablePaths.push(current.directory);
-          return Effect.succeed([]);
-        }),
-      );
-      const files = children
-        .filter((child) => child.isFile())
-        .toSorted((a, b) => a.name.localeCompare(b.name));
-      const contents = new Map<string, string>();
-      for (const file of files) {
-        if (!SCRIPT_MANIFEST_NAMES.has(file.name.toLowerCase())) continue;
-        if (manifests >= 512) {
-          truncated = true;
-          break;
-        }
-        manifests++;
-        const sourcePath = current.directory ? `${current.directory}/${file.name}` : file.name;
-        const result = yield* readFile({ cwd, relativePath: sourcePath }).pipe(
-          Effect.orElseSucceed(() => null),
-        );
-        if (!result || result.truncated) unreadablePaths.push(sourcePath);
-        else contents.set(file.name, result.contents);
-      }
-      const manager =
-        packageManagerFromManifest(contents.get("package.json") ?? "") ??
-        files
-          .map((file) => PACKAGE_MANAGER_LOCKS.get(file.name))
-          .find((value) => value !== undefined) ??
-        current.manager;
-      for (const [filename, contentsText] of contents) {
-        const sourcePath = current.directory ? `${current.directory}/${filename}` : filename;
-        const found = yield* Effect.try({
-          try: () =>
-            scriptsFromManifest({
-              sourcePath,
-              contents: contentsText,
-              packageManager: manager,
-              platform,
-            }),
-          catch: () => null,
-        }).pipe(Effect.orElseSucceed(() => null));
-        if (found) {
-          const remaining = 3_000 - scripts.length;
-          if (found.length > remaining) truncated = true;
-          scripts.push(...found.slice(0, remaining));
-        } else {
-          unreadablePaths.push(sourcePath);
-        }
-      }
-      for (const child of children.toSorted((a, b) => a.name.localeCompare(b.name))) {
-        if (!child.isDirectory() || excluded.has(child.name)) continue;
-        if (pending.length >= 10_000) {
-          truncated = true;
-          break;
-        }
-        pending.push({
-          directory: current.directory ? `${current.directory}/${child.name}` : child.name,
-          manager,
-        });
-      }
-    }
-    return { scripts, truncated, unreadablePaths };
-  });
-
-  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile, discoverScripts });
+  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

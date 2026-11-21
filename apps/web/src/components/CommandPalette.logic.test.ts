@@ -1,9 +1,9 @@
 import { threadKey } from "@t3tools/client-runtime/state/entities";
-import { type Project, type Thread } from "../types";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { Thread } from "../types";
+import { makeThreadFixture } from "../test-fixtures";
 import {
-  enumerateCommandPaletteItems,
-  buildCommandPaletteProjectMetadata,
-  buildProjectActionItems,
   newThreadNoProjectIndex,
   buildNestedSearchItems,
   resolveCommandPaletteProject,
@@ -17,14 +17,6 @@ import {
   reduceCommandPaletteSearchState,
   type CommandPaletteUiState,
 } from "./CommandPalette.logic";
-import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { makeThreadFixture } from "../test-fixtures";
-import {
-  buildSidebarProjectPickerEntries,
-  buildSidebarProjectSnapshots,
-  resolveProjectEnvironmentSummary,
-} from "../sidebarProjectGrouping";
 
 describe("linked pull request thread navigation", () => {
   it("keeps archived relations searchable and routes them through the PR environment", async () => {
@@ -98,59 +90,6 @@ describe("reduceCommandPaletteUiState", () => {
     ).toBeNull();
   });
 
-  it("routes open intents to command mode", () => {
-    const filesOpen = reduceCommandPaletteUiState(closedState, {
-      _tag: "ToggleMode",
-      mode: "files",
-    });
-    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenAddProject" })).toMatchObject({
-      open: true,
-      mode: "command",
-      openIntent: { kind: "add-project" },
-    });
-    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewThreadIn" })).toMatchObject({
-      open: true,
-      mode: "command",
-      openIntent: { kind: "new-thread-in" },
-    });
-  });
-
-  it("carries the environment a project should be added to", () => {
-    expect(
-      reduceCommandPaletteUiState(closedState, {
-        _tag: "OpenAddProject",
-        environmentId: "remote",
-      }),
-    ).toMatchObject({
-      open: true,
-      mode: "command",
-      openIntent: { kind: "add-project", environmentId: "remote" },
-    });
-    // No environment means "ask", and the key has to be absent rather than
-    // undefined for the flow to tell the two apart.
-    expect(
-      reduceCommandPaletteUiState(closedState, { _tag: "OpenAddProject" }).openIntent,
-    ).not.toHaveProperty("environmentId");
-  });
-
-  it("preserves the mode on close and resets it on open", () => {
-    const filesOpen = reduceCommandPaletteUiState(closedState, {
-      _tag: "ToggleMode",
-      mode: "files",
-    });
-
-    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "SetOpen", open: false })).toMatchObject({
-      open: false,
-      mode: "files",
-      openIntent: null,
-    });
-    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "SetOpen", open: true })).toMatchObject({
-      open: true,
-      mode: "command",
-      openIntent: null,
-    });
-  });
-
   it("keeps the session across mode switches so only intents start the palette over", () => {
     let state: CommandPaletteUiState = {
       open: false,
@@ -196,56 +135,8 @@ describe("resolveAddProjectEntry", () => {
   });
 });
 
-describe("enumerateCommandPaletteItems", () => {
-  it("assigns positional jump shortcuts to the first nine displayed items", () => {
-    const items = Array.from({ length: 10 }, (_, index) => ({
-      kind: "action" as const,
-      value: `project-${index + 1}`,
-      searchTerms: [],
-      title: `Project ${index + 1}`,
-      icon: null,
-      shortcutCommand: "chat.new" as const,
-      run: async () => undefined,
-    }));
-
-    expect(enumerateCommandPaletteItems(items).map((item) => item.shortcutCommand)).toEqual([
-      "thread.jump.1",
-      "thread.jump.2",
-      "thread.jump.3",
-      "thread.jump.4",
-      "thread.jump.5",
-      "thread.jump.6",
-      "thread.jump.7",
-      "thread.jump.8",
-      "thread.jump.9",
-      undefined,
-    ]);
-  });
-});
-
-const closedState: CommandPaletteUiState = {
-  open: false,
-  mode: "command",
-  openIntent: null,
-  session: 0,
-};
-
 const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const PROJECT_ID = ProjectId.make("project-1");
-
-function makeProject(overrides: Partial<Project> = {}): Project {
-  return {
-    id: PROJECT_ID,
-    environmentId: LOCAL_ENVIRONMENT_ID,
-    title: "Project",
-    workspaceRoot: "/workspace/project",
-    defaultModelSelection: null,
-    scripts: [],
-    createdAt: "2026-03-01T00:00:00.000Z",
-    updatedAt: "2026-03-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return makeThreadFixture({
@@ -271,91 +162,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     ...overrides,
   });
 }
-
-describe("buildProjectActionItems", () => {
-  it.each(["project", "new-thread-in"])(
-    "keeps linked projects together and searchable from every environment in %s",
-    async (valuePrefix) => {
-      const remoteEnvironmentId = EnvironmentId.make("home-lab");
-      const local = makeProject({ title: "Junti", linkKey: "link:junti" });
-      const remote = makeProject({
-        id: ProjectId.make("junti-remote"),
-        environmentId: remoteEnvironmentId,
-        title: "Junti server",
-        workspaceRoot: "/srv/junti",
-        linkKey: "link:junti",
-      });
-      const locations = new Map([
-        [LOCAL_ENVIRONMENT_ID, { label: "Local" }],
-        [remoteEnvironmentId, { label: "Home Lab" }],
-      ]);
-      const groups = buildSidebarProjectSnapshots({
-        projects: [local, remote],
-        settings: { sidebarProjectGroupingMode: "repository", sidebarProjectGroupingOverrides: {} },
-        primaryEnvironmentId: LOCAL_ENVIRONMENT_ID,
-        resolveEnvironmentLabel: (id) => locations.get(id)?.label ?? null,
-      });
-      const entries = buildSidebarProjectPickerEntries({
-        groups,
-        preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: remote.id },
-      });
-      const runProject = vi.fn(async () => undefined);
-      const items = entries.flatMap(({ group, targetProject }) =>
-        buildProjectActionItems({
-          projects: [{ ...targetProject, displayName: group.displayName }],
-          valuePrefix,
-          searchTerms: () =>
-            buildCommandPaletteProjectMetadata({
-              projects: group.memberProjects,
-              locationByEnvironmentId: locations,
-            }).searchTerms,
-          icon: () => null,
-          runProject,
-        }),
-      );
-
-      expect(items).toHaveLength(1);
-      expect(resolveProjectEnvironmentSummary(groups[0]!, LOCAL_ENVIRONMENT_ID)).toMatchObject({
-        label: "2 envs",
-        description: "Available in 2 environments: Local, Home Lab",
-      });
-      for (const query of ["local", "home lab", "/srv/junti", "/workspace/project"]) {
-        const filtered = filterCommandPaletteGroups({
-          activeGroups: [{ value: "projects", label: "Projects", items }],
-          isInSubmenu: true,
-          query,
-          projectSearchItems: [],
-          threadSearchItems: [],
-        });
-        expect(filtered.flatMap((group) => group.items)).toEqual(items);
-      }
-      await items[0]!.run();
-      expect(runProject).toHaveBeenCalledWith(
-        expect.objectContaining({ id: remote.id, environmentId: remoteEnvironmentId }),
-      );
-    },
-  );
-
-  it("shows the grouped display name but keeps the real title for icons", () => {
-    const project = makeProject({ title: "fleet", workspaceRoot: "/Users/theo/Code/p/fleet" });
-    const iconTitles: string[] = [];
-    const [item] = buildProjectActionItems({
-      projects: [{ ...project, displayName: "t3dotgg/fleet" }],
-      valuePrefix: "project",
-      icon: (candidate) => {
-        iconTitles.push(candidate.title);
-        return null;
-      },
-      runProject: async () => undefined,
-    });
-
-    expect(item?.title).toBe("t3dotgg/fleet");
-    expect(item?.searchTerms).toEqual(
-      expect.arrayContaining(["t3dotgg/fleet", "fleet", "/Users/theo/Code/p/fleet"]),
-    );
-    expect(iconTitles).toEqual(["fleet"]);
-  });
-});
 
 describe("buildThreadActionItems", () => {
   it("keeps threads apart when two environments share a thread ID", async () => {
@@ -1016,34 +822,6 @@ describe("filterPinnedBrowseEntries", () => {
       }).exactEntry,
     ).toBeNull();
   });
-});
-
-it("keeps the clone destination environment and URL when entering from the repository catalog", () => {
-  const state = reduceCommandPaletteUiState(
-    { open: false, mode: "command", openIntent: null, session: 0 },
-    {
-      _tag: "OpenAddProject",
-      environmentId: "remote-node",
-      projectSource: "url",
-      repositoryUrl: "git@example.test:team/repo.git",
-    },
-  );
-  expect(state.openIntent).toEqual({
-    kind: "add-project",
-    environmentId: "remote-node",
-    projectSource: "url",
-    repositoryUrl: "git@example.test:team/repo.git",
-  });
-  expect(
-    reduceCommandPaletteUiState(state, { _tag: "SetOpen", open: false }).openIntent,
-  ).toBeNull();
-  expect(
-    reduceCommandPaletteUiState(state, {
-      _tag: "OpenAddProject",
-      environmentId: "local",
-      projectSource: "local",
-    }).openIntent,
-  ).toEqual({ kind: "add-project", environmentId: "local", projectSource: "local" });
 });
 
 it.each([

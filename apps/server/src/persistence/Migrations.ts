@@ -1,6 +1,5 @@
 import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
-import { runAutomationMigrations } from "../automation/AutomationMigrations.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import {
   DATABASE_MIGRATION_PROGRESS_MESSAGE,
@@ -57,64 +56,63 @@ import Migration0045 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
 import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
 import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
-import Migration0049 from "./Migrations/048_ProjectionThreadsMiniSkills.ts";
-import Migration0050 from "./Migrations/050_ProjectionThreadsActiveOrderKey.ts";
-import Migration0051 from "./Migrations/051_ComputeJobs.ts";
-import Migration0052 from "./Migrations/052_ThreadHandoffs.ts";
-import Migration0053 from "./Migrations/050_ProjectionThreadPullRequests.ts";
-import Migration0054 from "./Migrations/051_ProjectionThreadMessageContext.ts";
-import Migration0055 from "./Migrations/055_ProjectionThreadTitleStateReconciliation.ts";
-import Migration0056 from "./Migrations/056_RepairProjectionThreadMessageContext.ts";
-import Migration0058 from "./Migrations/058_ScheduledMessages.ts";
-import Migration0057 from "./Migrations/053_PullRequestFilesViewed.ts";
-import Migration0059 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
-import Migration0060 from "./Migrations/060_ProjectionProjectLinkKey.ts";
-import Migration0061 from "./Migrations/055_OrchestrationV2.ts";
-import Migration0062 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
-import Migration0063 from "./Migrations/062_ScheduledMessagesOrchestrationV2.ts";
-import Migration0064 from "./Migrations/057_ScheduledTaskWebhooks.ts";
-import Migration0065 from "./Migrations/058_WebhookRelayDeliveries.ts";
-import Migration0066 from "./Migrations/059_McpAppModelContext.ts";
-import Migration0067 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
-import Migration0068 from "./Migrations/061_PullRequestReviewGuides.ts";
-import Migration0069 from "./Migrations/062_ThreadFailureLookupIndex.ts";
-import Migration0070 from "./Migrations/070_DropUnusedV1Projections.ts";
-import Migration0071 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
-import Migration0072 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
-import Migration0073 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
-import Migration0074 from "./Migrations/067_WebhookDedupe.ts";
-import Migration0075 from "./Migrations/068_ShellStopRequestIndex.ts";
-import Migration0076 from "./Migrations/069_ThreadMessageSearch.ts";
-import Migration0077 from "./Migrations/070_PeerLinks.ts";
-import Migration0078 from "./Migrations/071_PeerLinkFence.ts";
-import Migration0079 from "./Migrations/072_WaitingLinkRequestIndex.ts";
-import Migration0080 from "./Migrations/073_ActiveTurnItemIndexes.ts";
-import Migration0081 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
-import Migration0082 from "./Migrations/075_SubagentDeliveryState.ts";
-import Migration0083 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
-import Migration0084 from "./Migrations/077_RepairBooleanSettledOverride.ts";
-import Migration0085 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
-import Migration0086 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
-import Migration0087 from "./Migrations/080_ScheduledTaskThreadMode.ts";
-
-import Migration0088 from "./Migrations/081_ProjectionMessageSearchText.ts";
-import Migration0089 from "./Migrations/082_TurnItemConversationIndex.ts";
-import Migration0090 from "./Migrations/083_CommandReadIndexes.ts";
-import Migration0091 from "./Migrations/084_LastExecutedRunIndex.ts";
-import Migration0092 from "./Migrations/085_TurnItemCounts.ts";
-import Migration0093 from "./Migrations/086_QueuedTurnInputIndex.ts";
-import Migration0094 from "./Migrations/087_ProjectionProjectsCustomTitle.ts";
-import Migration0095 from "./Migrations/088_TurnItemTypeStatusIndex.ts";
-import Migration0096 from "./Migrations/089_ShellThreadReadIndexes.ts";
-import Migration0097 from "./Migrations/090_AuthConnectDevices.ts";
-import Migration0098 from "./Migrations/091_AuthConnectDeniedRequests.ts";
-import Migration0099 from "./Migrations/092_QueuedTurnInputIndexJsonValid.ts";
-import Migration0100 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
-import Migration0101 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
-import Migration0102 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
-import Migration0103 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
-import Migration0104 from "./Migrations/097_IssueTrackerBindings.ts";
-import Migration0105 from "./Migrations/098_ActiveShellIndexIndexes.ts";
+import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
+import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
+import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
+import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
+import Migration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
+import Migration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+import Migration0055 from "./Migrations/055_OrchestrationV2.ts";
+import Migration0056 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
+import Migration0057 from "./Migrations/057_ScheduledTaskWebhooks.ts";
+import Migration0058 from "./Migrations/058_WebhookRelayDeliveries.ts";
+import Migration0059 from "./Migrations/059_McpAppModelContext.ts";
+import Migration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
+import Migration0061 from "./Migrations/061_PullRequestReviewGuides.ts";
+import Migration0062 from "./Migrations/062_ThreadFailureLookupIndex.ts";
+import Migration0063 from "./Migrations/063_DropUnusedV1Projections.ts";
+import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
+import Migration0065 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
+import Migration0066 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
+import Migration0067 from "./Migrations/067_WebhookDedupe.ts";
+import Migration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
+import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
+import Migration0070 from "./Migrations/070_PeerLinks.ts";
+import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
+import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
+import Migration0074 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
+import Migration0075 from "./Migrations/075_SubagentDeliveryState.ts";
+import Migration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
+import Migration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
+import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
+import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
+import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
+import Migration0081 from "./Migrations/081_ProjectionMessageSearchText.ts";
+import Migration0082 from "./Migrations/082_TurnItemConversationIndex.ts";
+import Migration0083 from "./Migrations/083_CommandReadIndexes.ts";
+import Migration0084 from "./Migrations/084_LastExecutedRunIndex.ts";
+import Migration0085 from "./Migrations/085_TurnItemCounts.ts";
+import Migration0086 from "./Migrations/086_QueuedTurnInputIndex.ts";
+import Migration0087 from "./Migrations/087_ProjectionProjectsCustomTitle.ts";
+import Migration0088 from "./Migrations/088_TurnItemTypeStatusIndex.ts";
+import Migration0089 from "./Migrations/089_ShellThreadReadIndexes.ts";
+import Migration0090 from "./Migrations/090_AuthConnectDevices.ts";
+import Migration0091 from "./Migrations/091_AuthConnectDeniedRequests.ts";
+import Migration0092 from "./Migrations/092_QueuedTurnInputIndexJsonValid.ts";
+import Migration0093 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
+import Migration0094 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
+import Migration0095 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
+import Migration0096 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
+import Migration0097 from "./Migrations/097_IssueTrackerBindings.ts";
+import Migration0098 from "./Migrations/098_ActiveShellIndexIndexes.ts";
+import Migration0099 from "./Migrations/099_BackgroundRecoveryIndexes.ts";
+import Migration0100 from "./Migrations/100_TurnStartReadIndexes.ts";
+import Migration0101 from "./Migrations/101_DelegatedTaskReadIndexes.ts";
+import Migration0102 from "./Migrations/102_ThreadItemCounts.ts";
+import Migration0103 from "./Migrations/103_IssueTrackerAdditionalScopes.ts";
+import Migration0104 from "./Migrations/104_ProjectionProjectsTrackedFolders.ts";
+import Migration0105 from "./Migrations/105_TaskFolders.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -165,90 +163,65 @@ const migrationEntries = [
   [46, "RepairAutomaticSettlementTimestamps", Migration0046],
   [47, "ProjectionProjectIcon", Migration0047],
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
-  [49, "ProjectionThreadsMiniSkillsReconciliation", Migration0049],
-  [50, "ProjectionThreadsActiveOrderKey", Migration0050],
-  [51, "ComputeJobs", Migration0051],
-  [52, "ThreadHandoffs", Migration0052],
-  // The fork had already published IDs 49–52 when upstream assigned 49–51
-  // to different changes. Preserve that durable history, then append the
-  // upstream pull-request and message-context migrations.
-  [53, "ProjectionThreadPullRequests", Migration0053],
-  [54, "ProjectionThreadMessageContext", Migration0054],
-  [55, "ProjectionThreadTitleStateReconciliation", Migration0055],
-  [56, "RepairProjectionThreadMessageContext", Migration0056],
-  // ID 53 is already published by the fork. Append the upstream viewed-file
-  // store so both migration histories remain valid.
-  [57, "PullRequestFilesViewed", Migration0057],
-  [58, "ScheduledMessages", Migration0058],
-  // The fork already published ID 54 for message context. Preserve that
-  // history and append upstream's auto-settle switch migration instead.
-  [59, "ProjectionThreadsAutoSettleDisabledAt", Migration0059],
-  [60, "ProjectionProjectLinkKey", Migration0060],
-  // Upstream published the V2 orchestrator as 55 and its index cleanup as 56; both ids already belong to fork migrations, so fork databases (at 60) receive them here.
-  // Upstream migrations 49-54 already ran above under fork ids (the title-state column as 55's idempotent reconciliation).
+  [49, "ProjectionThreadsActiveOrderKey", Migration0049],
+  [50, "ProjectionThreadPullRequests", Migration0050],
+  [51, "ProjectionThreadMessageContext", Migration0051],
+  [52, "ProjectionThreadTitleState", Migration0052],
+  [53, "PullRequestFilesViewed", Migration0053],
+  [54, "ProjectionThreadsAutoSettleDisabledAt", Migration0054],
   // Preserve this migration's schema. Future V2 schema changes need new migrations.
-  [61, "OrchestrationV2", Migration0061],
-  [62, "RemoveRedundantProjectionIndexes", Migration0062],
-  // Scheduled messages stored V1 turn-start commands; rewrite them as V2
-  // `message.dispatch` commands so held messages survive the upgrade.
-  [63, "ScheduledMessagesOrchestrationV2", Migration0063],
-  [64, "ScheduledTaskWebhooks", Migration0064],
-  [65, "WebhookRelayDeliveries", Migration0065],
-  [66, "McpAppModelContext", Migration0066],
-  [67, "ThreadSnapshotWindowIndexes", Migration0067],
-  [68, "PullRequestReviewGuides", Migration0068],
-  // Upstream published this as 62; fork ids through 68 were already taken.
-  [69, "ThreadFailureLookupIndex", Migration0069],
-  [70, "DropUnusedV1Projections", Migration0070],
-  [71, "CanonicalizeThreadPullRequestLinks", Migration0071],
-  [72, "CodexUsageNativeTurnIndex", Migration0072],
-  [73, "RepairClientSettlementTimestamps", Migration0073],
-  [74, "WebhookDedupe", Migration0074],
-  // Upstream published these as 68–72; fork ids through 74 were already taken.
-  [75, "ShellStopRequestIndex", Migration0075],
-  [76, "ThreadMessageSearch", Migration0076],
-  [77, "PeerLinks", Migration0077],
-  [78, "PeerLinkFence", Migration0078],
-  [79, "WaitingLinkRequestIndex", Migration0079],
-  // Upstream published these as 73–75; fork ids through 79 were already taken.
-  [80, "ActiveTurnItemIndexes", Migration0080],
-  [81, "ExcludeAttachmentPlaceholdersFromSearch", Migration0081],
-  [82, "SubagentDeliveryState", Migration0082],
-  // Upstream published this as 76; fork ids through 82 were already taken.
-  [83, "ProjectionProjectsPinArchive", Migration0083],
-  // Upstream published this as 77; fork ids through 83 were already taken.
-  [84, "RepairBooleanSettledOverride", Migration0084],
-  // Upstream published these as 78 and 79; fork ids through 84 were already taken.
-  [85, "DropOrchestrationEventCorrelationIndex", Migration0085],
-  [86, "DelegatedRecoveryIndexes", Migration0086],
-  // Upstream published this as 80; fork ids through 86 are already released.
-  [87, "ScheduledTaskThreadMode", Migration0087],
-
-  // Upstream ids 81-85 follow the fork's published ids through 87.
-  [88, "ProjectionMessageSearchText", Migration0088],
-  [89, "TurnItemConversationIndex", Migration0089],
-  [90, "CommandReadIndexes", Migration0090],
-  [91, "LastExecutedRunIndex", Migration0091],
-  [92, "TurnItemCounts", Migration0092],
-
-  // Upstream ids 86-98 follow the fork's published ids through 92.
-  [93, "QueuedTurnInputIndex", Migration0093],
-  [94, "ProjectionProjectsCustomTitle", Migration0094],
-  [95, "TurnItemTypeStatusIndex", Migration0095],
-  [96, "ShellThreadReadIndexes", Migration0096],
-  [97, "AuthConnectDevices", Migration0097],
-  [98, "AuthConnectDeniedRequests", Migration0098],
-  [99, "QueuedTurnInputIndexJsonValid", Migration0099],
-  [100, "ProviderTurnAttemptIndex", Migration0100],
-  [101, "TurnItemMessageOrdinalIndex", Migration0101],
-  [102, "TurnItemInlineWorkOutput", Migration0102],
-  [103, "RepairStaleTitleRegeneration", Migration0103],
-  [104, "IssueTrackerBindings", Migration0104],
-  [105, "ActiveShellIndexIndexes", Migration0105],
+  [55, "OrchestrationV2", Migration0055],
+  [56, "RemoveRedundantProjectionIndexes", Migration0056],
+  [57, "ScheduledTaskWebhooks", Migration0057],
+  [58, "WebhookRelayDeliveries", Migration0058],
+  [59, "McpAppModelContext", Migration0059],
+  [60, "ThreadSnapshotWindowIndexes", Migration0060],
+  [61, "PullRequestReviewGuides", Migration0061],
+  [62, "ThreadFailureLookupIndex", Migration0062],
+  [63, "DropUnusedV1Projections", Migration0063],
+  [64, "CanonicalizeThreadPullRequestLinks", Migration0064],
+  [65, "CodexUsageNativeTurnIndex", Migration0065],
+  [66, "RepairClientSettlementTimestamps", Migration0066],
+  [67, "WebhookDedupe", Migration0067],
+  [68, "ShellStopRequestIndex", Migration0068],
+  [69, "ThreadMessageSearch", Migration0069],
+  [70, "PeerLinks", Migration0070],
+  [71, "PeerLinkFence", Migration0071],
+  [72, "WaitingLinkRequestIndex", Migration0072],
+  [73, "ActiveTurnItemIndexes", Migration0073],
+  [74, "ExcludeAttachmentPlaceholdersFromSearch", Migration0074],
+  [75, "SubagentDeliveryState", Migration0075],
+  [76, "ProjectionProjectsPinArchive", Migration0076],
+  [77, "RepairBooleanSettledOverride", Migration0077],
+  [78, "DropOrchestrationEventCorrelationIndex", Migration0078],
+  [79, "DelegatedRecoveryIndexes", Migration0079],
+  [80, "ScheduledTaskThreadMode", Migration0080],
+  [81, "ProjectionMessageSearchText", Migration0081],
+  [82, "TurnItemConversationIndex", Migration0082],
+  [83, "CommandReadIndexes", Migration0083],
+  [84, "LastExecutedRunIndex", Migration0084],
+  [85, "TurnItemCounts", Migration0085],
+  [86, "QueuedTurnInputIndex", Migration0086],
+  [87, "ProjectionProjectsCustomTitle", Migration0087],
+  [88, "TurnItemTypeStatusIndex", Migration0088],
+  [89, "ShellThreadReadIndexes", Migration0089],
+  [90, "AuthConnectDevices", Migration0090],
+  [91, "AuthConnectDeniedRequests", Migration0091],
+  [92, "QueuedTurnInputIndexJsonValid", Migration0092],
+  [93, "ProviderTurnAttemptIndex", Migration0093],
+  [94, "TurnItemMessageOrdinalIndex", Migration0094],
+  [95, "TurnItemInlineWorkOutput", Migration0095],
+  [96, "RepairStaleTitleRegeneration", Migration0096],
+  [97, "IssueTrackerBindings", Migration0097],
+  [98, "ActiveShellIndexIndexes", Migration0098],
+  [99, "BackgroundRecoveryIndexes", Migration0099],
+  [100, "TurnStartReadIndexes", Migration0100],
+  [101, "DelegatedTaskReadIndexes", Migration0101],
+  [102, "ThreadItemCounts", Migration0102],
+  [103, "IssueTrackerAdditionalScopes", Migration0103],
+  [104, "ProjectionProjectsTrackedFolders", Migration0104],
+  [105, "TaskFolders", Migration0105],
 ] as const;
-
-/** The id this build records the V2 orchestrator schema under. */
-export const ORCHESTRATION_V2_MIGRATION_ID = 61;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
@@ -261,6 +234,8 @@ const makeMigrationLoader = (throughId?: number) =>
     ),
   );
 
+const FIRST_V2_MIGRATION_ID = 55;
+
 export function skippedV2Migrations(
   recorded: ReadonlyArray<{ readonly id: number; readonly name: string }>,
   throughId?: number,
@@ -269,7 +244,7 @@ export function skippedV2Migrations(
   const recordedNames = new Map(recorded.map((row) => [row.id, row.name]));
   return migrationManifest.flatMap(([id, name]) => {
     if (
-      id < ORCHESTRATION_V2_MIGRATION_ID ||
+      id < FIRST_V2_MIGRATION_ID ||
       id > latestRecordedId ||
       (throughId !== undefined && id > throughId)
     )
@@ -292,20 +267,11 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
     readonly migration_id: number;
     readonly name: string;
   }>`SELECT migration_id, name FROM effect_sql_migrations`;
+  const skipped = skippedV2Migrations(
+    recorded.map((row) => ({ id: row.migration_id, name: row.name })),
+    throughId,
+  );
   const latestRecordedId = Math.max(0, ...recorded.map((row) => row.migration_id));
-  const recordedNames = new Map(recorded.map((row) => [row.migration_id, row.name]));
-  const skipped = migrationEntries.flatMap(([id, name]) => {
-    if (
-      id < ORCHESTRATION_V2_MIGRATION_ID ||
-      id > latestRecordedId ||
-      (throughId !== undefined && id > throughId)
-    )
-      return [];
-    const recordedName = recordedNames.get(id);
-    if (recordedName === name) return [];
-    return [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
-  });
-
   if (skipped.length === 0) return;
   return yield* new Migrator.MigrationError({
     kind: "BadState",
@@ -338,42 +304,6 @@ export interface RunMigrationsOptions {
   readonly toMigrationInclusive?: number | undefined;
 }
 
-/**
- * Names an earlier fork build recorded under an id this build gives to another
- * migration, where a later migration here applies the skipped change again
- * idempotently: 49 re-adds what 48 adds, and 56 re-adds what 54 adds. Such a
- * database is complete, so its history is not worth a warning on every start.
- */
-const RECONCILED_FORK_MIGRATIONS: ReadonlyMap<number, string> = new Map([
-  [48, "ProjectionThreadsMiniSkills"],
-  [54, "ReconcileProjectionThreadFeatures"],
-]);
-
-/**
- * The recorded migrations that do not match this build's manifest and that no
- * later migration makes up for. The migrator keys on the id, so each of these
- * means a schema change of this build was skipped.
- */
-export function divergentMigrations(
-  recorded: ReadonlyArray<{ readonly migration_id: number; readonly name: string }>,
-  manifest: ReadonlyArray<readonly [id: number, name: string]>,
-): Array<string> {
-  const manifestNames = new Map(manifest);
-  return recorded.flatMap((row) => {
-    const expected = manifestNames.get(row.migration_id);
-    if (expected === undefined) {
-      return [`${row.migration_id}:${row.name} (unknown to this build)`];
-    }
-    return expected === row.name || RECONCILED_FORK_MIGRATIONS.get(row.migration_id) === row.name
-      ? []
-      : [`${row.migration_id}:${row.name} (this build: ${expected})`];
-  });
-}
-
-/**
- * Runs all pending migrations: creates the tracking table (effect_sql_migrations) if missing, then runs migrations with an ID above the latest recorded one.
- * Returns the [id, name] tuples of the migrations that ran.
- */
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
@@ -381,7 +311,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   const hasPending = yield* hasPendingMigrations();
   if (hasPending) yield* Effect.log(DATABASE_MIGRATIONS_STARTED_MESSAGE);
   const includesV2 =
-    toMigrationInclusive === undefined || toMigrationInclusive >= ORCHESTRATION_V2_MIGRATION_ID;
+    toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.
   const previewMigrations = includesV2 && hasPending ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
@@ -425,18 +355,20 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     readonly migration_id: number;
     readonly name: string;
   }>`SELECT migration_id, name FROM effect_sql_migrations`;
-  const divergent = divergentMigrations(
-    recorded,
-    migrationEntries.map(([id, name]) => [id, name] as const),
-  );
+  const manifestNames = new Map<number, string>(migrationEntries.map(([id, name]) => [id, name]));
+  const divergent = recorded.flatMap((row) => {
+    const expected = manifestNames.get(row.migration_id);
+    if (expected === undefined) {
+      return [`${row.migration_id}:${row.name} (unknown to this build)`];
+    }
+    return expected === row.name
+      ? []
+      : [`${row.migration_id}:${row.name} (this build: ${expected})`];
+  });
   if (divergent.length > 0) {
     yield* Effect.logWarning(
       "Database migration history diverges from this build; recorded migration ids are skipped, not reconciled by name.",
     ).pipe(Effect.annotateLogs({ divergent }));
-  }
-  // Automation tables have their own ledger; a partial run targets the main ledger only.
-  if (toMigrationInclusive === undefined) {
-    yield* runAutomationMigrations();
   }
   return executedMigrations;
 });

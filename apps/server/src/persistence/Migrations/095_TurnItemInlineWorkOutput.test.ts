@@ -11,7 +11,7 @@ layer("095_TurnItemInlineWorkOutput", (it) => {
   it.effect("flags existing dynamic tools whose output renders inline", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 101 });
+      yield* runMigrations({ toMigrationInclusive: 94 });
       const rows: ReadonlyArray<readonly [string, string, object, number]> = [
         ["delegate", "dynamic_tool", { toolName: "mcp__t3_code__delegate_task" }, 1],
         ["html", "dynamic_tool", { toolName: "x", output: { htmlRender: {} } }, 1],
@@ -33,7 +33,7 @@ layer("095_TurnItemInlineWorkOutput", (it) => {
         `;
       }
 
-      yield* runMigrations({ toMigrationInclusive: 102 });
+      yield* runMigrations({ toMigrationInclusive: 95 });
       const flagged = yield* sql<{ readonly turn_item_id: string; readonly inline: number }>`
         SELECT turn_item_id, inline_work_output AS inline
         FROM orchestration_v2_projection_turn_items

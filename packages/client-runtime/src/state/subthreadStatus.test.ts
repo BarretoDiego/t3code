@@ -1,6 +1,6 @@
 import { ProviderInstanceId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveSubthreadStatusLabel } from "./models.ts";
+import { resolveSubthreadStatusLabel } from "./threadNesting.ts";
 
 describe("persistent subthread status", () => {
   const now = "2026-10-09T00:00:00.000Z";
@@ -67,9 +67,9 @@ describe("persistent subthread status", () => {
         { ...working, hasPendingApprovals: true, hasPendingUserInput: true },
         now,
       ),
-    ).toBe("Pending Approval");
+    ).toBe("Pending approval");
     expect(resolveSubthreadStatusLabel({ ...working, hasPendingUserInput: true }, now)).toBe(
-      "Awaiting Input",
+      "Awaiting input",
     );
     expect(resolveSubthreadStatusLabel(working, now)).toBe("Working");
   });
@@ -96,7 +96,7 @@ describe("persistent subthread status", () => {
     expect(resolveSubthreadStatusLabel(snoozed, now)).toBe("Idle · Snoozed");
     expect(resolveSubthreadStatusLabel(snoozed, snoozed.snoozedUntil)).toBe("Idle");
     expect(resolveSubthreadStatusLabel({ ...snoozed, hasPendingUserInput: true }, now)).toBe(
-      "Awaiting Input",
+      "Awaiting input",
     );
   });
 
@@ -119,7 +119,9 @@ describe("persistent subthread status", () => {
     );
   });
   it("keeps background work waiting without masking failed or cancelled results", () => {
-    const pendingBackgroundTasks = [{ taskId: "monitor", kind: "monitor" as const }];
+    const pendingBackgroundTasks = [
+      { taskId: "monitor", kind: "monitor" as const, awaited: true as const },
+    ];
     const waiting = { ...base, pendingBackgroundTasks };
     expect(resolveSubthreadStatusLabel(waiting, now)).toBe("Waiting");
     expect(

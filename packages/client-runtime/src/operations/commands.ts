@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { translatableMessage } from "../errors/translatable.ts";
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
 import {
   type ThreadLinkedPullRequest,
@@ -17,6 +19,7 @@ import {
   type ProjectId,
   type ProjectIconOverride,
   type ProjectScript,
+  type ProjectTrackedFolder,
   type ProviderApprovalDecision,
   type ProviderInteractionMode,
   type ProviderUserInputAnswers,
@@ -25,9 +28,6 @@ import {
   type RuntimeRequestId,
   type ThreadId,
   type ThreadEnvMode,
-  type ThreadMiniSkillSnapshot,
-  type MiniSkillId,
-  type TurnAgentProfileContext,
   type UploadChatAttachment,
   type GuestMessageId,
 } from "@t3tools/contracts";
@@ -48,6 +48,7 @@ import {
   isRpcClientError,
   request,
 } from "../rpc/client.ts";
+import { repositoryCheckpointScopeIds } from "../state/threadRepositories.ts";
 
 interface CommandMetadata {
   readonly commandId?: CommandId;
@@ -60,9 +61,9 @@ export interface CreateProjectInput extends CommandMetadata {
   readonly title: string;
   readonly workspaceRoot: string;
   readonly createWorkspaceRootIfMissing?: boolean;
-  readonly linkKey?: string | null;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
 }
 
 export interface UpdateProjectInput extends CommandMetadata {
@@ -73,10 +74,13 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly autoPull?: boolean;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly faviconPath?: string | null;
-  // Absent = leave unchanged; null = unlink from other environments.
-  readonly linkKey?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  /** Replaces the whole list. Paths only mean something on the project's own environment. */
+  readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
+  /** Added to, and removed by path from, the list as the server has it. */
+  readonly trackFolders?: ReadonlyArray<ProjectTrackedFolder>;
+  readonly untrackFolders?: ReadonlyArray<string>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
 }
@@ -173,8 +177,6 @@ interface StartThreadBootstrap {
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly createdAt: string;
-    /** Mini skill snapshots for the new thread; the server fills defaults when omitted. */
-    readonly miniSkills?: ReadonlyArray<ThreadMiniSkillSnapshot>;
   };
   readonly prepareWorktree?: {
     readonly requireWorktree?: boolean;
@@ -182,6 +184,8 @@ interface StartThreadBootstrap {
     readonly baseBranch: string;
     readonly branch?: string;
     readonly startFromOrigin?: boolean;
+    /** Tracked repositories to give a worktree; absent leaves the choice to the server. */
+    readonly repositories?: ReadonlyArray<{ readonly path: string }>;
   };
   readonly runSetupScript?: boolean;
 }
@@ -203,12 +207,6 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly bootstrap?: StartThreadBootstrap;
   readonly sourceProposedPlan?: { readonly threadId: ThreadId; readonly planId: PlanId };
   readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
-  /** Library mini skills selected in the composer for this request only. */
-  readonly miniSkillIds?: ReadonlyArray<MiniSkillId>;
-  /** The composer-resolved agent profile for this turn, when one was active. */
-  readonly agentProfile?: TurnAgentProfileContext;
-  /** Hold the message on the server and dispatch it at this instant. */
-  readonly sendAt?: string;
   /** Start a new provider session; needs the server's `freshContext` capability. */
   readonly freshContext?: boolean;
   /** Defaults to true. Callers with their own retry queue opt out so a dead socket fails fast. */
@@ -329,7 +327,11 @@ const dispatchMessage = Effect.fn("EnvironmentCommands.dispatchMessage")(functio
         Effect.fail(
           new EnvironmentRpcUnavailableError({
             environmentId: supervisor.target.environmentId,
-            message: `${supervisor.target.label} did not confirm the message within 60 seconds.`,
+            ...translatableMessage(
+              msg("{host} did not confirm the message within 60 seconds.", {
+                host: supervisor.target.label,
+              }),
+            ),
           }),
         ),
     }),
@@ -405,6 +407,7 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly createWorkspaceRootIfMissing?: boolean;
         readonly defaultModelSelection?: ModelSelection | null;
         readonly scripts?: ReadonlyArray<ProjectScript>;
+        readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
       }
     | {
         readonly type: "project.update";
@@ -414,6 +417,9 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly workspaceRoot?: string;
         readonly defaultModelSelection?: ModelSelection | null;
         readonly scripts?: ReadonlyArray<ProjectScript>;
+        readonly trackedFolders?: ReadonlyArray<ProjectTrackedFolder>;
+        readonly trackFolders?: ReadonlyArray<ProjectTrackedFolder>;
+        readonly untrackFolders?: ReadonlyArray<string>;
       }
     | {
         readonly type: "project.delete";
@@ -437,11 +443,11 @@ export const createProject = Effect.fn("EnvironmentCommands.createProject")(func
     ...(input.createWorkspaceRootIfMissing === undefined
       ? {}
       : { createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing }),
-    ...(input.linkKey === undefined ? {} : { linkKey: input.linkKey }),
     ...(input.defaultModelSelection === undefined
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.trackedFolders === undefined ? {} : { trackedFolders: input.trackedFolders }),
   });
 });
 
@@ -460,11 +466,13 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
     ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
     ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
-    ...(input.linkKey === undefined ? {} : { linkKey: input.linkKey }),
     ...(input.defaultThreadEnvMode === undefined
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.trackedFolders === undefined ? {} : { trackedFolders: input.trackedFolders }),
+    ...(input.trackFolders === undefined ? {} : { trackFolders: input.trackFolders }),
+    ...(input.untrackFolders === undefined ? {} : { untrackFolders: input.untrackFolders }),
     ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
     ...(input.archived === undefined ? {} : { archived: input.archived }),
   });
@@ -758,6 +766,10 @@ export const setThreadInteractionMode = Effect.fn("EnvironmentCommands.setThread
   },
 );
 
+// Servers without native resume dispatch command.text verbatim; newer ones clear
+// it when manualContinuationOfRunId is set.
+const MANUAL_CONTINUATION_FALLBACK_TEXT = "Continue where you left off.";
+
 export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(function* (
   input: StartThreadTurnInput,
 ) {
@@ -774,12 +786,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
   );
   const bootstrap = input.bootstrap?.createThread;
   const prepareWorktree = input.bootstrap?.prepareWorktree;
-  const promptAdditions = {
-    ...(input.miniSkillIds !== undefined && input.miniSkillIds.length > 0
-      ? { miniSkillIds: [...input.miniSkillIds] }
-      : {}),
-    ...(input.agentProfile === undefined ? {} : { agentProfile: input.agentProfile }),
-  };
   if (bootstrap !== undefined || prepareWorktree !== undefined) {
     const existingProjection =
       bootstrap === undefined ? yield* getProjection(input.threadId) : null;
@@ -793,6 +799,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
             ...(prepareWorktree.startFromOrigin === undefined
               ? {}
               : { startFromOrigin: prepareWorktree.startFromOrigin }),
+            ...(prepareWorktree.repositories === undefined
+              ? {}
+              : { repositories: prepareWorktree.repositories }),
           }
         : bootstrap?.worktreePath
           ? {
@@ -818,38 +827,12 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
       workspaceStrategy,
-      ...(bootstrap?.miniSkills === undefined ? {} : { miniSkills: [...bootstrap.miniSkills] }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,
         ...(context ? { context } : {}),
         attachments,
-        ...promptAdditions,
       },
-    });
-  }
-
-  if (input.sendAt !== undefined) {
-    // Scheduled sends resolve their delivery against the thread state at the
-    // moment the server releases them, not the state when they were queued.
-    return yield* dispatch({
-      type: "message.dispatch",
-      commandId,
-      createdBy: "user",
-      creationSource: input.creationSource ?? "web",
-      threadId: input.threadId,
-      messageId: input.message.messageId,
-      text: input.message.text,
-      ...(context ? { context } : {}),
-      attachments,
-      ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
-      ...(input.sourceProposedPlan === undefined
-        ? {}
-        : { sourcePlanRef: input.sourceProposedPlan }),
-      ...promptAdditions,
-      sendAt: input.sendAt,
-      deliveryIntent: "auto",
-      dispatchMode: { type: "start_immediately" },
     });
   }
 
@@ -867,7 +850,12 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ...(input.manualContinuationOfRunId === undefined
           ? {}
           : { manualContinuationOfRunId: input.manualContinuationOfRunId }),
-        text: input.message.text,
+        text:
+          input.manualContinuationOfRunId !== undefined &&
+          input.message.text.trim().length === 0 &&
+          attachments.length === 0
+            ? MANUAL_CONTINUATION_FALLBACK_TEXT
+            : input.message.text,
         ...(context ? { context } : {}),
         ...(input.message.idleCompaction === undefined
           ? {}
@@ -877,7 +865,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ...(input.sourceProposedPlan === undefined
           ? {}
           : { sourcePlanRef: input.sourceProposedPlan }),
-        ...promptAdditions,
         ...(input.freshContext ? { freshContext: true } : {}),
         dispatchMode: { type: "start_immediately" },
       },
@@ -908,7 +895,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       ...(input.sourceProposedPlan === undefined
         ? {}
         : { sourcePlanRef: input.sourceProposedPlan }),
-      ...promptAdditions,
       ...(input.freshContext ? { freshContext: true } : {}),
       ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
       dispatchMode,
@@ -1064,14 +1050,18 @@ export const revertThreadCheckpoint = Effect.fn("EnvironmentCommands.revertThrea
       });
     }
     const projection = yield* getProjection(input.threadId);
+    // A tracked repository's baseline also sits at ordinal zero; it follows the thread's rewind.
+    const repositoryScopeIds = repositoryCheckpointScopeIds(projection.checkpointScopes);
     const checkpoint =
       projection.checkpoints.find(
         (candidate) => candidate.id === input.checkpointId && candidate.scopeId === input.scopeId,
       ) ??
-      projection.checkpoints.findLast((candidate) =>
-        input.turnCount === 0
-          ? candidate.ordinalWithinScope === 0 && candidate.appRunOrdinal === null
-          : candidate.appRunOrdinal === input.turnCount,
+      projection.checkpoints.findLast(
+        (candidate) =>
+          !repositoryScopeIds.has(candidate.scopeId) &&
+          (input.turnCount === 0
+            ? candidate.ordinalWithinScope === 0 && candidate.appRunOrdinal === null
+            : candidate.appRunOrdinal === input.turnCount),
       );
     if (
       checkpoint === undefined ||

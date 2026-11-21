@@ -15,6 +15,7 @@ import {
   effectiveShortcutsForCommand,
   formatShortcutLabel,
   isRichTextBoldShortcut,
+  isSidebarToggleShortcut,
   isTerminalNewShortcut,
   isTerminalSplitShortcut,
   resolveChatShortcutCommand,
@@ -626,79 +627,6 @@ describe("resolveChatShortcutCommand", () => {
 });
 
 describe("resolveShortcutCommand", () => {
-  it.each(["MacIntel", "Win32", "Linux"])(
-    "resolves deliberate Stop on %s without taking plain Escape",
-    (platform) => {
-      const shortcut = event({
-        key: "Escape",
-        metaKey: platform === "MacIntel",
-        ctrlKey: platform !== "MacIntel",
-      });
-      assert.strictEqual(
-        resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, { platform }),
-        "thread.stop",
-      );
-      assert.isNull(
-        resolveShortcutCommand(event({ key: "Escape" }), DEFAULT_RESOLVED_KEYBINDINGS, {
-          platform,
-        }),
-      );
-      for (const context of [{ terminalFocus: true }, { previewFocus: true }]) {
-        assert.notStrictEqual(
-          resolveShortcutCommand(shortcut, DEFAULT_RESOLVED_KEYBINDINGS, { platform, context }),
-          "thread.stop",
-        );
-      }
-    },
-  );
-
-  it("resolves a custom stop-thread shortcut", () => {
-    const keybindings = compile([{ shortcut: modShortcut("escape"), command: "thread.stop" }]);
-
-    assert.strictEqual(
-      resolveShortcutCommand(event({ key: "Escape", metaKey: true }), keybindings, {
-        platform: "MacIntel",
-      }),
-      "thread.stop",
-    );
-  });
-
-  it("honors preview conditions for a stop-thread shortcut", () => {
-    const keybindings = compile([
-      {
-        shortcut: modShortcut("escape"),
-        command: "thread.stop",
-        whenAst: whenIdentifier("previewFocus"),
-      },
-    ]);
-    const input = event({ key: "Escape", metaKey: true });
-
-    assert.isNull(
-      resolveShortcutCommand(input, keybindings, {
-        platform: "MacIntel",
-        context: { previewFocus: false },
-      }),
-    );
-    assert.strictEqual(
-      resolveShortcutCommand(input, keybindings, {
-        platform: "MacIntel",
-        context: { previewFocus: true },
-      }),
-      "thread.stop",
-    );
-  });
-
-  it("returns dynamic script commands", () => {
-    const keybindings = compile([{ shortcut: modShortcut("r"), command: "script.setup.run" }]);
-
-    assert.strictEqual(
-      resolveShortcutCommand(event({ key: "r", ctrlKey: true }), keybindings, {
-        platform: "Linux",
-      }),
-      "script.setup.run",
-    );
-  });
-
   it("routes mod+w to the terminal while focused and to the right panel otherwise", () => {
     const closeEvent = event({ key: "w", metaKey: true });
     assert.strictEqual(
@@ -883,6 +811,33 @@ describe("isRichTextBoldShortcut", () => {
     const modB = event({ key: "b", metaKey: true });
     assert.isFalse(isRichTextBoldShortcut(modB, { isCollapsed: true }));
     assert.isFalse(isRichTextBoldShortcut(modB, null));
+  });
+});
+
+describe("isSidebarToggleShortcut", () => {
+  it("leaves Ctrl+B to a focused terminal, where it is the tmux prefix", () => {
+    const ctrlB = event({ key: "b", ctrlKey: true });
+    assert.isFalse(
+      isSidebarToggleShortcut(ctrlB, DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+    );
+    assert.isTrue(
+      isSidebarToggleShortcut(ctrlB, DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: false },
+      }),
+    );
+  });
+
+  it("keeps Cmd+B toggling the sidebar from a focused terminal on macOS", () => {
+    assert.isTrue(
+      isSidebarToggleShortcut(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+    );
   });
 });
 

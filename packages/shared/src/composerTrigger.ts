@@ -1,10 +1,4 @@
-export type ComposerTriggerKind =
-  | "path"
-  | "pull-request"
-  | "slash-command"
-  | "slash-model"
-  | "skill"
-  | "profile";
+export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -107,17 +101,6 @@ export function detectComposerTrigger(
       rangeEnd: cursor,
     };
   }
-  // "#profile-slug" only triggers at the very start of the message, and only
-  // with a letter after '#': issue references and mid-text hashtags never
-  // open the profile menu.
-  if (tokenStart === 0 && /^#(?:[a-z][a-z0-9-]*)?$/i.test(token)) {
-    return {
-      kind: "profile",
-      query: token.slice(1),
-      rangeStart: tokenStart,
-      rangeEnd: cursor,
-    };
-  }
   const pullRequestTrigger = detectComposerPullRequestTrigger(token, cursor);
   if (pullRequestTrigger) return pullRequestTrigger;
   const skillPrefix = /^\p{Sc}/u.exec(token);
@@ -152,6 +135,14 @@ export function replaceTextRange(
   const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
   const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
   return { text: nextText, cursor: safeStart + replacement.length };
+}
+
+/** A message that only invokes a slash command, such as `/context all`, not a path like `/src/a.ts`. */
+export function isSlashCommand(message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<unknown>;
+}): boolean {
+  return message.attachments.length === 0 && /^\/[\w:-]+(?:\s|$)/u.test(message.text.trim());
 }
 
 /** `/clear` as the whole message arms a fresh session instead of sending. */

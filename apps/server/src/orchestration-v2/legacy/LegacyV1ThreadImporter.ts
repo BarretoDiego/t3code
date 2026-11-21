@@ -8,7 +8,6 @@ import {
   DEFAULT_MODEL,
   EventId,
   MessageId,
-  MessagePromptContext,
   ModelSelection,
   type OrchestrationV2AppThread,
   OrchestrationV2AppThreadJson,
@@ -19,7 +18,6 @@ import {
   ProviderInstanceId,
   ThreadId,
   ThreadLinkedPullRequest,
-  ThreadMiniSkillSnapshot,
   ThreadPullRequestLink,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -63,8 +61,6 @@ interface LegacyThreadRow {
   readonly pull_requests_json: string;
   readonly linked_pull_request_json: string | null;
   readonly branch_pull_request_json: string | null;
-  /** Fork-only V1 column (migration 49): the thread's mini skill snapshot. */
-  readonly mini_skills_json?: string | null;
   readonly active_order_key: string | null;
   readonly deleted_at: string | null;
 }
@@ -80,8 +76,6 @@ interface LegacyMessageRow {
   readonly text: string;
   readonly attachments_json: string | null;
   readonly context_json?: string | null;
-  /** Fork-only V1 prompt context, recorded as a `user.prompt-context` activity. */
-  readonly prompt_context_json?: string | null;
   readonly is_streaming: number;
   readonly created_at: string;
   readonly updated_at: string;
@@ -131,8 +125,6 @@ const decodeModelSelection = Schema.decodeUnknownOption(ModelSelection);
 const decodeAttachments = Schema.decodeUnknownOption(Schema.Array(ChatAttachment));
 const decodePullRequests = Schema.decodeUnknownOption(Schema.Array(ThreadPullRequestLink));
 const decodeLinkedPullRequest = Schema.decodeUnknownOption(ThreadLinkedPullRequest);
-const decodeMiniSkills = Schema.decodeUnknownOption(Schema.Array(ThreadMiniSkillSnapshot));
-const decodePromptContext = Schema.decodeUnknownOption(MessagePromptContext);
 const decodeStoredThread = Schema.decodeUnknownOption(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
@@ -177,16 +169,6 @@ function branchPullRequestFor(row: LegacyThreadRow) {
   return Option.getOrNull(decodeLinkedPullRequest(parseJson(row.branch_pull_request_json)));
 }
 
-function miniSkillsFor(row: LegacyThreadRow) {
-  if (row.mini_skills_json == null) return [];
-  return Option.getOrElse(decodeMiniSkills(parseJson(row.mini_skills_json)), () => []);
-}
-
-function promptContextFor(row: LegacyMessageRow) {
-  if (row.prompt_context_json == null) return undefined;
-  return Option.getOrUndefined(decodePromptContext(parseJson(row.prompt_context_json)));
-}
-
 function runtimeModeFor(value: string): OrchestrationV2AppThread["runtimeMode"] {
   return value === "approval-required" ||
     value === "auto-accept-edits" ||
@@ -226,7 +208,6 @@ function importedThread(row: LegacyThreadRow, importedAt: DateTime.Utc): Orchest
     () => [],
   );
   const linkedPullRequest = linkedPullRequestFor(row);
-  const miniSkills = miniSkillsFor(row);
   const legacyLink = threadPullRequestsOf({ linkedPullRequest })[0];
   const importedPullRequests =
     legacyLink !== undefined &&
@@ -269,7 +250,6 @@ function importedThread(row: LegacyThreadRow, importedAt: DateTime.Utc): Orchest
     autoSettleDisabledAt: nullableDateTime(row.auto_settle_disabled_at, updatedAt),
     pinOrderKey: row.pin_order_key?.trim() || null,
     lastVisitedAt: null,
-    ...(miniSkills.length === 0 ? {} : { miniSkills }),
     deletedAt: nullableDateTime(row.deleted_at, updatedAt),
   };
 }
@@ -283,7 +263,6 @@ function messageEvents(
   const createdAt = dateTimeOr(row.created_at, dateTimeOr(row.updated_at, importedAt));
   const updatedAt = dateTimeOr(row.updated_at, createdAt);
   const attachments = attachmentsFor(row);
-  const promptContext = row.role === "user" ? promptContextFor(row) : undefined;
   const context = contextFor(row);
   const message: OrchestrationV2ConversationMessage = {
     createdBy: row.role === "user" ? "user" : "agent",
@@ -328,7 +307,6 @@ function messageEvents(
           text: row.text,
           ...(context !== undefined ? { context } : {}),
           attachments,
-          ...(promptContext === undefined ? {} : { promptContext }),
         }
       : {
           ...baseTurnItem,
@@ -378,13 +356,6 @@ const make = Effect.gen(function* () {
         text,
         attachments_json,
         context_json,
-        (
-          SELECT json_extract(activity.payload_json, '$.context')
-          FROM projection_thread_activities AS activity
-          WHERE activity.activity_id = 'prompt-context:' || projection_thread_messages.message_id
-            AND activity.thread_id = projection_thread_messages.thread_id
-            AND activity.kind = 'user.prompt-context'
-        ) AS prompt_context_json,
         is_streaming,
         created_at,
         updated_at,
@@ -409,13 +380,6 @@ const make = Effect.gen(function* () {
           message.text,
           message.attachments_json,
           message.context_json,
-          (
-            SELECT json_extract(activity.payload_json, '$.context')
-            FROM projection_thread_activities AS activity
-            WHERE activity.activity_id = 'prompt-context:' || message.message_id
-              AND activity.thread_id = message.thread_id
-              AND activity.kind = 'user.prompt-context'
-          ) AS prompt_context_json,
           message.is_streaming,
           message.created_at,
           message.updated_at,
@@ -446,13 +410,6 @@ const make = Effect.gen(function* () {
           message.text,
           message.attachments_json,
           message.context_json,
-          (
-            SELECT json_extract(activity.payload_json, '$.context')
-            FROM projection_thread_activities AS activity
-            WHERE activity.activity_id = 'prompt-context:' || message.message_id
-              AND activity.thread_id = message.thread_id
-              AND activity.kind = 'user.prompt-context'
-          ) AS prompt_context_json,
           message.is_streaming,
           message.created_at,
           message.updated_at,
@@ -508,7 +465,6 @@ const make = Effect.gen(function* () {
         (SELECT json_group_array(json_object('host', pr.host, 'repository', pr.repository, 'number', pr.number, 'url', pr.url, 'source', pr.source, 'linkedAt', pr.linked_at, 'snapshot', json(pr.snapshot_json), 'stack', json(pr.stack_json))) FROM projection_thread_pull_requests pr WHERE pr.thread_id = thread.thread_id) AS pull_requests_json,
         thread.linked_pull_request_json,
         thread.branch_pull_request_json,
-        thread.mini_skills_json,
         thread.active_order_key,
         thread.deleted_at,
         projection.payload_json
@@ -613,7 +569,6 @@ const make = Effect.gen(function* () {
         (SELECT json_group_array(json_object('host', pr.host, 'repository', pr.repository, 'number', pr.number, 'url', pr.url, 'source', pr.source, 'linkedAt', pr.linked_at, 'snapshot', json(pr.snapshot_json), 'stack', json(pr.stack_json))) FROM projection_thread_pull_requests pr WHERE pr.thread_id = thread.thread_id) AS pull_requests_json,
         thread.linked_pull_request_json,
         thread.branch_pull_request_json,
-        thread.mini_skills_json,
         thread.active_order_key,
         thread.deleted_at
       FROM projection_threads AS thread

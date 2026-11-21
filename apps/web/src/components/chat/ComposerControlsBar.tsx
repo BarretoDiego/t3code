@@ -1,14 +1,11 @@
-import { MiniSkillsMenuContent, MiniSkillsPicker } from "./MiniSkillsPicker";
-import { AgentProfileMenuContent, AgentProfilePicker } from "./AgentProfilePicker";
-import type { AgentProfileResolution } from "@t3tools/shared/agentProfiles";
-import type { ComposerThreadTarget } from "../../composerDraftStore";
 import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
+import { useGT, useMessages } from "gt-react";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
+import { ComposerControl } from "./ComposerControl";
 import {
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -44,9 +41,6 @@ import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 const MODEL_TRIGGER_STATES = "data-popup-open:bg-accent data-popup-open:text-foreground";
 
 export function ComposerControlsBar(props: {
-  composerDraftTarget: ComposerThreadTarget;
-  agentProfileResolution: AgentProfileResolution | null;
-  resolvedProfile: Extract<AgentProfileResolution, { status: "resolved" }> | null;
   environmentId: EnvironmentId;
   workspaceCwd: string | null;
   routeKind: ChatComposerProps["routeKind"];
@@ -95,9 +89,6 @@ export function ComposerControlsBar(props: {
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
 }) {
   const {
-    composerDraftTarget,
-    agentProfileResolution,
-    resolvedProfile,
     environmentId,
     routeKind,
     routeThreadRef,
@@ -150,16 +141,13 @@ export function ComposerControlsBar(props: {
     overflowShowsPermissions,
     pickerOwnsModeShortcut,
   } = resolveComposerControlsOwnership({
-    // The locked picker cannot hold Permissions in Profile Mode, so the chip stays visible.
-    matchesDefault:
-      props.permissionsShownInStrip || (accessMatchesDefault && resolvedProfile === null),
-    modelPickerLocked: resolvedProfile !== null,
+    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,
-    leadingBlockIds: ["profile"],
-    beforeModeBlockIds: ["mini-skills"],
   });
   const controlSize = composerControlsCollapsed ? "xs" : "sm";
+  const gt = useGT();
+  const m = useMessages();
   const applyThreadModelPick = useApplyThreadModelPick();
   const applyRouteThreadModelPick = useStableCallback(() => applyThreadModelPick(routeThreadRef));
   const traitsInput = resolveComposerTraitsInput({
@@ -176,67 +164,25 @@ export function ComposerControlsBar(props: {
     promptUltrathink,
     onPromptEdit,
   });
-  // Profile Mode owns the model and reasoning, so the trigger stops naming the thread's own effort.
-  const effort = describeComposerEffort(
-    resolvedProfile === null ? traitsInput : null,
-    props.effortDisplay,
-    controlSize,
-  );
-  const miniSkillsMenuContent = (
-    <MiniSkillsMenuContent
-      composerDraftTarget={composerDraftTarget}
-      environmentId={environmentId}
-    />
-  );
-  const restingBlockDefs = [
-    {
-      id: "profile",
-      content: (
-        <>
-          <ComposerControlSeparator size={composerControlsCollapsed ? "xs" : "sm"} />
-          <AgentProfilePicker
-            composerDraftTarget={composerDraftTarget}
-            environmentId={environmentId}
-            resolution={agentProfileResolution}
-            size={composerControlsCollapsed ? "xs" : "sm"}
-            hidden={composerControlsHidden || hiddenRestingBlockIds.includes("profile")}
-          />
-        </>
-      ),
-    },
-    {
-      id: "mini-skills",
-      content: (
-        <>
-          <ComposerControlSeparator size={composerControlsCollapsed ? "xs" : "sm"} />
-          <MiniSkillsPicker
-            composerDraftTarget={composerDraftTarget}
-            environmentId={environmentId}
-            size={composerControlsCollapsed ? "xs" : "sm"}
-            hidden={composerControlsHidden || hiddenRestingBlockIds.includes("mini-skills")}
-          />
-        </>
-      ),
-    },
-    ...(showModeBlock
-      ? [
-          {
-            id: "mode",
-            content: (
-              <ComposerFooterModeControls
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                size={controlSize}
-                hidden={composerControlsHidden || hiddenRestingBlockIds.includes("mode")}
-                accessDisplay={accessDisplay}
-                emphasized={!accessMatchesDefault}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          },
-        ]
-      : []),
-  ];
+  const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize, m);
+  const restingBlockDefs = showModeBlock
+    ? [
+        {
+          id: "mode",
+          content: (
+            <ComposerFooterModeControls
+              runtimeMode={compatibleRuntimeMode}
+              runtimeModeOptions={compatibleRuntimeModeOptions}
+              size={controlSize}
+              hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+              accessDisplay={accessDisplay}
+              emphasized={!accessMatchesDefault}
+              onRuntimeModeChange={handleRuntimeModeChange}
+            />
+          ),
+        },
+      ]
+    : [];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
@@ -246,9 +192,7 @@ export function ComposerControlsBar(props: {
       isComposerOwned
       // The trigger grows away from this edge when its model or effort label changes.
       popupAlign={composerControlsCollapsed ? "start" : "end"}
-      // Keep the saved thread selection visible until the catalog arrives;
-      // once known, Profile Mode owns the model and keeps the picker inert.
-      disabled={providerCatalogPending || isSendBusy || resolvedProfile !== null}
+      disabled={providerCatalogPending || isSendBusy}
       multipleModelsEnabled={multipleModelsEnabled}
       multipleModelSelections={multipleModelSelections}
       onMultipleModelSelectionsChange={onMultipleModelSelectionsChange}
@@ -262,7 +206,7 @@ export function ComposerControlsBar(props: {
       model={
         providerCatalogPending
           ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-          : (resolvedProfile?.modelSelection.model ?? selectedModelForPickerWithCustomFallback)
+          : selectedModelForPickerWithCustomFallback
       }
       lockedProvider={lockedProvider}
       lockedContinuationGroupKey={lockedContinuationGroupKey}
@@ -317,7 +261,7 @@ export function ComposerControlsBar(props: {
       className="shrink-0"
     >
       <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      {providerSetupInstanceId ? gt("Open provider settings") : gt("No provider available")}
     </ComposerControl>
   ) : (
     <>
@@ -360,18 +304,6 @@ export function ComposerControlsBar(props: {
             runtimeModeOptions={compatibleRuntimeModeOptions}
             size={controlSize}
             hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
-            miniSkillsMenuContent={
-              hiddenRestingBlockIds.includes("mini-skills") ? miniSkillsMenuContent : undefined
-            }
-            agentProfileMenuContent={
-              hiddenRestingBlockIds.includes("profile") ? (
-                <AgentProfileMenuContent
-                  composerDraftTarget={composerDraftTarget}
-                  environmentId={environmentId}
-                  resolution={agentProfileResolution}
-                />
-              ) : undefined
-            }
             // Permissions join the overflow only when their normal home is in it.
             showPermissions={overflowShowsPermissions}
             onRuntimeModeChange={handleRuntimeModeChange}

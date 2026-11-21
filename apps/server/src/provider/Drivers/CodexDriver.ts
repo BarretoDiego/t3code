@@ -53,6 +53,7 @@ import {
 } from "@t3tools/provider-core/server/snapshotSettings";
 import {
   codexContinuationIdentity,
+  codexHomeLaunchArgs,
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
@@ -163,7 +164,6 @@ export const CodexDriver: ProviderDriver<
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -202,7 +202,6 @@ export const CodexDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     yield* materializeCodexShadowHome(homeLayout).pipe(
@@ -221,6 +220,7 @@ export const CodexDriver: ProviderDriver<
       enabled,
       binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
       homePath: homeLayout.effectiveHomePath ?? "",
+      launchArgs: codexHomeLaunchArgs(pathService, homeLayout, config.launchArgs),
     } satisfies CodexSettings;
     const resolveInstallation = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(
@@ -420,7 +420,6 @@ export const CodexDriver: ProviderDriver<
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot,
       snapshotForCwd,

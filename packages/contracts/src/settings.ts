@@ -16,19 +16,12 @@ import {
   EnvironmentId,
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
-  IsoDateTime,
   OmittedWhenNull,
   ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
-import {
-  DEFAULT_MINI_SKILL_PROMPT_WRAPPERS,
-  MiniSkill,
-  MiniSkillPromptWrappers,
-} from "./miniSkills.ts";
-import { AgentProfile, AgentProfileId, DEFAULT_AGENT_PROFILE_WRAPPER } from "./agentProfiles.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { UsageModelFilter } from "./usage.ts";
 import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
@@ -71,43 +64,6 @@ import {
   SpeechPostProcessingPromptSettings,
 } from "./speech.ts";
 
-export const DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT =
-  "Review the pull request for actionable correctness, security, performance and testing issues. Explain the impact and cite precise code locations. Use as many findings as the evidence warrants, including none when there are no actionable issues. Avoid duplicate comments and cosmetic nitpicks. Distinguish uncertain claims and verify important findings.";
-export const DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE = "English";
-
-export const SourceControlReviewSettings = Schema.Struct({
-  prompt: Schema.String.check(Schema.isMaxLength(32_000)).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT)),
-  ),
-  tier: Schema.Literals(["quick", "standard", "deep", "exhaustive"]),
-  profileId: Schema.NullOr(AgentProfileId),
-  severityThreshold: Schema.Literals(["critical", "major", "minor", "suggestion", "info"]),
-  language: TrimmedString.check(Schema.isNonEmpty(), Schema.isMaxLength(100)).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE)),
-  ),
-  // Empty defers to the provider default; unsupported values are ignored when
-  // the run's model does not advertise them.
-  reasoningEffort: TrimmedString.check(Schema.isMaxLength(50)).pipe(
-    Schema.withDecodingDefault(Effect.succeed("")),
-  ),
-  includeExistingComments: Schema.Boolean,
-  includeGenerated: Schema.Boolean,
-  publication: Schema.Literal("draft"),
-});
-const DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS: typeof SourceControlReviewSettings.Type = {
-  prompt: DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
-  tier: "standard",
-  profileId: null,
-  severityThreshold: "minor",
-  language: DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
-  reasoningEffort: "",
-  includeExistingComments: true,
-  includeGenerated: false,
-  publication: "draft",
-};
-
-// ── Client Settings (local-only) ───────────────────────────────
-
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
@@ -124,15 +80,6 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
-/**
- * How the sidebar orders its sections. `activity` is the grouping's own order
- * (live work, history-only, then empty); `alphabetical` sorts by label; `manual`
- * is the user's arrangement stored in `sidebarSectionOrder`.
- */
-export const SidebarSectionOrderMode = Schema.Literals(["activity", "alphabetical", "manual"]);
-export type SidebarSectionOrderMode = typeof SidebarSectionOrderMode.Type;
-const DEFAULT_SIDEBAR_SECTION_ORDER_MODE: SidebarSectionOrderMode = "activity";
-
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -140,42 +87,6 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
-
-/** The sidebar implementation shown in the desktop and web clients. */
-export const SidebarExperience = Schema.Literals(["grouped", "original", "legacy"]);
-export type SidebarExperience = typeof SidebarExperience.Type;
-const DEFAULT_SIDEBAR_EXPERIENCE: SidebarExperience = "grouped";
-
-/**
- * Axis the sidebar inbox groups threads along. `none` keeps the list flat
- * ("leave it open"); the rest split the inbox into collapsible sections.
- *
- * Two independent axes are stored (primary + secondary) so a section can nest
- * one level, e.g. environment sections containing per-project subsections.
- */
-export const SidebarThreadGroupingAxis = Schema.Literals([
-  "none",
-  "environment",
-  "project",
-  "provider",
-]);
-export type SidebarThreadGroupingAxis = typeof SidebarThreadGroupingAxis.Type;
-// The sidebar ships segmented by environment and then project. Every project
-// keeps a row whether or not it has threads, and that row is where its New
-// thread and settings buttons live — so the default has to be a layout that
-// actually has project rows in it.
-const DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING: SidebarThreadGroupingAxis = "environment";
-const DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING: SidebarThreadGroupingAxis = "project";
-export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
-export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
-export const SidebarThreadPreviewCount = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
-    maximum: MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
-  }),
-);
-export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
-const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
 export const MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 1;
 export const MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS = 90;
 export const SidebarAutoSettleAfterDays = Schema.Number.check(
@@ -405,6 +316,13 @@ export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
 export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
 /**
+ * Where a plain click opens a subagent, a side chat or a linked environment's thread: beside the
+ * thread you are in, or in its place. A modified click opens it in the other one.
+ */
+export const SideThreadOpenTarget = Schema.Literals(["panel", "main"]);
+export type SideThreadOpenTarget = typeof SideThreadOpenTarget.Type;
+const DEFAULT_SIDE_THREAD_OPEN_TARGET: SideThreadOpenTarget = "panel";
+/**
  * What the address bar searches with when the input is not an address.
  * "custom" uses `browserCustomSearchUrl`, a template with `%s` for the query.
  */
@@ -611,9 +529,11 @@ export const ClientSettingsSchema = Schema.Struct({
   sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("enter")),
   ),
-  confirmBeforeInterrupt: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("steer")),
+  ),
+  sideThreadOpenTarget: SideThreadOpenTarget.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDE_THREAD_OPEN_TARGET)),
   ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -635,16 +555,6 @@ export const ClientSettingsSchema = Schema.Struct({
   threadDetailsItems: Schema.Record(Schema.String, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Opt-in for the removed legacy sidebar. Still read so those users land in
-  // the boring sidebar; the boring sidebar toggle clears it.
-  contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Keep the upstream implementation selectable while the fork's grouped
-  // sidebar evolves independently. `legacySidebarEnabled` remains so saved
-  // preferences from earlier releases still decode and select the legacy UI.
-  sidebarExperience: SidebarExperience.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_EXPERIENCE)),
-  ),
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
@@ -658,49 +568,6 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
-  ),
-  sidebarShowAllSubthreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
-  ),
-  sidebarThreadPrimaryGrouping: SidebarThreadGroupingAxis.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PRIMARY_GROUPING)),
-  ),
-  sidebarThreadSecondaryGrouping: SidebarThreadGroupingAxis.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SECONDARY_GROUPING)),
-  ),
-  // Driver kind ("claude", "codex", …) the inbox is narrowed to, or null for
-  // every provider. Stored as the driver kind rather than an instance id so
-  // the filter survives instance renames and applies across environments.
-  sidebarThreadProviderFilter: Schema.NullOr(TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  // Collapsed sections, keyed by the stable group key from
-  // `buildSidebarThreadGroups`. Only collapsed sections are stored, so
-  // switching axes never resurrects stale expansion state.
-  sidebarThreadCollapsedGroups: Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  // Provider keys whose compact plan-limit widget is pinned above the
-  // sidebar's utility controls. Keys include the environment and instance so
-  // multiple accounts of the same provider remain independently selectable.
-  sidebarPinnedRateLimitProviderKeys: Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  // Provider keys whose weekly plan-limit rows are hidden in the expanded
-  // breakdown. Session and credit windows remain visible.
-  sidebarCollapsedRateLimitWeeklyProviderKeys: Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
-  sidebarSectionOrderMode: SidebarSectionOrderMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_SECTION_ORDER_MODE)),
-  ),
-  // Section keys in the user's order across every nesting level (child keys are
-  // parent-prefixed, so one flat list is unambiguous). Keys of sections not currently
-  // rendered are kept: grouping or provider filters hide sections temporarily, and
-  // pruning would discard the user's arrangement.
-  sidebarSectionOrder: Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -1539,6 +1406,8 @@ export const ServerSettings = Schema.Struct({
   ),
 
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Lets clients reach this machine's loopback ports over `/api/preview/tunnel`. */
+  enablePreviewTunnel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
     Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "" })),
   ),
@@ -1686,9 +1555,6 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
-  sourceControlReview: SourceControlReviewSettings.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SOURCE_CONTROL_REVIEW_SETTINGS)),
-  ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
@@ -1742,46 +1608,7 @@ export const ServerSettings = Schema.Struct({
   usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  /**
-   * User-authored reusable instruction snippets ("Mini Skills"). Kept in settings so
-   * they roam with shared-settings sync. Threads snapshot applied skills, so editing
-   * or deleting an entry never rewrites an existing thread's instructions.
-   */
-  miniSkills: Schema.Array(MiniSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  /** Prompt wrappers surrounding rendered mini skills; `{{skills}}` marks the insertion point. */
-  miniSkillPromptWrappers: MiniSkillPromptWrappers.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MINI_SKILL_PROMPT_WRAPPERS)),
-  ),
-  /**
-   * Set once the built-in mini skills have been seeded. Distinguishes "never
-   * initialized" from "user deleted the defaults", so a deleted seed is never
-   * silently recreated on startup.
-   */
-  miniSkillsSeededAt: Schema.NullOr(IsoDateTime).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  /**
-   * Reusable agent execution profiles. Global user configuration: available
-   * in every project and synced to every shared-settings environment. The
-   * composer references a profile by id per thread; turns record the resolved
-   * snapshot, so edits never rewrite history.
-   */
-  agentProfiles: Schema.Array(AgentProfile).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  /**
-   * Wrapper used by profiles without a custom template. Must keep the
-   * `{{user_message}}` placeholder; validated in the settings UI.
-   */
-  agentProfileDefaultWrapper: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_PROFILE_WRAPPER)),
-  ),
-  /** One-time seed marker for the built-in profiles; see `miniSkillsSeededAt`. */
-  agentProfilesSeededAt: Schema.NullOr(IsoDateTime).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
-  /**
-   * Exact model ID to the model its usage counts as, such as a preview slug to
-   * its released name. The mapped model is priced and reported as its target.
-   */
+
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -2043,6 +1870,7 @@ export const ServerSettingsPatch = Schema.Struct({
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
   requireConnectDeviceApproval: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enablePreviewTunnel: Schema.optionalKey(Schema.Boolean),
   cloudSpeechCredentials: Schema.optionalKey(
     Schema.Struct({
       openai: Schema.optionalKey(SettingsSecretValue),
@@ -2125,7 +1953,6 @@ export const ServerSettingsPatch = Schema.Struct({
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
-  sourceControlReview: Schema.optionalKey(SourceControlReviewSettings),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
@@ -2172,23 +1999,7 @@ export const ServerSettingsPatch = Schema.Struct({
   usagePriceOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(UsageModelPriceOverride)),
   ),
-  // Whole-library replacement, like `providerInstances`: the settings UI
-  // always sends the fully-formed list, and per-entry patching would race
-  // another client's edit that has not echoed back yet.
-  miniSkills: Schema.optionalKey(Schema.Array(MiniSkill)),
-  miniSkillPromptWrappers: Schema.optionalKey(
-    Schema.Struct({
-      thread: Schema.optionalKey(Schema.String),
-      request: Schema.optionalKey(Schema.String),
-    }),
-  ),
-  // Server-internal seed marker; clients never write it directly.
-  miniSkillsSeededAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
-  // Whole-library replacement, same rationale as `miniSkills`.
-  agentProfiles: Schema.optionalKey(Schema.Array(AgentProfile)),
-  agentProfileDefaultWrapper: Schema.optionalKey(Schema.String),
-  agentProfilesSeededAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
-  /** Each entry replaces one model's mapping; `null` removes it. */
+
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
@@ -2208,7 +2019,7 @@ export function requiredScopesForServerSettingsPatch(
   let changesAccess = false;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if (key === "requireConnectDeviceApproval") {
+    if (key === "requireConnectDeviceApproval" || key === "enablePreviewTunnel") {
       changesAccess = true;
     } else if (
       key === "providers" ||
@@ -2299,8 +2110,8 @@ export const ClientSettingsPatch = Schema.Struct({
   pullRequestLinksOpenInApp: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
   sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
-  confirmBeforeInterrupt: Schema.optionalKey(Schema.Boolean),
   followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
+  sideThreadOpenTarget: Schema.optionalKey(SideThreadOpenTarget),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   boringSidebarEnabled: Schema.optionalKey(Schema.Boolean),
@@ -2310,9 +2121,6 @@ export const ClientSettingsPatch = Schema.Struct({
   screenReaderWindowTitle: Schema.optionalKey(Schema.Boolean),
   threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
-  contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
-  legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
-  sidebarExperience: Schema.optionalKey(SidebarExperience),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
@@ -2320,18 +2128,6 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
-  sidebarShowAllSubthreads: Schema.optionalKey(Schema.Boolean),
-  sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
-  sidebarThreadPrimaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
-  sidebarThreadSecondaryGrouping: Schema.optionalKey(SidebarThreadGroupingAxis),
-  sidebarThreadProviderFilter: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
-  sidebarThreadCollapsedGroups: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
-  sidebarPinnedRateLimitProviderKeys: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
-  sidebarCollapsedRateLimitWeeklyProviderKeys: Schema.optionalKey(
-    Schema.Array(TrimmedNonEmptyString),
-  ),
-  sidebarSectionOrderMode: Schema.optionalKey(SidebarSectionOrderMode),
-  sidebarSectionOrder: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   voiceMicrophone: Schema.optionalKey(Schema.String),
   voiceMicrophones: Schema.optionalKey(Schema.Array(VoiceMicrophoneEntry)),

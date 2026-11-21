@@ -18,7 +18,6 @@ import {
   splitPromptIntoComposerSegments,
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
-import { findComposerCodeBlocks } from "./composerCodeBlocks";
 
 import {
   resolveShortcutCommand,
@@ -26,7 +25,7 @@ import {
   type ShortcutMatchContext,
 } from "./keybindings";
 
-export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill" | "profile";
+export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "side" | "btw" | "clear";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
@@ -104,11 +103,6 @@ export function composerSubmissionIntentForKey(input: {
   return "foreground";
 }
 
-// A code block is editable text the caret moves through, not an atomic chip,
-// so it is deliberately absent from this list.
-const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean =>
-  segment.type !== "text" && segment.type !== "code-block";
-
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));
@@ -164,27 +158,9 @@ export function expandCollapsedComposerCursor(
       expandedCursor += expandedLength;
       continue;
     }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return expandedCursor + remaining;
-      }
-      remaining -= 1;
-      expandedCursor += 1;
-      continue;
-    }
-    if (segment.type === "code-block") {
-      const length = segment.content.length;
-      if (remaining <= length) {
-        return expandedCursor + segment.prefixLength + remaining;
-      }
-      remaining -= length;
-      expandedCursor += segment.source.length;
-      continue;
-    }
 
     const segmentLength = segment.text.length;
-    // Strict, so a cursor landing exactly on the seam falls through to whatever follows.
-    if (remaining < segmentLength) {
+    if (remaining <= segmentLength) {
       return expandedCursor + remaining;
     }
     remaining -= segmentLength;
@@ -197,9 +173,6 @@ export function expandCollapsedComposerCursor(
 function collapsedSegmentLength(segment: ComposerPromptSegment): number {
   if (segment.type === "text") {
     return segment.text.length;
-  }
-  if (segment.type === "code-block") {
-    return segment.content.length;
   }
   return 1;
 }
@@ -274,26 +247,6 @@ export function collapseExpandedComposerCursor(
       collapsedCursor += 1;
       continue;
     }
-    if (segment.type === "terminal-context") {
-      if (remaining <= 1) {
-        return collapsedCursor + remaining;
-      }
-      remaining -= 1;
-      collapsedCursor += 1;
-      continue;
-    }
-    if (segment.type === "code-block") {
-      const length = segment.source.length;
-      if (remaining <= length) {
-        return (
-          collapsedCursor +
-          Math.max(0, Math.min(segment.content.length, remaining - segment.prefixLength))
-        );
-      }
-      remaining -= length;
-      collapsedCursor += segment.content.length;
-      continue;
-    }
 
     const segmentLength = segment.text.length;
     if (remaining <= segmentLength) {
@@ -306,64 +259,14 @@ export function collapseExpandedComposerCursor(
   return collapsedCursor;
 }
 
-export function isCollapsedCursorAdjacentToInlineToken(
-  text: string,
-  cursorInput: number,
-  direction: "left" | "right",
-): boolean {
-  const segments = splitPromptIntoComposerSegments(text);
-  if (!segments.some(isInlineTokenSegment)) {
-    return false;
-  }
-
-  const cursor = clampCollapsedComposerCursorForSegments(segments, cursorInput);
-  let collapsedOffset = 0;
-
-  for (const segment of segments) {
-    if (isInlineTokenSegment(segment)) {
-      if (direction === "left" && cursor === collapsedOffset + 1) {
-        return true;
-      }
-      if (direction === "right" && cursor === collapsedOffset) {
-        return true;
-      }
-    }
-    collapsedOffset += collapsedSegmentLength(segment);
-  }
-
-  return false;
-}
-
-/** Expanded prompt offsets that sit inside a fenced block's content. */
-function isExpandedCursorInsideCodeBlock(text: string, cursor: number): boolean {
-  return findComposerCodeBlocks(text).some(
-    (block) => block.start + block.prefixLength <= cursor && cursor <= block.end,
-  );
-}
-
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
-  // `@path` and `$skill` are literal inside a code block, so no menu there.
-  if (isExpandedCursorInsideCodeBlock(text, cursor)) {
-    return null;
-  }
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
   if (token.startsWith("/")) {
     if (isPathWord(text, tokenStart, cursor, isWhitespace)) return null;
     return {
       kind: "slash-command",
-      query: token.slice(1),
-      rangeStart: tokenStart,
-      rangeEnd: cursor,
-    };
-  }
-  // "#profile-slug" only triggers at the very start of the message, and only
-  // with a letter after '#': numeric references and mid-text hashtags never
-  // open the profile menu.
-  if (tokenStart === 0 && /^#(?:[a-z][a-z0-9-]*)?$/i.test(token)) {
-    return {
-      kind: "profile",
       query: token.slice(1),
       rangeStart: tokenStart,
       rangeEnd: cursor,

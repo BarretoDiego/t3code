@@ -13,14 +13,6 @@ const SHARED_SERVER_SETTING_KEYS = [
   "snoozePresets",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
-  "sourceControlReview",
-  // The mini skill library and its prompt wrappers are user content, not
-  // machine state: they roam to every sync-eligible environment.
-  "miniSkills",
-  "miniSkillPromptWrappers",
-  // Agent profiles roam for the same reason.
-  "agentProfiles",
-  "agentProfileDefaultWrapper",
   "textGenerationModelSelection",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
@@ -69,10 +61,6 @@ export function filterSharedServerPatch(
     patch = Struct.omit(patch, ["textGenerationModelSelection"]);
   }
   return settings ? patch : Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
-}
-
-export function pickSharedServerSettings(settings: ServerSettings): ServerSettingsPatch {
-  return filterSharedServerPatch(Struct.pick(settings, SHARED_SERVER_SETTING_KEYS), settings);
 }
 
 export function supportsSharedSettingsSync(environment: {

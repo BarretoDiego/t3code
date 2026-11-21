@@ -1,58 +1,14 @@
 import * as Schema from "effect/Schema";
-import { IsoDateTime, ThreadId, TrimmedNonEmptyString, TurnId } from "./baseSchemas.ts";
+import { IsoDateTime, ProviderThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ThreadId } from "./baseSchemas.ts";
 import {
   getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ChatAttachment,
 } from "./chatAttachment.ts";
 import { ModelSelection } from "./modelSelection.ts";
-import {
-  ProviderApprovalPolicy,
-  ProviderInteractionMode,
-  ProviderSandboxMode,
-  RuntimeMode,
-} from "./providerPolicy.ts";
-import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
-
-const ProviderSessionStatus = Schema.Literals([
-  "connecting",
-  "ready",
-  "running",
-  "error",
-  "closed",
-]);
-
-export const ProviderSession = Schema.Struct({
-  provider: ProviderDriverKind,
-  providerInstanceId: Schema.optional(ProviderInstanceId),
-  status: ProviderSessionStatus,
-  runtimeMode: RuntimeMode,
-  cwd: Schema.optional(TrimmedNonEmptyString),
-  model: Schema.optional(TrimmedNonEmptyString),
-  threadId: ThreadId,
-  resumeCursor: Schema.optional(Schema.Unknown),
-  activeTurnId: Schema.optional(TurnId),
-  createdAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-  lastError: Schema.optional(TrimmedNonEmptyString),
-});
-export type ProviderSession = typeof ProviderSession.Type;
-
-export const ProviderSessionStartInput = Schema.Struct({
-  threadId: ThreadId,
-  provider: Schema.optional(ProviderDriverKind),
-  providerInstanceId: Schema.optional(ProviderInstanceId),
-  cwd: Schema.optional(TrimmedNonEmptyString),
-  title: Schema.optional(TrimmedNonEmptyString),
-  modelSelection: Schema.optional(ModelSelection),
-  resumeCursor: Schema.optional(Schema.Unknown),
-  /** Server-owned context archive consumed by the first real turn only. */
-  handoffContext: Schema.optional(Schema.Unknown),
-  approvalPolicy: Schema.optional(ProviderApprovalPolicy),
-  sandboxMode: Schema.optional(ProviderSandboxMode),
-  runtimeMode: RuntimeMode,
-});
-export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
+import { ProviderInteractionMode } from "./providerPolicy.ts";
+import { SignInUrl } from "./providerSetup.ts";
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
@@ -81,6 +37,50 @@ export const ProviderUploadFeedbackResult = Schema.Struct({
   feedbackId: TrimmedNonEmptyString,
 });
 export type ProviderUploadFeedbackResult = typeof ProviderUploadFeedbackResult.Type;
+
+const McpServerName = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
+
+/** One of an agent's MCP servers, in the thread whose session asked for a sign-in. */
+export const ProviderMcpSignInStartInput = Schema.Struct({
+  threadId: ThreadId,
+  providerThreadId: ProviderThreadId,
+  server: McpServerName,
+});
+export type ProviderMcpSignInStartInput = typeof ProviderMcpSignInStartInput.Type;
+
+export const ProviderMcpSignInStartResult = Schema.Struct({
+  /** The page to approve the sign-in on; null when the server needs none any more. */
+  authorizationUrl: Schema.NullOr(SignInUrl),
+  /** The environment's time when it found the server already signed in. */
+  signedInAt: Schema.NullOr(IsoDateTime),
+});
+export type ProviderMcpSignInStartResult = typeof ProviderMcpSignInStartResult.Type;
+
+export const ProviderMcpSignInCompleteInput = Schema.Struct({
+  ...ProviderMcpSignInStartInput.fields,
+  /** The address the browser was sent to after approving, usually a localhost page. */
+  callbackUrl: TrimmedNonEmptyString.check(Schema.isMaxLength(16_384)),
+});
+export type ProviderMcpSignInCompleteInput = typeof ProviderMcpSignInCompleteInput.Type;
+
+export const ProviderMcpSignInCompleteResult = Schema.Struct({
+  /** The environment's time, so a later notice that needs a sign-in again offers one. */
+  signedInAt: IsoDateTime,
+});
+export type ProviderMcpSignInCompleteResult = typeof ProviderMcpSignInCompleteResult.Type;
+
+/** Safe to show: never carries the callback URL, codes or tokens. */
+export class ProviderMcpSignInError extends Schema.TaggedError<ProviderMcpSignInError>()(
+  "ProviderMcpSignInError",
+  {
+    server: Schema.String,
+    detail: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 export class ProviderUploadFeedbackError extends Schema.TaggedError<ProviderUploadFeedbackError>()(
   "ProviderUploadFeedbackError",

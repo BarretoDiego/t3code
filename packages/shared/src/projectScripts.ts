@@ -33,16 +33,8 @@ export function projectScriptCwd(input: {
     cwd: string;
   };
   worktreePath?: string | null;
-  script?: Pick<ProjectScript, "cwd">;
 }): string {
-  const root = input.worktreePath ?? input.project.cwd;
-  const directory = input.script?.cwd;
-  if (!directory || directory === ".") return root;
-  const separator = /^(?:[a-zA-Z]:|\\\\)/.test(root) ? "\\" : "/";
-  return `${root.replace(/[/\\]+$/, "")}${separator}${directory
-    .split(/[/\\]/)
-    .filter((segment) => segment && segment !== ".")
-    .join(separator)}`;
+  return input.worktreePath ?? input.project.cwd;
 }
 
 export function projectScriptRuntimeEnv(
@@ -62,14 +54,6 @@ export function projectScriptRuntimeEnv(
 
 export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
   return scripts.find((script) => script.runOnWorktreeCreate) ?? null;
-}
-
-export function projectScriptMenuLabel(script: ProjectScript): string {
-  const roles = [
-    ...(script.runOnWorktreeCreate ? ["setup"] : []),
-    ...(script.runOnSettle ? ["on settle"] : []),
-  ];
-  return roles.length === 0 ? script.name : `${script.name} (${roles.join(", ")})`;
 }
 
 export function settleProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {

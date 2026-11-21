@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import { useEffect, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { BackHandler, Keyboard } from "react-native";
@@ -13,6 +14,7 @@ import {
 } from "./WorkspaceListHeader.types";
 
 export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
+  const gt = useGT();
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
   const isTabActive = workspace?.isTabActive;
@@ -65,17 +67,6 @@ export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
-      actions={
-        props.onOpenAgentBoard
-          ? [
-              {
-                accessibilityLabel: "Open Agent Operations",
-                icon: "rectangle.3.group",
-                onPress: props.onOpenAgentBoard,
-              },
-            ]
-          : undefined
-      }
       search={{
         value: search.value,
         onChangeText: onSearchQueryChange,
@@ -89,7 +80,7 @@ export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
         connectionState.hasConnections
           ? [
               {
-                title: "Filter threads",
+                title: gt("Filter threads"),
                 icon: workspaceListFilterIcon(props.filter.customized),
                 items: props.filter.items,
               },

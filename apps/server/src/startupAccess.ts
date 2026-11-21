@@ -10,7 +10,6 @@ import {
   isWildcardHost,
 } from "@t3tools/shared/hostClassification";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isHostOnlyNetworkInterface } from "@t3tools/shared/networkInterfaces";
 import { QrCode } from "@t3tools/shared/qrCode";
 import { buildPairingAppLink } from "@t3tools/shared/remote";
 import * as Clock from "effect/Clock";
@@ -44,23 +43,23 @@ export const isLoopbackHost = (host: string | undefined): boolean => {
 };
 
 /**
+ * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
+ * macOS's `bridge100`+) have private addresses only this machine reaches. A
+ * host bridge such as `br0` or Proxmox's `vmbr0` carries the LAN address, so
+ * it stays listed.
+ */
+const VIRTUAL_INTERFACE =
+  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge[1-9]\d\d)/;
+
+/**
  * systemd-nspawn's `ve-*`/`vz-*` and NixOS containers' `vb-*` name host-side
  * veths after the machine. Windows aliases are user-renameable, so these
  * prefixes only apply to Linux interface discovery.
  */
 const LINUX_CONTAINER_INTERFACE = /^(ve-|vb-|vz-)/;
 
-/**
- * Container, VM, and VPN gateway interfaces (see `isHostOnlyNetworkInterface`)
- * have addresses only this machine reaches, so they are never advertised.
- */
-export const isHostOnlyInterface = (
-  name: string,
-  entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
-  platform: NodeJS.Platform,
-): boolean =>
-  isHostOnlyNetworkInterface(name, entries) ||
-  (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
+export const isVirtualInterface = (name: string, platform: NodeJS.Platform): boolean =>
+  VIRTUAL_INTERFACE.test(name) || (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
 
 /**
  * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
@@ -149,8 +148,8 @@ const resolveHeadlessConnectionHost = (
     return normalizeHost(host);
   }
 
-  const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries = []]) =>
-    isHostOnlyInterface(name, entries, platform) ? [] : entries,
+  const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries]) =>
+    privateNetworkOnly && isVirtualInterface(name, platform) ? [] : (entries ?? []),
   );
   const externalIpv4Entries = interfaceEntries.filter(
     (entry) =>
@@ -243,6 +242,13 @@ export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): 
     `Token: ${accessInfo.token}`,
     `Pairing URL: ${accessInfo.pairingUrl}`,
     `App link: ${buildPairingAppLink(accessInfo.pairingUrl)}`,
+    ...(isLoopbackHost(new URL(accessInfo.connectionString).hostname)
+      ? []
+      : [
+          "",
+          "Warning: this address uses plain HTTP. Anyone on the same network can read the",
+          "token and control this machine. Use it over a VPN or tailnet you trust.",
+        ]),
     "",
     renderTerminalQrCode(accessInfo.pairingUrl),
     "",

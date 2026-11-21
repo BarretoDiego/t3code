@@ -13,7 +13,6 @@ export interface UnavailableProviderSnapshotInput {
   readonly instanceId: ProviderInstanceId;
   readonly displayName?: string | undefined;
   readonly accentColor?: string | undefined;
-  readonly icon?: string | undefined;
   readonly reason: string;
   readonly checkedAt?: string;
 }
@@ -46,7 +45,6 @@ export const buildUnavailableProviderSnapshot = Effect.fn(
     ...base,
     instanceId: input.instanceId,
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
-    ...(input.icon ? { icon: input.icon } : {}),
     driver:
       typeof input.driverKind === "string"
         ? ProviderDriverKind.make(input.driverKind)

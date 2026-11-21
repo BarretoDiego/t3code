@@ -2,7 +2,10 @@ import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RegistryContext } from "@effect/atom-react";
 import type { OlderSettledShelfEnvironment } from "@t3tools/client-runtime/state/threads";
-import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  presentThreadShell,
+  type EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import * as DateTime from "effect/DateTime";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -12,7 +15,16 @@ import { olderSettledThreads } from "../../state/threads";
 import { makeRawThreadShell } from "../../test-fixtures";
 import { useThreadListV2 } from "./useThreadListV2";
 
+const mockedThreadShells = vi.hoisted(() => ({
+  atom: null as Atom.Writable<ReadonlyArray<EnvironmentThreadShell>> | null,
+}));
+
 vi.mock("../../state/threads", () => ({
+  environmentThreadShells: {
+    get quietThreadShellsAtom() {
+      return mockedThreadShells.atom!;
+    },
+  },
   olderSettledThreads: { shelfAtom: vi.fn() },
   threadFamilies: { mountRows: () => () => {} },
 }));
@@ -38,6 +50,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
       }),
     ),
   );
+  mockedThreadShells.atom = Atom.make<ReadonlyArray<EnvironmentThreadShell>>(threads);
   const environmentIds = new Set([environmentId, otherEnvironmentId]);
   const input: Parameters<typeof useThreadListV2>[0] = {
     threads,
@@ -60,9 +73,6 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     snoozedShelfExpanded: false,
     settledShelfExpanded: true,
     selectedThreadKey: null,
-    nestableThreads: threads,
-    nestedExpandedByKey: {},
-    nestedShowAllKeys: new Set(),
   };
   const seen: Array<ReturnType<typeof useThreadListV2>> = [];
   function Probe(props: { input: typeof input; tab: string }) {
@@ -128,12 +138,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
     thread.id === "thread-0" ? { ...thread, title: "Updated title" } : thread,
   );
   await act(async () =>
-    root.render(
-      <Probe
-        input={{ ...input, threads: updatedThreads, nestableThreads: updatedThreads }}
-        tab="chats"
-      />,
-    ),
+    root.render(<Probe input={{ ...input, threads: updatedThreads }} tab="chats" />),
   );
   expect(
     seen.at(-1)!.layout.items.find((item) => item.thread.id === "thread-0")?.thread.title,
@@ -142,12 +147,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
   await act(async () =>
     root.render(
       <Probe
-        input={{
-          ...input,
-          threads: updatedThreads,
-          nestableThreads: updatedThreads,
-          searchQuery: "Updated title",
-        }}
+        input={{ ...input, threads: updatedThreads, searchQuery: "Updated title" }}
         tab="chats"
       />,
     ),
@@ -157,12 +157,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
   await act(async () =>
     root.render(
       <Probe
-        input={{
-          ...nextMinute,
-          threads: updatedThreads,
-          nestableThreads: updatedThreads,
-          searchQuery: "Updated title",
-        }}
+        input={{ ...nextMinute, threads: updatedThreads, searchQuery: "Updated title" }}
         tab="chats"
       />,
     ),
@@ -173,12 +168,7 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
   const clockThreads = threads.map((thread) =>
     thread.id === "thread-0" ? { ...thread, snoozedUntil: "2026-01-02T00:00:30.000Z" } : thread,
   );
-  const clockInput = {
-    ...input,
-    threads: clockThreads,
-    nestableThreads: clockThreads,
-    snoozedShelfExpanded: true,
-  };
+  const clockInput = { ...input, threads: clockThreads, snoozedShelfExpanded: true };
   await act(async () => root.render(<Probe input={clockInput} tab="chats" />));
   const beforeClock = seen.at(-1)!;
   expect(beforeClock.layout.snoozedCount).toBe(1);

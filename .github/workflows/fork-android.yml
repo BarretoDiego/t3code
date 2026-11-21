@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - apps/mobile/**
-      - assets/fork/**
       - packages/client-runtime/**
       - packages/contracts/**
       - packages/shared/**
@@ -62,7 +61,7 @@ jobs:
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
         with:
           node-version-file: package.json
           cache: true
@@ -129,7 +128,7 @@ jobs:
           cd release-assets
           sha256sum *.apk > android-sha256.txt
       - name: Upload installable APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-apk
           path: release-assets/*

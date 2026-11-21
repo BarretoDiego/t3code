@@ -3,17 +3,11 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
-  PROJECT_SYNC_EXPORT_ROUTE_PREFIX,
-  PROJECT_SYNC_IMPORT_ROUTE_PREFIX,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
 import { FILE_PREVIEW_SCROLL_SCRIPT } from "@t3tools/shared/htmlRender";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
-import {
-  createProjectSyncFrameDecoder,
-  encodeProjectSyncRecords,
-} from "@t3tools/shared/projectSyncFraming";
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -56,19 +50,12 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
   browserApiCorsAllowedHeaders,
   browserApiCorsAllowedMethods,
   DESKTOP_RENDERER_ORIGINS,
   MCP_HTTP_PATH,
 } from "./httpCors.ts";
-import { applyProjectSyncRecords } from "./workspace/ProjectSyncApply.ts";
-import {
-  projectSyncExportRecords,
-  resolveProjectSyncExportToken,
-  resolveProjectSyncImportToken,
-} from "./workspace/ProjectSyncTransfer.ts";
 import { requestUrl } from "./requestUrl.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -434,15 +421,13 @@ const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_P
 // HttpRouter.serve builds routes privately; provide the server-wide TracerDisabledWhen to the served layer.
 const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
-  const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
-  // Signed URLs carry bearer tokens in the path, so they never reach a trace.
-  return (
-    UNTRACED_REQUEST_PATHS.has(path) ||
-    path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`) ||
-    path.startsWith(`${ASSET_ROUTE_PREFIX}/`) ||
-    path.startsWith(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`)
+  return UNTRACED_REQUEST_PATHS.has(
+    queryIndex === -1 ? request.url : request.url.slice(0, queryIndex),
   );
 });
+
+// Signed URLs carry their bearer token in the path; spans and request logs record it as REDACTED.
+const SIGNED_URL_ROUTE_OPTIONS = { redactedParams: ["*"] };
 
 export const withUntracedRequests = Layer.provide(layerUntracedRequests);
 
@@ -514,6 +499,7 @@ export const layerAssetRoute = HttpRouter.add(
       Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
     );
   }),
+  SIGNED_URL_ROUTE_OPTIONS,
 );
 
 export const layerAttachmentUploadRoute = HttpRouter.add(
@@ -553,95 +539,7 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
   }),
-);
-
-class ProjectSyncExportStreamError extends Schema.TaggedError<ProjectSyncExportStreamError>()(
-  "ProjectSyncExportStreamError",
-  { cause: Schema.Defect() },
-) {}
-
-function projectSyncToken(pathname: string, prefix: string): string | null {
-  const token = pathname.slice(`${prefix}/`.length);
-  return token.length > 0 && !token.includes("/") ? token : null;
-}
-
-export const projectSyncExportRouteLayer = HttpRouter.add(
-  "GET",
-  `${PROJECT_SYNC_EXPORT_ROUTE_PREFIX}/*`,
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
-
-    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_EXPORT_ROUTE_PREFIX);
-    if (!token) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    const resolved = yield* resolveProjectSyncExportToken(token);
-    if (!resolved) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    return HttpServerResponse.stream(
-      Stream.fromAsyncIterable(
-        encodeProjectSyncRecords(
-          projectSyncExportRecords({
-            workspaceRoot: resolved.claims.workspaceRoot,
-            entries: resolved.entries,
-            requestId: resolved.claims.requestId,
-          }),
-        ),
-        (cause) => new ProjectSyncExportStreamError({ cause }),
-      ),
-      { status: 200, contentType: "application/octet-stream" },
-    );
-  }),
-);
-
-export const projectSyncImportRouteLayer = HttpRouter.add(
-  "POST",
-  `${PROJECT_SYNC_IMPORT_ROUTE_PREFIX}/*`,
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
-
-    const token = projectSyncToken(url.value.pathname, PROJECT_SYNC_IMPORT_ROUTE_PREFIX);
-    if (!token) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    const claims = yield* resolveProjectSyncImportToken(token);
-    if (!claims) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-
-    return yield* applyProjectSyncRecords({
-      workspaceRoot: claims.workspaceRoot,
-      records: createProjectSyncFrameDecoder(Stream.toAsyncIterable(request.stream)),
-      maxContentBytes: claims.totalBytes,
-      maxRecordCount: claims.fileCount,
-    }).pipe(
-      Effect.map((result) =>
-        HttpServerResponse.jsonUnsafe({ applied: result.applied, bytes: result.bytes }),
-      ),
-      Effect.catchTags({
-        ProjectSyncPathViolationError: (error) =>
-          Effect.succeed(HttpServerResponse.text(error.message, { status: 400 })),
-        ProjectSyncImportLimitError: (error) =>
-          Effect.succeed(HttpServerResponse.text(error.message, { status: 413 })),
-        ProjectSyncIoError: (error) =>
-          Effect.logError("Project sync import failed.", { error }).pipe(
-            Effect.as(HttpServerResponse.text("Failed to apply the import.", { status: 500 })),
-          ),
-      }),
-    );
-  }),
+  SIGNED_URL_ROUTE_OPTIONS,
 );
 
 const decodeBuildManifest = Schema.decodeUnknownEffect(

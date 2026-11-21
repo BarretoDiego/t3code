@@ -1,18 +1,13 @@
+import { shortcutLabelForCommand } from "./keybindings";
+import { describe, expect, it } from "vite-plus/test";
+import { settleProjectScript, setupProjectScript } from "@t3tools/shared/projectScripts";
+
 import {
-  projectScriptCwd,
-  projectScriptRuntimeEnv,
-  settleProjectScript,
-  setupProjectScript,
-} from "@t3tools/shared/projectScripts";
-import {
-  buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
   primaryProjectScript,
   releaseClaimedRoles,
 } from "./projectScripts";
-import { shortcutLabelForCommand } from "./keybindings";
-import { describe, expect, it } from "vite-plus/test";
 
 describe("projectScripts helpers", () => {
   it.each(["install-javascript-dependencies", "A", "a.b", "a b", "-a", "", "a".repeat(25)])(
@@ -93,83 +88,5 @@ describe("projectScripts helpers", () => {
     expect(
       releaseClaimedRoles(holder, { ...input, runOnWorktreeCreate: false, runOnSettle: false }),
     ).toBe(holder);
-  });
-
-  it("builds default runtime env for scripts", () => {
-    const env = projectScriptRuntimeEnv({
-      project: { cwd: "/repo" },
-      worktreePath: "/repo/worktree-a",
-    });
-
-    expect(env).toMatchObject({
-      T3CODE_PROJECT_ROOT: "/repo",
-      T3CODE_WORKTREE_PATH: "/repo/worktree-a",
-    });
-  });
-
-  it("allows overriding runtime env values", () => {
-    const env = projectScriptRuntimeEnv({
-      project: { cwd: "/repo" },
-      extraEnv: {
-        T3CODE_PROJECT_ROOT: "/custom-root",
-        CUSTOM_FLAG: "1",
-      },
-    });
-
-    expect(env.T3CODE_PROJECT_ROOT).toBe("/custom-root");
-    expect(env.CUSTOM_FLAG).toBe("1");
-    expect(env.T3CODE_WORKTREE_PATH).toBeUndefined();
-  });
-
-  it("prefers the worktree path for script cwd resolution", () => {
-    expect(
-      projectScriptCwd({
-        project: { cwd: "/repo" },
-        worktreePath: "/repo/worktree-a",
-      }),
-    ).toBe("/repo/worktree-a");
-    expect(
-      projectScriptCwd({
-        project: { cwd: "/repo" },
-        worktreePath: null,
-      }),
-    ).toBe("/repo");
-  });
-
-  it("runs nested actions in the corresponding directory of each checkout", () => {
-    expect(projectScriptCwd({ project: { cwd: "/repo" }, script: { cwd: "apps/web" } })).toBe(
-      "/repo/apps/web",
-    );
-    expect(
-      projectScriptCwd({
-        project: { cwd: "/repo" },
-        worktreePath: "/repo-worktree",
-        script: { cwd: "apps/web" },
-      }),
-    ).toBe("/repo-worktree/apps/web");
-    expect(
-      projectScriptCwd({
-        project: { cwd: "C:\\repo" },
-        worktreePath: "D:\\worktree\\",
-        script: { cwd: "apps/web" },
-      }),
-    ).toBe("D:\\worktree\\apps\\web");
-    expect(projectScriptCwd({ project: { cwd: "/repo" }, script: { cwd: "." } })).toBe("/repo");
-  });
-
-  it("preserves a selected working directory when saving an action", () => {
-    expect(
-      buildProjectScript("test", {
-        name: "Web test",
-        command: "pnpm run test",
-        cwd: "apps/web",
-        runOnSettle: false,
-        icon: "test",
-        runOnWorktreeCreate: false,
-        waitForSetup: false,
-        previewUrl: null,
-        autoOpenPreview: false,
-      }),
-    ).toMatchObject({ cwd: "apps/web", command: "pnpm run test" });
   });
 });

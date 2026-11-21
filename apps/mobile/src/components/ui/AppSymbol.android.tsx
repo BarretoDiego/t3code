@@ -23,7 +23,6 @@ import IconArrowsLeftRight from "@tabler/icons-react-native/IconArrowsLeftRight"
 import IconArrowsDiagonal2 from "@tabler/icons-react-native/IconArrowsDiagonal2";
 import IconArrowsMinimize from "@tabler/icons-react-native/IconArrowsMinimize";
 import IconBan from "@tabler/icons-react-native/IconBan";
-import IconHelpCircle from "@tabler/icons-react-native/IconHelpCircle";
 import IconBellRinging from "@tabler/icons-react-native/IconBellRinging";
 import IconBolt from "@tabler/icons-react-native/IconBolt";
 import IconBox from "@tabler/icons-react-native/IconBox";
@@ -84,7 +83,6 @@ import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
 import IconKeyboardHide from "@tabler/icons-react-native/IconKeyboardHide";
 import IconLock from "@tabler/icons-react-native/IconLock";
 import IconLayoutColumns from "@tabler/icons-react-native/IconLayoutColumns";
-import IconLayoutGrid from "@tabler/icons-react-native/IconLayoutGrid";
 import IconLayoutSidebar from "@tabler/icons-react-native/IconLayoutSidebar";
 import IconLayoutSidebarRight from "@tabler/icons-react-native/IconLayoutSidebarRight";
 import IconLetterSpacing from "@tabler/icons-react-native/IconLetterSpacing";
@@ -101,7 +99,6 @@ import IconMinus from "@tabler/icons-react-native/IconMinus";
 import IconMoon from "@tabler/icons-react-native/IconMoon";
 import IconNetwork from "@tabler/icons-react-native/IconNetwork";
 import IconPalette from "@tabler/icons-react-native/IconPalette";
-import IconPackage from "@tabler/icons-react-native/IconPackage";
 import IconPencil from "@tabler/icons-react-native/IconPencil";
 import IconPlug from "@tabler/icons-react-native/IconPlug";
 import IconPhoto from "@tabler/icons-react-native/IconPhoto";
@@ -257,8 +254,6 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "pin.slash": IconPinnedOff,
   play: IconPlayerPlay,
   pause: IconPlayerPause,
-  nosign: IconBan,
-  "questionmark.circle": IconHelpCircle,
   plus: IconPlus,
   minus: IconMinus,
   "slash.circle": IconBan,
@@ -277,8 +272,6 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "square.on.square": IconCopy,
   "square.grid.2x2": IconApps,
   "square.split.2x1": IconLayoutColumns,
-  "rectangle.3.group": IconLayoutGrid,
-  shippingbox: IconPackage,
   star: IconStar,
   "star.fill": IconStarFilled,
   "sun.max": IconSun,

@@ -10,6 +10,8 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 
 import type { EnvironmentProject } from "./models.ts";
 import { normalizeProjectPathForComparison } from "./projects.ts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 const SCRATCH_PROJECT_SCOPE_KEY = "\0no-project";
 
@@ -66,6 +68,20 @@ function deriveRepositoryRelativeProjectPath(
   }
 
   return normalizedProjectPath.slice(rootPrefix.length).replaceAll("\\", "/");
+}
+
+/** The project's workspace root is its repository's git top-level, not a sub-folder. */
+export function isRepositoryRootProject(
+  project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+): boolean {
+  return deriveRepositoryRelativeProjectPath(project) === "";
+}
+
+/** A group's default checkout for new threads: its repository root, else its first member. */
+export function selectGroupDefaultProject<
+  TProject extends Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+>(projects: ReadonlyArray<TProject>): TProject | undefined {
+  return projects.find(isRepositoryRootProject) ?? projects[0];
 }
 
 export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: string): string {
@@ -126,16 +142,10 @@ function deriveRepositoryScopedKey(
     : `${canonicalKey}::${relativeProjectPath}`;
 }
 
-/**
- * A project's logical identity. An explicit `linkKey` wins over the git
- * remote, so projects without a remote (or with different remotes) can be
- * paired across environments. A link to a project that has a remote stores
- * that repository's key, so the linked project joins its whole group.
- */
 function deriveLogicalProjectKey(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "linkKey" | "isScratch"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
   >,
   options?: {
     readonly groupingMode?: SidebarProjectGroupingMode;
@@ -148,11 +158,6 @@ function deriveLogicalProjectKey(
     return derivePhysicalProjectKey(project);
   }
 
-  const linkKey = project.linkKey?.trim();
-  if (linkKey) {
-    return linkKey;
-  }
-
   return (
     deriveRepositoryScopedKey(project, groupingMode) ??
     derivePhysicalProjectKey(project) ??
@@ -163,7 +168,7 @@ function deriveLogicalProjectKey(
 export function deriveLogicalProjectKeyFromSettings(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "linkKey" | "isScratch"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
   >,
   settings: ProjectGroupingSettings,
   options?: { readonly groupScratchProjects?: boolean },
@@ -172,6 +177,23 @@ export function deriveLogicalProjectKeyFromSettings(
     groupingMode: resolveProjectGroupingMode(project, settings),
     groupScratchProjects: options?.groupScratchProjects ?? false,
   });
+}
+
+/** The checkout a new thread in `project`'s group starts in on its environment: the group's root. */
+export function resolveGroupDefaultProject<TProject extends EnvironmentProject>(
+  project: TProject,
+  projects: ReadonlyArray<TProject>,
+  settings: ProjectGroupingSettings,
+): TProject {
+  const groupKey = deriveLogicalProjectKeyFromSettings(project, settings);
+  return (
+    projects.find(
+      (candidate) =>
+        candidate.environmentId === project.environmentId &&
+        isRepositoryRootProject(candidate) &&
+        deriveLogicalProjectKeyFromSettings(candidate, settings) === groupKey,
+    ) ?? project
+  );
 }
 
 export function resolveScratchProjectScopeKey(
@@ -282,6 +304,10 @@ export function pickableProjectGroups<
   return [...open.filter((group) => group.pinned), ...open.filter((group) => !group.pinned)];
 }
 
+export function isPickableProjectMember(member: Pick<EnvironmentProject, "archivedAt">): boolean {
+  return member.archivedAt == null;
+}
+
 function projectFreshnessTime(project: EnvironmentProject): number {
   const updatedAtTime = Date.parse(project.updatedAt);
   if (Number.isFinite(updatedAtTime)) {
@@ -303,7 +329,7 @@ function selectProjectIdentitySource<TProject extends EnvironmentProject>(
   projects: ReadonlyArray<TProject>,
   winner: TProject,
 ): TProject {
-  if (winner.linkKey || winner.repositoryIdentity !== null) {
+  if (winner.repositoryIdentity !== null) {
     return winner;
   }
 
@@ -322,12 +348,15 @@ function selectProjectIdentitySource<TProject extends EnvironmentProject>(
   return freshestIdentifiedProject ?? winner;
 }
 
-export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
-  readonly projects: ReadonlyArray<TProject>;
-  readonly settings: ProjectGroupingSettings;
-  readonly preferredEnvironmentId?: EnvironmentId | null;
-  readonly groupScratchProjects?: boolean;
-}): ReadonlyArray<ProjectGroup<TProject>> {
+export function buildProjectGroups<TProject extends EnvironmentProject>(
+  input: {
+    readonly projects: ReadonlyArray<TProject>;
+    readonly settings: ProjectGroupingSettings;
+    readonly preferredEnvironmentId?: EnvironmentId | null;
+    readonly groupScratchProjects?: boolean;
+  },
+  resolve: MFunctionType = mFallback,
+): ReadonlyArray<ProjectGroup<TProject>> {
   const projectsByPhysicalKey = new Map<string, TProject[]>();
   for (const project of input.projects) {
     const physicalProjectKey = derivePhysicalProjectKey(project);
@@ -383,15 +412,18 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
 
   const preferredEnvironmentId = input.preferredEnvironmentId ?? null;
   return Array.from(groupedMembers, ([key, members]) => {
+    const projects = members.map((member) => member.project);
     const representative =
       (preferredEnvironmentId
-        ? members.find((member) => member.project.environmentId === preferredEnvironmentId)?.project
-        : null) ?? members[0]!.project;
+        ? selectGroupDefaultProject(
+            projects.filter((project) => project.environmentId === preferredEnvironmentId),
+          )
+        : undefined) ?? selectGroupDefaultProject(projects)!;
     return {
       key,
       label:
         input.groupScratchProjects && representative.isScratch
-          ? "No project"
+          ? resolve(msg("No project"))
           : members.length > 1
             ? deriveProjectGroupLabel({
                 groupKey: key,
@@ -403,145 +435,11 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
       members,
       memberProjectRefs: projectRefsByLogicalKey.get(key) ?? [],
       pinned: members.some((member) => member.project.pinnedAt != null),
-      archived: members.every((member) => member.project.archivedAt != null),
+      archived: !members.some(({ project }) => isPickableProjectMember(project)),
     };
   });
 }
 
-type LinkableProject = Pick<
-  EnvironmentProject,
-  "environmentId" | "id" | "workspaceRoot" | "linkKey"
->;
-
-export interface ProjectGroupLinkSide {
-  readonly key: string;
-  readonly members: ReadonlyArray<LinkableProject>;
-}
-
-export interface ProjectGroupLinkPlan {
-  readonly linkKey: string;
-  readonly updates: ReadonlyArray<ScopedProjectRef>;
-}
-
-function isPhysicalGroupKey(group: ProjectGroupLinkSide): boolean {
-  return group.members.some((member) => derivePhysicalProjectKey(member) === group.key);
-}
-
-/** Lists physical projects independently of sidebar grouping and settings scope. */
-export function selectProjectLinkCandidates<TProject extends EnvironmentProject>(input: {
-  readonly projects: ReadonlyArray<TProject>;
-  readonly members: ReadonlyArray<LinkableProject>;
-}): TProject[] {
-  const selected = new Set(
-    input.members.map((member) =>
-      scopedProjectKey(scopeProjectRef(member.environmentId, member.id)),
-    ),
-  );
-  return input.projects
-    .filter(
-      (project) =>
-        !selected.has(scopedProjectKey(scopeProjectRef(project.environmentId, project.id))),
-    )
-    .sort(
-      (a, b) =>
-        a.title.localeCompare(b.title) ||
-        a.environmentId.localeCompare(b.environmentId) ||
-        a.workspaceRoot.localeCompare(b.workspaceRoot) ||
-        a.id.localeCompare(b.id),
-    );
-}
-
-/** Portable project references for sharing a link configuration with an agent. */
-export function projectLinkConfiguration(projects: ReadonlyArray<EnvironmentProject>) {
-  return projects.map((project) => ({
-    environmentId: project.environmentId,
-    projectId: project.id,
-    title: project.title,
-    workspaceRoot: project.workspaceRoot,
-    linkKey: project.linkKey ?? null,
-    repositoryKey: project.repositoryIdentity?.canonicalKey ?? null,
-  }));
-}
-
-/** Reveals link membership even when the sidebar is configured to keep projects separate. */
-export function selectProjectLinkPeers<TProject extends EnvironmentProject>(input: {
-  readonly project: EnvironmentProject;
-  readonly projects: ReadonlyArray<TProject>;
-  readonly settings: ProjectGroupingSettings;
-}): TProject[] {
-  const identity = (project: EnvironmentProject) => {
-    const mode = resolveProjectGroupingMode(project, input.settings);
-    return deriveLogicalProjectKey(project, {
-      groupingMode: mode === "separate" ? "repository" : mode,
-    });
-  };
-  const key = identity(input.project);
-  return input.projects.filter(
-    (project) =>
-      (project.environmentId !== input.project.environmentId || project.id !== input.project.id) &&
-      identity(project) === key,
-  );
-}
-
-/** Gives unidentified members an ID without replacing an existing group identity. */
-export function planProjectGroupLinkId(input: {
-  readonly group: ProjectGroupLinkSide;
-  readonly makeLinkKey: () => string;
-}): ProjectGroupLinkPlan {
-  const linkKey =
-    input.group.members.find((member) => member.linkKey)?.linkKey ??
-    (!isPhysicalGroupKey(input.group) ? input.group.key : `link:${input.makeLinkKey()}`);
-  return {
-    linkKey,
-    updates: input.group.members
-      .filter((member) => !member.linkKey)
-      .map((member) => scopeProjectRef(member.environmentId, member.id)),
-  };
-}
-
-function linkSideIdentity(group: ProjectGroupLinkSide): string {
-  // Separate mode uses physical keys for display even when a link already exists.
-  return isPhysicalGroupKey(group)
-    ? (group.members.find((member) => member.linkKey)?.linkKey ?? group.key)
-    : group.key;
-}
-
-/**
- * Plans the `linkKey` writes that make two project groups one. A group with a
- * shared identity (git remote or earlier link) lends its key; two unidentified
- * groups get a fresh key. Only projects whose key changes are returned.
- */
-export function planProjectGroupLink(input: {
-  readonly source: ProjectGroupLinkSide;
-  readonly target: ProjectGroupLinkSide;
-  readonly makeLinkKey: () => string;
-}): ProjectGroupLinkPlan {
-  const targetKey = linkSideIdentity(input.target);
-  const sourceKey = linkSideIdentity(input.source);
-  const targetIsPhysical = targetKey === input.target.key && isPhysicalGroupKey(input.target);
-  const sourceIsPhysical = sourceKey === input.source.key && isPhysicalGroupKey(input.source);
-  const linkKey = !targetIsPhysical
-    ? targetKey
-    : !sourceIsPhysical
-      ? sourceKey
-      : `link:${input.makeLinkKey()}`;
-  const candidates = !targetIsPhysical
-    ? input.source.members
-    : !sourceIsPhysical
-      ? input.target.members
-      : [...input.source.members, ...input.target.members];
-  return {
-    linkKey,
-    updates: candidates
-      .filter((member) => member.linkKey !== linkKey)
-      .map((member) => scopeProjectRef(member.environmentId, member.id)),
-  };
-}
-
-/**
- * Orders projects the way a sorted group list shows them: by the first group holding each
- * project. Projects in no group follow, and ties keep their incoming order.
- */
 export function sortProjectsByGroupOrder<
   TProject extends { readonly id: string; readonly environmentId: string },
 >(

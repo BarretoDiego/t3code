@@ -1,8 +1,6 @@
 /** Settings pages a Settings row opens. */
 export const SETTINGS_PAGE_TARGETS = [
   "SettingsEnvironments",
-  "SettingsAiRuntimes",
-  "SettingsMarketplace",
   "SettingsNotifications",
   "SettingsThreads",
   "SettingsAbout",
@@ -21,7 +19,6 @@ export const SETTINGS_PAGE_TARGETS = [
   "SettingsVoice",
   "SettingsFollowUp",
   "SettingsScheduledTasks",
-  "SettingsAutomation",
   "SettingsProjectGrouping",
   "SettingsClientStorage",
   "SettingsDiagnostics",

@@ -50,24 +50,3 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
     refresh,
   };
 }
-
-const sidebarArchivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
-  getSnapshotAtom: archivedSnapshotAtom,
-  hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
-  hiddenThreadKeysAtom: environmentThreadShells.hiddenThreadKeysAtom,
-  liveThreadRefsAtom: environmentThreadShells.threadRefsAtom,
-  anyEnvironmentHidingAtom: environmentThreadShells.anyEnvironmentHidingAtom,
-  labelPrefix: "web:sidebar-archived-thread-snapshots",
-});
-
-/** Archived threads folded into the sidebar tree; read once per environment, not subscribed. */
-export function useSidebarArchivedThreadSnapshots(environmentIds: ReadonlyArray<EnvironmentId>) {
-  const environmentKey = makeArchivedThreadsEnvironmentKey(environmentIds);
-  const result = useAtomValue(sidebarArchivedSnapshotsAtom(environmentKey));
-  const refresh = () => {
-    for (const environmentId of environmentIds) {
-      appAtomRegistry.refresh(archivedSnapshotAtom(environmentId));
-    }
-  };
-  return { ...result, refresh };
-}

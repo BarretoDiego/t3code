@@ -52,11 +52,6 @@ vi.mock("../hooks/useSettings", async (original) => ({
   useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
   useUpdateEnvironmentSettings: () => () => undefined,
 }));
-// The fork keeps SyncProjectDialog for cross-environment project sync. It mounts its own
-// settings/session hooks that this add-project composition test doesn't exercise, so stub it out.
-vi.mock("./SyncProjectDialog", () => ({
-  SyncProjectDialog: () => null,
-}));
 vi.mock("../hooks/useScratchProject", () => ({
   useScratchProject: () => ({ scratchEnvironmentId: () => null }),
 }));
@@ -77,7 +72,8 @@ vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => ({ _tag: "Success", value: { projectId: "project-cloned" } }),
 }));
 vi.mock("../state/use-atom-query-runner", () => ({
-  useAtomQueryRunner: () => async () => ({ _tag: "Success", value: undefined }),
+  // Doubles as the add-project folder scan, which finds nothing to track.
+  useAtomQueryRunner: () => async () => ({ _tag: "Success", value: { folders: [] } }),
 }));
 vi.mock("../state/environments", async (original) => ({
   ...(await original<typeof import("../state/environments")>()),

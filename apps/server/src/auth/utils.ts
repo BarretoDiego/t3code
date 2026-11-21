@@ -9,9 +9,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
 import { normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as Mac from "effect/crypto/Mac";
-import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
@@ -91,34 +89,6 @@ export function timingSafeEqualBase64Url(left: string, right: string): boolean {
     Mac.timingSafeEqual(leftBytes.success, rightBytes.success)
   );
 }
-
-/**
- * Verifies one `<base64url claims>.<hmac signature>` bearer token and returns its claims, or `null` for any token that is malformed, unsigned, wrongly signed, undecodable, or expired.
- * Every family of URL-borne token (attachment uploads, project sync export/import) shares this shape; one shared check keeps the families from drifting on what counts as valid.
- * `verify` is the signer's check; a signer that cannot load its key should answer `false`, so no key means no valid token.
- */
-export const verifySignedClaims = Effect.fn("auth.verifySignedClaims")(function* <
-  A extends { readonly expiresAt: number },
->(input: {
-  readonly token: string;
-  readonly verify: (payload: string, signature: string) => Effect.Effect<boolean>;
-  readonly nowMs: number;
-  readonly decode: (encoded: unknown) => Option.Option<A>;
-}) {
-  const [payload, signature, unexpectedSegment] = input.token.split(".");
-  if (!payload || !signature || unexpectedSegment !== undefined) {
-    return null;
-  }
-  if (!(yield* input.verify(payload, signature))) {
-    return null;
-  }
-
-  const claims = yield* Effect.try({
-    try: () => Option.getOrNull(input.decode(base64UrlDecodeUtf8(payload))),
-    catch: () => null,
-  }).pipe(Effect.orElseSucceed(() => null));
-  return claims && claims.expiresAt > input.nowMs ? claims : null;
-});
 
 function normalizeNonEmptyString(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") {

@@ -1,4 +1,3 @@
-import { isThreadListV2ListItem } from "./threadListV2";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
@@ -888,6 +887,9 @@ describe("buildThreadListV2ListItems", () => {
               : "settled-shelf",
       ),
     ).toEqual(["unsent", "queued-1", "queued-2", "active", "settled-shelf", "settled"]);
+    expect(threadJumpTarget(items, "thread.jump.1")).toMatchObject({
+      pendingTask: { draftKey: "new-task:unsent" },
+    });
     expect(
       items.flatMap((item) => (item.type === "v2-pending" ? [item.showPendingDivider] : [])),
     ).toEqual([true, false, false]);
@@ -936,9 +938,17 @@ describe("buildThreadListV2ListItems", () => {
       "v2-settled-shelf",
       "v2-thread",
     ]);
-    expect(threadJumpTarget(items, "thread.jump.1")?.id).toBe("active");
-    expect(threadJumpTarget(items, "thread.jump.2")?.id).toBe("settled");
-    expect(threadJumpTarget(items, "thread.jump.3")).toBeNull();
+    expect(threadJumpTarget(items, "thread.jump.1")).toMatchObject({
+      type: "v2-pending",
+      pendingTask: { key: "pending-task:queued" },
+    });
+    expect(threadJumpTarget(items, "thread.jump.2")).toMatchObject({
+      item: { thread: { id: "active" } },
+    });
+    expect(threadJumpTarget(items, "thread.jump.3")).toMatchObject({
+      item: { thread: { id: "settled" } },
+    });
+    expect(threadJumpTarget(items, "thread.jump.4")).toBeNull();
   });
 });
 
@@ -1326,300 +1336,32 @@ describe("cross-section thread drops", () => {
   });
 });
 
-describe("subagent threads nested under their parent", () => {
+it("excludes subagents from navigation, search and ordering while retaining user forks", () => {
   const root = makeThread({ id: ThreadId.make("root"), title: "Root" });
-  const subagentOf = (
-    parent: EnvironmentThreadShell,
-    id: string,
-    input: Partial<EnvironmentThreadShell> = {},
-  ) =>
-    makeThread({
-      id: ThreadId.make(id),
-      title: id,
-      lineage: {
-        parentThreadId: parent.id,
-        rootThreadId: parent.id,
-        relationshipToParent: "subagent",
-      },
-      ...input,
-    });
+  const child = makeThread({
+    id: ThreadId.make("child"),
+    title: "Child",
+    lineage: { parentThreadId: root.id, rootThreadId: root.id, relationshipToParent: "subagent" },
+  });
   const fork = makeThread({
     id: ThreadId.make("fork"),
     title: "Fork",
     lineage: { parentThreadId: root.id, rootThreadId: root.id, relationshipToParent: "fork" },
   });
-  const working = { runtime: runningRuntime() };
-
-  function listRows(
-    threads: EnvironmentThreadShell[],
-    input: Partial<Parameters<typeof buildThreadListV2Items>[0]> = {},
-  ) {
-    const layout = buildThreadListV2Items({
-      threads,
-      environmentId: null,
-      searchQuery: "",
-      now: NOW,
-      ...input,
-    });
-    return buildThreadListV2ListItems({
-      items: layout.items,
-      pendingTasks: [],
-      snoozedCount: layout.snoozedCount,
-      snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
-      settledCount: layout.settledCount,
-      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
-      settledShelfExpanded: input.settledShelfExpanded ?? true,
-      nestedByKey: layout.nestedByKey,
-    });
-  }
-  const describeRows = (rows: ThreadListV2ListItem[]) =>
-    rows.map((row) =>
-      row.type === "v2-thread"
-        ? row.item.thread.id
-        : row.type === "v2-nested-thread"
-          ? `${"> ".repeat(row.depth)}${row.thread.id}`
-          : row.type === "v2-nested-more"
-            ? `${"> ".repeat(row.depth)}+${row.hiddenCount}`
-            : row.type,
-    );
-
-  it("draws a nested Settled shelf and preserves its expansion and recycled-list updates", () => {
-    const done = subagentOf(root, "done", { settledOverride: "settled", settledAt: NOW });
-    const busy = subagentOf(root, "busy", working);
-    const threads = [root, done, busy];
-    const folded = listRows(threads);
-    expect(describeRows(folded)).toEqual(["root", "> busy", "v2-nested-settled"]);
-    const header = folded.at(-1)!;
-    expect(header).toMatchObject({
-      type: "v2-nested-settled",
-      count: 1,
-      expanded: false,
-      groupKey: `${environmentId}:root:settled`,
-    });
-    const expanded = listRows(threads, {
-      nestedExpandedByKey: { [`${environmentId}:root:settled`]: true },
-    });
-    expect(describeRows(expanded)).toEqual(["root", "> busy", "v2-nested-settled", "> done"]);
-    const openHeader = expanded.find((row) => row.type === "v2-nested-settled")!;
-    expect(threadListV2ListItemsAreEqual(header, openHeader)).toBe(false);
-    expect(threadListV2ListItemsAreEqual(header, { ...header })).toBe(true);
-    expect(threadJumpTarget(expanded, "thread.jump.2")).toBeNull();
-  });
-
-  it("draws a working subagent under its parent and keeps forks at the top level", () => {
-    const child = subagentOf(root, "child", working);
-    const grandchild = subagentOf(child, "grandchild", working);
-    const threads = [root, child, grandchild, fork];
-    const rows = listRows(threads);
-
-    expect(describeRows(rows)).toEqual(["fork", "root", "> child", "> > grandchild"]);
-    // Only top-level rows have a slot to reorder or a jump number.
-    expect(
-      getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map(
-        (thread) => thread.id,
-      ),
-    ).toEqual([fork.id, root.id]);
-    expect(threadJumpTarget(rows, "thread.jump.2")?.id).toBe(root.id);
-    expect(threadJumpTarget(rows, "thread.jump.3")).toBeNull();
-  });
-
-  it("folds finished subagents away but still reports them on the parent", () => {
-    const rows = listRows([root, subagentOf(root, "done-a"), subagentOf(root, "done-b")]);
-
-    expect(describeRows(rows)).toEqual(["root"]);
-    expect(rows[0]).toMatchObject({
-      nested: { total: 2, signal: null, expanded: false, label: "2 subagents" },
-    });
-  });
-
-  it("surfaces a subagent that needs the user on a collapsed parent", () => {
-    const threads = [
-      root,
-      subagentOf(root, "asking", { hasPendingApprovals: true }),
-      subagentOf(root, "busy", working),
-    ];
-    const collapsed = listRows(threads, {
-      nestedExpandedByKey: { [`${environmentId}:${root.id}`]: false },
-    });
-
-    expect(describeRows(collapsed)).toEqual(["root"]);
-    expect(collapsed[0]).toMatchObject({
-      nested: {
-        total: 2,
-        signal: "approval",
-        expanded: false,
-        label: "2 subagents, 1 awaiting approval, 1 working",
-      },
-    });
-    expect(describeRows(listRows(threads))).toEqual(["root", "> asking", "> busy"]);
-  });
-
-  it("honors an explicit expand of finished subagents", () => {
-    const rows = listRows([root, subagentOf(root, "done")], {
-      nestedExpandedByKey: { [`${environmentId}:${root.id}`]: true },
-    });
-
-    expect(describeRows(rows)).toEqual(["root", "> done"]);
-  });
-
-  it("shows a settled parent together with its working subagents in the active list", () => {
-    const settledRoot = makeThread({
-      id: ThreadId.make("settled-root"),
-      title: "Settled root",
-      settledOverride: "settled",
-      settledAt: NOW,
-    });
-    const rows = listRows(
-      [
-        settledRoot,
-        subagentOf(settledRoot, "still-working", { ...working, createdAt: isoAt(BASE_MS) }),
-        subagentOf(settledRoot, "done", { createdAt: isoAt(BASE_MS + MINUTE_MS) }),
-      ],
-      { settledShelfExpanded: false },
-    );
-
-    expect(describeRows(rows)).toEqual(["settled-root", "> still-working", "> done"]);
-    expect(settledRoot.settledOverride).toBe("settled");
-  });
-
-  it.each(["settled", "snoozed"] as const)(
-    "keeps a %s family together through child activity and returns it to its saved shelf",
-    (shelf) => {
-      const parent = makeThread({
-        id: ThreadId.make("parked-parent"),
-        title: "Parked parent",
-        ...(shelf === "settled"
-          ? { settledOverride: "settled" as const, settledAt: NOW }
-          : { snoozedUntil: isoAt(BASE_MS + 60 * MINUTE_MS) }),
-      });
-      const child = subagentOf(parent, "child", working);
-      const grandchild = subagentOf(child, "grandchild", { hasPendingUserInput: true });
-      const threads = [parent, child, grandchild];
-      expect(describeRows(listRows(threads, { settledShelfExpanded: false }))).toEqual([
-        parent.id,
-        "> child",
-        "> > grandchild",
-      ]);
-      expect(
-        getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map((t) => t.id),
-      ).toEqual([parent.id]);
-      const layout = buildThreadListV2Items({
-        threads,
-        environmentId: null,
-        searchQuery: "",
-        now: NOW,
-      });
-      expect(layout.settledCount + layout.snoozedCount).toBe(0);
-      expect(layout.nestedByKey.get(`${environmentId}:${parent.id}`)?.summary?.signal).toBe(
-        "input",
-      );
-      const quiet = buildThreadListV2Items({
-        threads: [
-          parent,
-          { ...child, runtime: null },
-          { ...grandchild, hasPendingUserInput: false },
-        ],
-        environmentId: null,
-        searchQuery: "",
-        now: NOW,
-        snoozedShelfExpanded: true,
-      });
-      expect(quiet.settledCount + quiet.snoozedCount).toBe(1);
-      expect(quiet.items.map((item) => item.thread.id)).toEqual([parent.id]);
-      expect(parent.settledOverride).toBe(shelf === "settled" ? "settled" : null);
-      expect(parent.snoozedUntil).toBe(
-        shelf === "snoozed" ? isoAt(BASE_MS + 60 * MINUTE_MS) : null,
-      );
-    },
-  );
-
-  it("gives a search hit its own row when only the subagent matches", () => {
-    const layout = buildThreadListV2Items({
-      threads: [root, subagentOf(root, "needle")],
-      environmentId: null,
-      searchQuery: "needle",
-      now: NOW,
-    });
-
-    expect(layout.items.map((item) => item.thread.id)).toEqual(["needle"]);
-    expect(layout.nestedByKey.size).toBe(0);
-  });
-
-  it("hides the finished subagents of an archived parent", () => {
-    const archivedRoot = makeThread({
-      id: ThreadId.make("archived-root"),
-      title: "Archived root",
-      archivedAt: NOW,
-    });
-    const rows = listRows([
-      archivedRoot,
-      subagentOf(archivedRoot, "done"),
-      subagentOf(archivedRoot, "still-working", working),
-    ]);
-
-    expect(describeRows(rows)).toEqual(["still-working"]);
-  });
-
-  it("windows a long subagent list behind a more row", () => {
-    const children = Array.from({ length: 12 }, (_, index) =>
-      subagentOf(root, `done-${String(index).padStart(2, "0")}`, {
-        createdAt: isoAt(BASE_MS + index * MINUTE_MS),
-      }),
-    );
-    const expanded = { nestedExpandedByKey: { [`${environmentId}:${root.id}`]: true } };
-    const windowed = describeRows(listRows([root, ...children], expanded));
-
-    expect(windowed).toHaveLength(1 + 8 + 1);
-    expect(windowed.at(-1)).toBe("> +4");
-    expect(windowed.at(-2)).toBe("> done-11");
-    expect(
-      listRows([root, ...children], {
-        ...expanded,
-        nestedShowAllKeys: new Set([`${environmentId}:${root.id}`]),
-      }),
-    ).toHaveLength(13);
-  });
-
-  it("draws one hairline under a family, not between a parent and its subagents", () => {
-    const newer = makeThread({
-      id: ThreadId.make("newer"),
-      title: "Newer",
-      createdAt: isoAt(BASE_MS),
-    });
-    const older = makeThread({
-      id: ThreadId.make("older"),
-      title: "Older",
-      createdAt: isoAt(BASE_MS - MINUTE_MS),
-    });
-    const rows = listRows([
-      newer,
-      subagentOf(newer, "a", working),
-      subagentOf(newer, "b", working),
-      older,
-    ]);
-
-    expect(describeRows(rows)).toEqual(["newer", "> a", "> b", "older"]);
-    expect(
-      rows.map((row) => ("showTrailingDivider" in row ? row.showTrailingDivider : null)),
-    ).toEqual([false, false, true, false]);
-  });
-
-  it("re-renders a parent only when what it reports about its subagents changes", () => {
-    const child = subagentOf(root, "child", working);
-    const before = listRows([root, child]);
-    const unrelated = listRows([root, child, fork]);
-    const asking = listRows([root, { ...child, hasPendingApprovals: true }]);
-    const parentRow = (rows: ThreadListV2ListItem[]) =>
-      rows.find((row) => row.type === "v2-thread" && row.item.thread.id === root.id)!;
-    const childRow = (rows: ThreadListV2ListItem[]) =>
-      rows.find((row) => row.type === "v2-nested-thread")!;
-
-    expect(threadListV2ListItemsAreEqual(parentRow(before), parentRow(unrelated))).toBe(true);
-    expect(threadListV2ListItemsAreEqual(childRow(before), childRow(unrelated))).toBe(true);
-    expect(threadListV2ListItemsAreEqual(parentRow(before), parentRow(asking))).toBe(false);
-    expect(threadListV2ListItemsAreEqual(childRow(before), childRow(asking))).toBe(false);
-    expect(before.every(isThreadListV2ListItem)).toBe(true);
-  });
+  const threads = [root, child, fork];
+  expect(
+    buildThreadListV2Items({ threads, environmentId: null, searchQuery: "", now: NOW }).items.map(
+      (item) => item.thread.id,
+    ),
+  ).toEqual([fork.id, root.id]);
+  expect(
+    buildThreadListV2Items({ threads, environmentId: null, searchQuery: "Child", now: NOW }).items,
+  ).toEqual([]);
+  expect(
+    getThreadListV2OrderedSection({ threads, section: "active", now: NOW }).map(
+      (thread) => thread.id,
+    ),
+  ).toEqual([fork.id, root.id]);
 });
 
 const BASE_MS = Date.parse(NOW);
@@ -2150,15 +1892,3 @@ describe("queued messages keep a settled thread active", () => {
     expect(layout.settledCount).toBe(1);
   });
 });
-
-function runningRuntime() {
-  return {
-    status: "running" as const,
-    providerName: "Codex",
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    runtimeMode: "full-access" as const,
-    activeRunId: null,
-    lastError: null,
-    updatedAt: NOW,
-  };
-}

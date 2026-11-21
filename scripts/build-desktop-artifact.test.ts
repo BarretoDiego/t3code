@@ -22,9 +22,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 
 import {
-  resolveDesktopProductName,
-  resolveDesktopBuildIconAssets,
-  copyPackagedDirectory,
   buildDesktopBundles,
   copyDesktopBuildArtifacts,
   DesktopBuildManifestRestoreError,
@@ -71,8 +68,6 @@ import {
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
 } from "./build-desktop-artifact.ts";
-import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-
 import {
   ReleasePackageManifestError,
   releasePackageFiles,
@@ -248,42 +243,6 @@ const makePackagedAppFixture = Effect.fn("test.makePackagedAppFixture")(function
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
-  it("keeps fork branding across stable and nightly packages", () => {
-    for (const version of ["0.0.46", "0.0.46-nightly.20261009.18"]) {
-      assert.equal(resolveDesktopProductName(version, true), "T3 Code Fork");
-      assert.deepStrictEqual(resolveDesktopBuildIconAssets(version, true), {
-        macIconPng: BRAND_ASSET_PATHS.forkMacIconPng,
-        linuxIconPng: BRAND_ASSET_PATHS.forkIconPng,
-        windowsIconIco: BRAND_ASSET_PATHS.forkWindowsIconIco,
-      });
-    }
-  });
-
-  it.effect("self-signs unsigned macOS builds only when a certificate is configured", () =>
-    Effect.gen(function* () {
-      const build = (signed: boolean, env: Record<string, string>) =>
-        createBuildConfig("mac", "dmg", "1.2.3", signed, false, undefined, undefined).pipe(
-          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
-        );
-      const configured = { T3CODE_DESKTOP_MAC_SELF_SIGN_P12: "cDEy" };
-
-      const selfSigned = yield* build(false, configured);
-      assert.match(String(selfSigned.afterPack), /scripts\/self-sign-macos\.ts$/);
-      assert.match(
-        String((yield* build(true, configured)).afterPack),
-        /scripts\/prepare-server-compile-cache\.cjs$/,
-      );
-      assert.match(
-        String((yield* build(false, {})).afterPack),
-        /scripts\/prepare-server-compile-cache\.cjs$/,
-      );
-      assert.match(
-        String((yield* build(false, { T3CODE_DESKTOP_MAC_SELF_SIGN_P12: "" })).afterPack),
-        /scripts\/prepare-server-compile-cache\.cjs$/,
-      );
-    }),
-  );
-
   it.effect("rejects overlapping builds from another process until restoration finishes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1916,37 +1875,6 @@ it("keeps the prefix of a UNC path instead of going relative", () => {
   }
   assert.deepStrictEqual(paths[0], "\\\\server\\share\\tmp\\node_modules");
 });
-
-it.effect.skipIf(!symlinksSupported)(
-  "keeps framework links usable after staging is removed and the app is moved",
-  () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-framework-copy-" });
-      const source = path.join(root, "stage");
-      const output = path.join(root, "output");
-      const installed = path.join(root, "installed");
-      const framework = "Contents/Frameworks/Electron Framework.framework";
-      yield* fs.makeDirectory(path.join(source, framework, "Versions/A"), { recursive: true });
-      yield* fs.writeFileString(
-        path.join(source, framework, "Versions/A/Electron Framework"),
-        "binary",
-      );
-      yield* fs.symlink("A", path.join(source, framework, "Versions/Current"));
-      yield* fs.symlink(
-        "Versions/Current/Electron Framework",
-        path.join(source, framework, "Electron Framework"),
-      );
-      yield* copyPackagedDirectory(source, output);
-      yield* fs.remove(source, { recursive: true });
-      yield* fs.rename(output, installed);
-      assert.equal(
-        yield* fs.readFileString(path.join(installed, framework, "Electron Framework")),
-        "binary",
-      );
-    }).pipe(Effect.provide(NodeServices.layer)),
-);
 
 it.effect.skipIf(!symlinksSupported)("rebases packaged links into the isolated tree", () =>
   Effect.gen(function* () {

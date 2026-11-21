@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { ORCHESTRATION_V2_MIGRATION_ID, runMigrations } from "../src/persistence/Migrations.ts";
+import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
 
@@ -325,44 +325,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
         { sharedHome: sourceDir },
       );
-      assert.include(result.executedMigrations, `${ORCHESTRATION_V2_MIGRATION_ID}_OrchestrationV2`);
-    }),
-  );
-
-  it.effect("accepts reconciled fork slots while preserving the source history", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-reconciled-" });
-      const destDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "migrate-dev-db-reconciled-dest-",
-      });
-      const source = yield* createFixtureSource(sourceDir);
-      yield* withDatabase(
-        source,
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          yield* sql`UPDATE effect_sql_migrations SET name = 'ProjectionThreadsMiniSkills' WHERE migration_id = 48`;
-          yield* sql`UPDATE effect_sql_migrations SET name = 'ReconcileProjectionThreadFeatures' WHERE migration_id = 54`;
-        }),
-      );
-      const result = yield* runMigrateDevDb(
-        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
-        { sharedHome: sourceDir },
-      );
-      const recorded = Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        return yield* sql<{
-          migration_id: number;
-          name: string;
-        }>`SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id IN (48,54) ORDER BY migration_id`;
-      });
-      const expected = [
-        { migration_id: 48, name: "ProjectionThreadsMiniSkills" },
-        { migration_id: 54, name: "ReconcileProjectionThreadFeatures" },
-      ];
-      assert.deepStrictEqual(yield* withDatabase(source, recorded), expected);
-      assert.deepStrictEqual(yield* withDatabase(result.databasePath, recorded), expected);
-      assert.isAbove(result.projects.length, 0);
+      assert.include(result.executedMigrations, "55_OrchestrationV2");
     }),
   );
 
@@ -466,7 +429,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`UPDATE effect_sql_migrations SET name = 'OtherBuildMigration'
-            WHERE migration_id = 67`;
+            WHERE migration_id = 60`;
         }),
       );
 
@@ -481,44 +444,74 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.equal(error._tag, "MigrateDevDbPhaseError");
       if (error._tag === "MigrateDevDbPhaseError") {
         assert.equal(error.phase, "migrate");
-        assert.include(String(error.cause), "67_ThreadSnapshotWindowIndexes");
+        assert.include(String(error.cause), "60_ThreadSnapshotWindowIndexes");
       }
       assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
       assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);
     }),
   );
 
-  it.effect("refuses an upstream peer preview without rewriting the source or destination", () =>
+  it.effect("imports a dev seed whose ids after 67 came from the peer links branch", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-peer-" });
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-peer-dest-" });
-      const source = yield* createFixtureSource(sourceDir);
+      const source = yield* createFixtureSource(sourceDir, 67);
+      // Mirrors a real ~/.t3 seed written by a build whose 68-70 differ from main's.
       yield* withDatabase(
         source,
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          // Upstream's V2 id 55 and peer preview ids 68-70 conflict with published fork migrations.
-          yield* sql`UPDATE effect_sql_migrations SET name = 'OrchestrationV2' WHERE migration_id = 55`;
-          yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id >= 68`;
+          yield* sql`CREATE TABLE peer_environment_links (
+            environment_id TEXT PRIMARY KEY,
+            secret_name TEXT NOT NULL,
+            label TEXT NOT NULL,
+            urls_json TEXT NOT NULL,
+            access TEXT NOT NULL,
+            linked_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_reached_at TEXT,
+            last_error TEXT,
+            fenced INTEGER NOT NULL DEFAULT 0)`;
+          yield* sql`CREATE INDEX orchestration_v2_projection_turn_items_waiting_link_idx
+            ON orchestration_v2_projection_turn_items(thread_id, updated_at DESC, turn_item_id DESC)
+            WHERE type = 'link_request' AND status = 'waiting'`;
+          yield* insertPeerLink(sql);
           yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES
-          (68, 'PeerLinks'), (69, 'PeerLinkFence'), (70, 'WaitingLinkRequestIndex')`;
+            (68, 'PeerLinks'), (69, 'PeerLinkFence'), (70, 'WaitingLinkRequestIndex')`;
         }),
       );
-      const destination = yield* createFixtureSource(destDir);
-      const sourceBefore = yield* fs.readFile(source);
-      const destinationBefore = yield* fs.readFile(destination);
-      const error = yield* runMigrateDevDb(
+
+      const result = yield* runMigrateDevDb(
         { baseDir: destDir, source, projects: 5, threadsPerProject: 2 },
         { sharedHome: sourceDir },
-      ).pipe(Effect.flip);
-      assert.equal(error._tag, "MigrateDevDbPhaseError");
-      if (error._tag === "MigrateDevDbPhaseError") {
-        assert.equal(error.phase, "migrate");
-        assert.include(String(error.cause), "migration ids conflict with this build's history");
-      }
-      assert.deepStrictEqual(yield* fs.readFile(source), sourceBefore);
-      assert.deepStrictEqual(yield* fs.readFile(destination), destinationBefore);
+      );
+
+      const imported = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const threads = yield* sql<{ thread_id: string }>`
+            SELECT thread_id FROM orchestration_v2_projection_threads ORDER BY thread_id`;
+          const schema = yield* sql<{ name: string }>`
+            SELECT name FROM sqlite_master WHERE name IN (
+              'orchestration_v2_projection_turn_items_stop_request_idx',
+              'orchestration_v2_message_search')
+            ORDER BY name`;
+          return { threads, schema };
+        }),
+      );
+      assert.deepStrictEqual(
+        imported.threads.map((row) => row.thread_id),
+        ["fork-thread", "settled-thread", "stopped-thread"],
+      );
+      assert.deepStrictEqual(
+        imported.schema.map((row) => row.name),
+        [
+          "orchestration_v2_message_search",
+          "orchestration_v2_projection_turn_items_stop_request_idx",
+        ],
+      );
     }),
   );
 

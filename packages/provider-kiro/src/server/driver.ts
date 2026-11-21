@@ -76,7 +76,6 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -96,7 +95,6 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     const effectiveConfig = {
@@ -160,7 +158,6 @@ export const KiroDriver: ProviderDriver<KiroSettings, KiroDriverEnv> = {
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot,
       orchestrationAdapter,

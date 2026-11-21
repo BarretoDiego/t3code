@@ -4,6 +4,7 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { CursorSettings } from "../settings.ts";
+import type { SDKModel } from "@cursor/sdk";
 import * as Effect from "effect/Effect";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as FileSystem from "effect/FileSystem";
@@ -90,7 +91,6 @@ export const CursorDriver: ProviderDriver<
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -110,7 +110,6 @@ export const CursorDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       displayName: displayName ?? "Cursor",
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     const effectiveConfig = { ...config, enabled } satisfies CursorSettings;
@@ -166,10 +165,12 @@ export const CursorDriver: ProviderDriver<
       });
 
     let catalogModels: ReadonlyArray<ServerProviderModel> = [];
+    let catalogSdkModels: ReadonlyArray<SDKModel> = [];
     const orchestrationAdapter = yield* makeCursorAdapterV2({
       instanceId,
       environment: processEnv,
       getModels: () => catalogModels,
+      getSdkModels: () => catalogSdkModels,
     }).pipe(
       Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
         ...sdkRunner,
@@ -213,6 +214,8 @@ export const CursorDriver: ProviderDriver<
       auth.requireApiKey,
       auth.withAccess,
       () => catalogModels,
+      () => catalogSdkModels,
+      sdkRunner,
     );
 
     const checkProvider = auth.readApiKey.pipe(
@@ -252,6 +255,19 @@ export const CursorDriver: ProviderDriver<
           }
         }),
       ),
+      Effect.provideServiceEffect(
+        CursorSdkCatalog.CursorSdkCatalog,
+        Effect.map(CursorSdkCatalog.CursorSdkCatalog, (catalog) =>
+          CursorSdkCatalog.CursorSdkCatalog.of({
+            // Untraced: CursorSdkCatalog.read already spans this call.
+            read: Effect.fnUntraced(function* (apiKey) {
+              const snapshot = yield* catalog.read(apiKey);
+              if (snapshot.models.length > 0) catalogSdkModels = snapshot.models;
+              return snapshot;
+            }),
+          }),
+        ),
+      ),
       Effect.provide(CursorSdkCatalog.layer),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
@@ -283,7 +299,6 @@ export const CursorDriver: ProviderDriver<
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       auth: auth.controller,
       snapshot,

@@ -152,7 +152,6 @@ const legacyTask: ScheduledTask = {
   threadId: null,
   workspaceStrategy: { type: "worktree", baseRef: "release" },
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-  fallbackModelSelections: [],
   runtimeMode: "full-access",
   interactionMode: "default",
   createdBy: "user",
@@ -171,6 +170,11 @@ describe("editing scheduled task branch settings", () => {
     const draft = taskToDraft(legacyTask);
     expect(draft.baseRef).toBe("release");
     expect(draft.startFromOrigin).toBe(false);
+  });
+
+  it("leaves the base automatic when a task without a worktree switches to one", () => {
+    const draft = taskToDraft({ ...legacyTask, workspaceStrategy: { type: "root" } });
+    expect(draft.baseRef).toBe("");
   });
 });
 

@@ -3,15 +3,10 @@ import type { AssistantCitation } from "@t3tools/contracts";
 import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
-  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
-  type TerminalContextDraft,
-} from "./lib/terminalContext";
-import {
   collectComposerInlineTokens,
   composerMathRanges,
   type ComposerInlineToken,
 } from "@t3tools/shared/composerInlineTokens";
-import { findComposerCodeBlocks } from "./composerCodeBlocks";
 
 export type ComposerPromptSegment =
   | {
@@ -40,19 +35,6 @@ export type ComposerPromptSegment =
       source: string;
     }
   | {
-      type: "terminal-context";
-      context: TerminalContextDraft | null;
-    }
-  | {
-      /** A fenced block, including one still being typed. `source` includes the editable fences. */
-      type: "code-block";
-      info: string;
-      content: string;
-      source: string;
-      /** Characters of `source` that precede `content` (the fence line plus its newline). */
-      prefixLength: number;
-    }
-  | {
       type: "context-reference";
       kind: string;
       contextId: string;
@@ -72,32 +54,6 @@ function pushTextSegment(segments: ComposerPromptSegment[], text: string): void 
     return;
   }
   segments.push({ type: "text", text });
-}
-
-function forEachPromptSegmentSlice(
-  prompt: string,
-  visitor: (
-    slice:
-      | { type: "text"; text: string; promptOffset: number }
-      | { type: "terminal-context"; promptOffset: number },
-  ) => boolean | void,
-): boolean {
-  let textCursor = 0;
-  for (let index = 0; index < prompt.length; index += 1) {
-    if (prompt[index] !== INLINE_TERMINAL_CONTEXT_PLACEHOLDER) continue;
-    if (
-      index > textCursor &&
-      visitor({ type: "text", text: prompt.slice(textCursor, index), promptOffset: textCursor }) ===
-        true
-    )
-      return true;
-    if (visitor({ type: "terminal-context", promptOffset: index }) === true) return true;
-    textCursor = index + 1;
-  }
-  return (
-    textCursor < prompt.length &&
-    visitor({ type: "text", text: prompt.slice(textCursor), promptOffset: textCursor }) === true
-  );
 }
 
 function forEachPromptTextSlice(
@@ -253,80 +209,6 @@ export function selectionTouchesMentionBoundary(
   });
 }
 
-/**
- * Segments a stretch of prompt that is known to sit outside any code block.
- * The terminal-context cursor is shared across calls so chips keep matching
- * their drafts when blocks split the prompt into several stretches.
- */
-function splitPlainPromptIntoComposerSegments(
-  prompt: string,
-  terminalContexts: ReadonlyArray<TerminalContextDraft>,
-  terminalContextCursor: { index: number },
-): ComposerPromptSegment[] {
-  const segments: ComposerPromptSegment[] = [];
-  forEachPromptSegmentSlice(prompt, (slice) => {
-    if (slice.type === "text") {
-      segments.push(...splitPromptTextIntoComposerSegments(slice.text));
-      return false;
-    }
-
-    segments.push({
-      type: "terminal-context",
-      context: terminalContexts[terminalContextCursor.index] ?? null,
-    });
-    terminalContextCursor.index += 1;
-    return false;
-  });
-
-  return segments;
-}
-
-export function splitPromptIntoComposerSegments(
-  prompt: string,
-  terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
-): ComposerPromptSegment[] {
-  if (!prompt) {
-    return [];
-  }
-
-  const terminalContextCursor = { index: 0 };
-  const blocks = findComposerCodeBlocks(prompt);
-  if (blocks.length === 0) {
-    return splitPlainPromptIntoComposerSegments(prompt, terminalContexts, terminalContextCursor);
-  }
-
-  // Code blocks are carved out first: their content is literal, so a `@path` or
-  // `$skill` inside one must stay text rather than becoming a chip.
-  const segments: ComposerPromptSegment[] = [];
-  let cursor = 0;
-  for (const block of blocks) {
-    if (block.start > cursor) {
-      segments.push(
-        ...splitPlainPromptIntoComposerSegments(
-          prompt.slice(cursor, block.start),
-          terminalContexts,
-          terminalContextCursor,
-        ),
-      );
-    }
-    segments.push({
-      type: "code-block",
-      info: block.info,
-      content: block.content,
-      source: prompt.slice(block.start, block.end),
-      prefixLength: block.prefixLength,
-    });
-    cursor = block.end;
-  }
-  if (cursor < prompt.length) {
-    segments.push(
-      ...splitPlainPromptIntoComposerSegments(
-        prompt.slice(cursor),
-        terminalContexts,
-        terminalContextCursor,
-      ),
-    );
-  }
-
-  return segments;
+export function splitPromptIntoComposerSegments(prompt: string): ComposerPromptSegment[] {
+  return splitPromptTextIntoComposerSegments(prompt);
 }

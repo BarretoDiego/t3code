@@ -12,7 +12,6 @@ import {
   reorderProjects,
   resolveProjectExpanded,
   setProjectExpanded,
-  setThreadChildrenExpanded,
   type UiState,
 } from "./uiStateStore";
 
@@ -22,7 +21,6 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectOrder: [],
     sidebarProjectScopeKeys: [],
     threadLastVisitedAtById: {},
-    threadChildrenExpandedById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
@@ -126,7 +124,6 @@ describe("parsePersistedState", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
-      threadChildrenExpandedById: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       pullRequestMergeMethod: "merge",
@@ -238,7 +235,6 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
-      threadChildrenExpandedById: {},
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       sidebarProjectScopeKey: null,
@@ -254,26 +250,6 @@ describe("uiStateStore persistence", () => {
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
     });
-  });
-
-  it("restores which threads show their subagents, including explicit collapses", () => {
-    const expanded = setThreadChildrenExpanded(makeUiState(), "environment:parent-a", true);
-    const state = setThreadChildrenExpanded(expanded, "environment:parent-b", false);
-    expect(setThreadChildrenExpanded(state, "environment:parent-b", false)).toBe(state);
-
-    persistState(state);
-    const persisted = JSON.parse(
-      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
-    ) as PersistedUiState;
-
-    expect(parsePersistedState(persisted).threadChildrenExpandedById).toEqual({
-      "environment:parent-a": true,
-      "environment:parent-b": false,
-    });
-    expect(
-      parsePersistedState({ threadChildrenExpandedById: { ok: true, bad: "yes" } as never })
-        .threadChildrenExpandedById,
-    ).toEqual({ ok: true });
   });
 
   it("restores the sidebar project scope across reloads", () => {

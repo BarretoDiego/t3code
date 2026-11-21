@@ -33,7 +33,6 @@ function PopoverPopup({
   children,
   className,
   padding = "default",
-  corner = "default",
   variant = "default",
   width = "auto",
   side = "bottom",
@@ -48,7 +47,6 @@ function PopoverPopup({
   ...props
 }: PopoverPrimitive.Popup.Props & {
   padding?: keyof typeof popoverViewportPaddingClassName;
-  corner?: "default" | "md";
   variant?: "default" | "panel";
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
@@ -102,7 +100,6 @@ function PopoverPopup({
             "[-webkit-app-region:no-drag]",
             tooltipStyle &&
               "w-fit rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
-            corner === "md" && "rounded-md before:rounded-[calc(var(--radius-md)-1px)]",
             !tooltipStyle &&
               variant !== "panel" &&
               "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",

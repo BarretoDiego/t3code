@@ -53,7 +53,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     const resolved = yield* registry.resolve(token);
     expect(resolved?.thread.threadId).toBe(threadId);
     expect(resolved?.capabilities).toEqual(
-      new Set(["compute", "preview", "orchestration", "worktree", "pull-requests", "issues"]),
+      new Set(["preview", "orchestration", "worktree", "pull-requests", "issues"]),
     );
 
     yield* registry.revokeThread(threadId);
@@ -63,55 +63,50 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
-it.effect(
-  "always grants compute and pull-requests while gating browser and device access independently",
-  () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry(() => 1_000);
-      const withPreview = yield* registry.issue({
-        threadId: ThreadId.make("thread-preview"),
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        capabilities: new Set(["preview"]),
-      });
-      const withoutPreview = yield* registry.issue({
-        threadId: ThreadId.make("thread-no-preview"),
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        capabilities: new Set(),
-      });
-      const withDevice = yield* registry.issue({
-        threadId: ThreadId.make("thread-device"),
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        capabilities: new Set(["device"]),
-      });
-      const capabilitiesOf = (issued: typeof withPreview) =>
-        registry
-          .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
-          .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
+it.effect("always grants pull-requests and gates browser and device access independently", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const withPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
+    });
+    const withoutPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(),
+    });
+    const withDevice = yield* registry.issue({
+      threadId: ThreadId.make("thread-device"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["device"]),
+    });
+    const capabilitiesOf = (issued: typeof withPreview) =>
+      registry
+        .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
+        .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
 
-      expect(yield* capabilitiesOf(withPreview)).toEqual([
-        "compute",
-        "issues",
-        "orchestration",
-        "preview",
-        "pull-requests",
-        "worktree",
-      ]);
-      expect(yield* capabilitiesOf(withoutPreview)).toEqual([
-        "compute",
-        "issues",
-        "orchestration",
-        "pull-requests",
-        "worktree",
-      ]);
-      expect(yield* capabilitiesOf(withDevice)).toEqual([
-        "compute",
-        "device",
-        "issues",
-        "orchestration",
-        "pull-requests",
-        "worktree",
-      ]);
-    }),
+    expect(yield* capabilitiesOf(withPreview)).toEqual([
+      "issues",
+      "orchestration",
+      "preview",
+      "pull-requests",
+      "worktree",
+    ]);
+    expect(yield* capabilitiesOf(withoutPreview)).toEqual([
+      "issues",
+      "orchestration",
+      "pull-requests",
+      "worktree",
+    ]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual([
+      "device",
+      "issues",
+      "orchestration",
+      "pull-requests",
+      "worktree",
+    ]);
+  }),
 );
 
 // regression: #3114 use bound host for MCP endpoint

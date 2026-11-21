@@ -10,7 +10,7 @@ import {
 } from "./appLinking";
 
 describe("shouldHandleAppLink", () => {
-  it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://", "t3code-fork://"])(
+  it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://"])(
     "ignores scheme-only URL %s",
     (url) => {
       expect(shouldHandleAppLink(url, true)).toBe(false);
@@ -75,6 +75,7 @@ describe("draft deep links", () => {
   it.each([
     ["environment", "NewTaskEnvironment"],
     ["branch", "NewTaskBranch"],
+    ["repositories", "NewTaskRepositories"],
     ["files", "NewTaskFiles"],
     ["files/src/index.ts", "NewTaskFile"],
     ["attachments/attachment-1", "NewTaskAttachment"],

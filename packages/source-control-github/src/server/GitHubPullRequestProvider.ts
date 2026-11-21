@@ -732,18 +732,21 @@ export const make = Effect.gen(function* () {
           host: input.host,
           number: input.number,
           action: input.action,
-          ...(input.expectedHeadSha === undefined
-            ? {}
-            : { expectedHeadSha: input.expectedHeadSha }),
           ...(input.removeAgentCreditsOnMerge === true ? { removeAgentCreditsOnMerge: true } : {}),
           ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
           ...(input.expectedStackHeads === undefined
             ? {}
             : { expectedStackHeads: input.expectedStackHeads }),
+          ...(input.expectedHeadSha === undefined
+            ? {}
+            : { expectedHeadSha: input.expectedHeadSha }),
           ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
           ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
         })
         .pipe(Effect.mapError(fail("runAction"))),
+
+    getCheckLogs: (input) => cli.readCheckLogs(input).pipe(Effect.mapError(fail("getCheckLogs"))),
+    rerunChecks: (input) => cli.rerunChecks(input).pipe(Effect.mapError(fail("rerunChecks"))),
 
     updateChangeRequest: (input) =>
       cli

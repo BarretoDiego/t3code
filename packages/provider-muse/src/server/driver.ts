@@ -73,7 +73,6 @@ export const MuseDriver: ProviderDriver<
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -107,7 +106,6 @@ export const MuseDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     // Only a running CLI reports usage; status probes cannot fetch it.
@@ -232,7 +230,6 @@ export const MuseDriver: ProviderDriver<
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot: { ...snapshot, resolveMaintenance, refreshUsage: Effect.void },
       orchestrationAdapter,

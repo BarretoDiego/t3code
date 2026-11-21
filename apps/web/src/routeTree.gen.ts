@@ -19,12 +19,10 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
-import { Route as ChatSourceControlRouteImport } from './routes/_chat.source-control'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
 import { Route as ChatIssuesRouteImport } from './routes/_chat.issues'
-import { Route as ChatBoardRouteImport } from './routes/_chat.board'
 import { Route as ThreadsEnvironmentIdThreadIdRouteImport } from './routes/threads.$environmentId.$threadId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVoiceRouteImport } from './routes/_chat.settings.voice'
@@ -37,7 +35,6 @@ import { Route as ChatSettingsScheduledTasksRouteImport } from './routes/_chat.s
 import { Route as ChatSettingsProvidersRouteImport } from './routes/_chat.settings.providers'
 import { Route as ChatSettingsProjectsRouteImport } from './routes/_chat.settings.projects'
 import { Route as ChatSettingsOpenSourceLicensesRouteImport } from './routes/_chat.settings.open-source-licenses'
-import { Route as ChatSettingsMiniSkillsRouteImport } from './routes/_chat.settings.mini-skills'
 import { Route as ChatSettingsMaintenanceRouteImport } from './routes/_chat.settings.maintenance'
 import { Route as ChatSettingsLabsRouteImport } from './routes/_chat.settings.labs'
 import { Route as ChatSettingsKeybindingsRouteImport } from './routes/_chat.settings.keybindings'
@@ -50,17 +47,13 @@ import { Route as ChatSettingsConnectionsRouteImport } from './routes/_chat.sett
 import { Route as ChatSettingsChatRouteImport } from './routes/_chat.settings.chat'
 import { Route as ChatSettingsBrowserRouteImport } from './routes/_chat.settings.browser'
 import { Route as ChatSettingsBetaRouteImport } from './routes/_chat.settings.beta'
-import { Route as ChatSettingsAutomationRouteImport } from './routes/_chat.settings.automation'
 import { Route as ChatSettingsArchivedRouteImport } from './routes/_chat.settings.archived'
 import { Route as ChatSettingsAppearanceRouteImport } from './routes/_chat.settings.appearance'
-import { Route as ChatSettingsAiRuntimesRouteImport } from './routes/_chat.settings.ai-runtimes'
-import { Route as ChatSettingsAgentProfilesRouteImport } from './routes/_chat.settings.agent-profiles'
 import { Route as ChatSettingsAccessRouteImport } from './routes/_chat.settings.access'
 import { Route as ChatSettingsAboutRouteImport } from './routes/_chat.settings.about'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
-import { Route as ChatEnvironmentsEnvironmentIdIndexRouteImport } from './routes/_chat.environments.$environmentId.index'
-import { Route as ChatEnvironmentsEnvironmentIdProjectsProjectIdRouteImport } from './routes/_chat.environments.$environmentId.projects.$projectId'
+import { Route as ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRouteImport } from './routes/_chat.linked.$viaEnvironmentId.$linkedEnvironmentId.$linkedThreadId'
 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
@@ -111,11 +104,6 @@ const ChatUsageRoute = ChatUsageRouteImport.update({
   path: '/usage',
   getParentRoute: () => ChatRoute,
 } as any)
-const ChatSourceControlRoute = ChatSourceControlRouteImport.update({
-  id: '/source-control',
-  path: '/source-control',
-  getParentRoute: () => ChatRoute,
-} as any)
 const ChatSettingsRoute = ChatSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -134,11 +122,6 @@ const ChatNewRoute = ChatNewRouteImport.update({
 const ChatIssuesRoute = ChatIssuesRouteImport.update({
   id: '/issues',
   path: '/issues',
-  getParentRoute: () => ChatRoute,
-} as any)
-const ChatBoardRoute = ChatBoardRouteImport.update({
-  id: '/board',
-  path: '/board',
   getParentRoute: () => ChatRoute,
 } as any)
 const ThreadsEnvironmentIdThreadIdRoute =
@@ -205,11 +188,6 @@ const ChatSettingsOpenSourceLicensesRoute =
     path: '/open-source-licenses',
     getParentRoute: () => ChatSettingsRoute,
   } as any)
-const ChatSettingsMiniSkillsRoute = ChatSettingsMiniSkillsRouteImport.update({
-  id: '/mini-skills',
-  path: '/mini-skills',
-  getParentRoute: () => ChatSettingsRoute,
-} as any)
 const ChatSettingsMaintenanceRoute = ChatSettingsMaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
@@ -271,11 +249,6 @@ const ChatSettingsBetaRoute = ChatSettingsBetaRouteImport.update({
   path: '/beta',
   getParentRoute: () => ChatSettingsRoute,
 } as any)
-const ChatSettingsAutomationRoute = ChatSettingsAutomationRouteImport.update({
-  id: '/automation',
-  path: '/automation',
-  getParentRoute: () => ChatSettingsRoute,
-} as any)
 const ChatSettingsArchivedRoute = ChatSettingsArchivedRouteImport.update({
   id: '/archived',
   path: '/archived',
@@ -286,17 +259,6 @@ const ChatSettingsAppearanceRoute = ChatSettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => ChatSettingsRoute,
 } as any)
-const ChatSettingsAiRuntimesRoute = ChatSettingsAiRuntimesRouteImport.update({
-  id: '/ai-runtimes',
-  path: '/ai-runtimes',
-  getParentRoute: () => ChatSettingsRoute,
-} as any)
-const ChatSettingsAgentProfilesRoute =
-  ChatSettingsAgentProfilesRouteImport.update({
-    id: '/agent-profiles',
-    path: '/agent-profiles',
-    getParentRoute: () => ChatSettingsRoute,
-  } as any)
 const ChatSettingsAccessRoute = ChatSettingsAccessRouteImport.update({
   id: '/access',
   path: '/access',
@@ -318,18 +280,14 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
-const ChatEnvironmentsEnvironmentIdIndexRoute =
-  ChatEnvironmentsEnvironmentIdIndexRouteImport.update({
-    id: '/environments/$environmentId/',
-    path: '/environments/$environmentId/',
-    getParentRoute: () => ChatRoute,
-  } as any)
-const ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute =
-  ChatEnvironmentsEnvironmentIdProjectsProjectIdRouteImport.update({
-    id: '/environments/$environmentId/projects/$projectId',
-    path: '/environments/$environmentId/projects/$projectId',
-    getParentRoute: () => ChatRoute,
-  } as any)
+const ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute =
+  ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRouteImport.update(
+    {
+      id: '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId',
+      path: '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId',
+      getParentRoute: () => ChatRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
@@ -339,23 +297,18 @@ export interface FileRoutesByFullPath {
   '/guest': typeof GuestRoute
   '/pair': typeof PairRoute
   '/welcome': typeof WelcomeRoute
-  '/board': typeof ChatBoardRoute
   '/issues': typeof ChatIssuesRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/settings': typeof ChatSettingsRouteWithChildren
-  '/source-control': typeof ChatSourceControlRoute
   '/usage': typeof ChatUsageRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/settings/about': typeof ChatSettingsAboutRoute
   '/settings/access': typeof ChatSettingsAccessRoute
-  '/settings/agent-profiles': typeof ChatSettingsAgentProfilesRoute
-  '/settings/ai-runtimes': typeof ChatSettingsAiRuntimesRoute
   '/settings/appearance': typeof ChatSettingsAppearanceRoute
   '/settings/archived': typeof ChatSettingsArchivedRoute
-  '/settings/automation': typeof ChatSettingsAutomationRoute
   '/settings/beta': typeof ChatSettingsBetaRoute
   '/settings/browser': typeof ChatSettingsBrowserRoute
   '/settings/chat': typeof ChatSettingsChatRoute
@@ -368,7 +321,6 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof ChatSettingsKeybindingsRoute
   '/settings/labs': typeof ChatSettingsLabsRoute
   '/settings/maintenance': typeof ChatSettingsMaintenanceRoute
-  '/settings/mini-skills': typeof ChatSettingsMiniSkillsRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
@@ -381,8 +333,7 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
-  '/environments/$environmentId/': typeof ChatEnvironmentsEnvironmentIdIndexRoute
-  '/environments/$environmentId/projects/$projectId': typeof ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute
+  '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRoutesByTo {
   '/approve-agent': typeof ApproveAgentRoute
@@ -391,12 +342,10 @@ export interface FileRoutesByTo {
   '/guest': typeof GuestRoute
   '/pair': typeof PairRoute
   '/welcome': typeof WelcomeRoute
-  '/board': typeof ChatBoardRoute
   '/issues': typeof ChatIssuesRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/settings': typeof ChatSettingsRouteWithChildren
-  '/source-control': typeof ChatSourceControlRoute
   '/usage': typeof ChatUsageRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/': typeof ChatIndexRoute
@@ -404,11 +353,8 @@ export interface FileRoutesByTo {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/settings/about': typeof ChatSettingsAboutRoute
   '/settings/access': typeof ChatSettingsAccessRoute
-  '/settings/agent-profiles': typeof ChatSettingsAgentProfilesRoute
-  '/settings/ai-runtimes': typeof ChatSettingsAiRuntimesRoute
   '/settings/appearance': typeof ChatSettingsAppearanceRoute
   '/settings/archived': typeof ChatSettingsArchivedRoute
-  '/settings/automation': typeof ChatSettingsAutomationRoute
   '/settings/beta': typeof ChatSettingsBetaRoute
   '/settings/browser': typeof ChatSettingsBrowserRoute
   '/settings/chat': typeof ChatSettingsChatRoute
@@ -421,7 +367,6 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof ChatSettingsKeybindingsRoute
   '/settings/labs': typeof ChatSettingsLabsRoute
   '/settings/maintenance': typeof ChatSettingsMaintenanceRoute
-  '/settings/mini-skills': typeof ChatSettingsMiniSkillsRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
@@ -434,8 +379,7 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
-  '/environments/$environmentId': typeof ChatEnvironmentsEnvironmentIdIndexRoute
-  '/environments/$environmentId/projects/$projectId': typeof ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute
+  '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -446,12 +390,10 @@ export interface FileRoutesById {
   '/guest': typeof GuestRoute
   '/pair': typeof PairRoute
   '/welcome': typeof WelcomeRoute
-  '/_chat/board': typeof ChatBoardRoute
   '/_chat/issues': typeof ChatIssuesRoute
   '/_chat/new': typeof ChatNewRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/_chat/settings': typeof ChatSettingsRouteWithChildren
-  '/_chat/source-control': typeof ChatSourceControlRoute
   '/_chat/usage': typeof ChatUsageRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/_chat/': typeof ChatIndexRoute
@@ -459,11 +401,8 @@ export interface FileRoutesById {
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/_chat/settings/about': typeof ChatSettingsAboutRoute
   '/_chat/settings/access': typeof ChatSettingsAccessRoute
-  '/_chat/settings/agent-profiles': typeof ChatSettingsAgentProfilesRoute
-  '/_chat/settings/ai-runtimes': typeof ChatSettingsAiRuntimesRoute
   '/_chat/settings/appearance': typeof ChatSettingsAppearanceRoute
   '/_chat/settings/archived': typeof ChatSettingsArchivedRoute
-  '/_chat/settings/automation': typeof ChatSettingsAutomationRoute
   '/_chat/settings/beta': typeof ChatSettingsBetaRoute
   '/_chat/settings/browser': typeof ChatSettingsBrowserRoute
   '/_chat/settings/chat': typeof ChatSettingsChatRoute
@@ -476,7 +415,6 @@ export interface FileRoutesById {
   '/_chat/settings/keybindings': typeof ChatSettingsKeybindingsRoute
   '/_chat/settings/labs': typeof ChatSettingsLabsRoute
   '/_chat/settings/maintenance': typeof ChatSettingsMaintenanceRoute
-  '/_chat/settings/mini-skills': typeof ChatSettingsMiniSkillsRoute
   '/_chat/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/_chat/settings/projects': typeof ChatSettingsProjectsRoute
   '/_chat/settings/providers': typeof ChatSettingsProvidersRoute
@@ -489,8 +427,7 @@ export interface FileRoutesById {
   '/_chat/settings/voice': typeof ChatSettingsVoiceRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
-  '/_chat/environments/$environmentId/': typeof ChatEnvironmentsEnvironmentIdIndexRoute
-  '/_chat/environments/$environmentId/projects/$projectId': typeof ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute
+  '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -502,23 +439,18 @@ export interface FileRouteTypes {
     | '/guest'
     | '/pair'
     | '/welcome'
-    | '/board'
     | '/issues'
     | '/new'
     | '/pull-requests'
     | '/settings'
-    | '/source-control'
     | '/usage'
     | '/projects/$projectKey'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
     | '/settings/about'
     | '/settings/access'
-    | '/settings/agent-profiles'
-    | '/settings/ai-runtimes'
     | '/settings/appearance'
     | '/settings/archived'
-    | '/settings/automation'
     | '/settings/beta'
     | '/settings/browser'
     | '/settings/chat'
@@ -531,7 +463,6 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/labs'
     | '/settings/maintenance'
-    | '/settings/mini-skills'
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
@@ -544,8 +475,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
-    | '/environments/$environmentId/'
-    | '/environments/$environmentId/projects/$projectId'
+    | '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/approve-agent'
@@ -554,12 +484,10 @@ export interface FileRouteTypes {
     | '/guest'
     | '/pair'
     | '/welcome'
-    | '/board'
     | '/issues'
     | '/new'
     | '/pull-requests'
     | '/settings'
-    | '/source-control'
     | '/usage'
     | '/projects/$projectKey'
     | '/'
@@ -567,11 +495,8 @@ export interface FileRouteTypes {
     | '/draft/$draftId'
     | '/settings/about'
     | '/settings/access'
-    | '/settings/agent-profiles'
-    | '/settings/ai-runtimes'
     | '/settings/appearance'
     | '/settings/archived'
-    | '/settings/automation'
     | '/settings/beta'
     | '/settings/browser'
     | '/settings/chat'
@@ -584,7 +509,6 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/labs'
     | '/settings/maintenance'
-    | '/settings/mini-skills'
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
@@ -597,8 +521,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
-    | '/environments/$environmentId'
-    | '/environments/$environmentId/projects/$projectId'
+    | '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   id:
     | '__root__'
     | '/_chat'
@@ -608,12 +531,10 @@ export interface FileRouteTypes {
     | '/guest'
     | '/pair'
     | '/welcome'
-    | '/_chat/board'
     | '/_chat/issues'
     | '/_chat/new'
     | '/_chat/pull-requests'
     | '/_chat/settings'
-    | '/_chat/source-control'
     | '/_chat/usage'
     | '/projects/$projectKey'
     | '/_chat/'
@@ -621,11 +542,8 @@ export interface FileRouteTypes {
     | '/_chat/draft/$draftId'
     | '/_chat/settings/about'
     | '/_chat/settings/access'
-    | '/_chat/settings/agent-profiles'
-    | '/_chat/settings/ai-runtimes'
     | '/_chat/settings/appearance'
     | '/_chat/settings/archived'
-    | '/_chat/settings/automation'
     | '/_chat/settings/beta'
     | '/_chat/settings/browser'
     | '/_chat/settings/chat'
@@ -638,7 +556,6 @@ export interface FileRouteTypes {
     | '/_chat/settings/keybindings'
     | '/_chat/settings/labs'
     | '/_chat/settings/maintenance'
-    | '/_chat/settings/mini-skills'
     | '/_chat/settings/open-source-licenses'
     | '/_chat/settings/projects'
     | '/_chat/settings/providers'
@@ -651,8 +568,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/voice'
     | '/_chat/settings/worktrees'
     | '/threads/$environmentId/$threadId'
-    | '/_chat/environments/$environmentId/'
-    | '/_chat/environments/$environmentId/projects/$projectId'
+    | '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -739,13 +655,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatUsageRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/_chat/source-control': {
-      id: '/_chat/source-control'
-      path: '/source-control'
-      fullPath: '/source-control'
-      preLoaderRoute: typeof ChatSourceControlRouteImport
-      parentRoute: typeof ChatRoute
-    }
     '/_chat/settings': {
       id: '/_chat/settings'
       path: '/settings'
@@ -772,13 +681,6 @@ declare module '@tanstack/react-router' {
       path: '/issues'
       fullPath: '/issues'
       preLoaderRoute: typeof ChatIssuesRouteImport
-      parentRoute: typeof ChatRoute
-    }
-    '/_chat/board': {
-      id: '/_chat/board'
-      path: '/board'
-      fullPath: '/board'
-      preLoaderRoute: typeof ChatBoardRouteImport
       parentRoute: typeof ChatRoute
     }
     '/threads/$environmentId/$threadId': {
@@ -865,13 +767,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatSettingsOpenSourceLicensesRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
-    '/_chat/settings/mini-skills': {
-      id: '/_chat/settings/mini-skills'
-      path: '/mini-skills'
-      fullPath: '/settings/mini-skills'
-      preLoaderRoute: typeof ChatSettingsMiniSkillsRouteImport
-      parentRoute: typeof ChatSettingsRoute
-    }
     '/_chat/settings/maintenance': {
       id: '/_chat/settings/maintenance'
       path: '/maintenance'
@@ -956,13 +851,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatSettingsBetaRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
-    '/_chat/settings/automation': {
-      id: '/_chat/settings/automation'
-      path: '/automation'
-      fullPath: '/settings/automation'
-      preLoaderRoute: typeof ChatSettingsAutomationRouteImport
-      parentRoute: typeof ChatSettingsRoute
-    }
     '/_chat/settings/archived': {
       id: '/_chat/settings/archived'
       path: '/archived'
@@ -975,20 +863,6 @@ declare module '@tanstack/react-router' {
       path: '/appearance'
       fullPath: '/settings/appearance'
       preLoaderRoute: typeof ChatSettingsAppearanceRouteImport
-      parentRoute: typeof ChatSettingsRoute
-    }
-    '/_chat/settings/ai-runtimes': {
-      id: '/_chat/settings/ai-runtimes'
-      path: '/ai-runtimes'
-      fullPath: '/settings/ai-runtimes'
-      preLoaderRoute: typeof ChatSettingsAiRuntimesRouteImport
-      parentRoute: typeof ChatSettingsRoute
-    }
-    '/_chat/settings/agent-profiles': {
-      id: '/_chat/settings/agent-profiles'
-      path: '/agent-profiles'
-      fullPath: '/settings/agent-profiles'
-      preLoaderRoute: typeof ChatSettingsAgentProfilesRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
     '/_chat/settings/access': {
@@ -1019,18 +893,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/_chat/environments/$environmentId/': {
-      id: '/_chat/environments/$environmentId/'
-      path: '/environments/$environmentId'
-      fullPath: '/environments/$environmentId/'
-      preLoaderRoute: typeof ChatEnvironmentsEnvironmentIdIndexRouteImport
-      parentRoute: typeof ChatRoute
-    }
-    '/_chat/environments/$environmentId/projects/$projectId': {
-      id: '/_chat/environments/$environmentId/projects/$projectId'
-      path: '/environments/$environmentId/projects/$projectId'
-      fullPath: '/environments/$environmentId/projects/$projectId'
-      preLoaderRoute: typeof ChatEnvironmentsEnvironmentIdProjectsProjectIdRouteImport
+    '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId': {
+      id: '/_chat/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
+      path: '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
+      fullPath: '/linked/$viaEnvironmentId/$linkedEnvironmentId/$linkedThreadId'
+      preLoaderRoute: typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
   }
@@ -1039,11 +906,8 @@ declare module '@tanstack/react-router' {
 interface ChatSettingsRouteChildren {
   ChatSettingsAboutRoute: typeof ChatSettingsAboutRoute
   ChatSettingsAccessRoute: typeof ChatSettingsAccessRoute
-  ChatSettingsAgentProfilesRoute: typeof ChatSettingsAgentProfilesRoute
-  ChatSettingsAiRuntimesRoute: typeof ChatSettingsAiRuntimesRoute
   ChatSettingsAppearanceRoute: typeof ChatSettingsAppearanceRoute
   ChatSettingsArchivedRoute: typeof ChatSettingsArchivedRoute
-  ChatSettingsAutomationRoute: typeof ChatSettingsAutomationRoute
   ChatSettingsBetaRoute: typeof ChatSettingsBetaRoute
   ChatSettingsBrowserRoute: typeof ChatSettingsBrowserRoute
   ChatSettingsChatRoute: typeof ChatSettingsChatRoute
@@ -1056,7 +920,6 @@ interface ChatSettingsRouteChildren {
   ChatSettingsKeybindingsRoute: typeof ChatSettingsKeybindingsRoute
   ChatSettingsLabsRoute: typeof ChatSettingsLabsRoute
   ChatSettingsMaintenanceRoute: typeof ChatSettingsMaintenanceRoute
-  ChatSettingsMiniSkillsRoute: typeof ChatSettingsMiniSkillsRoute
   ChatSettingsOpenSourceLicensesRoute: typeof ChatSettingsOpenSourceLicensesRoute
   ChatSettingsProjectsRoute: typeof ChatSettingsProjectsRoute
   ChatSettingsProvidersRoute: typeof ChatSettingsProvidersRoute
@@ -1073,11 +936,8 @@ interface ChatSettingsRouteChildren {
 const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsAboutRoute: ChatSettingsAboutRoute,
   ChatSettingsAccessRoute: ChatSettingsAccessRoute,
-  ChatSettingsAgentProfilesRoute: ChatSettingsAgentProfilesRoute,
-  ChatSettingsAiRuntimesRoute: ChatSettingsAiRuntimesRoute,
   ChatSettingsAppearanceRoute: ChatSettingsAppearanceRoute,
   ChatSettingsArchivedRoute: ChatSettingsArchivedRoute,
-  ChatSettingsAutomationRoute: ChatSettingsAutomationRoute,
   ChatSettingsBetaRoute: ChatSettingsBetaRoute,
   ChatSettingsBrowserRoute: ChatSettingsBrowserRoute,
   ChatSettingsChatRoute: ChatSettingsChatRoute,
@@ -1090,7 +950,6 @@ const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsKeybindingsRoute: ChatSettingsKeybindingsRoute,
   ChatSettingsLabsRoute: ChatSettingsLabsRoute,
   ChatSettingsMaintenanceRoute: ChatSettingsMaintenanceRoute,
-  ChatSettingsMiniSkillsRoute: ChatSettingsMiniSkillsRoute,
   ChatSettingsOpenSourceLicensesRoute: ChatSettingsOpenSourceLicensesRoute,
   ChatSettingsProjectsRoute: ChatSettingsProjectsRoute,
   ChatSettingsProvidersRoute: ChatSettingsProvidersRoute,
@@ -1109,35 +968,28 @@ const ChatSettingsRouteWithChildren = ChatSettingsRoute._addFileChildren(
 )
 
 interface ChatRouteChildren {
-  ChatBoardRoute: typeof ChatBoardRoute
   ChatIssuesRoute: typeof ChatIssuesRoute
   ChatNewRoute: typeof ChatNewRoute
   ChatPullRequestsRoute: typeof ChatPullRequestsRoute
   ChatSettingsRoute: typeof ChatSettingsRouteWithChildren
-  ChatSourceControlRoute: typeof ChatSourceControlRoute
   ChatUsageRoute: typeof ChatUsageRoute
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
-  ChatEnvironmentsEnvironmentIdIndexRoute: typeof ChatEnvironmentsEnvironmentIdIndexRoute
-  ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute: typeof ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute
+  ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute: typeof ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
-  ChatBoardRoute: ChatBoardRoute,
   ChatIssuesRoute: ChatIssuesRoute,
   ChatNewRoute: ChatNewRoute,
   ChatPullRequestsRoute: ChatPullRequestsRoute,
   ChatSettingsRoute: ChatSettingsRouteWithChildren,
-  ChatSourceControlRoute: ChatSourceControlRoute,
   ChatUsageRoute: ChatUsageRoute,
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
-  ChatEnvironmentsEnvironmentIdIndexRoute:
-    ChatEnvironmentsEnvironmentIdIndexRoute,
-  ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute:
-    ChatEnvironmentsEnvironmentIdProjectsProjectIdRoute,
+  ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute:
+    ChatLinkedViaEnvironmentIdLinkedEnvironmentIdLinkedThreadIdRoute,
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)

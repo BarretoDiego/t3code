@@ -4,10 +4,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
-import * as Cause from "effect/Cause";
-import * as Runtime from "effect/Runtime";
 import * as Layer from "effect/Layer";
-import * as Logger from "effect/Logger";
 import { Argument, Command } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
@@ -19,9 +16,6 @@ import { environmentCommand } from "./cli/environment.ts";
 import { appCommand } from "./cli/app.ts";
 import { browserCommand } from "./cli/browser.ts";
 import { pairCommand } from "./cli/pair.ts";
-import { peerCommand } from "./cli/peer.ts";
-import { nodeCommand } from "./cli/node.ts";
-import { jobCommand } from "./cli/job.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { extendConnectionAttemptTimeout, keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
@@ -43,21 +37,9 @@ import { sshHelperCommand } from "./cli/sshHelper.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
-import { envCommand } from "./cli/env.ts";
-import { eventsCommand } from "./cli/events.ts";
-import { forkCommand } from "./cli/fork.ts";
-import { hooksCommand } from "./cli/hooks.ts";
-import { makeGuideCommand } from "./cli/guide.ts";
-import { profileCommand, skillCommand } from "./cli/library.ts";
-import { rpcCommand } from "./cli/rpc.ts";
-import { orchestratorCommand } from "./cli/orchestrator.ts";
-import { scheduleCommand } from "./cli/schedule.ts";
-import { statusCommand } from "./cli/status.ts";
-import { taskCommand } from "./cli/task.ts";
-import { terminalCommand } from "./cli/terminal.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
-import { connectCommand, setupStatusCommand, upCommand } from "./cli/up.ts";
+import { connectCommand, statusCommand, upCommand } from "./cli/up.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer);
 
@@ -85,8 +67,8 @@ const connectUnavailableCommand = Command.make("connect", {
   ),
 );
 
-export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
-  const command = Command.make("t3", { ...sharedServerCommandFlags }).pipe(
+export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
+  Command.make("t3", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription(
       "Run T3 Code in this terminal and open it in your browser. To use it from your other devices, run `t3 up`.",
     ),
@@ -110,23 +92,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       projectCommand,
       threadCommand,
       upCommand,
-      taskCommand,
-      terminalCommand,
-      scheduleCommand,
-      orchestratorCommand,
-      peerCommand,
-      nodeCommand,
-      jobCommand,
-      eventsCommand,
-      hooksCommand,
-      statusCommand.pipe(Command.withSubcommands([setupStatusCommand])),
-      rpcCommand,
-      skillCommand,
-      profileCommand,
-      makeGuideCommand((): Command.Command.Any => command),
-      envCommand,
-
-      forkCommand,
+      statusCommand,
       serviceCommand,
       updateCommand,
       installCommand,
@@ -150,8 +116,6 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) => {
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),
   );
-  return command;
-};
 
 export const cli = makeCli();
 
@@ -176,12 +140,6 @@ export function runCli() {
     ),
     Effect.scoped,
     Effect.provide(layerCliRuntime),
-    Effect.tapCause((cause) =>
-      Cause.hasInterruptsOnly(cause) || !Runtime.getErrorReported(Cause.squash(cause))
-        ? Effect.void
-        : Effect.logError(cause),
-    ),
-    Effect.provideService(Logger.LogToStderr, true),
-    NodeRuntime.runMain({ disableErrorReporting: true }),
+    NodeRuntime.runMain,
   );
 }

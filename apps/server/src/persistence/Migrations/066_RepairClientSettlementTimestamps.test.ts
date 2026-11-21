@@ -32,7 +32,7 @@ layer("066_RepairClientSettlementTimestamps", (it) => {
   it.effect("repairs only sweep stamps, preserves overrides, and survives a V2 rebuild", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 71 });
+      yield* runMigrations({ toMigrationInclusive: 64 });
       assert.deepEqual(
         yield* sql`SELECT name FROM sqlite_master WHERE name = 'projection_turns'`,
         [],
@@ -314,7 +314,7 @@ layer("066_RepairClientSettlementTimestamps", (it) => {
       `;
       const overridesBefore = yield* overrides;
 
-      yield* runMigrations({ toMigrationInclusive: 73 });
+      yield* runMigrations({ toMigrationInclusive: 66 });
       const legacy = yield* sql`
         SELECT thread_id, settled_override, settled_at FROM projection_threads
         WHERE thread_id LIKE 'sweep-%' ORDER BY thread_id
@@ -359,7 +359,7 @@ layer("066_RepairClientSettlementTimestamps", (it) => {
         sql`SELECT * FROM orchestration_events ORDER BY sequence`,
       ]);
       const repaired = yield* snapshot;
-      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 73 }), []);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 66 }), []);
       yield* Migration0066;
       assert.deepEqual(yield* snapshot, repaired);
 

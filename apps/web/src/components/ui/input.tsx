@@ -8,8 +8,6 @@ type InputProps = Omit<InputPrimitive.Props & React.RefAttributes<HTMLInputEleme
   font?: "default" | "mono";
   unstyled?: boolean;
   nativeInput?: boolean;
-  startAdornment?: boolean;
-  textSize?: "responsive" | "sm";
 };
 
 function Input({
@@ -18,8 +16,6 @@ function Input({
   font = "default",
   unstyled = false,
   nativeInput = false,
-  startAdornment = false,
-  textSize = "responsive",
   ...props
 }: InputProps) {
   const inputClassName = cn(
@@ -69,8 +65,6 @@ function Input({
           !unstyled &&
             size === "compact" &&
             "rounded-md before:rounded-[calc(var(--radius-md)-1px)]",
-          startAdornment && "[&_[data-slot=input]]:pl-7",
-          textSize === "sm" && "text-sm",
           font === "mono" && "font-mono tabular-nums",
           className,
         ) || undefined

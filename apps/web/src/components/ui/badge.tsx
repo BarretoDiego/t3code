@@ -41,25 +41,11 @@ const badgeVariants = cva(
 interface BadgeProps extends useRender.ComponentProps<"span"> {
   variant?: VariantProps<typeof badgeVariants>["variant"];
   size?: VariantProps<typeof badgeVariants>["size"];
-  truncate?: boolean;
-  weight?: "medium" | "normal";
 }
 
-function Badge({
-  className,
-  variant,
-  size,
-  truncate,
-  weight = "medium",
-  render,
-  ...props
-}: BadgeProps) {
+function Badge({ className, variant, size, render, ...props }: BadgeProps) {
   const defaultProps = {
-    className: cn(
-      badgeVariants({ className, size, variant }),
-      truncate && "truncate",
-      weight === "normal" && "font-normal",
-    ),
+    className: cn(badgeVariants({ className, size, variant })),
     "data-slot": "badge",
   };
 

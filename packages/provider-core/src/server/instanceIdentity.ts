@@ -9,9 +9,7 @@ export const withInstanceIdentity =
     readonly driverKind: ProviderDriverKind;
     readonly displayName: string | undefined;
     readonly accentColor: string | undefined;
-    readonly icon: string | undefined;
     readonly continuationGroupKey: string;
-    readonly supportsSessionHandoff?: boolean;
   }) =>
   (snapshot: ServerProviderDraft): ServerProvider => ({
     ...snapshot,
@@ -19,8 +17,5 @@ export const withInstanceIdentity =
     driver: input.driverKind,
     ...(input.displayName ? { displayName: input.displayName } : {}),
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
-    ...(input.icon ? { icon: input.icon } : {}),
     continuation: { groupKey: input.continuationGroupKey },
-    ...(input.supportsSessionHandoff ? { supportsSessionHandoff: true } : {}),
-    supportsContextHandoff: true,
   });

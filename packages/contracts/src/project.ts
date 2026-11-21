@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import * as Struct from "effect/Struct";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import {
@@ -32,21 +33,10 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
-/** A checkout-relative working directory, preserved when switching to a worktree. */
-export const ProjectScriptDirectory = TrimmedNonEmptyString.check(
-  Schema.makeFilter(
-    (value) =>
-      !/^(?:[/\\]|[a-zA-Z]:)/.test(value) &&
-      !value.split(/[/\\]/).includes("..") &&
-      !/[\r\n\0]/.test(value),
-  ),
-);
-
 export const ProjectScript = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   command: TrimmedNonEmptyString,
-  cwd: Schema.optional(ProjectScriptDirectory),
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
   runOnSettle: Schema.optional(Schema.Boolean),
@@ -57,30 +47,31 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
-export const ProjectDiscoverScriptsInput = Schema.Struct({ cwd: TrimmedNonEmptyString });
-export type ProjectDiscoverScriptsInput = typeof ProjectDiscoverScriptsInput.Type;
-export const DiscoveredProjectScript = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  command: TrimmedNonEmptyString,
-  cwd: ProjectScriptDirectory,
-  sourcePath: TrimmedNonEmptyString,
-  description: Schema.optional(Schema.String),
+export const PROJECT_TRACKED_FOLDERS_MAX = 128;
+
+/**
+ * A folder the project works in besides its home folder. Paths are absolute and only mean
+ * something on the project's own environment. Git folders get their own history and review.
+ */
+export const ProjectTrackedFolder = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  /**
+   * The server found this repository inside the project folder and keeps the entry in step with
+   * the disk. Absent on a folder someone added.
+   */
+  discovered: Schema.optional(Schema.Boolean),
 });
-export type DiscoveredProjectScript = typeof DiscoveredProjectScript.Type;
-export const ProjectDiscoverScriptsResult = Schema.Struct({
-  scripts: Schema.Array(DiscoveredProjectScript),
-  truncated: Schema.Boolean,
-  unreadablePaths: Schema.Array(Schema.String),
-});
-export type ProjectDiscoverScriptsResult = typeof ProjectDiscoverScriptsResult.Type;
-export class ProjectDiscoverScriptsError extends Schema.TaggedError<ProjectDiscoverScriptsError>()(
-  "ProjectDiscoverScriptsError",
-  { cwd: Schema.String, cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return `Failed to discover scripts in '${this.cwd}'.`;
-  }
-}
+export type ProjectTrackedFolder = typeof ProjectTrackedFolder.Type;
+
+/** The folders a caller adds to a project. Which repositories sit inside it is the server's to say. */
+export const ProjectAddedFolders = Schema.Array(
+  ProjectTrackedFolder.mapFields(Struct.omit(["discovered"])),
+).check(Schema.isMaxLength(PROJECT_TRACKED_FOLDERS_MAX));
+
+export const ProjectTrackedFolders = Schema.Array(ProjectTrackedFolder).check(
+  Schema.isMaxLength(PROJECT_TRACKED_FOLDERS_MAX),
+);
 
 export const ProjectIconColor = Schema.Literals([
   "gray",
@@ -187,12 +178,6 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
-/** Shared key that marks projects in different environments as instances of
- *  the same logical project. Clients group by it before the git remote, so
- *  repositories without a remote can still be paired. */
-export const ProjectLinkKey = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
-export type ProjectLinkKey = typeof ProjectLinkKey.Type;
-
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -200,12 +185,13 @@ export const Project = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
-  linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
   scripts: Schema.Array(ProjectScript),
+  // Absent from older servers; that means a single-folder project.
+  trackedFolders: Schema.optional(ProjectTrackedFolders),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
@@ -224,9 +210,9 @@ export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
-  linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  trackedFolders: Schema.optional(ProjectAddedFolders),
 });
 export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
 
@@ -237,10 +223,13 @@ export const ProjectUpdatePayload = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  // Absent = leave unchanged; null = unlink from other environments.
-  linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  trackedFolders: Schema.optional(
+    ProjectAddedFolders.annotate({
+      description: "Extra folders by absolute path. Replaces the whole list.",
+    }),
+  ),
   pinned: Schema.optional(Schema.Boolean),
   archived: Schema.optional(
     Schema.Boolean.annotate({
@@ -262,6 +251,9 @@ export const ProjectMutation = Schema.Union([
     commandId: CommandId,
     projectId: ProjectId,
     ...ProjectUpdatePayload.fields,
+    // Applied to the list as the server has it, so two clients' edits do not undo each other.
+    trackFolders: Schema.optional(ProjectAddedFolders),
+    untrackFolders: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   }),
   Schema.Struct({
     type: Schema.Literal("project.delete"),
@@ -290,7 +282,6 @@ export const ProjectSearchEntriesInput = Schema.Struct({
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   kind: Schema.optional(ProjectEntryKind),
   imageOnly: Schema.optional(Schema.Boolean),
-  includeRepositories: Schema.optional(Schema.Boolean),
 });
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
@@ -298,7 +289,6 @@ export const ProjectEntry = Schema.Struct({
   path: TrimmedNonEmptyString,
   kind: ProjectEntryKind,
   ignored: Schema.optional(Schema.Boolean),
-  repository: Schema.optional(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
@@ -346,7 +336,6 @@ export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Typ
 export const ProjectListEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   directoryPath: Schema.optional(TrimmedString),
-  repositoriesOnly: Schema.optional(Schema.Boolean),
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 

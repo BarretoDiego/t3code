@@ -1,3 +1,5 @@
+import { useGT, useMessages } from "gt-react-native";
+
 import { useContentTopInset } from "../../components/ui/useBarInset";
 import { usePaneRole } from "../../components/ui/Pane";
 import { ScreenContent } from "../../components/ui/ScreenContent";
@@ -56,13 +58,14 @@ import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
-import { useThreadShells } from "../../state/entities";
 import { useWorkspaceListEmptyTopInset } from "../layout/workspace/workspace-list-insets";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatches";
 import { useThreadListV2 } from "../threads/useThreadListV2";
+import { ThreadListNestedListRow } from "../threads/thread-list-nested-rows";
+import { isThreadListNestedListItem } from "../threads/threadListNesting";
 import { useSidebarRowThreadKey } from "../threads/useSidebarRowThreadKey";
 import { useThreadListNow } from "../threads/use-thread-list-now";
 import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollRestoration";
@@ -72,9 +75,6 @@ import { threadListEnvironmentsAtom } from "../../state/presentation";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
-  ThreadListV2NestedMoreRow,
-  ThreadListV2NestedSettledRow,
-  ThreadListV2NestedRow,
   ThreadListV2PendingRow,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
@@ -196,6 +196,8 @@ function renderHomeScrollView(props: ScrollViewProps) {
 }
 
 export function HomeScreen(props: HomeScreenProps) {
+  const gt = useGT();
+  const m = useMessages();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
   const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
@@ -324,12 +326,15 @@ export function HomeScreen(props: HomeScreenProps) {
   const { projects, selectedEnvironmentId, projectGroupingMode } = props;
   const projectScopes = useMemo(
     () =>
-      buildHomeProjectScopes({
-        projects,
-        environmentId: selectedEnvironmentId,
-        projectGroupingMode,
-      }),
-    [projects, selectedEnvironmentId, projectGroupingMode],
+      buildHomeProjectScopes(
+        {
+          projects,
+          environmentId: selectedEnvironmentId,
+          projectGroupingMode,
+        },
+        m,
+      ),
+    [projects, selectedEnvironmentId, projectGroupingMode, m],
   );
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = (() => {
@@ -386,10 +391,6 @@ export function HomeScreen(props: HomeScreenProps) {
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
-    nestedExpandedByKey,
-    nestedShowAllKeys,
-    setNestedExpanded,
-    showAllNested,
     settledShelfExpanded,
     snoozedShelfExpanded,
     workingShelfEnabled,
@@ -414,14 +415,12 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder();
-  // The list nests subagent threads under their parents, so it reads every
-  // shell; `props.threads` is the navigation set, which leaves them out.
-  const nestableThreads = useThreadShells();
   const {
     layout: threadListV2Layout,
     items: threadListV2Items,
     contentOnlyThreadKeys,
     olderSettledShelf,
+    showAllNested,
   } = useThreadListV2({
     threads: props.threads,
     pendingTasks: props.pendingTasks,
@@ -443,9 +442,7 @@ export function HomeScreen(props: HomeScreenProps) {
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey,
-    nestableThreads,
-    nestedExpandedByKey,
-    nestedShowAllKeys,
+    openThreadKey: activeNewTask ? null : (primaryColumn?.selectedThreadKey ?? null),
   });
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
   // props object, which is new on every render of Home's parent.
@@ -462,13 +459,24 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     onSelectThread(thread);
   };
-  useThreadJumpShortcuts(threadListV2Items, selectThread);
+  useThreadJumpShortcuts(threadListV2Items, selectThread, props.onSelectPendingTask);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the list's visible range after commit to enable swipe gestures on those rows
   useEffect(() => {
     if (swipeEnabled) activateVisibleRows(threadListV2Items);
   }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
 
   const renderV2Item = ({ item }: { readonly item: ThreadListV2ListItem }) => {
+    if (isThreadListNestedListItem(item)) {
+      return (
+        <ThreadListNestedListRow
+          item={item}
+          pane={sidebarSurface ? "sidebar" : "screen"}
+          selectedThreadKey={activeNewTask ? null : (primaryColumn?.selectedThreadKey ?? null)}
+          onSelectThread={selectThread}
+          onShowAll={showAllNested}
+        />
+      );
+    }
     if (item.type === "v2-pending") {
       const pendingScopeKey = scopedProjectKey(
         item.pendingTask.environmentId,
@@ -534,44 +542,6 @@ export function HomeScreen(props: HomeScreenProps) {
         />
       );
     }
-    if (item.type === "v2-nested-thread") {
-      return (
-        <ThreadListV2NestedRow
-          thread={item.thread}
-          threadKey={item.threadKey}
-          depth={item.depth}
-          timeLabel={item.timeLabel}
-          nested={item.nested}
-          showTrailingDivider={item.showTrailingDivider}
-          onSelectThread={props.onSelectThread}
-          onToggleNested={setNestedExpanded}
-        />
-      );
-    }
-    if (item.type === "v2-nested-settled") {
-      return (
-        <ThreadListV2NestedSettledRow
-          groupKey={item.groupKey}
-          pane={primaryColumn ? "sidebar" : "screen"}
-          showTrailingDivider={item.showTrailingDivider}
-          depth={item.depth}
-          count={item.count}
-          expanded={item.expanded}
-          onToggle={setNestedExpanded}
-        />
-      );
-    }
-    if (item.type === "v2-nested-more") {
-      return (
-        <ThreadListV2NestedMoreRow
-          parentKey={item.parentKey}
-          depth={item.depth}
-          hiddenCount={item.hiddenCount}
-          showTrailingDivider={item.showTrailingDivider}
-          onShowAll={showAllNested}
-        />
-      );
-    }
     const thread = item.item.thread;
     return (
       <ThreadListV2Row
@@ -579,8 +549,6 @@ export function HomeScreen(props: HomeScreenProps) {
         selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
         fullSwipeWidth={fullSwipeWidth}
         onNewThreadOnBranch={props.onNewThreadOnBranch}
-        nested={item.nested}
-        onToggleNested={setNestedExpanded}
         thread={thread}
         variant={item.item.variant}
         hasQueuedMessages={item.hasQueuedMessages}
@@ -631,6 +599,7 @@ export function HomeScreen(props: HomeScreenProps) {
         }
         canMoveUp={item.canMoveUp}
         canMoveDown={item.canMoveDown}
+        nested={item.nested}
         onSnoozeThread={handleSnoozeThread}
         onUnsnoozeThread={handleUnsnoozeThread}
         onUnsettleThread={handleUnsettleThread}
@@ -675,7 +644,7 @@ export function HomeScreen(props: HomeScreenProps) {
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
         "this environment");
-  const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length);
+  const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length, m);
 
   if (!hasAnyThreads) {
     return (
@@ -698,12 +667,12 @@ export function HomeScreen(props: HomeScreenProps) {
               <EmptyState
                 title={emptyState.title}
                 detail={emptyState.detail}
-                actionLabel={emptyState.showsAddEnvironment ? "Add environment" : undefined}
+                actionLabel={emptyState.showsAddEnvironment ? gt("Add environment") : undefined}
                 onAction={emptyState.showsAddEnvironment ? props.onAddConnection : undefined}
                 action={
                   Platform.OS === "android" && emptyState.showsAddEnvironment ? (
                     <FloatingActionButton
-                      label="Add environment"
+                      label={gt("Add environment")}
                       icon="plus"
                       variant="extended"
                       tone="primary"
@@ -757,32 +726,40 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListEmpty =
     hasSearchQuery && threadSearch.isPending ? (
       <EmptyState
-        title="Searching thread messages…"
-        detail={`Looking for "${props.searchQuery}" in messages.`}
+        title={gt("Searching thread messages…")}
+        detail={gt('Looking for "{query}" in messages.', { query: props.searchQuery })}
+        variant={Platform.OS === "android" ? "plain" : undefined}
+      />
+    ) : hasSearchQuery && threadSearch.failed ? (
+      <EmptyState
+        title={gt("Search failed")}
+        detail={gt('Couldn\'t search messages for "{query}". Change the search to try again.', {
+          query: props.searchQuery,
+        })}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : hasSearchQuery ? (
       <EmptyState
-        title="No results"
-        detail={`No threads matching "${props.searchQuery}".`}
+        title={gt("No results")}
+        detail={gt('No threads matching "{query}".', { query: props.searchQuery })}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : v2ScopedProjectGroup !== null ? (
       <EmptyState
-        title={`No threads in ${v2ScopedProjectGroup.title}`}
-        detail="Choose another project or create a new task."
+        title={gt("No threads in {name}", { name: v2ScopedProjectGroup.title })}
+        detail={gt("Choose another project or create a new task.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : selectedEnvironmentLabel ? (
       <EmptyState
-        title={`No threads in ${selectedEnvironmentLabel}`}
-        detail="Choose another environment or create a new task."
+        title={gt("No threads in {name}", { name: selectedEnvironmentLabel })}
+        detail={gt("Choose another environment or create a new task.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : (
       <EmptyState
-        title="No threads yet"
-        detail="Create a task to start a new coding session."
+        title={gt("No threads yet")}
+        detail={gt("Create a task to start a new coding session.")}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     );

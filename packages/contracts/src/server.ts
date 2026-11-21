@@ -27,7 +27,6 @@ import { ManagedPolicySummary } from "./managedPolicy.ts";
 import { ModelCapabilities, ProviderOptionDescriptor } from "./model.ts";
 import { RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
-import { ProviderRateLimits } from "./providerRateLimits.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
@@ -92,6 +91,14 @@ export const ServerProviderModel = Schema.Struct({
   capabilities: Schema.NullOr(ModelCapabilities),
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
+
+/** A backend a provider's models run on, such as one of fx's. */
+export const ServerProviderSubProvider = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  /** Why none of its models can run now, such as a signed-out backend. */
+  unavailableReason: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerProviderSubProvider = typeof ServerProviderSubProvider.Type;
 
 export const ServerProviderUpdateRequiredModel = Schema.Struct({
   slug: TrimmedNonEmptyString,
@@ -220,9 +227,6 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
-export const ServerProviderRateLimitsRefreshMode = Schema.Literal("active-session-required");
-export type ServerProviderRateLimitsRefreshMode = typeof ServerProviderRateLimitsRefreshMode.Type;
-
 export const ServerProvider = Schema.Struct({
   // Only instanceId is stable enough for provider routing.
   instanceId: ProviderInstanceId,
@@ -237,8 +241,6 @@ export const ServerProvider = Schema.Struct({
   reportsContextWindow: Schema.optional(Schema.Boolean),
   supportedRuntimeModes: Schema.optional(ForwardCompatibleArray(RuntimeMode)),
   supportsConversationRollback: Schema.optional(Schema.Boolean),
-  supportsSessionHandoff: Schema.optional(Schema.Boolean),
-  supportsContextHandoff: Schema.optional(Schema.Boolean),
   supportsTextGeneration: Schema.optional(Schema.Boolean),
   setup: Schema.optional(
     Schema.Struct({
@@ -275,6 +277,10 @@ export const ServerProvider = Schema.Struct({
   availability: Schema.optional(ServerProviderAvailability),
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  // Pickers group `models` under these, in order, by `subProvider`.
+  subProviders: Schema.optional(Schema.Array(ServerProviderSubProvider)),
+  // Set for the one failed check that follows a ready one: pickers keep offering `models`.
+  modelsRetained: Schema.optionalKey(Schema.Boolean),
   // Kept apart from `models` so clients that predate it never offer them.
   updateRequiredModels: Schema.optionalKey(Schema.Array(ServerProviderUpdateRequiredModel)),
   slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
@@ -288,13 +294,6 @@ export const ServerProvider = Schema.Struct({
    */
   workspaceRescannedAt: Schema.optionalKey(IsoDateTime),
   usageLimits: Schema.optional(ServerProviderUsageLimits),
-  // Declares whether the provider can answer an explicit plan-limit refresh.
-  // `active-session-required` means usage is exposed by its live protocol
-  // connection instead of a standalone account API.
-  rateLimitsRefresh: Schema.optionalKey(ServerProviderRateLimitsRefreshMode),
-  // Last plan rate-limit observation for this instance, absent until the
-  // provider reports one (and always absent for providers that never do).
-  rateLimits: Schema.optionalKey(ProviderRateLimits),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
@@ -545,28 +544,6 @@ export const ServerProcessDiagnosticsResult = Schema.Struct({
   ),
 });
 export type ServerProcessDiagnosticsResult = typeof ServerProcessDiagnosticsResult.Type;
-
-export const ServerPendingWorkResult = Schema.Struct({
-  effects: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      threadId: Schema.String,
-      type: Schema.String,
-      status: Schema.Literals(["pending", "running"]),
-      attemptCount: NonNegativeInt,
-      createdAt: Schema.String,
-      updatedAt: Schema.String,
-      availableAt: Schema.String,
-      lastError: Schema.NullOr(Schema.String),
-    }),
-  ),
-});
-export type ServerPendingWorkResult = typeof ServerPendingWorkResult.Type;
-
-export class ServerPendingWorkError extends Schema.TaggedError<ServerPendingWorkError>()(
-  "ServerPendingWorkError",
-  { detail: Schema.String },
-) {}
 
 export const ServerProcessResourceHistoryInput = Schema.Struct({
   windowMs: NonNegativeInt,
@@ -1014,20 +991,6 @@ export const ServerProviderUpdateInput = Schema.Struct({
 });
 export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
 
-/** A requested subscription-limit refresh could not complete for this provider instance. */
-export class ServerProviderRateLimitsRefreshError extends Schema.TaggedError<ServerProviderRateLimitsRefreshError>()(
-  "ServerProviderRateLimitsRefreshError",
-  {
-    instanceId: ProviderInstanceId,
-    reason: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
-  override get message(): string {
-    return `Provider rate-limit refresh failed for ${this.instanceId}: ${this.reason}`;
-  }
-}
-
 export class ServerProviderUpdateError extends Schema.TaggedError<ServerProviderUpdateError>()(
   "ServerProviderUpdateError",
   {
@@ -1107,6 +1070,13 @@ export class ServerSelfUpdateError extends Schema.TaggedError<ServerSelfUpdateEr
   "ServerSelfUpdateError",
   {
     reason: TrimmedNonEmptyString,
+    /** Set when the host's desktop app refused only because its build and saved tracks differ. */
+    trackMismatch: Schema.optionalKey(
+      Schema.Struct({
+        buildChannel: DesktopUpdateChannelSchema,
+        savedChannel: DesktopUpdateChannelSchema,
+      }),
+    ),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {

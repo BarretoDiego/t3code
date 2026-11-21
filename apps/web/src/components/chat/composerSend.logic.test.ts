@@ -44,8 +44,6 @@ it("detects draft edits during upload preparation without treating upload metada
     activeProvider: null,
     runtimeMode: null,
     interactionMode: null,
-    selectedMiniSkillIds: [],
-    selectedProfileId: null,
   };
   expect(
     composerDraftContentChanged(draft, {

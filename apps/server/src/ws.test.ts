@@ -1,27 +1,3 @@
-import { JobRecovery } from "./automation/JobService.ts";
-import { HookRuntime } from "./automation/hooks/HookRuntime.ts";
-import { JournalStore } from "./automation/events/JournalStore.ts";
-import { PeerStore, type PeerSignal } from "./automation/federation/PeerStore.ts";
-import { DelegatedTaskEngine } from "./automation/tasks/TaskEngine.ts";
-import * as Context from "effect/Context";
-import { MarketplaceService } from "./marketplace/MarketplaceService.ts";
-import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
-import { ComputeService } from "./compute/ComputeService.ts";
-import { RemotePullRequestService } from "./sourceControl/RemotePullRequestService.ts";
-import { PullRequestReviewService } from "./aiReview/PullRequestReviewService.ts";
-import { SourceControlHubService } from "./sourceControl/SourceControlHubService.ts";
-import { SourceControlAccounts } from "./sourceControl/SourceControlAccounts.ts";
-import { EffectOutboxV2 } from "./orchestration-v2/EffectOutbox.ts";
-import { NetworkDiagnostics } from "./diagnostics/NetworkDiagnostics.ts";
-import { AutomationDiagnosticsService } from "./automation/AutomationDiagnosticsService.ts";
-import { DelegatedTaskService } from "./automation/DelegatedTaskService.ts";
-import { EventJournal } from "./automation/EventJournal.ts";
-import { HookService } from "./automation/HookService.ts";
-import { JobService } from "./automation/JobService.ts";
-import { OrchestratorInbox } from "./automation/OrchestratorInbox.ts";
-import { OrchestratorService } from "./automation/OrchestratorService.ts";
-import { PeerService } from "./automation/PeerService.ts";
-import { ResponsibilityService } from "./automation/ResponsibilityService.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { WebSocket } from "@effect/platform-node/NodeWS";
@@ -81,6 +57,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { Headers, HttpRouter, HttpServer } from "effect/http";
+import * as Context from "effect/Context";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
@@ -92,6 +69,7 @@ import * as Statement from "effect/sql/Statement";
 import { vi } from "vite-plus/test";
 
 import * as AssetSigner from "./assets/AssetSigner.ts";
+import * as WorkspacePreviewRevisions from "./assets/WorkspacePreviewRevisions.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
@@ -105,6 +83,7 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as NativeChildWorkQuery from "./orchestration-v2/NativeChildWorkQuery.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
+import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
@@ -116,12 +95,15 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "./mcpApps/McpSignIn.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as PeerThreadRelay from "./peer/PeerThreadRelay.ts";
+import * as PeerClientPairing from "./peer/PeerClientPairing.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -138,6 +120,7 @@ import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as IssueService from "./issue/IssueService.ts";
+import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -168,6 +151,8 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
+import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -834,34 +819,6 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
 
 // Build the production RPC layer; unrelated capabilities fail if this test calls them.
 const layerUnusedConfigRpcServices = Layer.mergeAll(
-  Layer.mock(JobRecovery)({}),
-  Layer.mock(HookRuntime)({}),
-  Layer.mock(JournalStore)({ environmentId: EnvironmentId.make("config-test") }),
-  Layer.unwrap(
-    Effect.map(PubSub.unbounded<PeerSignal>(), (signals) => Layer.mock(PeerStore)({ signals })),
-  ),
-  Layer.mock(DelegatedTaskEngine)({}),
-  Layer.mock(MarketplaceService)({}),
-  Layer.mock(AiRuntimeService)({}),
-  Layer.mock(ComputeService)({}),
-  Layer.mock(RemotePullRequestService)({}),
-  Layer.mock(PullRequestReviewService)({}),
-  Layer.mock(SourceControlHubService)({}),
-  Layer.mock(SourceControlAccounts)({}),
-  Layer.mock(EffectOutboxV2)({}),
-  Layer.mock(NetworkDiagnostics)({}),
-  Layer.mock(AutomationDiagnosticsService)({}),
-  Layer.mock(DelegatedTaskService)({}),
-  Layer.mock(EventJournal)({}),
-  Layer.mock(HookService)({}),
-  Layer.mock(JobService)({}),
-  Layer.mock(OrchestratorInbox)({}),
-  Layer.mock(OrchestratorService)({}),
-  Layer.mock(PeerService)({}),
-  Layer.mock(ResponsibilityService)({}),
-  Layer.mock(ServerEnvironment.ServerEnvironmentIdentity)({
-    getEnvironmentId: Effect.succeed(EnvironmentId.make("config-test")),
-  }),
   Layer.mock(DocumentText.DocumentText)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.mock(SecretCheck.SecretCheck)({}),
@@ -882,12 +839,14 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({}),
   Layer.mock(NativeChildWorkQuery.NativeChildWorkQuery)({}),
   Layer.mock(CommandOutputHub.CommandOutputHub)({}),
+  ThreadViewers.layer,
   Layer.mock(CodexInstallation.CodexInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(ModelManifest.ModelManifest)({}),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
@@ -895,6 +854,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+  Layer.mock(PeerThreadRelay.PeerThreadRelay)({}),
+  Layer.mock(PeerClientPairing.PeerClientPairing)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
@@ -912,6 +873,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
   Layer.mock(IssueService.IssueService)({}),
+  Layer.mock(ThreadIssueService.ThreadIssueService)({}),
   Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(RelayClient.RelayClient)({}),
@@ -940,6 +902,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),
+  Layer.mock(WorkspaceFolders.WorkspaceFolders)({}),
+  Layer.mock(TaskFolders.TaskFolders)({}),
   Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({}),
   Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
 );
@@ -947,6 +911,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
 const layerConfigSources = Layer.mergeAll(
   Keybindings.layer,
   AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+  WorkspacePreviewRevisions.layer,
   ServerSettings.layer.pipe(
     Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layerTest())),
   ),
@@ -1014,7 +979,6 @@ it.live.each([
         }),
         ProviderInstallationGate.layer,
         FetchHttpClient.layer,
-        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
       );
       const context = yield* Layer.build(
         HttpRouter.serve(Ws.layer, { disableListenLog: true }).pipe(
@@ -1170,7 +1134,6 @@ it.effect.each([
           subscribeChanges: settingsChanges,
         }),
       );
-      const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
       const server = yield* RpcServer.makeNoSerialization(
         RpcGroup.make(WsSubscribeServerConfigRpc),
         {
@@ -1192,17 +1155,6 @@ it.effect.each([
               scopes: [],
             },
             {},
-            {},
-            yield* PreviewAutomationBroker.PreviewAutomationBroker,
-            Context.get(serviceContext, MarketplaceService),
-            Context.get(serviceContext, AiRuntimeService),
-            Context.get(serviceContext, ComputeService),
-            Context.get(serviceContext, RemotePullRequestService),
-            Context.get(serviceContext, PullRequestReviewService),
-            Context.get(serviceContext, SourceControlHubService),
-            Context.get(serviceContext, SourceControlAccounts),
-            undefined,
-            serviceContext,
             yield* ServerBrowser.ServerBrowser,
             () => Effect.void,
             { secretReferences: true },
@@ -1335,7 +1287,6 @@ it.effect("access changes made while the snapshot loads reach the client after i
         ),
       );
     const revokedElsewhere = AuthSessionId.make("revoked-elsewhere");
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const responses = yield* Queue.unbounded<AuthAccessStreamEvent>();
     const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
       ...WS_RPC_SERVER_OPTIONS,
@@ -1359,17 +1310,6 @@ it.effect("access changes made while the snapshot loads reach the client after i
             scopes: [],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -1563,7 +1503,6 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
           }),
       }),
     );
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const server = yield* RpcServer.makeNoSerialization(
       RpcGroup.make(WsSubscribeServerConfigRpc, WsServerRefreshProvidersRpc),
       {
@@ -1587,17 +1526,6 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
             scopes: [],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -1938,7 +1866,6 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
     );
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const server = yield* RpcServer.makeNoSerialization(
       RpcGroup.make(WsServerRefreshProvidersRpc),
       {
@@ -1960,17 +1887,6 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
             scopes: [],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -2036,7 +1952,6 @@ it.effect("a git action that fails partway still refreshes the repository status
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
     );
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
       ...WS_RPC_SERVER_OPTIONS,
       onFromServer: (response) =>
@@ -2051,17 +1966,6 @@ it.effect("a git action that fails partway still refreshes the repository status
             scopes: [AuthSourceControlWriteScope],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -2128,7 +2032,6 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
     );
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
       ...WS_RPC_SERVER_OPTIONS,
       onFromServer: (response) =>
@@ -2143,17 +2046,6 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
             scopes: [AuthSourceControlWriteScope],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -2677,7 +2569,6 @@ it.effect("ACP session RPCs list a thread missing its history and repair it on i
       Layer.succeed(SqlClient.SqlClient, sql),
     );
     const services = AcpRegistrySessions.layer.pipe(Layer.provideMerge(dependencies));
-    const serviceContext = yield* Layer.build(layerUnusedConfigRpcServices);
     const client = yield* RpcTest.makeClient(acpSessionRpcs).pipe(
       Effect.provide(
         layerWsRpc(
@@ -2688,17 +2579,6 @@ it.effect("ACP session RPCs list a thread missing its history and repair it on i
             scopes: [],
           },
           {},
-          {},
-          yield* PreviewAutomationBroker.PreviewAutomationBroker,
-          Context.get(serviceContext, MarketplaceService),
-          Context.get(serviceContext, AiRuntimeService),
-          Context.get(serviceContext, ComputeService),
-          Context.get(serviceContext, RemotePullRequestService),
-          Context.get(serviceContext, PullRequestReviewService),
-          Context.get(serviceContext, SourceControlHubService),
-          Context.get(serviceContext, SourceControlAccounts),
-          undefined,
-          serviceContext,
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },

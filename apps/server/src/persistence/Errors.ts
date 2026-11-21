@@ -119,4 +119,3 @@ export type IssueTrackerBindingsRepositoryError = PersistenceSqlError | Persiste
 export type PullRequestReviewGuideRepositoryError = PersistenceSqlError | PersistenceDecodeError;
 
 export type ProjectionRepositoryError = PersistenceSqlError | PersistenceDecodeError;
-export type ComputeRepositoryError = PersistenceSqlError | PersistenceDecodeError;

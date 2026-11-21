@@ -6,61 +6,88 @@ import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
+import PullRequestFilesViewed from "./Migrations/053_PullRequestFilesViewed.ts";
+import RemoveRedundantProjectionIndexes from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
 import OrchestrationV2 from "./Migrations/055_OrchestrationV2.ts";
 
-describe("V2 migration ledger", () => {
-  it.effect("upgrades a fork database at 60 by appending the V2 migrations", () =>
+const seedPreview = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* runMigrations({ toMigrationInclusive: 52 });
+  yield* Migrator.make({})({
+    loader: Migrator.fromRecord({ "53_OrchestrationV2": OrchestrationV2 }),
+  });
+  yield* sql`
+    INSERT INTO orchestration_v2_legacy_imports
+      (thread_id, source_updated_at, shell_imported_at, transcript_imported_at, imported_message_count)
+    VALUES ('preview-thread', '2026-09-15', '2026-09-15', '2026-09-16', 42)
+  `;
+  yield* sql`
+    UPDATE effect_sql_migrations SET created_at = '2026-09-15 00:00:00' WHERE migration_id = 53
+  `;
+});
+
+describe("V2 preview upgrade", () => {
+  it.effect("upgrades a published preview without replaying V2 or losing import progress", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 60 });
+      yield* seedPreview;
+      const imports = yield* sql`SELECT * FROM orchestration_v2_legacy_imports`;
       assert.deepStrictEqual(yield* runMigrations(), [
-        [61, "OrchestrationV2"],
-        [62, "RemoveRedundantProjectionIndexes"],
-        [63, "ScheduledMessagesOrchestrationV2"],
-        [64, "ScheduledTaskWebhooks"],
-        [65, "WebhookRelayDeliveries"],
-        [66, "McpAppModelContext"],
-        [67, "ThreadSnapshotWindowIndexes"],
-        [68, "PullRequestReviewGuides"],
-        [69, "ThreadFailureLookupIndex"],
-        [70, "DropUnusedV1Projections"],
-        [71, "CanonicalizeThreadPullRequestLinks"],
-        [72, "CodexUsageNativeTurnIndex"],
-        [73, "RepairClientSettlementTimestamps"],
-        [74, "WebhookDedupe"],
-        [75, "ShellStopRequestIndex"],
-        [76, "ThreadMessageSearch"],
-        [77, "PeerLinks"],
-        [78, "PeerLinkFence"],
-        [79, "WaitingLinkRequestIndex"],
-        [80, "ActiveTurnItemIndexes"],
-        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
-        [82, "SubagentDeliveryState"],
-        [83, "ProjectionProjectsPinArchive"],
-        [84, "RepairBooleanSettledOverride"],
-        [85, "DropOrchestrationEventCorrelationIndex"],
-        [86, "DelegatedRecoveryIndexes"],
-        [87, "ScheduledTaskThreadMode"],
-        [88, "ProjectionMessageSearchText"],
-        [89, "TurnItemConversationIndex"],
-        [90, "CommandReadIndexes"],
-        [91, "LastExecutedRunIndex"],
-        [92, "TurnItemCounts"],
-        [93, "QueuedTurnInputIndex"],
-        [94, "ProjectionProjectsCustomTitle"],
-        [95, "TurnItemTypeStatusIndex"],
-        [96, "ShellThreadReadIndexes"],
-        [97, "AuthConnectDevices"],
-        [98, "AuthConnectDeniedRequests"],
-        [99, "QueuedTurnInputIndexJsonValid"],
-        [100, "ProviderTurnAttemptIndex"],
-        [101, "TurnItemMessageOrdinalIndex"],
-        [102, "TurnItemInlineWorkOutput"],
-        [103, "RepairStaleTitleRegeneration"],
-        [104, "IssueTrackerBindings"],
-        [105, "ActiveShellIndexIndexes"],
+        [53, "PullRequestFilesViewed"],
+        [54, "ProjectionThreadsAutoSettleDisabledAt"],
+        [56, "RemoveRedundantProjectionIndexes"],
+        [57, "ScheduledTaskWebhooks"],
+        [58, "WebhookRelayDeliveries"],
+        [59, "McpAppModelContext"],
+        [60, "ThreadSnapshotWindowIndexes"],
+        [61, "PullRequestReviewGuides"],
+        [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
+        [81, "ProjectionMessageSearchText"],
+        [82, "TurnItemConversationIndex"],
+        [83, "CommandReadIndexes"],
+        [84, "LastExecutedRunIndex"],
+        [85, "TurnItemCounts"],
+        [86, "QueuedTurnInputIndex"],
+        [87, "ProjectionProjectsCustomTitle"],
+        [88, "TurnItemTypeStatusIndex"],
+        [89, "ShellThreadReadIndexes"],
+        [90, "AuthConnectDevices"],
+        [91, "AuthConnectDeniedRequests"],
+        [92, "QueuedTurnInputIndexJsonValid"],
+        [93, "ProviderTurnAttemptIndex"],
+        [94, "TurnItemMessageOrdinalIndex"],
+        [95, "TurnItemInlineWorkOutput"],
+        [96, "RepairStaleTitleRegeneration"],
+        [97, "IssueTrackerBindings"],
+        [98, "ActiveShellIndexIndexes"],
+        [99, "BackgroundRecoveryIndexes"],
+        [100, "TurnStartReadIndexes"],
+        [101, "DelegatedTaskReadIndexes"],
+        [102, "ThreadItemCounts"],
+        [103, "IssueTrackerAdditionalScopes"],
+        [104, "ProjectionProjectsTrackedFolders"],
+        [105, "TaskFolders"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
         SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id
       `;
@@ -68,99 +95,139 @@ describe("V2 migration ledger", () => {
         history.map((row) => [row.migration_id, row.name] as const),
         migrationManifest,
       );
+      assert.deepStrictEqual(
+        yield* sql`SELECT created_at FROM effect_sql_migrations WHERE migration_id = 55`,
+        [{ created_at: "2026-09-15 00:00:00" }],
+      );
+      yield* sql`
+        INSERT INTO pull_request_files_viewed
+          (provider, host, repository, number, viewer, path, revision, viewed_at)
+        VALUES ('github', 'github.com', 'owner/repo', 1, 'viewer', 'file.ts', 'revision', '2026-09-17')
+      `;
+      assert.strictEqual((yield* sql`SELECT * FROM pull_request_files_viewed`).length, 1);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect("refuses an upstream V2 preview ledger without modifying its history", () =>
+  it.effect.each([false, true])(
+    "upgrades preview migration 54 with index cleanup %s",
+    (withIndexes) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 52 });
+        yield* Migrator.make({})({
+          loader: Migrator.fromRecord({
+            "53_PullRequestFilesViewed": PullRequestFilesViewed,
+            "54_OrchestrationV2": OrchestrationV2,
+            ...(withIndexes
+              ? { "55_RemoveRedundantProjectionIndexes": RemoveRedundantProjectionIndexes }
+              : {}),
+          }),
+        });
+        yield* runMigrations();
+        assert.deepStrictEqual(yield* runMigrations(), []);
+        const history = yield* sql<{
+          readonly migration_id: number;
+          readonly name: string;
+        }>`SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`;
+        assert.deepStrictEqual(
+          history.map((row) => [row.migration_id, row.name] as const),
+          migrationManifest,
+        );
+        const columns = yield* sql<{
+          readonly name: string;
+        }>`PRAGMA table_info(projection_threads)`;
+        assert.ok(columns.some((column) => column.name === "auto_settle_disabled_at"));
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect("rolls back schema and ledger together on failure and can retry", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 52 });
-      yield* Migrator.make({})({
-        loader: Migrator.fromRecord({ "53_OrchestrationV2": OrchestrationV2 }),
-      });
+      yield* seedPreview;
+      yield* sql`
+        CREATE TRIGGER fail_preview_upgrade BEFORE INSERT ON effect_sql_migrations
+        WHEN NEW.name = 'PullRequestFilesViewed'
+        BEGIN SELECT RAISE(ABORT, 'injected failure'); END
+      `;
+      assert.ok(Exit.isFailure(yield* Effect.exit(runMigrations())));
+      assert.deepStrictEqual(
+        yield* sql`SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id >= 53`,
+        [{ migration_id: 53, name: "OrchestrationV2" }],
+      );
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master WHERE name = 'pull_request_files_viewed'`,
+        [],
+      );
+      assert.strictEqual((yield* sql`SELECT * FROM orchestration_v2_legacy_imports`).length, 1);
+      yield* sql`DROP TRIGGER fail_preview_upgrade`;
+      assert.deepStrictEqual(yield* runMigrations(), [
+        [53, "PullRequestFilesViewed"],
+        [54, "ProjectionThreadsAutoSettleDisabledAt"],
+        [56, "RemoveRedundantProjectionIndexes"],
+        [57, "ScheduledTaskWebhooks"],
+        [58, "WebhookRelayDeliveries"],
+        [59, "McpAppModelContext"],
+        [60, "ThreadSnapshotWindowIndexes"],
+        [61, "PullRequestReviewGuides"],
+        [62, "ThreadFailureLookupIndex"],
+        [63, "DropUnusedV1Projections"],
+        [64, "CanonicalizeThreadPullRequestLinks"],
+        [65, "CodexUsageNativeTurnIndex"],
+        [66, "RepairClientSettlementTimestamps"],
+        [67, "WebhookDedupe"],
+        [68, "ShellStopRequestIndex"],
+        [69, "ThreadMessageSearch"],
+        [70, "PeerLinks"],
+        [71, "PeerLinkFence"],
+        [72, "WaitingLinkRequestIndex"],
+        [73, "ActiveTurnItemIndexes"],
+        [74, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [75, "SubagentDeliveryState"],
+        [76, "ProjectionProjectsPinArchive"],
+        [77, "RepairBooleanSettledOverride"],
+        [78, "DropOrchestrationEventCorrelationIndex"],
+        [79, "DelegatedRecoveryIndexes"],
+        [80, "ScheduledTaskThreadMode"],
+        [81, "ProjectionMessageSearchText"],
+        [82, "TurnItemConversationIndex"],
+        [83, "CommandReadIndexes"],
+        [84, "LastExecutedRunIndex"],
+        [85, "TurnItemCounts"],
+        [86, "QueuedTurnInputIndex"],
+        [87, "ProjectionProjectsCustomTitle"],
+        [88, "TurnItemTypeStatusIndex"],
+        [89, "ShellThreadReadIndexes"],
+        [90, "AuthConnectDevices"],
+        [91, "AuthConnectDeniedRequests"],
+        [92, "QueuedTurnInputIndexJsonValid"],
+        [93, "ProviderTurnAttemptIndex"],
+        [94, "TurnItemMessageOrdinalIndex"],
+        [95, "TurnItemInlineWorkOutput"],
+        [96, "RepairStaleTitleRegeneration"],
+        [97, "IssueTrackerBindings"],
+        [98, "ActiveShellIndexIndexes"],
+        [99, "BackgroundRecoveryIndexes"],
+        [100, "TurnStartReadIndexes"],
+        [101, "DelegatedTaskReadIndexes"],
+        [102, "ThreadItemCounts"],
+        [103, "IssueTrackerAdditionalScopes"],
+        [104, "ProjectionProjectsTrackedFolders"],
+        [105, "TaskFolders"],
+      ]);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
 
+  it.effect("refuses unexpected later migrations without modifying their history", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* seedPreview;
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (54, 'UnknownFork')`;
       const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
       assert.ok(Exit.isFailure(yield* Effect.exit(runMigrations())));
       assert.deepStrictEqual(
         yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
         history,
       );
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  );
-
-  it.effect("upgrades a published fork ledger at 79 without changing its history", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 79 });
-      const history = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
-      assert.deepStrictEqual(yield* runMigrations(), [
-        [80, "ActiveTurnItemIndexes"],
-        [81, "ExcludeAttachmentPlaceholdersFromSearch"],
-        [82, "SubagentDeliveryState"],
-        [83, "ProjectionProjectsPinArchive"],
-        [84, "RepairBooleanSettledOverride"],
-        [85, "DropOrchestrationEventCorrelationIndex"],
-        [86, "DelegatedRecoveryIndexes"],
-        [87, "ScheduledTaskThreadMode"],
-        [88, "ProjectionMessageSearchText"],
-        [89, "TurnItemConversationIndex"],
-        [90, "CommandReadIndexes"],
-        [91, "LastExecutedRunIndex"],
-        [92, "TurnItemCounts"],
-        [93, "QueuedTurnInputIndex"],
-        [94, "ProjectionProjectsCustomTitle"],
-        [95, "TurnItemTypeStatusIndex"],
-        [96, "ShellThreadReadIndexes"],
-        [97, "AuthConnectDevices"],
-        [98, "AuthConnectDeniedRequests"],
-        [99, "QueuedTurnInputIndexJsonValid"],
-        [100, "ProviderTurnAttemptIndex"],
-        [101, "TurnItemMessageOrdinalIndex"],
-        [102, "TurnItemInlineWorkOutput"],
-        [103, "RepairStaleTitleRegeneration"],
-        [104, "IssueTrackerBindings"],
-        [105, "ActiveShellIndexIndexes"],
-      ]);
-      assert.deepStrictEqual(
-        yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 79 ORDER BY migration_id`,
-        history,
-      );
-      assert.deepStrictEqual(yield* runMigrations(), []);
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  );
-
-  it.effect("adds project pin and archive to a published fork ledger at 82", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 82 });
-      assert.deepStrictEqual(yield* runMigrations(), [
-        [83, "ProjectionProjectsPinArchive"],
-        [84, "RepairBooleanSettledOverride"],
-        [85, "DropOrchestrationEventCorrelationIndex"],
-        [86, "DelegatedRecoveryIndexes"],
-        [87, "ScheduledTaskThreadMode"],
-        [88, "ProjectionMessageSearchText"],
-        [89, "TurnItemConversationIndex"],
-        [90, "CommandReadIndexes"],
-        [91, "LastExecutedRunIndex"],
-        [92, "TurnItemCounts"],
-        [93, "QueuedTurnInputIndex"],
-        [94, "ProjectionProjectsCustomTitle"],
-        [95, "TurnItemTypeStatusIndex"],
-        [96, "ShellThreadReadIndexes"],
-        [97, "AuthConnectDevices"],
-        [98, "AuthConnectDeniedRequests"],
-        [99, "QueuedTurnInputIndexJsonValid"],
-        [100, "ProviderTurnAttemptIndex"],
-        [101, "TurnItemMessageOrdinalIndex"],
-        [102, "TurnItemInlineWorkOutput"],
-        [103, "RepairStaleTitleRegeneration"],
-        [104, "IssueTrackerBindings"],
-        [105, "ActiveShellIndexIndexes"],
-      ]);
-      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(projection_projects)`;
-      const names = columns.map((column) => column.name);
-      assert.isTrue(names.includes("pinned_at") && names.includes("archived_at"));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

@@ -16,7 +16,6 @@ import {
   OpenAI,
   OpenRouterIcon,
 } from "../Icons";
-import { resolveProviderIconChoice } from "../providerIcons";
 
 import { cn } from "~/lib/utils";
 import { providerClients } from "../settings/providerDriverMeta";
@@ -91,8 +90,6 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;
   accentColor?: string | undefined;
-  /** Key into PROVIDER_ICON_CHOICES; overrides the driver icon when known. */
-  icon?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;
@@ -103,9 +100,8 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   badgeClassName?: string;
   indicatorBackground?: string;
 }) {
-  const customIcon = resolveProviderIconChoice(props.icon)?.Icon;
-  const Icon = customIcon ?? PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
-  const packageIcon = customIcon ? undefined : providerClients.get(props.driverKind)?.icon;
+  const Icon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
+  const packageIcon = providerClients.get(props.driverKind)?.icon;
   const indicatorBackground = props.indicatorBackground ?? "var(--card)";
   const accentColor = normalizeProviderAccentColor(props.accentColor);
   const accentStyle = accentColor

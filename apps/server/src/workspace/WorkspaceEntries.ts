@@ -1,8 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 
-import * as Cache from "effect/Cache";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -24,7 +25,7 @@ import type {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
-import { normalizeSearchQuery, scoreSubsequenceMatch } from "@t3tools/shared/searchRanking";
+import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -160,71 +161,38 @@ export const make = Effect.gen(function* () {
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
   const vcsProcess = yield* VcsProcess.VcsProcess;
 
-  // Skip dependency/build metadata, but not ignored project folders: a container
-  // often ignores its independent repositories. Do not follow directory symlinks.
-  const repositoryCache = yield* Cache.make({
-    capacity: 32,
-    timeToLive: "30 seconds",
-    lookup: (cwd: string) =>
-      Effect.tryPromise({
-        try: async (): Promise<ProjectListEntriesResult> => {
-          const entries: ProjectEntry[] = [];
-          const pending = [""];
-          let scanned = 0;
-          let truncated = false;
-          const excluded = new Set([".git", "node_modules", ".t3", ".cache", ".next", ".turbo"]);
-          while (scanned < pending.length && entries.length < 1_000) {
-            const relative = pending[scanned++]!;
-            let children;
-            try {
-              children = await NodeFSP.readdir(path.join(cwd, relative), { withFileTypes: true });
-            } catch (cause) {
-              if (relative === "") throw cause;
-              truncated = true;
-              continue;
-            }
-            if (
-              children.some(
-                (child) => child.name === ".git" && (child.isDirectory() || child.isFile()),
-              )
-            ) {
-              entries.push({ path: relative || ".", kind: "directory", repository: true });
-            }
-            for (const child of children.toSorted((a, b) => a.name.localeCompare(b.name))) {
-              if (child.isDirectory() && !excluded.has(child.name)) {
-                if (pending.length < 20_000) {
-                  pending.push(relative ? `${relative}/${child.name}` : child.name);
-                } else {
-                  truncated = true;
-                }
-              }
-            }
-          }
-          return {
-            entries: entries.toSorted((a, b) => a.path.localeCompare(b.path)),
-            truncated: truncated || scanned < pending.length,
-          };
-        },
-        catch: (cause) =>
-          new WorkspaceEntriesReadDirectoryError({ cwd, partialPath: ".", parentPath: cwd, cause }),
-      }),
-  });
-
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
     return yield* workspacePaths.normalizeWorkspaceRoot(cwd);
   });
 
+  // Refreshing goes through `get`, which restarts the map's idle timer, so idleness is measured
+  // from the last search, not the last refresh.
+  const lastSearchedAt = new Map<string, number>();
+  const indexIdleMillis = Duration.toMillis(WorkspaceSearchIndex.WORKSPACE_INDEX_IDLE_TTL);
+  const markSearched = (indexKey: string, now: number) => {
+    // A record older than the timeout counts the same as none, so it can go.
+    for (const [key, searchedAt] of lastSearchedAt) {
+      if (now - searchedAt >= indexIdleMillis) lastSearchedAt.delete(key);
+    }
+    lastSearchedAt.set(indexKey, now);
+  };
+
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(
     function* (cwd) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(cwd).pipe(
         Effect.orElseSucceed(() => cwd),
       );
-      yield* Cache.invalidate(repositoryCache, normalizedCwd);
       for (const variant of WorkspaceSearchIndex.WORKSPACE_SEARCH_INDEX_VARIANTS) {
         const indexKey = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, variant);
         if (!(yield* RcMap.has(workspaceSearchIndexes.rcMap, indexKey))) {
+          continue;
+        }
+        const searchedAt = lastSearchedAt.get(indexKey) ?? 0;
+        if ((yield* Clock.currentTimeMillis) - searchedAt >= indexIdleMillis) {
+          lastSearchedAt.delete(indexKey);
+          yield* workspaceSearchIndexes.invalidate(indexKey);
           continue;
         }
         const recoverRefreshFailure = Effect.fn("WorkspaceEntries.recoverRefreshFailure")(
@@ -310,56 +278,20 @@ export const make = Effect.gen(function* () {
       const normalizedQuery = normalizeSearchQuery(input.query, {
         trimLeadingPattern: /^[@./]+/,
       });
-      const repositories =
-        input.includeRepositories && input.kind !== "file" && !input.imageOnly
-          ? yield* Cache.get(repositoryCache, normalizedCwd)
-          : { entries: [], truncated: false };
-      const matches = repositories.entries
-        .map((entry) => ({
-          entry,
-          score: normalizedQuery
-            ? scoreSubsequenceMatch(entry.path.toLowerCase(), normalizedQuery)
-            : 0,
-        }))
-        .filter((match) => match.score !== null)
-        .toSorted((a, b) => a.score! - b.score! || a.entry.path.localeCompare(b.entry.path))
-        .map((match) => match.entry);
-      if (input.includeRepositories && normalizedQuery === "") {
-        return {
-          entries: matches.slice(0, input.limit),
-          truncated: repositories.truncated || matches.length > input.limit,
-        };
-      }
-      const indexed = yield* Effect.gen(function* () {
+      const indexKey = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "paths");
+      markSearched(indexKey, yield* Clock.currentTimeMillis);
+      const result = yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* searchIndex.search(normalizedQuery, input.limit, input.kind, input.imageOnly);
-      }).pipe(
-        Effect.provide(
-          workspaceSearchIndexes.get(
-            WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "paths"),
-          ),
-        ),
-      );
-      const repositoryPaths = new Set(matches.map((entry) => entry.path));
-      const combined = [
-        ...matches,
-        ...indexed.entries.filter((entry) => !repositoryPaths.has(entry.path)),
-      ];
-      const result = {
-        entries: combined.slice(0, input.limit),
-        truncated: repositories.truncated || indexed.truncated || combined.length > input.limit,
-      };
+      }).pipe(Effect.provide(workspaceSearchIndexes.get(indexKey)));
       if (input.kind === "directory" || input.imageOnly) return result;
       const worktreeFiles = yield* findNestedWorktreeFiles(
         normalizedCwd,
         input.query,
         result.entries,
       );
-      const paths = new Set(worktreeFiles.map((entry) => entry.path));
-      const entries = [
-        ...worktreeFiles,
-        ...result.entries.filter((entry) => !paths.has(entry.path)),
-      ];
+      if (worktreeFiles.length === 0) return result;
+      const entries = [...worktreeFiles, ...result.entries];
       return {
         entries: entries.slice(0, input.limit),
         truncated: result.truncated || entries.length > input.limit,
@@ -440,25 +372,17 @@ export const make = Effect.gen(function* () {
     "WorkspaceEntries.searchContents",
   )(function* (input) {
     const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+    const indexKey = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "content");
+    markSearched(indexKey, yield* Clock.currentTimeMillis);
     return yield* Effect.gen(function* () {
       const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
       return yield* searchIndex.searchContents(input);
-    }).pipe(
-      Effect.provide(
-        workspaceSearchIndexes.get(
-          WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "content"),
-        ),
-      ),
-    );
+    }).pipe(Effect.provide(workspaceSearchIndexes.get(indexKey)));
   });
 
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
-      if (input.repositoriesOnly) {
-        yield* Cache.invalidate(repositoryCache, normalizedCwd);
-        return yield* Cache.get(repositoryCache, normalizedCwd);
-      }
       if (input.directoryPath !== undefined) {
         const directoryPath = input.directoryPath;
         const toError = (cause: unknown) =>
@@ -628,16 +552,12 @@ export const make = Effect.gen(function* () {
           truncated: false,
         };
       }
+      const indexKey = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "paths");
+      markSearched(indexKey, yield* Clock.currentTimeMillis);
       return yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* searchIndex.list();
-      }).pipe(
-        Effect.provide(
-          workspaceSearchIndexes.get(
-            WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, "paths"),
-          ),
-        ),
-      );
+      }).pipe(Effect.provide(workspaceSearchIndexes.get(indexKey)));
     },
   );
 

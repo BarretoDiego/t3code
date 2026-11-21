@@ -1,21 +1,15 @@
-import { RemotePullRequestService } from "./sourceControl/RemotePullRequestService.ts";
-import { PullRequestReviewService } from "./aiReview/PullRequestReviewService.ts";
-import { SourceControlHubService } from "./sourceControl/SourceControlHubService.ts";
-import { SourceControlAccounts } from "./sourceControl/SourceControlAccounts.ts";
-import { AiRuntimeService } from "./aiRuntimes/AiRuntimeService.ts";
-import { ComputeService } from "./compute/ComputeService.ts";
-import { ThreadHandoffService } from "./handoff/ThreadHandoffService.ts";
-import { OrchestrationDispatchCommandError, ThreadHandoffError } from "@t3tools/contracts";
+import { GitCommandError, OrchestrationDispatchCommandError } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
-
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as PeerClientPairing from "./peer/PeerClientPairing.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as PeerThreadRelay from "./peer/PeerThreadRelay.ts";
 
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -39,6 +33,8 @@ import {
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
+  AuthProvidersManageScope,
+  type AuthEnvironmentScope,
   type ScheduledTaskListResult,
   AuthSessionId,
   ClientConnectionMethod,
@@ -49,7 +45,6 @@ import {
   type DiscoveredLocalServerList,
   type EditorId,
   type FileManagerRevealKind,
-  type OrchestrationClientOrigin,
   type OrchestrationV2Command,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -83,11 +78,8 @@ import {
   type ProjectMutation,
   ProjectListEntriesError,
   ProjectReadFileError,
-  ProjectDiscoverScriptsError,
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
-  ProjectSyncIoError,
-  ProjectSyncProjectNotFoundError,
   ProjectWriteFileError,
   ProjectMutationError,
   ProviderUploadFeedbackError,
@@ -97,7 +89,6 @@ import {
   type ServerConfig as ClientServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleStreamEvent,
-  ServerPendingWorkError,
   type ServerProvider,
   serverProviderDeltas,
   type FilesystemBrowseFailure,
@@ -108,15 +99,12 @@ import {
   ChatAttachmentId,
   PersistChatAttachmentsError,
   RpcClientId,
-  type ProjectId,
+  EnvironmentAuthorizationError,
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
   WS_METHODS,
-  WsCoreRpcGroup,
-  WsForkRpcGroup,
   WsRpcGroup,
-  AutomationRpcGroup,
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -133,19 +121,15 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "./mcpApps/McpSignIn.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
-import * as ScheduledMessages from "./orchestration-v2/ScheduledMessages.ts";
-
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
-import type * as AutomationLayer from "./automation/AutomationLayer.ts";
-import { makeOrchestratorRpcGate } from "./automation/orchestrator/RpcGate.ts";
-import { callerFromSession, makeAutomationRpcHandlers } from "./automation/rpcHandlers.ts";
-import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import {
@@ -217,7 +201,6 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { makePrepareTerminalLaunch } from "./workspace/restoreMissingWorktree.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
-import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -231,14 +214,10 @@ import { parseBase64DataUrl } from "./imageMime.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
+import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
-import { applyProjectSyncDeletions } from "./workspace/ProjectSyncApply.ts";
-import { buildProjectSyncManifest } from "./workspace/ProjectSyncManifest.ts";
-import {
-  issueProjectSyncExportUrl,
-  issueProjectSyncImportUrl,
-} from "./workspace/ProjectSyncTransfer.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
@@ -263,24 +242,22 @@ import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
+import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
-import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
-import * as NetworkDiagnostics from "./diagnostics/NetworkDiagnostics.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
 import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
-import * as MarketplaceService from "./marketplace/MarketplaceService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as IssueService from "./issue/IssueService.ts";
+import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -298,7 +275,6 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
-import * as SessionGate from "./auth/SessionGate.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -745,10 +721,11 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 
-// RpcGroup.toLayer's type cost grows with handlers × RPCs; near 200 methods it
-// exceeds TypeScript's instantiation limit and requirements degrade to `any`, so
-// core handlers register as two disjoint groups and fork/automation ones apart.
-type CoreWsRpc = RpcGroup.Rpcs<typeof WsCoreRpcGroup>;
+// RpcGroup.toLayer derives each handler's requirements by scanning every RPC in
+// the group, so its type cost grows with handlers × RPCs. Near 200 methods that
+// crosses TypeScript's instantiation limit and the layer's requirements degrade to
+// `any`, so the handlers are registered as two disjoint, smaller groups.
+type ServerWsRpc = RpcGroup.Rpcs<typeof ServerWsRpcGroup>;
 const SPLIT_WS_RPC_PREFIXES = [
   "server",
   "pullRequests",
@@ -758,13 +735,14 @@ const SPLIT_WS_RPC_PREFIXES = [
   "orchestration",
 ] as const;
 type SplitWsRpc = Extract<
-  CoreWsRpc,
+  ServerWsRpc,
   { readonly _tag: `${(typeof SPLIT_WS_RPC_PREFIXES)[number]}.${string}` }
 >;
-const isSplitWsRpc = (rpc: CoreWsRpc): rpc is SplitWsRpc =>
+const isSplitWsRpc = (rpc: ServerWsRpc): rpc is SplitWsRpc =>
   SPLIT_WS_RPC_PREFIXES.some((prefix) => rpc._tag.startsWith(`${prefix}.`));
-const isOtherWsRpc = (rpc: CoreWsRpc): rpc is Exclude<CoreWsRpc, SplitWsRpc> => !isSplitWsRpc(rpc);
-const serverWsRpcs = Array.from(WsCoreRpcGroup.requests.values());
+const isOtherWsRpc = (rpc: ServerWsRpc): rpc is Exclude<ServerWsRpc, SplitWsRpc> =>
+  !isSplitWsRpc(rpc);
+const serverWsRpcs = Array.from(ServerWsRpcGroup.requests.values());
 const SplitWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isSplitWsRpc));
 const OtherWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isOtherWsRpc));
 function toAuthAccessStreamEvent(
@@ -837,23 +815,6 @@ function shouldUseBoundedThreadSnapshot(input: {
   readonly acceptDeferredWork?: boolean;
 }): boolean {
   return input.acceptBoundedSnapshot === true;
-}
-
-function readClientConnectionOrigin(
-  request: HttpServerRequest.HttpServerRequest,
-): OrchestrationClientOrigin {
-  const url = HttpServerRequest.toURL(request);
-  if (Option.isNone(url)) {
-    return {};
-  }
-  const surface = url.value.searchParams.get("clientSurface");
-  const appVersion = url.value.searchParams.get("clientAppVersion")?.trim() ?? "";
-  return {
-    ...(isClientSurface(surface) ? { surface } : {}),
-    ...(appVersion !== "" && appVersion.length <= MAX_CLIENT_APP_VERSION_LENGTH
-      ? { appVersion }
-      : {}),
-  };
 }
 
 // Keep telemetry per socket; several client types can connect simultaneously.
@@ -1476,18 +1437,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
-  clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
-  previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
-  marketplace: MarketplaceService.MarketplaceService["Service"],
-  aiRuntimes: AiRuntimeService["Service"],
-  compute: ComputeService["Service"],
-  remotePrs: RemotePullRequestService["Service"],
-  reviews: PullRequestReviewService["Service"],
-  hub: SourceControlHubService["Service"],
-  accounts: SourceControlAccounts["Service"],
-  scheduledMessages: ScheduledMessages.ScheduledMessages["Service"] | undefined,
-  automationServices: Context.Context<AutomationLayer.AutomationServices>,
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
   reportProfiles: ServerBrowser.ProfileReporter,
   settingsClient: { readonly secretReferences: boolean },
@@ -1497,7 +1447,7 @@ export const layerWsRpc = (
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
       const threadManagement = yield* ThreadManagementService.ThreadManagementService;
-      const baseIntakeContext = yield* Effect.context<
+      const intakeContext = yield* Effect.context<
         | ThreadManagementService.ThreadManagementService
         | ThreadLaunchService.ThreadLaunchService
         | FileSystem.FileSystem
@@ -1505,12 +1455,6 @@ export const layerWsRpc = (
         | ServerSettings.ServerSettingsService
         | DocumentText.DocumentText
       >();
-      // Intake holds `message.dispatch` with `sendAt` and withdraws held
-      // messages on `run.interrupt` through the server-lifetime scheduler.
-      const intakeContext =
-        scheduledMessages === undefined
-          ? baseIntakeContext
-          : Context.add(baseIntakeContext, ScheduledMessages.ScheduledMessages, scheduledMessages);
       const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const projectService = yield* ProjectService.ProjectService;
@@ -1521,6 +1465,7 @@ export const layerWsRpc = (
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
+      const mcpSignIn = yield* McpSignIn.McpSignIn;
       const analytics = yield* AnalyticsService.AnalyticsService;
       const originProps = clientAnalyticsProps;
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
@@ -1542,12 +1487,14 @@ export const layerWsRpc = (
       };
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
+      const threadViewers = yield* ThreadViewers.ThreadViewers;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const issues = yield* IssueService.IssueService;
+      const threadIssues = yield* ThreadIssueService.ThreadIssueService;
       const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -1619,8 +1566,12 @@ export const layerWsRpc = (
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+      const peerThreadRelay = yield* PeerThreadRelay.PeerThreadRelay;
+      const peerClientPairing = yield* PeerClientPairing.PeerClientPairing;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+      const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+      const taskFolders = yield* TaskFolders.TaskFolders;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -1653,20 +1604,11 @@ export const layerWsRpc = (
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
-      const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
       const triage = yield* TriageService.TriageService;
       const hostResources = yield* HostResources.HostResources;
-      const networkDiagnostics = yield* NetworkDiagnostics.NetworkDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
-      // Who the session proves the caller to be. An orchestrator's agent is a
-      // caller of its own kind; a session that only claims to be one holds no scopes.
-      const caller = callerFromSession(currentSession);
-      const commandAuthor = caller.kind === "orchestrator" ? "agent" : "user";
-      const orchestratorGate = yield* makeOrchestratorRpcGate.pipe(
-        Effect.provide(automationServices),
-      );
       // Webhook URLs start agents; expose them only to operate-scoped sessions while keeping tasks readable.
       const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
         currentSession.scopes.includes(AuthOrchestrationOperateScope)
@@ -1675,11 +1617,13 @@ export const layerWsRpc = (
               ...result,
               tasks: result.tasks.map(({ webhook: _webhook, ...task }) => task),
             };
-      const { authorizeEffect, authorizeStream } = yield* SessionGate.makeSessionGate({
-        sessionId: currentSessionId,
-        scopes: caller.kind === "internal" ? [] : caller.scopes,
-        changes: sessions.streamChanges,
-      });
+      const authorizeEffect = <A, E, R>(
+        requiredScope: AuthEnvironmentScope,
+        effect: Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
+        currentSession.scopes.includes(requiredScope)
+          ? effect
+          : Effect.fail(rpcAuthorizationError(requiredScope));
 
       const listAcpRegistrySessions = Effect.fn("ws.acpRegistry.listSessions")(function* (
         input: AcpRegistryListSessionsInput,
@@ -1871,45 +1815,6 @@ export const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
-      const observeRpcEffect = <A, E, R>(
-        method: string,
-        effect: Effect.Effect<A, E, R>,
-        _traceAttributes?: Readonly<Record<string, unknown>>,
-      ) => authorizeEffect(requiredScopeForRpcMethod(method), effect);
-      const observeRpcStream = <A, E, R>(
-        method: string,
-        stream: Stream.Stream<A, E, R>,
-        _traceAttributes?: Readonly<Record<string, unknown>>,
-      ) => authorizeStream(requiredScopeForRpcMethod(method), stream);
-      const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
-        method: string,
-        effect: Effect.Effect<
-          Stream.Stream<A, StreamError, StreamContext>,
-          EffectError,
-          EffectContext
-        >,
-        _traceAttributes?: Readonly<Record<string, unknown>>,
-      ) => authorizeStream(requiredScopeForRpcMethod(method), Stream.unwrap(effect));
-      // Project sync always addresses a project by id and works from the
-      // workspace root the project store holds, so a deleted or unknown
-      // project fails before any filesystem work starts.
-      const resolveProjectSyncWorkspaceRoot = Effect.fn("ws.resolveProjectSyncWorkspaceRoot")(
-        function* (projectId: ProjectId) {
-          const project = yield* projectStore.getShell(projectId).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProjectSyncIoError({
-                  message: `Failed to look up project '${projectId}'.`,
-                  cause,
-                }),
-            ),
-          );
-          if (Option.isNone(project)) {
-            return yield* new ProjectSyncProjectNotFoundError({ projectId });
-          }
-          return project.value.workspaceRoot;
-        },
-      );
       const loadAuthAccessSnapshot = () =>
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks(),
@@ -2082,12 +1987,13 @@ export const layerWsRpc = (
         return yield* mutateProjectWithClone(projectService, projectCloneTracker, mutation);
       });
 
-      const handlers = WsCoreRpcGroup.of({
+      const handlers = ServerWsRpcGroup.of({
         [WS_METHODS.issuesList]: (input) => issues.list(input),
         [WS_METHODS.issuesDetail]: (input) => issues.detail(input),
         [WS_METHODS.issuesComments]: (input) => issues.comments(input),
         [WS_METHODS.issuesTemplates]: (input) => issues.templates(input),
         [WS_METHODS.issuesCandidates]: (input) => issues.candidates(input),
+        [WS_METHODS.issuesLinkedThreads]: (input) => threadIssues.linkedThreads(input),
         [WS_METHODS.issuesCreate]: (input) => issues.create(input),
         [WS_METHODS.issuesComment]: (input) => issues.comment(input),
         [WS_METHODS.issuesUpdate]: (input) => issues.update(input),
@@ -2121,24 +2027,24 @@ export const layerWsRpc = (
                     ? threadLaunch.retryPreparation(command)
                     : ThreadMessageIntake.dispatchCommand(
                         ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: commandAuthor,
+                          createdBy: "user",
                           creationSource:
                             "creationSource" in command ? command.creationSource : "web",
                         }),
+                        {
+                          managesProviders:
+                            currentSession.scopes.includes(AuthProvidersManageScope),
+                        },
                       )
                   ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
-                  (dispatch) =>
-                    Effect.andThen(orchestratorGate.threadCommand(caller, command), dispatch),
-                  // A replayed receipt was already counted; a prepared-run retry never replays.
                   Effect.tap((result) =>
-                    "replayed" in result && result.replayed === true
-                      ? Effect.void
-                      : recordClientCommandAnalytics(command),
+                    result.replayed ? Effect.void : recordClientCommandAnalytics(command),
                   ),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
+                    if (cause._tag === "EnvironmentAuthorizationError") return cause;
                     const detail = userFacingDispatchErrorMessage(cause);
                     return new OrchestrationV2DispatchCommandError({
                       commandId: command.commandId,
@@ -2318,9 +2224,6 @@ export const layerWsRpc = (
                           runtimeMode: input.runtimeMode,
                           interactionMode: input.interactionMode,
                           workspaceStrategy: input.workspaceStrategy,
-                          ...(input.miniSkills === undefined
-                            ? {}
-                            : { miniSkills: input.miniSkills }),
                           ...(input.initialMessage === undefined
                             ? {}
                             : {
@@ -2328,12 +2231,6 @@ export const layerWsRpc = (
                                   ...(input.initialMessage.messageId === undefined
                                     ? {}
                                     : { messageId: input.initialMessage.messageId }),
-                                  ...(input.initialMessage.miniSkillIds === undefined
-                                    ? {}
-                                    : { miniSkillIds: input.initialMessage.miniSkillIds }),
-                                  ...(input.initialMessage.agentProfile === undefined
-                                    ? {}
-                                    : { agentProfile: input.initialMessage.agentProfile }),
                                   text: input.initialMessage.text,
                                   attachments: input.initialMessage.attachments,
                                   ...(input.initialMessage.context === undefined
@@ -2341,7 +2238,7 @@ export const layerWsRpc = (
                                     : { context: input.initialMessage.context }),
                                 },
                               }),
-                          createdBy: commandAuthor,
+                          createdBy: "user",
                           creationSource: input.creationSource ?? "web",
                         }),
                       ),
@@ -2349,7 +2246,6 @@ export const layerWsRpc = (
                     ),
                 )
                 .pipe(
-                  (launch) => Effect.andThen(orchestratorGate.threadLaunch(caller, input), launch),
                   // A resumed launch is a retry of one already counted.
                   Effect.tap((result) =>
                     result.resumed
@@ -2429,6 +2325,13 @@ export const layerWsRpc = (
                         message: cause.message,
                         cause,
                       }),
+                    TaskFolderError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: cause.message,
+                        cause,
+                      }),
                   }),
                 ),
             ),
@@ -2438,6 +2341,7 @@ export const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>
           Stream.unwrap(
             Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+              Effect.andThen(threadViewers.view(input.threadId)),
               Effect.andThen(subscribeOrchestrationV2Thread(input)),
             ),
           ),
@@ -2447,8 +2351,6 @@ export const layerWsRpc = (
               Effect.as(commandOutputHub.subscribe(input)),
             ),
           ),
-        [WS_METHODS.scheduledTasksList]: (_input) =>
-          scheduledTasks.list().pipe(Effect.map(withVisibleWebhookUrls)),
         [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: (input) =>
           providerSessionManager.subscribePromptSuggestion(input.threadId),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
@@ -2695,6 +2597,8 @@ export const layerWsRpc = (
         [WS_METHODS.mcpAppsToolInfo]: (input) => mcpAppRequests.toolInfo(input),
         [WS_METHODS.mcpAppsUpdateModelContext]: (input) => mcpAppRequests.updateModelContext(input),
         [WS_METHODS.mcpAppsReadResource]: (input) => mcpAppRequests.readResource(input),
+        [WS_METHODS.providerMcpSignInStart]: (input) => mcpSignIn.start(input),
+        [WS_METHODS.providerMcpSignInComplete]: (input) => mcpSignIn.complete(input),
         [WS_METHODS.providerUploadFeedback]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(
@@ -2819,9 +2723,24 @@ export const layerWsRpc = (
         [WS_METHODS.serverReclaimDatabaseSpace]: () => databaseStorage.requestReclaim,
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
+        [WS_METHODS.peerLinksNames]: (_input) =>
+          peerLinks.names.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
         [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
           peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
+        [WS_METHODS.peerLinksSubscribeThread]: (input) => peerThreadRelay.subscribe(input),
+        [WS_METHODS.peerLinksThreadHistoryPage]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(peerThreadRelay.historyPage(input)),
+          ),
+        [WS_METHODS.peerLinksThreadItem]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(peerThreadRelay.item(input)),
+          ),
+        [WS_METHODS.peerLinksPairClient]: (input) =>
+          peerClientPairing.request(input, currentSession),
+        [WS_METHODS.peerLinksPairLink]: (input) =>
+          peerClientPairing.requestForLink(input, currentSession),
         [WS_METHODS.peerLinksAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(peerLinkRequests.answer(input)),
@@ -2845,15 +2764,7 @@ export const layerWsRpc = (
             return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
-        [WS_METHODS.serverGetPendingWork]: (_input) =>
-          observeRpcEffect(
-            WS_METHODS.serverGetPendingWork,
-            effectOutbox.pendingWork.pipe(
-              Effect.mapError((cause) => new ServerPendingWorkError({ detail: cause.message })),
-            ),
-          ),
         [WS_METHODS.serverCheckSecretSource]: (input) => secretCheck.check(input.source),
-
         [WS_METHODS.serverGetTraceDiagnostics]: (_input) =>
           TraceDiagnostics.readTraceDiagnostics({
             traceFilePath: config.serverTracePath,
@@ -3124,18 +3035,6 @@ export const layerWsRpc = (
                 }),
             ),
           ),
-        [WS_METHODS.projectsDiscoverScripts]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectsDiscoverScripts,
-            workspaceFileSystem
-              .discoverScripts(input)
-              .pipe(
-                Effect.mapError(
-                  (cause) => new ProjectDiscoverScriptsError({ cwd: input.cwd, cause }),
-                ),
-              ),
-            { "rpc.aggregate": "workspace" },
-          ),
         [WS_METHODS.projectsListIgnoredFiles]: (input) =>
           workspaceEntries.listIgnoredFiles(input).pipe(
             Effect.mapError(
@@ -3197,6 +3096,11 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.workspaceListFolders]: (input) => workspaceFolders.list(input),
+        [WS_METHODS.workspaceScanFolders]: (input) => workspaceFolders.scan(input),
+        [WS_METHODS.workspaceTaskFolder]: (input) =>
+          taskFolders.find(input.worktreePath).pipe(Effect.map((taskFolder) => ({ taskFolder }))),
+        [WS_METHODS.workspaceAddTaskFolderRepository]: (input) => taskFolders.addRepository(input),
         [WS_METHODS.attachmentsCreateUploadUrl]: (input) => issueAttachmentUploadUrl(input),
         [WS_METHODS.attachmentsDelete]: (input) => deletePendingAttachment(input.attachmentId),
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
@@ -3324,11 +3228,16 @@ export const layerWsRpc = (
                       ? Effect.void
                       : linkCreatedPullRequest({
                           threadId: input.threadId,
+                          cwd: input.cwd,
                           result,
                           commandId: serverCommandId("pr-created-link"),
                         }).pipe(
                           Effect.provideService(Orchestrator.OrchestratorV2, orchestrationEngine),
                           Effect.provideService(ProjectService.ProjectService, projectService),
+                          Effect.provideService(
+                            RepositoryIdentityResolver.RepositoryIdentityResolver,
+                            repositoryIdentityResolver,
+                          ),
                         )
                     ).pipe(
                       Effect.andThen(
@@ -3354,10 +3263,40 @@ export const layerWsRpc = (
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsListRefs]: (input) => gitWorkflow.listRefs(input),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
-          gitWorkflow.createWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
-        [WS_METHODS.vcsRemoveWorktree]: (input) =>
-          gitWorkflow.removeWorktree(input).pipe(
+          // A project that tracks repositories gets a task folder, as its new worktree threads do.
+          taskFolders.createForProjectFolder(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitCommandError({
+                  operation: "TaskFolders.create",
+                  command: "git worktree add",
+                  cwd: input.cwd,
+                  detail: cause.detail,
+                }),
+            ),
+            Effect.filterOrElse(
+              (created) => created !== null,
+              () => gitWorkflow.createWorktree(input),
+            ),
             Effect.tap(() => refreshGitStatus(input.cwd)),
+          ),
+        [WS_METHODS.vcsRemoveWorktree]: (input) =>
+          // A thread's worktree may be a task folder: its repositories' worktrees go with it.
+          taskFolders.removeIfTaskFolder({ path: input.path, force: input.force === true }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitCommandError({
+                  operation: "TaskFolders.remove",
+                  command: "git worktree remove",
+                  cwd: input.cwd,
+                  detail: cause.detail,
+                }),
+            ),
+            Effect.flatMap((removed) =>
+              removed ? Effect.void : gitWorkflow.removeWorktree(input),
+            ),
+            // No project-root refresh here: the client awaits vcs.refreshStatus right after, and a
+            // second refresh would queue behind this one and reread an unchanged repository.
             // Subscribers of the removed checkout learn it is no longer a repository.
             Effect.tap(() =>
               vcsStatusBroadcaster
@@ -3725,245 +3664,12 @@ export const layerWsRpc = (
             ),
           ),
       });
-      const forkHandlers = WsForkRpcGroup.of({
-        [WS_METHODS.serverGetNetworkDiagnostics]: (_input) =>
-          observeRpcEffect(WS_METHODS.serverGetNetworkDiagnostics, networkDiagnostics.read, {
-            "rpc.aggregate": "server",
-          }),
-        [WS_METHODS.serverRefreshProviderRateLimits]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.serverRefreshProviderRateLimits,
-            // V2 drivers fold live `account.rate-limits.updated` events into
-            // their managed snapshots; an explicit refresh re-runs the
-            // instance's status probe, which reads the plan limits again.
-            providerRegistry
-              .refreshInstance(input.instanceId)
-              .pipe(Effect.map((providers) => ({ providers }))),
-            { "rpc.aggregate": "provider" },
-          ),
-        [WS_METHODS.sourceControlHubAccounts]: () => accounts.list,
-        [WS_METHODS.sourceControlHubConnectAccount]: (input) =>
-          accounts
-            .connect(input)
-            .pipe(
-              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
-            ),
-        [WS_METHODS.sourceControlHubSaveAccount]: (input) =>
-          accounts
-            .save(input)
-            .pipe(
-              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
-            ),
-        [WS_METHODS.sourceControlHubRemoveAccount]: (input) =>
-          accounts
-            .remove(input.provider)
-            .pipe(
-              Effect.tap(() => Effect.all([hub.refresh, remotePrs.refresh], { discard: true })),
-            ),
-        [WS_METHODS.sourceControlHubRepositories]: (input) => hub.repositories(input),
-        [WS_METHODS.sourceControlHubRefs]: (input) => hub.refs(input),
-        [WS_METHODS.sourceControlHubClones]: () => hub.clones,
-        [WS_METHODS.sourceControlHubCloneState]: (input) => hub.cloneState(input.projectId),
-        [WS_METHODS.sourceControlHubRefresh]: () =>
-          Effect.all([hub.refresh, remotePrs.refresh], { discard: true }),
-        [WS_METHODS.sourceControlHubCreatePullRequest]: (input) =>
-          hub.browser(input.provider).pipe(
-            Effect.flatMap((browser) => browser.createPullRequest(input)),
-            Effect.tap(() => remotePrs.refresh),
-          ),
-        [WS_METHODS.sourceControlHubPullRequests]: (input) => remotePrs.list(input),
-        [WS_METHODS.sourceControlHubPullRequest]: (input) => remotePrs.detail(input),
-        [WS_METHODS.sourceControlHubActivity]: (input) => remotePrs.activity(input),
-        [WS_METHODS.sourceControlHubDiff]: (input) => remotePrs.diff(input),
-        [WS_METHODS.sourceControlHubRevisions]: (input) =>
-          hub.browser(input.provider).pipe(Effect.flatMap((browser) => browser.revisions(input))),
-        [WS_METHODS.sourceControlHubSubmitReview]: (input) => remotePrs.review(input),
-        [WS_METHODS.sourceControlHubMerge]: (input) => remotePrs.merge(input),
-        [WS_METHODS.sourceControlHubReviewStart]: (input) => reviews.start(input),
-        [WS_METHODS.sourceControlHubReviewHistory]: (input) => reviews.history(input),
-        [WS_METHODS.sourceControlHubReviewEdit]: (input) => reviews.edit(input),
-        [WS_METHODS.sourceControlHubReviewPublish]: (input) => reviews.publish(input),
-        [WS_METHODS.sourceControlHubReviewCancel]: (input) => reviews.cancel(input.id),
-        [WS_METHODS.sourceControlHubReviewSubscribe]: () => reviews.changes,
-        [WS_METHODS.sourceControlHubMapRepository]: (input) => hub.mapRepository(input),
-        [WS_METHODS.sourceControlHubCommitPreview]: (input) =>
-          gitWorkflow.previewCommitMessage(input),
-        [WS_METHODS.aiRuntimesList]: ({ refresh }) => aiRuntimes.list(refresh),
-        [WS_METHODS.aiRuntimesSubscribe]: () => aiRuntimes.changes,
-        [WS_METHODS.aiRuntimesSave]: (input) => aiRuntimes.save(input),
-        [WS_METHODS.aiRuntimesRemove]: ({ runtimeId }) => aiRuntimes.remove(runtimeId),
-        [WS_METHODS.aiRuntimesAction]: (input) => aiRuntimes.action(input),
-        [WS_METHODS.aiRuntimesBind]: (input) => aiRuntimes.bind(input),
-        [WS_METHODS.computeList]: ({ refresh }) =>
-          observeRpcEffect(WS_METHODS.computeList, compute.list(refresh)),
-        [WS_METHODS.computeSubscribe]: () =>
-          observeRpcStream(WS_METHODS.computeSubscribe, compute.changes),
-        [WS_METHODS.computeEventsSubscribe]: () =>
-          observeRpcStream(WS_METHODS.computeEventsSubscribe, compute.events),
-        [WS_METHODS.computeSaveProvider]: ({ provider }) =>
-          observeRpcEffect(WS_METHODS.computeSaveProvider, compute.saveProvider(provider)),
-        [WS_METHODS.computeRemoveProvider]: ({ providerId }) =>
-          observeRpcEffect(WS_METHODS.computeRemoveProvider, compute.removeProvider(providerId)),
-        [WS_METHODS.computeListJobs]: (input) =>
-          observeRpcEffect(WS_METHODS.computeListJobs, compute.listJobs(input)),
-        [WS_METHODS.computeGetJob]: (input) =>
-          observeRpcEffect(WS_METHODS.computeGetJob, compute.getJob(input)),
-        [WS_METHODS.computeSubmit]: (input) =>
-          observeRpcEffect(WS_METHODS.computeSubmit, compute.submit(input)),
-        [WS_METHODS.computeCancelJob]: (input) =>
-          observeRpcEffect(WS_METHODS.computeCancelJob, compute.cancel(input)),
-        [WS_METHODS.marketplaceList]: (_input) =>
-          observeRpcEffect(WS_METHODS.marketplaceList, marketplace.list(), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceGetPackage]: ({ sourceId, packageId }) =>
-          observeRpcEffect(
-            WS_METHODS.marketplaceGetPackage,
-            marketplace.getPackage(sourceId, packageId),
-            { "rpc.aggregate": "marketplace" },
-          ),
-        [WS_METHODS.marketplaceAddSource]: ({ url }) =>
-          observeRpcEffect(WS_METHODS.marketplaceAddSource, marketplace.addSource(url), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceRemoveSource]: ({ sourceId }) =>
-          observeRpcEffect(WS_METHODS.marketplaceRemoveSource, marketplace.removeSource(sourceId), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceInstall]: (input) =>
-          observeRpcEffect(WS_METHODS.marketplaceInstall, marketplace.install(input), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceUpdate]: (input) =>
-          observeRpcEffect(WS_METHODS.marketplaceUpdate, marketplace.update(input), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceUninstall]: ({ installationId }) =>
-          observeRpcEffect(WS_METHODS.marketplaceUninstall, marketplace.uninstall(installationId), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceSetAutoUpdate]: (input) =>
-          observeRpcEffect(WS_METHODS.marketplaceSetAutoUpdate, marketplace.setAutoUpdate(input), {
-            "rpc.aggregate": "marketplace",
-          }),
-        [WS_METHODS.marketplaceExportProviderTemplate]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.marketplaceExportProviderTemplate,
-            marketplace.exportProviderTemplate(input),
-            { "rpc.aggregate": "marketplace" },
-          ),
-        [WS_METHODS.projectSyncManifest]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectSyncManifest,
-            Effect.gen(function* () {
-              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
-              const entries = yield* buildProjectSyncManifest({
-                workspaceRoot,
-                includeGit: input.includeGit,
-                extraIgnores: input.extraIgnores,
-              });
-              return {
-                workspaceRoot,
-                entries,
-                generatedAt: DateTime.formatIso(yield* DateTime.now),
-              };
-            }),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.threadHandoffWatch]: (input) =>
-          observeRpcStreamEffect(
-            WS_METHODS.threadHandoffWatch,
-            Effect.gen(function* () {
-              const service = yield* Effect.serviceOption(ThreadHandoffService);
-              if (Option.isNone(service))
-                return yield* new ThreadHandoffError({
-                  code: "unsupported",
-                  message: "Thread handoff is unavailable on this server.",
-                });
-              return service.value.watch(input.threadId);
-            }),
-            { "rpc.aggregate": "thread" },
-          ),
-        [WS_METHODS.threadHandoffRequest]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.threadHandoffRequest,
-            Effect.gen(function* () {
-              const service = yield* Effect.serviceOption(ThreadHandoffService);
-              if (Option.isNone(service))
-                return yield* new ThreadHandoffError({
-                  code: "unsupported",
-                  message: "Thread handoff is unavailable on this server.",
-                });
-              return yield* service.value.handle(input);
-            }),
-            { "rpc.aggregate": "thread" },
-          ),
-        [WS_METHODS.projectSyncCreateExportUrl]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectSyncCreateExportUrl,
-            Effect.gen(function* () {
-              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
-              return yield* issueProjectSyncExportUrl({
-                projectId: input.projectId,
-                workspaceRoot,
-                entries: input.entries,
-              });
-            }),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.projectSyncCreateImportUrl]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectSyncCreateImportUrl,
-            Effect.gen(function* () {
-              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
-              return yield* issueProjectSyncImportUrl({
-                projectId: input.projectId,
-                workspaceRoot,
-                fileCount: input.fileCount,
-                totalBytes: input.totalBytes,
-              });
-            }),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.projectSyncApplyDeletions]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectSyncApplyDeletions,
-            Effect.gen(function* () {
-              const workspaceRoot = yield* resolveProjectSyncWorkspaceRoot(input.projectId);
-              return yield* applyProjectSyncDeletions({ workspaceRoot, paths: input.paths });
-            }),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.subscribeScheduledMessages]: (input) =>
-          observeRpcStream(
-            WS_METHODS.subscribeScheduledMessages,
-            scheduledMessages?.stream(input.threadId) ?? Stream.empty,
-          ),
-        [WS_METHODS.scheduledMessageUpdate]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.scheduledMessageUpdate,
-            scheduledMessages?.update(input) ?? Effect.void,
-          ),
-        [WS_METHODS.vcsFetch]: (input) => gitWorkflow.fetchRemote(input),
-      });
-      const automationHandlers = yield* makeAutomationRpcHandlers({
-        caller,
-        observeEffect: observeRpcEffect,
-        observeStream: observeRpcStream,
-      }).pipe(Effect.provide(automationServices));
-      // For an orchestrator's agent every handler is guarded by method here, so
-      // an RPC without a rule fails closed whether or not it checks a scope.
-      const coreHandlers = orchestratorGate.guardHandlers(caller, handlers);
-      const splitHandlers: Pick<typeof coreHandlers, SplitWsRpc["_tag"]> = coreHandlers;
-      const otherHandlers: Pick<typeof coreHandlers, Exclude<CoreWsRpc, SplitWsRpc>["_tag"]> =
-        coreHandlers;
-      return Context.mergeAll(
+      const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
+      const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =
+        handlers;
+      return Context.merge(
         yield* SplitWsRpcGroup.toHandlers(splitHandlers),
         yield* OtherWsRpcGroup.toHandlers(otherHandlers),
-        yield* WsForkRpcGroup.toHandlers(orchestratorGate.guardHandlers(caller, forkHandlers)),
-        yield* AutomationRpcGroup.toHandlers(
-          orchestratorGate.guardHandlers(caller, automationHandlers),
-        ),
       );
     }),
   );
@@ -3976,32 +3682,18 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
-    const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
-    const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
-    const scheduledMessages = yield* Effect.serviceOption(ScheduledMessages.ScheduledMessages);
-    if (Option.isSome(scheduledMessages)) {
-      yield* startup.awaitCommandReady.pipe(
-        Effect.andThen(scheduledMessages.value.start),
-        Effect.forkScoped,
-      );
-    }
     const npmRelease = yield* NpmRelease.NpmRelease;
     const pullRequests = yield* PullRequestService.PullRequestService;
-    const marketplace = yield* MarketplaceService.MarketplaceService;
-    const aiRuntimes = yield* AiRuntimeService;
-    const compute = yield* ComputeService;
-    const remotePrs = yield* RemotePullRequestService;
-    const reviews = yield* PullRequestReviewService;
-    const hub = yield* SourceControlHubService;
-    const accounts = yield* SourceControlAccounts;
-    const automationServices = yield* Effect.context<AutomationLayer.AutomationServices>();
     const issues = yield* IssueService.IssueService;
+    const threadIssues = yield* ThreadIssueService.ThreadIssueService;
     const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const peerThreadRelay = yield* PeerThreadRelay.PeerThreadRelay;
+    const peerClientPairing = yield* PeerClientPairing.PeerClientPairing;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -4033,7 +3725,6 @@ export const layer = Layer.unwrap(
             failEnvironmentInternal("internal_error", error),
           ),
         );
-        const clientOrigin = readClientConnectionOrigin(request);
         // Desktop bootstrap sessions connect to their own backend, including same-machine WSL.
         if (session.subject === "desktop-bootstrap") {
           delete NodeHttpServerRequest.toIncomingMessage(request).headers[
@@ -4074,18 +3765,7 @@ export const layer = Layer.unwrap(
           Effect.provide(
             layerWsRpc(
               session,
-              clientOrigin,
               clientAnalyticsProps,
-              previewAutomationBroker,
-              marketplace,
-              aiRuntimes,
-              compute,
-              remotePrs,
-              reviews,
-              hub,
-              accounts,
-              Option.getOrUndefined(scheduledMessages),
-              automationServices,
               serverBrowser,
               reportProfiles,
               readSettingsClient(url.value),
@@ -4101,6 +3781,7 @@ export const layer = Layer.unwrap(
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
               Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
+              Layer.provide(Layer.succeed(ThreadIssueService.ThreadIssueService, threadIssues)),
               Layer.provide(
                 Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
               ),
@@ -4113,6 +3794,8 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+              Layer.provide(Layer.succeed(PeerThreadRelay.PeerThreadRelay, peerThreadRelay)),
+              Layer.provide(Layer.succeed(PeerClientPairing.PeerClientPairing, peerClientPairing)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

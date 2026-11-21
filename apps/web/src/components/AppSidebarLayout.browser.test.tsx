@@ -13,9 +13,7 @@ vi.mock(import("../state/server"), async (original) => {
   return { ...actual, primaryServerKeybindingsAtom: Atom.make(keybindings) };
 });
 // The thread list needs live environments; the shortcut lives in the shell around it.
-vi.mock(import("./GroupedSidebar"), () => ({ default: (() => null) as never }));
-vi.mock(import("./LegacySidebar"), () => ({ default: (() => null) as never }));
-vi.mock(import("./OriginalSidebar"), () => ({ default: (() => null) as never }));
+vi.mock(import("./Sidebar"), () => ({ default: (() => null) as never }));
 
 import { AppSidebarLayout } from "./AppSidebarLayout";
 

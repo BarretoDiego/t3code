@@ -132,6 +132,9 @@ vi.mock("../../state/query", () => ({
   useEnvironmentQuery: () => ({ data: { tasks: mocks.tasks, threads: [] } }),
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.upsert }));
+vi.mock("../../state/queries", () => ({
+  usePaginatedBranches: () => ({ refs: [], data: null, error: null }),
+}));
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { editDraft } from "./scheduledTaskDraft";
@@ -158,7 +161,6 @@ beforeEach(() => {
     schedule: { type: "fixed_time", timeOfDay: "05:00" },
     projectId: ProjectId.make("project"),
     threadId: null,
-    fallbackModelSelections: [],
     workspaceStrategy: { type: "root" },
     modelSelection: {
       instanceId: ProviderInstanceId.make("codex"),

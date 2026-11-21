@@ -96,6 +96,7 @@ const unitTestProject = {
     setupFiles: [
       "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
+      "../../packages/shared/src/testing/gitEnv.ts",
     ],
   },
 } satisfies TestProjectInlineConfiguration;
@@ -123,7 +124,7 @@ const browserTestProject = {
       "fast-xml-parser",
       "entities",
       "dompurify",
-      "heic-to/next",
+      "heic-to/csp",
       "jszip",
       "pdfjs-dist",
       "sql.js",
@@ -350,8 +351,6 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: {
-      // In dev mode, tell the web app where the WebSocket server lives
-      "import.meta.env.VITE_T3CODE_FORK_BRAND": JSON.stringify(process.env.T3CODE_FORK_BRAND ?? ""),
       "import.meta.env.VITE_WS_URL": JSON.stringify(configuredWsUrl ?? ""),
       // Override .env URLs with empty values in single-origin dev so clients use window.location.origin.
       "import.meta.env.VITE_HTTP_URL": JSON.stringify(configuredHttpUrl ?? ""),

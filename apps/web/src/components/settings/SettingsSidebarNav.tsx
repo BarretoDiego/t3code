@@ -28,9 +28,6 @@ import {
   SearchIcon,
   ServerIcon,
   Settings2Icon,
-  PuzzleIcon,
-  UserCogIcon,
-  WorkflowIcon,
   ShieldCheckIcon,
   SmartphoneIcon,
   WrenchIcon,
@@ -57,11 +54,11 @@ import {
   searchSettings,
   revealSettingsSearchTarget,
   SETTINGS_NAV_GROUPS,
+  SETTINGS_NAV_LABELS,
   SETTINGS_SECTION_LABELS,
   type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
-import { useAutomationEnvironmentIds } from "../../state/automation";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { handleSettingsSectionKeyDown } from "./settingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -102,15 +99,11 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
-  "/settings/ai-runtimes": BotIcon,
   "/settings/threads": MessagesSquareIcon,
   "/settings/browser": GlobeIcon,
   "/settings/devices": SmartphoneIcon,
   "/settings/scheduled-tasks": CalendarClockIcon,
-  "/settings/automation": WorkflowIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/mini-skills": PuzzleIcon,
-  "/settings/agent-profiles": UserCogIcon,
   "/settings/worktrees": FolderTreeIcon,
   "/settings/connections": ServerIcon,
   "/settings/access": ShieldCheckIcon,
@@ -134,7 +127,7 @@ function scrollResultIntoView(row: HTMLElement | null) {
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
-  return <Icon className="size-4 shrink-0 text-(--sidebar-icon-color)" />;
+  return <Icon className="size-4 h-5 shrink-0 text-(--sidebar-icon-color)" />;
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
@@ -143,14 +136,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navArea = workspaceAreaProps("settings-nav", 0, gt("Settings sections"));
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
-  // Automation appears only once an environment's server supports it.
-  const hasAutomation = useAutomationEnvironmentIds().length > 0;
-  const navGroups = SETTINGS_NAV_GROUPS.map((group) => ({
-    ...group,
-    paths: group.paths.filter((to) => to !== "/settings/automation" || hasAutomation),
-  }));
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
-
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   // Below md the nav is an icon rail; searching expands it over the page.
@@ -393,7 +379,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   </SidebarMenu>
                 )}
                 <div onKeyDown={handleSettingsSectionKeyDown} className="flex flex-col gap-4">
-                  {navGroups.map((group, index) => (
+                  {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
                       key={group.heading}
                       className="flex flex-col gap-1 max-md:border-t max-md:border-sidebar-border max-md:pt-4 max-md:first:border-t-0 max-md:first:pt-0"
@@ -428,7 +414,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                       !compactSearchOpen && "max-md:sr-only",
                                     )}
                                   >
-                                    {m(SETTINGS_SECTION_LABELS[to])}
+                                    {m(SETTINGS_NAV_LABELS[to])}
                                   </span>
                                 </SidebarMenuButton>
                               </SidebarMenuItem>

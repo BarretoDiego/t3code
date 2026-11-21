@@ -117,7 +117,7 @@ it.each([
 
     expect(state.searchRequests).toHaveBeenCalledExactlyOnceWith({
       environmentId: target.environmentId,
-      input: { cwd: target.cwd, query: expected, limit: 80, includeRepositories: true },
+      input: { cwd: target.cwd, query: expected, limit: 80 },
     });
     expect(result.searchedTarget).toMatchObject({ ...target, query });
     expect(result.searchedQuery).toBe(query);

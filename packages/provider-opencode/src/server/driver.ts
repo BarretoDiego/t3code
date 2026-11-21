@@ -263,7 +263,6 @@ export const OpenCodeDriver: ProviderDriver<
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -287,7 +286,6 @@ export const OpenCodeDriver: ProviderDriver<
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     const effectiveConfig = {
@@ -526,6 +524,7 @@ export const OpenCodeDriver: ProviderDriver<
           runtimeProbe.refresh,
           loadOpenCode2Models,
           processEnv,
+          host.compatibility,
         ).pipe(
           Effect.annotateLogs({ providerInstanceId: instanceId }),
           Effect.annotateSpans({ providerInstanceId: instanceId }),
@@ -691,7 +690,6 @@ export const OpenCodeDriver: ProviderDriver<
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot,
       // A scan never installs OpenCode: without an offline probe result it fails and keeps the

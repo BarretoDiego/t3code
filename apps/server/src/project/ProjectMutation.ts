@@ -20,11 +20,13 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.createWorkspaceRootIfMissing === undefined
           ? {}
           : { createWorkspaceRootIfMissing: mutation.createWorkspaceRootIfMissing }),
-        ...(mutation.linkKey === undefined ? {} : { linkKey: mutation.linkKey }),
         ...(mutation.defaultModelSelection === undefined
           ? {}
           : { defaultModelSelection: mutation.defaultModelSelection }),
         ...(mutation.scripts === undefined ? {} : { scripts: mutation.scripts }),
+        ...(mutation.trackedFolders === undefined
+          ? {}
+          : { trackedFolders: mutation.trackedFolders }),
       });
 
     case "project.update":
@@ -39,11 +41,17 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.autoPull === undefined ? {} : { autoPull: mutation.autoPull }),
         ...(mutation.projectIcon === undefined ? {} : { projectIcon: mutation.projectIcon }),
         ...(mutation.faviconPath === undefined ? {} : { faviconPath: mutation.faviconPath }),
-        ...(mutation.linkKey === undefined ? {} : { linkKey: mutation.linkKey }),
         ...(mutation.defaultThreadEnvMode === undefined
           ? {}
           : { defaultThreadEnvMode: mutation.defaultThreadEnvMode }),
         ...(mutation.scripts === undefined ? {} : { scripts: mutation.scripts }),
+        ...(mutation.trackedFolders === undefined
+          ? {}
+          : { trackedFolders: mutation.trackedFolders }),
+        ...(mutation.trackFolders === undefined ? {} : { trackFolders: mutation.trackFolders }),
+        ...(mutation.untrackFolders === undefined
+          ? {}
+          : { untrackFolders: mutation.untrackFolders }),
         ...(mutation.pinned === undefined ? {} : { pinned: mutation.pinned }),
         ...(mutation.archived === undefined ? {} : { archived: mutation.archived }),
       });

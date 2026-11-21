@@ -152,7 +152,6 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
     instanceId,
     displayName,
     accentColor,
-    icon,
     environment,
     enabled,
     config,
@@ -175,7 +174,6 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       driverKind: DRIVER_KIND,
       displayName,
       accentColor,
-      icon,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
     const effectiveConfig = { ...config, enabled } satisfies GrokSettings;
@@ -240,6 +238,9 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       getSettings: snapshotSettings.getSettings,
       streamSettings: snapshotSettings.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
+      // Each check starts the Grok CLI four times. A ready instance is rechecked on refresh or a
+      // settings change; only an unhealthy one keeps polling until it recovers.
+      refreshOnInterval: (snapshot) => snapshot.status !== "ready",
       initialSnapshot: (settings) =>
         buildInitialGrokProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,
@@ -292,7 +293,6 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       continuationIdentity,
       displayName,
       accentColor,
-      icon,
       enabled,
       snapshot,
       snapshotForCwd,

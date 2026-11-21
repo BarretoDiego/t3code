@@ -14,7 +14,7 @@ import {
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
-import { ProjectLinkKey, ProjectScript, StoredProjectIcon } from "./project.ts";
+import { ProjectScript, ProjectTrackedFolders, StoredProjectIcon } from "./project.ts";
 
 export const OrchestrationClientOrigin = Schema.Struct({
   surface: Schema.optional(ClientSurface),
@@ -42,8 +42,8 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
-  linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   scripts: Schema.Array(ProjectScript),
+  trackedFolders: Schema.optional(ProjectTrackedFolders),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -60,8 +60,8 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
-  linkKey: Schema.optional(Schema.NullOr(ProjectLinkKey)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  trackedFolders: Schema.optional(ProjectTrackedFolders),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   updatedAt: IsoDateTime,

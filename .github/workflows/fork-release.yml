@@ -1,7 +1,7 @@
 name: Fork Release
 
 # Release train for a fork of T3 Code. Every push to main becomes a nightly
-# version, a tag, and a GitHub Release in the fork itself. The desktop build
+# version, a tag, and a GitHub prerelease in the fork itself. The desktop build
 # reads its update feed from GITHUB_REPOSITORY, so installs of these builds
 # update from the fork's releases and never from upstream.
 #
@@ -9,7 +9,10 @@ name: Fork Release
 # upstream release secrets (relay, npm, Vercel, Apple, Azure). macOS builds are
 # signed with the self-signed certificate in MAC_SELF_SIGN_P12 and
 # MAC_SELF_SIGN_PASSWORD; without them the app is unsigned and macOS refuses to
-# install its updates. See docs/operations/release.md.
+# install its updates.
+#
+# Keep this file name: the run number is part of every version and is the
+# Android versionCode, and GitHub restarts it for a renamed workflow.
 
 on:
   push:
@@ -33,14 +36,11 @@ jobs:
     if: github.repository != 'pingdotgg/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      T3CODE_FORK_BRAND: "1"
     outputs:
       version: ${{ steps.release_meta.outputs.version }}
       tag: ${{ steps.release_meta.outputs.tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
     steps:
-      # Same credential-free checkout as release-desktop.yml.
       - name: Checkout
         shell: bash
         env:
@@ -53,15 +53,10 @@ jobs:
           git sparse-checkout set --no-cone '/*' '!/.repos/'
           git checkout --detach FETCH_HEAD
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
         with:
-          node-version-file: package.json
-          cache: true
-          run-install: false
-
-      - name: Install bundle dependencies
-        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
 
       # The run number only grows, so versions cut on the same day stay ordered
       # and every release is an update over the one before it.
@@ -77,16 +72,13 @@ jobs:
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ steps.release_meta.outputs.version }}"
 
-      - name: Install browser secret helper build libraries
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-
+      # Same build and layout as release.yml's build_bundle, so
+      # release-desktop.yml packages it unchanged.
       - name: Build JS bundle
-        run: vp run build:desktop
+        run: vp run build:desktop:bundle
 
-      # Same layout as release.yml's js-bundle so release-desktop.yml can
-      # package it unchanged.
       - name: Upload JS bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: js-bundle
           path: |
@@ -111,7 +103,8 @@ jobs:
       clerk_cli_oauth_client_id: ""
       relay_url: ""
       label: macOS arm64
-      runner: macos-latest
+      # Packaging builds the Apple Speech helper, which needs Xcode 26.
+      runner: macos-26
       platform: mac
       target: dmg
       arch: arm64
@@ -163,14 +156,14 @@ jobs:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: desktop-*
           merge-multiple: true
           path: release-assets
 
       - name: Download Android APK
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: android-apk
           path: release-assets

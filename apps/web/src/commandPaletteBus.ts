@@ -9,16 +9,6 @@ export interface CommandPaletteLinkedThreads {
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
-  /**
-   * Environment to add the project to, skipping the environment step of the
-   * flow. Set when the caller already knows the answer — an environment
-   * section header in the sidebar asks for a project *in that environment*,
-   * and re-asking would be the palette ignoring where the click came from.
-   */
-  readonly environmentId?: string;
-  /** Enter the existing local-folder or Git-URL flow directly. */
-  readonly projectSource?: "local" | "url";
-  readonly repositoryUrl?: string;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
 }
@@ -30,12 +20,7 @@ export function openCommandPalette(detail: CommandPaletteOpenDetail = {}): void 
   if (detail.open === "new-thread-in") {
     dispatchCommandPalette({ _tag: "OpenNewThreadIn" });
   } else if (detail.open === "add-project") {
-    dispatchCommandPalette({
-      _tag: "OpenAddProject",
-      ...(detail.environmentId !== undefined ? { environmentId: detail.environmentId } : {}),
-      ...(detail.projectSource ? { projectSource: detail.projectSource } : {}),
-      ...(detail.repositoryUrl ? { repositoryUrl: detail.repositoryUrl } : {}),
-    });
+    dispatchCommandPalette({ _tag: "OpenAddProject" });
   } else if (detail.query !== undefined) {
     dispatchCommandPalette({
       _tag: "OpenSearch",

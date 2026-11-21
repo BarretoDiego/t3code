@@ -1,115 +1,11 @@
 import {
-  ProjectId,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
-import {
-  splitSharedServerPatch,
-  supportsSharedSettingsSync,
-  filterSharedServerPatch,
-  pickSharedServerSettings,
-} from "./sharedSettings.ts";
 import { describe, expect, it } from "@effect/vitest";
 
-describe("supportsSharedSettingsSync", () => {
-  it("accepts connected servers with loaded config regardless of legacy capability flags", () => {
-    expect(
-      supportsSharedSettingsSync({
-        connection: { phase: "connected" },
-        serverConfig: { environment: { capabilities: { threadAutoSettlement: true } } },
-      }),
-    ).toBe(true);
-    expect(
-      supportsSharedSettingsSync({
-        connection: { phase: "connected" },
-        serverConfig: { environment: { capabilities: {} } },
-      }),
-    ).toBe(true);
-    expect(
-      supportsSharedSettingsSync({ connection: { phase: "connected" }, serverConfig: null }),
-    ).toBe(false);
-    expect(
-      supportsSharedSettingsSync({
-        connection: { phase: "reconnecting" },
-        serverConfig: { environment: { capabilities: { threadAutoSettlement: true } } },
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("splitSharedServerPatch", () => {
-  it("keeps project overrides local: project ids belong to one environment", () => {
-    const patch = {
-      projectSettingsOverrides: { [ProjectId.make("project")]: { defaultAutoPull: true } },
-      sidebarAutoSettleOnMerge: false,
-    };
-    expect(splitSharedServerPatch(patch)).toEqual({
-      sharedPatch: { sidebarAutoSettleOnMerge: false },
-      localPatch: { projectSettingsOverrides: patch.projectSettingsOverrides },
-    });
-  });
-
-  it.each([
-    {
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.6-sol",
-      options: [{ id: "reasoningEffort", value: "low" }],
-    },
-    {
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-sonnet-4-6",
-      options: [{ id: "effort", value: "high" }],
-    },
-    DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
-  ])("shares the text generation model and options, including reset (%j)", (selection) => {
-    const patch = { textGenerationModelSelection: selection };
-    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
-    expect(pickSharedServerSettings({ ...DEFAULT_SERVER_SETTINGS, ...patch })).toMatchObject(patch);
-  });
-
-  it("routes preference keys to the shared patch and machine keys to the local patch", () => {
-    const { sharedPatch, localPatch } = splitSharedServerPatch({
-      sidebarAutoSettleAfterDays: 7,
-      sidebarAutoSettleOnMerge: false,
-      continueThreadsAfterServerUpdate: true,
-      enableAgentBrowserAccess: false,
-      defaultThreadEnvMode: "worktree",
-      newWorktreesStartFromOrigin: true,
-    });
-    expect(sharedPatch).toEqual({
-      sidebarAutoSettleAfterDays: 7,
-      sidebarAutoSettleOnMerge: false,
-      continueThreadsAfterServerUpdate: true,
-      newWorktreesStartFromOrigin: true,
-    });
-    expect(localPatch).toEqual({
-      enableAgentBrowserAccess: false,
-      defaultThreadEnvMode: "worktree",
-    });
-  });
-});
-
-describe("pickSharedServerSettings", () => {
-  it("returns only the shared keys", () => {
-    expect(Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS)).sort()).toEqual([
-      "agentProfileDefaultWrapper",
-      "agentProfiles",
-      "autoResumeLimitedThreads",
-      "continueThreadsAfterServerUpdate",
-      "miniSkillPromptWrappers",
-      "miniSkills",
-      "newWorktreesStartFromOrigin",
-      "sidebarAutoSettleAfterDays",
-      "sidebarAutoSettleOnMerge",
-      "snoozeLimitedThreads",
-      "snoozePresets",
-      "sourceControlReview",
-      "sourceControlWritingStyle",
-      "textGenerationModelSelection",
-    ]);
-  });
-});
+import { filterSharedServerPatch } from "./sharedSettings.ts";
 
 describe("filterSharedServerPatch", () => {
   it("holds the restart preference until the target's config loads", () => {

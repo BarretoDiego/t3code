@@ -9,12 +9,6 @@ A driver kind identifies an integration; an instance identifies one configuratio
 lifecycle. Route work by instance, so two accounts using the same driver do not share mutable
 session or catalog state. For a new driver, start with [adding a provider](./adding-a-provider.md).
 
-## Drivers and runtime context
-
-[`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) registers the Codex, Claude, Cursor, Grok, OpenCode, and Antigravity drivers. Each driver supplies configuration and creates its adapter in an instance-owned scope. Runtime instructions identify T3 Code and describe the harness without changing the persisted user message; adapters place those instructions in the native protocol's appropriate system or prompt field.
-
-Provider subscription quotas have two compatible views. Drivers expose normalized `usageLimits` for the common account-level UI, while provider-specific `rateLimits` snapshots retain named or sparse buckets that the normalized contract cannot represent. Both remain scoped to a provider instance, never a driver kind.
-
 ## Process and account isolation
 
 The `opencode` driver probes the installed version and runs the 1.x or 2.x runtime. OpenCode's MCP
@@ -43,14 +37,19 @@ session's cwd. Provider switches still use portable handoff summaries.
 See the [adapter](../../packages/provider-pi/src/server/adapter.ts).
 
 Antigravity separates account profiles per instance while sharing installed executables across the
-environment. It forces file-based credential storage because the native macOS keychain entry would
-otherwise be shared across instances. The launch environment removes ambient Google credentials,
+environment. The 1.5 CLI keeps every profile's sign-in in one OS keyring entry and ignores
+`AGY_ACP_FORCE_FILE_STORAGE`; only its SSH-session check stores the sign-in in the profile, so Google
+account instances launch with `SSH_CONNECTION` set and sign in with `--login`. Gemini Enterprise
+has no such sign-in and still shares the keyring entry. The launch environment removes ambient Google credentials,
 so an instance cannot silently use another account or billing project. The agent also resolves
 its user-global skill directories under that profile, so the profile links those two directories
 back to the user's real `~/.gemini`; MCP servers, hooks, and rules there stay out of the profile.
 See [profile isolation](../../apps/server/src/provider/antigravityAuthSupport.ts).
 
-The [Antigravity installer](../../apps/server/src/provider/AntigravityInstallation.ts) outlives client connections and provider-instance rebuilds. Releases are immutable, with an atomic pointer selecting the version for new processes. Running processes hold leases on their version. Updates and removal must respect those leases instead of replacing executables under a running agent.
+The [Antigravity installer](../../apps/server/src/provider/AntigravityInstallation.ts) outlives
+client connections and provider-instance rebuilds. Releases are immutable, with an atomic pointer
+selecting the version for new processes. Running processes hold leases on their version. Updates
+and removal must respect those leases instead of replacing executables under a running agent.
 
 ## Setup must not happen as a health-check side effect
 
@@ -59,7 +58,11 @@ Opening a provider session can start MCP servers, run hooks, or launch a login b
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
-[Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating T3 auth session. The client carries the return URL back to the environment because the provider's loopback listener may be on another machine. Forward only the callback for the owned pending flow; a successful callback HTTP request is not proof that provider authentication finished. The native process owns token exchange and storage.
+[Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
+T3 auth session. The client carries the return URL back to the environment because the provider's
+loopback listener may be on another machine. Forward only the callback for the owned pending flow;
+a successful callback HTTP request is not proof that provider authentication finished. The native
+process owns token exchange and storage.
 
 Managed ChatGPT sign-in for a remote environment can finish on a local primary. The
 [primary handoff](../../apps/server/src/provider/CodexChatGptHandoff.ts) uses an ephemeral
@@ -72,7 +75,10 @@ Antigravity sign-out closes admission to new processes and stops existing proces
 metadata. Otherwise a helper or resumed session could retain the old account. Cached model lists
 do not establish current access, and an authoritative empty catalog must clear the old list.
 
-Antigravity text-generation helpers deny tool requests, but native hooks and MCP configuration can run before the prompt. They reject profiles with such configuration before launch. Prompt instructions and tool denial do not create a native sandbox. See [helper constraints](../../apps/server/src/textGeneration/AntigravityTextGeneration.ts).
+Antigravity text-generation helpers deny tool requests, but native hooks and MCP configuration can
+run before the prompt. They reject profiles with such configuration before launch. Prompt
+instructions and tool denial do not create a native sandbox.
+See [helper constraints](../../apps/server/src/textGeneration/AntigravityTextGeneration.ts).
 
 ## Provider updates run only through the owning installer
 
@@ -147,7 +153,10 @@ uploads for a thread; adapters choose native input formats for those environment
 A path in the prompt does not grant filesystem access. Keep provider sandbox and approval rules
 in force; copying uploads into the project to bypass them changes that boundary.
 
-File attachments introduced a replay compatibility limit. Image-only clients cannot decode file-bearing messages, and an image-only server can fail the entire environment's startup when replaying one such event. Rollouts and downgrades must account for persisted history as well as current client support.
+File attachments introduced a replay compatibility limit. Image-only clients cannot decode
+file-bearing messages, and an image-only server can fail the entire environment's startup when
+replaying one such event. Rollouts and downgrades must account for persisted history as well as
+current client support.
 
 ## Provider diagnostics
 

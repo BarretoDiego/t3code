@@ -24,10 +24,9 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
@@ -396,12 +395,7 @@ it.effect.each(storageCases)(
         Effect.provide(
           Layer.merge(ProviderTurnControlService.layer, RuntimeRequestService.layer).pipe(
             Layer.provide(
-              Layer.mergeAll(
-                layerSessions,
-                layerEvents,
-                IdAllocator.layer,
-                ServerSettings.layerTest(),
-              ),
+              Layer.mergeAll(layerSessions, layerEvents, McpAppModelContext.layerEmpty),
             ),
           ),
         ),

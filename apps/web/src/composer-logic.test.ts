@@ -293,89 +293,6 @@ describe("detectComposerTrigger", () => {
     (text) => expect(detectComposerTrigger(text, text.length)).toBeNull(),
   );
 
-  it("detects @path trigger at cursor", () => {
-    const text = "Please check @src/com";
-    const trigger = detectComposerTrigger(text, text.length);
-
-    expect(trigger).toEqual({
-      kind: "path",
-      query: "src/com",
-      rangeStart: "Please check ".length,
-      rangeEnd: text.length,
-    });
-  });
-
-  it("detects #profile shortcut only at the start of the message", () => {
-    const text = "#reviewer look at this";
-    const trigger = detectComposerTrigger(text, "#reviewer".length);
-
-    expect(trigger).toEqual({
-      kind: "profile",
-      query: "reviewer",
-      rangeStart: 0,
-      rangeEnd: 9,
-    });
-  });
-
-  it("opens the profile menu on a bare # at message start", () => {
-    expect(detectComposerTrigger("#", 1)).toEqual({
-      kind: "profile",
-      query: "",
-      rangeStart: 0,
-      rangeEnd: 1,
-    });
-  });
-
-  it("keeps numeric references as pull requests rather than profile shortcuts", () => {
-    const issue = "Fix #123";
-    expect(detectComposerTrigger(issue, issue.length)).toEqual({
-      kind: "pull-request",
-      query: "123",
-      rangeStart: 4,
-      rangeEnd: issue.length,
-    });
-    expect(detectComposerTrigger("#123", 4)).toEqual({
-      kind: "pull-request",
-      query: "123",
-      rangeStart: 0,
-      rangeEnd: 4,
-    });
-    const midText = "The issue #reviewer is unrelated";
-    expect(detectComposerTrigger(midText, midText.length)).toBeNull();
-  });
-
-  it("does not trigger inside code blocks", () => {
-    const text = "```\n#reviewer\n```";
-    const trigger = detectComposerTrigger(text, 10);
-    expect(trigger).toBeNull();
-    const unfinished = "```ts\n#reviewer";
-    expect(detectComposerTrigger(unfinished, unfinished.length)).toBeNull();
-  });
-
-  it("detects slash command token while typing command name", () => {
-    const text = "/mo";
-    const trigger = detectComposerTrigger(text, text.length);
-
-    expect(trigger).toEqual({
-      kind: "slash-command",
-      query: "mo",
-      rangeStart: 0,
-      rangeEnd: text.length,
-    });
-  });
-
-  it("keeps /model as a slash command item", () => {
-    const text = "/model";
-    const trigger = detectComposerTrigger(text, text.length);
-
-    expect(trigger).toEqual({
-      kind: "slash-command",
-      query: "model",
-      rangeStart: 0,
-      rangeEnd: text.length,
-    });
-  });
-
   it("does not keep a subcommand trigger active after /model arguments", () => {
     const text = "/model spark";
     const trigger = detectComposerTrigger(text, text.length);
@@ -582,29 +499,6 @@ it("preserves the caret before trailing text after mixed-width skill chips", () 
   const expanded = "𑿝ui a $review ".length;
   expect(collapseExpandedComposerCursor(text, expanded)).toBe(6);
   expect(expandCollapsedComposerCursor(text, 6)).toBe(expanded);
-});
-
-describe("clampCollapsedComposerCursor", () => {
-  it("keeps editable code positions reachable while excluding the fences", () => {
-    const text = "before\n```ts\nconst x = **literal**;\n```\nafter";
-    const editable = "before\nconst x = **literal**;\nafter";
-    for (let cursor = 0; cursor <= editable.length; cursor += 1) {
-      const expanded = expandCollapsedComposerCursor(text, cursor);
-      expect(collapseExpandedComposerCursor(text, expanded)).toBe(cursor);
-    }
-    expect(clampCollapsedComposerCursor(text, text.length)).toBe(editable.length);
-  });
-
-  it("clamps to collapsed prompt length when mentions are present", () => {
-    const text = "open @AGENTS.md then ";
-
-    expect(clampCollapsedComposerCursor(text, text.length)).toBe(
-      "open ".length + 1 + " then ".length,
-    );
-    expect(clampCollapsedComposerCursor(text, Number.POSITIVE_INFINITY)).toBe(
-      "open ".length + 1 + " then ".length,
-    );
-  });
 });
 
 describe("assistant citation cursor offsets", () => {

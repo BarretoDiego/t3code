@@ -18,7 +18,7 @@ import { afterEach, vi } from "vite-plus/test";
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
 import { upsertServiceEnv } from "./service.ts";
-import { connectEnabled, planRoutes, setupStatusCommand, upCommand } from "./up.ts";
+import { connectEnabled, planRoutes, statusCommand, upCommand } from "./up.ts";
 
 const none = Option.none<boolean>();
 
@@ -384,7 +384,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
 
       if (input.answer !== undefined) yield* asTerminal;
       const run = input.reportStatus
-        ? Command.runWith(setupStatusCommand, { version: packageJson.version })
+        ? Command.runWith(statusCommand, { version: packageJson.version })
         : Command.runWith(upCommand, { version: packageJson.version });
       const { exit, lines } = yield* run(["--base-dir", baseDir, ...input.args]).pipe(
         Effect.provideService(HostProcess.Environment, {}),

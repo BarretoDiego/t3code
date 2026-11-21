@@ -1,7 +1,8 @@
 import type { RuntimeMode } from "@t3tools/contracts";
-import { memo, type ReactNode, useRef } from "react";
+import { useGT } from "gt-react";
+import { memo, useRef } from "react";
 import { EllipsisIcon } from "lucide-react";
-import { Menu, MenuPopup, MenuSeparator as MenuDivider, MenuTrigger } from "../ui/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
@@ -10,14 +11,13 @@ import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFo
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
-  miniSkillsMenuContent?: ReactNode;
-  agentProfileMenuContent?: ReactNode;
   showPermissions: boolean;
   size?: "sm" | "xs";
   /** Close the portaled popup when its trigger hides. */
   hidden?: boolean;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const gt = useGT();
   const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
   const [open, setOpen] = useComposerMenuState(props.hidden);
@@ -35,30 +35,14 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             ref={triggerRef}
             size={size}
             className="shrink-0"
-            aria-label="More composer controls"
+            aria-label={gt("More composer controls")}
             data-composer-shortcut={props.showPermissions ? "composer.mode" : undefined}
           />
         }
       >
         <ComposerControlIcon icon={EllipsisIcon} size={size} />
       </MenuTrigger>
-      <MenuPopup
-        align="start"
-        className="w-72 max-w-[calc(100vw-2rem)]"
-        {...composerFloatingLayerProps}
-      >
-        {props.agentProfileMenuContent ? (
-          <>
-            {props.agentProfileMenuContent}
-            {props.miniSkillsMenuContent || props.showPermissions ? <MenuDivider /> : null}
-          </>
-        ) : null}
-        {props.miniSkillsMenuContent ? (
-          <>
-            {props.miniSkillsMenuContent}
-            {props.showPermissions ? <MenuDivider /> : null}
-          </>
-        ) : null}
+      <MenuPopup align="start" {...composerFloatingLayerProps}>
         {props.showPermissions ? (
           <ComposerPermissionsSection
             runtimeMode={props.runtimeMode}

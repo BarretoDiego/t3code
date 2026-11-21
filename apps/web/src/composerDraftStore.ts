@@ -10,9 +10,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
-  AgentProfileId,
   EnvironmentId,
-  MiniSkillId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -353,13 +351,6 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   modelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
-  // Request-scoped mini skills selected in the composer. Persisted with the
-  // draft so a reload mid-edit keeps the selection; cleared after a
-  // successful send.
-  selectedMiniSkillIds: Schema.optionalKey(Schema.Array(MiniSkillId)),
-  // Active agent profile. Unlike `selectedMiniSkillIds` this survives sends:
-  // a profile is a per-thread mode, not a one-shot request parameter.
-  selectedProfileId: Schema.optionalKey(Schema.NullOr(AgentProfileId)),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -429,6 +420,7 @@ const PersistedDraftThreadState = Schema.Struct({
   checkoutPullRequest: Schema.optionalKey(
     Schema.Struct({ url: Schema.String, branch: Schema.String }),
   ),
+  worktreeRepositories: Schema.optionalKey(Schema.Array(Schema.String)),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -489,17 +481,6 @@ export interface ComposerThreadDraftState {
   modelSelectionExplicit?: boolean;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
-  /**
-   * Mini skills picked for the next message only. An ambient execution
-   * parameter like the mode flags: it never marks a draft as having user
-   * content, and a successful send clears it.
-   */
-  selectedMiniSkillIds: MiniSkillId[];
-  /**
-   * Active agent profile for this thread/draft, null = Custom mode. Persisted
-   * across sends; a deleted profile id reads as Custom at resolution time.
-   */
-  selectedProfileId: AgentProfileId | null;
 }
 
 export function composerDraftHasUserContent(
@@ -538,6 +519,11 @@ export interface DraftSessionState {
   startFromOrigin: boolean;
   /** Linked to the thread when the draft is sent on this branch. */
   checkoutPullRequest?: DraftCheckoutPullRequest;
+  /**
+   * Tracked repositories a new worktree thread gets a worktree for, by tracked path. Absent
+   * until the user chooses, which leaves the choice to the server's default.
+   */
+  worktreeRepositories?: ReadonlyArray<string>;
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -644,6 +630,7 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      worktreeRepositories?: ReadonlyArray<string> | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -687,21 +674,14 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
   ) => void;
-  /** Replace the request-scoped mini skill selection for the next send. */
-  setSelectedMiniSkillIds: (
-    threadRef: ComposerThreadTarget,
-    miniSkillIds: ReadonlyArray<MiniSkillId>,
-  ) => void;
-  /**
-   * Set the active agent profile (null = Custom). Persists across sends —
-   * profiles are a per-thread mode, not a one-shot parameter.
-   */
-  setSelectedProfileId: (threadRef: ComposerThreadTarget, profileId: AgentProfileId | null) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => boolean;
   addImages: (
     threadRef: ComposerThreadTarget,
     images: ComposerImageAttachment[],
-    options?: { allowDuplicates?: boolean },
+    options?: {
+      allowDuplicates?: boolean;
+      onCapacityExceeded?: (image: ComposerImageAttachment) => void;
+    },
   ) => string[];
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
   /** Returns the ids of files appended; a re-pick that replaces a marker is not listed. */
@@ -784,6 +764,12 @@ interface ComposerDraftStoreState {
   syncPersistedAttachments: (
     threadRef: ComposerThreadTarget,
     attachments: PersistedComposerImageAttachment[],
+  ) => Promise<void>;
+  /** Saves records for the supplied images that the draft still owns after serialization. */
+  appendPersistedAttachments: (
+    threadRef: ComposerThreadTarget,
+    images: ReadonlyArray<ComposerImageAttachment>,
+    attachments: ReadonlyArray<PersistedComposerImageAttachment>,
   ) => Promise<void>;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
   /** Clears text and attachments, preserving terminal/element contexts, preview annotations, and review comments. */
@@ -888,7 +874,6 @@ const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
-const EMPTY_MINI_SKILL_IDS: MiniSkillId[] = [];
 const EMPTY_THREAD_CONTEXTS: ThreadContextRecord[] = [];
 const EMPTY_ENVIRONMENT_CONTEXTS: EnvironmentContextRecord[] = [];
 Object.freeze(EMPTY_IMAGES);
@@ -897,7 +882,6 @@ Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 Object.freeze(EMPTY_PREVIEW_ANNOTATIONS);
 Object.freeze(EMPTY_REVIEW_COMMENTS);
-Object.freeze(EMPTY_MINI_SKILL_IDS);
 Object.freeze(EMPTY_THREAD_CONTEXTS);
 Object.freeze(EMPTY_ENVIRONMENT_CONTEXTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
@@ -924,8 +908,6 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   activeProvider: null,
   runtimeMode: null,
   interactionMode: null,
-  selectedMiniSkillIds: EMPTY_MINI_SKILL_IDS,
-  selectedProfileId: null,
 });
 
 function createEmptyThreadDraft(): ComposerThreadDraftState {
@@ -945,8 +927,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     activeProvider: null,
     runtimeMode: null,
     interactionMode: null,
-    selectedMiniSkillIds: [],
-    selectedProfileId: null,
   };
 }
 
@@ -957,8 +937,6 @@ function composerDraftContent({
   modelSelectionExplicit: _modelSelectionExplicit,
   runtimeMode: _runtimeMode,
   interactionMode: _interactionMode,
-  // The agent profile sticks to the thread like its model, not to one message.
-  selectedProfileId: _selectedProfileId,
   ...content
 }: ComposerThreadDraftState) {
   return content;
@@ -1062,9 +1040,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
-    draft.interactionMode === null &&
-    draft.selectedMiniSkillIds.length === 0 &&
-    draft.selectedProfileId === null
+    draft.interactionMode === null
   );
 }
 
@@ -1812,8 +1788,20 @@ function createDraftThreadState(
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
     ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+    ...(!projectChanged && existingThread?.worktreeRepositories !== undefined
+      ? { worktreeRepositories: existingThread.worktreeRepositories }
+      : {}),
     promotedTo: null,
   };
+}
+
+function worktreeRepositoriesEqual(
+  left: ReadonlyArray<string> | undefined,
+  right: ReadonlyArray<string> | undefined,
+): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined || left.length !== right.length) return false;
+  return left.every((path, index) => path === right[index]);
 }
 
 /** An explicit value wins; otherwise a checkout's pull request stays with its project. */
@@ -1864,6 +1852,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
     checkoutPullRequestsEqual(left.checkoutPullRequest, right.checkoutPullRequest) &&
+    worktreeRepositoriesEqual(left.worktreeRepositories, right.worktreeRepositories) &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -2037,6 +2026,13 @@ function normalizePersistedDraftThreads(
             ? { loadBalancedEnvironmentId: null }
             : {}),
         ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+        ...(Array.isArray(candidateDraftThread.worktreeRepositories)
+          ? {
+              worktreeRepositories: candidateDraftThread.worktreeRepositories.filter(
+                (path): path is string => typeof path === "string",
+              ),
+            }
+          : {}),
         promotedTo,
       };
     }
@@ -2435,9 +2431,7 @@ export function partializeComposerDraftStoreState(
       draft.replyTo === null &&
       !hasModelData &&
       draft.runtimeMode === null &&
-      draft.interactionMode === null &&
-      draft.selectedMiniSkillIds.length === 0 &&
-      draft.selectedProfileId === null
+      draft.interactionMode === null
     ) {
       continue;
     }
@@ -2507,10 +2501,6 @@ export function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
-      ...(draft.selectedMiniSkillIds.length > 0
-        ? { selectedMiniSkillIds: [...draft.selectedMiniSkillIds] }
-        : {}),
-      ...(draft.selectedProfileId !== null ? { selectedProfileId: draft.selectedProfileId } : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2521,7 +2511,11 @@ export function partializeComposerDraftStoreState(
     if (!keptSessionKeys.has(threadKey)) {
       continue;
     }
-    persistedDraftThreadsByThreadKey[threadKey] = draftThread;
+    const { worktreeRepositories, ...persistedDraftThread } = draftThread;
+    persistedDraftThreadsByThreadKey[threadKey] = {
+      ...persistedDraftThread,
+      ...(worktreeRepositories ? { worktreeRepositories: [...worktreeRepositories] } : {}),
+    };
   }
   return {
     draftsByThreadKey: persistedDraftsByThreadKey,
@@ -2631,7 +2625,6 @@ function readPersistedAttachmentIdsFromStorage(threadKey: string): string[] {
 
 function verifyPersistedAttachments(
   threadKey: string,
-  attachments: PersistedComposerImageAttachment[],
   set: (
     partial:
       | ComposerDraftStoreState
@@ -2655,7 +2648,7 @@ function verifyPersistedAttachments(
       return state;
     }
     const imageIdSet = new Set(current.images.map((image) => image.id));
-    const persistedAttachments = attachments.filter(
+    const persistedAttachments = current.persistedAttachments.filter(
       (attachment) => imageIdSet.has(attachment.id) && persistedIdSet.has(attachment.id),
     );
     const nonPersistedImageIds: string[] = [];
@@ -2786,8 +2779,6 @@ function toHydratedThreadDraft(
     ...(persistedDraft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
-    selectedMiniSkillIds: [...(persistedDraft.selectedMiniSkillIds ?? [])],
-    selectedProfileId: persistedDraft.selectedProfileId ?? null,
   };
 }
 
@@ -2824,6 +2815,9 @@ function toHydratedDraftThreadState(
       : {}),
     ...(persistedDraftThread.checkoutPullRequest
       ? { checkoutPullRequest: persistedDraftThread.checkoutPullRequest }
+      : {}),
+    ...(persistedDraftThread.worktreeRepositories
+      ? { worktreeRepositories: persistedDraftThread.worktreeRepositories }
       : {}),
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
@@ -3089,6 +3083,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               options.checkoutPullRequest,
               projectChanged,
             );
+            const worktreeRepositories =
+              options.worktreeRepositories === undefined
+                ? projectChanged
+                  ? undefined
+                  : existing.worktreeRepositories
+                : (options.worktreeRepositories ?? undefined);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -3113,6 +3113,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
               ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
+              ...(worktreeRepositories ? { worktreeRepositories } : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -3131,6 +3132,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               checkoutPullRequestsEqual(
                 nextDraftThread.checkoutPullRequest,
                 existing.checkoutPullRequest,
+              ) &&
+              worktreeRepositoriesEqual(
+                nextDraftThread.worktreeRepositories,
+                existing.worktreeRepositories,
               ) &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
@@ -3593,61 +3598,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
-        setSelectedMiniSkillIds: (threadRef, miniSkillIds) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) {
-            return;
-          }
-          const nextSelectedIds = [...new Set(miniSkillIds)];
-          set((state) => {
-            const existing = state.draftsByThreadKey[threadKey];
-            if (!existing && nextSelectedIds.length === 0) {
-              return state;
-            }
-            const base = existing ?? createEmptyThreadDraft();
-            if (Equal.equals(base.selectedMiniSkillIds, nextSelectedIds)) {
-              return state;
-            }
-            const nextDraft: ComposerThreadDraftState = {
-              ...base,
-              selectedMiniSkillIds: nextSelectedIds,
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
-        setSelectedProfileId: (threadRef, profileId) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) {
-            return;
-          }
-          set((state) => {
-            const existing = state.draftsByThreadKey[threadKey];
-            if (!existing && profileId === null) {
-              return state;
-            }
-            const base = existing ?? createEmptyThreadDraft();
-            if (base.selectedProfileId === profileId) {
-              return state;
-            }
-            const nextDraft: ComposerThreadDraftState = {
-              ...base,
-              selectedProfileId: profileId,
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
         addImage: (threadRef, image) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
           const threadId = resolveComposerThreadId(get(), threadRef);
@@ -3666,6 +3616,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return [];
           }
           let acceptedIds: string[] = [];
+          const capacityRejections: ComposerImageAttachment[] = [];
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const existingIds = new Set(existing.images.map((image) => image.id));
@@ -3690,6 +3641,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 existing.images.length + existing.files.length + dedupedIncoming.length >=
                 PROVIDER_SEND_TURN_MAX_ATTACHMENTS
               ) {
+                capacityRejections.push(image);
                 if (!acceptedPreviewUrls.has(image.previewUrl)) {
                   revokeObjectPreviewUrl(image.previewUrl);
                 }
@@ -3714,6 +3666,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               },
             };
           });
+          capacityRejections.forEach((image) => options?.onCapacityExceeded?.(image));
           return acceptedIds;
         },
         removeImage: (threadRef, imageId) => {
@@ -4467,7 +4420,24 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
           await Promise.resolve();
-          verifyPersistedAttachments(threadKey, attachments, set);
+          verifyPersistedAttachments(threadKey, set);
+        },
+        appendPersistedAttachments: async (threadRef, images, attachments) => {
+          const current = get().getComposerDraft(threadRef);
+          if (!current || attachments.length === 0) return;
+          const ownedImages = new Set(current.images);
+          const ownedIds = new Set(
+            images.filter((image) => ownedImages.has(image)).map(({ id }) => id),
+          );
+          const ownedRecords = attachments.filter(({ id }) => ownedIds.has(id));
+          if (ownedRecords.length === 0) return;
+          const persistedById = new Map(
+            current.persistedAttachments.map((record) => [record.id, record]),
+          );
+          for (const record of ownedRecords) {
+            if (!persistedById.has(record.id)) persistedById.set(record.id, record);
+          }
+          await get().syncPersistedAttachments(threadRef, [...persistedById.values()]);
         },
         clearComposerContent: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
@@ -4774,6 +4744,12 @@ export function useComposerThreadDraft(threadRef: ComposerThreadTarget): Compose
   return useComposerDraftStore((state) => {
     return getComposerDraftState(state, threadRef) ?? EMPTY_THREAD_DRAFT;
   });
+}
+
+export function useThreadHasUnsentDraft(threadRef: ScopedThreadRef): boolean {
+  return useComposerDraftStore((state) =>
+    composerDraftHasUserContent(getComposerDraftState(state, threadRef)),
+  );
 }
 
 export function useComposerDraftModelState(

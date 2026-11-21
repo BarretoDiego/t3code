@@ -30,7 +30,6 @@ import {
   updateReleasePackageVersions,
 } from "./update-release-package-versions.ts";
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
-import { copyRelocatableDirectory } from "./lib/packaged-directory.ts";
 import {
   BRAND_ASSET_PATHS,
   resolveWebAssetBrandForChannel,
@@ -998,6 +997,8 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/resources/browser-secret/**/*",
   "!apps/desktop/prod-resources/browser-secret",
   "!apps/desktop/prod-resources/browser-secret/**/*",
+  "!apps/desktop/prod-resources/apple-speech",
+  "!apps/desktop/prod-resources/apple-speech/**/*",
   "!apps/desktop/prod-resources/windows-server",
   "!apps/desktop/prod-resources/windows-server/**/*",
   "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
@@ -1119,6 +1120,9 @@ export const LINUX_CAPTURE_EXTRA_RESOURCES = [
 ] as const;
 export const LINUX_BROWSER_SECRET_EXTRA_RESOURCES = [
   { from: "apps/desktop/prod-resources/browser-secret", to: "browser-secret" },
+] as const;
+export const MAC_APPLE_SPEECH_EXTRA_RESOURCES = [
+  { from: "apps/desktop/prod-resources/apple-speech", to: "apple-speech" },
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -2155,21 +2159,6 @@ const hasNativeLoaderMarkers = Effect.fn("hasNativeLoaderMarkers")(function* (pa
   }).some((dependency) => dependency.startsWith("node-gyp-build"));
 });
 
-export const copyPackagedDirectory = Effect.fn("copyPackagedDirectory")(function* (
-  source: string,
-  destination: string,
-) {
-  // Framework links must remain relative after staging is deleted and the app is moved.
-  yield* Effect.tryPromise({
-    try: () => copyRelocatableDirectory(source, destination),
-    catch: (cause) =>
-      new BundleNotSelfContainedError({
-        exitCode: -1,
-        output: `Could not copy packaged directory ${source}: ${String(cause)}`,
-      }),
-  });
-});
-
 export const copyDirectoryPreservingSymlinks = Effect.fn("copyDirectoryPreservingSymlinks")(
   function* (source: string, destination: string) {
     const fs = yield* FileSystem.FileSystem;
@@ -2484,6 +2473,31 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   );
 });
 
+export const stageAppleSpeech = Effect.fn("stageAppleSpeech")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  if (input.platform !== "mac") return;
+  const path = yield* Path.Path;
+  yield* runCommand(
+    ChildProcess.make(
+      "node",
+      [
+        path.join(input.repoRoot, "apps/desktop/scripts/build-apple-speech.mjs"),
+        "--arch",
+        input.arch,
+        "--output",
+        path.join(input.stageResourcesDir, "apple-speech", "t3-apple-speech"),
+      ],
+      { cwd: input.repoRoot },
+    ),
+    { label: "build macOS Apple Speech helper", verbose: input.verbose },
+  );
+});
+
 const generateMacIconSet = Effect.fn("build-desktop-artifact.generateMacIconSet")(function* (
   sourcePng: string,
   targetIcns: string,
@@ -2750,17 +2764,7 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
   return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
-export function resolveDesktopBuildIconAssets(
-  version: string,
-  forkBuild = process.env.T3CODE_FORK_BRAND === "1",
-): DesktopBuildIconAssets {
-  if (forkBuild) {
-    return {
-      macIconPng: BRAND_ASSET_PATHS.forkMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.forkIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.forkWindowsIconIco,
-    };
-  }
+export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
@@ -2795,6 +2799,7 @@ export function resolveDesktopProductName(
   version: string,
   forkBuild = process.env.T3CODE_FORK_BRAND === "1",
 ): string {
+  // Fork installs already carry this name; updates must keep it to replace the same app.
   if (forkBuild) return "T3 Code Fork";
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
@@ -2842,6 +2847,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
+      ...(platform === "mac" ? MAC_APPLE_SPEECH_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
       ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
@@ -2866,8 +2872,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
-    // Builds without a Developer ID can still carry a stable self-signed
-    // identity, which is what lets Squirrel.Mac install their updates.
+    // A stable self-signed identity is what lets Squirrel.Mac install updates of builds without a Developer ID.
     const selfSignP12 = yield* Config.String("T3CODE_DESKTOP_MAC_SELF_SIGN_P12").pipe(
       Config.option,
     );
@@ -2895,6 +2900,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "T3 Code lets commands run by terminals and coding agents use the camera.",
         NSMicrophoneUsageDescription:
           "T3 Code lets commands run by terminals and coding agents use the microphone.",
+        NSSpeechRecognitionUsageDescription:
+          "T3 Code transcribes your dictation on this Mac when you choose Apple Speech.",
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
         CFBundleDocumentTypes: [
@@ -3878,6 +3885,13 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     arch: options.arch,
     verbose: options.verbose,
   });
+  yield* stageAppleSpeech({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+  });
 
   yield* assertPlatformBuildResources(
     options.platform,
@@ -4213,19 +4227,15 @@ export const copyDesktopBuildArtifacts = Effect.fn("copyDesktopBuildArtifacts")(
     // overwrite a directory with a file or a file with a directory, and only merges into
     // an existing directory, so a stale entry of either type must go first.
     yield* fs.remove(to, { recursive: true, force: true });
-    if (stat.type === "Directory") {
-      yield* copyPackagedDirectory(from, to);
-    } else {
-      yield* Effect.tryPromise({
-        try: () =>
-          NodeFSP.cp(from, to, {
-            recursive: true,
-            force: true,
-            verbatimSymlinks: true,
-          }),
-        catch: (cause) => new DesktopBuildArtifactCopyError({ from, to, cause }),
-      });
-    }
+    yield* Effect.tryPromise({
+      try: () =>
+        NodeFSP.cp(from, to, {
+          recursive: true,
+          force: true,
+          verbatimSymlinks: true,
+        }),
+      catch: (cause) => new DesktopBuildArtifactCopyError({ from, to, cause }),
+    });
     copiedArtifacts.push(to);
   }
 

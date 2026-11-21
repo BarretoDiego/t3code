@@ -149,7 +149,6 @@ function inlineTokenRanges(value: string): Array<{ start: number; end: number }>
   const ranges: Array<{ start: number; end: number }> = [];
   let offset = 0;
   for (const segment of splitPromptIntoComposerSegments(value)) {
-    if (segment.type === "terminal-context") continue;
     const end = offset + (segment.type === "text" ? segment.text : segment.source).length;
     if (segment.type !== "text") ranges.push({ start: offset, end });
     offset = end;

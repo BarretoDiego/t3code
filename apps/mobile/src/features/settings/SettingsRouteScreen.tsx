@@ -19,7 +19,6 @@ import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { use, type ComponentProps } from "react";
 import { Platform, View } from "react-native";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
-import { environmentSupportsAutomation } from "@t3tools/client-runtime/state/automation-presentation";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,8 +33,7 @@ import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilt
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
 import { usePaneRole } from "../../components/ui/Pane";
-import { useGT } from "gt-react-native";
-import { I18nProvider } from "../../i18n/I18nProvider";
+import { useGT, useMessages } from "gt-react-native";
 
 export function SettingsRouteScreen() {
   const list = useSettingsListPlacement();
@@ -48,9 +46,7 @@ export function WorkspaceSettingsList() {
   return (
     <SettingsSidebarContext value={list.sidebar ? { selected: list.selected } : null}>
       <View className="flex-1 bg-screen">
-        <I18nProvider>
-          <SettingsListContent />
-        </I18nProvider>
+        <SettingsListContent />
       </View>
     </SettingsSidebarContext>
   );
@@ -75,17 +71,6 @@ function SettingsListContent() {
 }
 
 export function SettingsListScreen(props: {
-  readonly sidebar: boolean;
-  readonly selected: string | null;
-}) {
-  return (
-    <I18nProvider>
-      <TranslatedSettingsListScreen {...props} />
-    </I18nProvider>
-  );
-}
-
-function TranslatedSettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
 }) {
@@ -164,21 +149,7 @@ function LocalSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   return (
     <SettingsList
-      connections={[
-        environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length),
-        {
-          id: "SettingsMarketplace",
-          icon: "shippingbox",
-          label: "Marketplace",
-          target: "SettingsMarketplace",
-        },
-        {
-          id: "SettingsAiRuntimes",
-          icon: "server.rack",
-          label: "AI Runtimes",
-          target: "SettingsAiRuntimes",
-        },
-      ]}
+      connections={[environmentsRow(gt("Environments"), Object.keys(savedConnectionsById).length)]}
     />
   );
 }
@@ -196,6 +167,7 @@ function environmentsRow(label: string, count: number): SettingsListRow {
 
 function SettingsList(props: { readonly connections: readonly SettingsListRow[] }) {
   const gt = useGT();
+  const m = useMessages();
   // UIKit's scroll-edge material takes the scroll view's own color; like the chat list, match
   // the sidebar's surface so the bar doesn't darken over content at rest.
   // Grouped cards only lift off the screen surface; the drawer is as dark as they are.
@@ -214,6 +186,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
       ...indexSections,
     ],
     query,
+    m,
   );
 
   return (
@@ -300,16 +273,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
         serverPage("SettingsProviderAccounts", "person.crop.circle", gt("Providers")),
         serverPage("SettingsThreads", "text.bubble", gt("Threads")),
         page("SettingsScheduledTasks", "clock", gt("Scheduled tasks")),
-        // Only where a selected environment's server speaks the automation RPCs.
-        ...(selectedTargets.some((target) => environmentSupportsAutomation(target.serverConfig))
-          ? [
-              page(
-                "SettingsAutomation",
-                "point.3.connected.trianglepath.dotted",
-                "Orchestrators, hooks, peers and nodes",
-              ),
-            ]
-          : []),
       ],
     },
     {
@@ -341,6 +304,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
 }
 
 function useOverflowRows(): SettingsListRow[] {
+  const m = useMessages();
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
   const { layout } = useAdaptiveWorkspaceLayout();
@@ -350,7 +314,7 @@ function useOverflowRows(): SettingsListRow[] {
   return tabs.map((tab) => ({
     id: tab,
     icon: NAVIGATION_TAB_ICONS[tab],
-    label: WORKSPACE_TAB_LABELS[tab],
+    label: m(WORKSPACE_TAB_LABELS[tab]),
     onPress: () => selectTab(tab),
   }));
 }

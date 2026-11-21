@@ -11,6 +11,8 @@ the current project, or use a project's own new-thread action. A new thread carr
 your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
+While the sidebar is filtered to one project, the sidebar's **New thread** button
+starts the thread in that project instead of asking which project to use.
 
 On mobile, **New thread** starts in the current thread's project, or else in the
 project the thread list is filtered to, or else in the last project you opened
@@ -269,48 +271,23 @@ the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
-On web and desktop, use **Agents** to follow work delegated to subagents.
+On web and desktop, use **Agents** to follow work delegated to subagents. Click
+a subagent there or on its conversation card to open it in the right panel,
+beside the thread you are in. See
+[Open a thread beside the one you are in](#open-a-thread-beside-the-one-you-are-in).
 On mobile, open a subagent from its conversation card or **Agents**. On iOS
 layouts with an inspector, its thread opens beside the parent. Maximize it to
 fill the screen; close the full-screen view to return to the parent and inspector.
+A thread with subagents shows their count next to its title in the sidebar and the
+mobile thread list, with a dot when one of them needs you. Its subagents are listed
+under it while any of them is working or waiting on you; click or tap the count to
+show or hide them. A subagent there opens the same way as from **Agents**.
 Stop on a thread also stops the subagents it delegated to.
 Before archiving the parent, wait for its delegated tasks to finish or cancel them.
 
 Subagent threads started by the agent can't take messages; message the parent
 thread instead. When such a subagent needs an approval or an answer, the parent
 thread asks for it.
-
-### Subagent threads in the thread list
-
-Threads an agent starts, both its own subagents and the tasks it delegates through
-T3 Code, sit indented under the thread that started them, at any depth. Forks stay
-separate threads.
-
-The parent shows a count of its subagents. A dot beside the count means one of them is
-waiting for an approval or an answer, has failed, or is working, so you can tell without
-opening the list. Click the count (tap it on mobile) to show or hide the subagents. Until
-you choose, they show while any of them is working or waiting on you and fold away once
-all have finished. Your choice is remembered per thread on that device. A long list shows
-the subagents that need attention and the most recent ones; **Show more** reveals the rest.
-
-Subagents move with their parent when you pin, settle, snooze, or reorder it, and their
-own menu has no pin, settle, or snooze. If the parent is settled, snoozed, or archived
-while a subagent is still working or waiting on you, that subagent gets its own row in the
-active list until it finishes. Archiving a thread hides its finished subagents with it.
-
-On web and desktop, the thread jump shortcuts count top-level threads only, while previous
-and next thread also step through the subagents on screen.
-
-Subagents nest the same way in every sidebar style. In the **Legacy** style they sit indented
-inside their project's list, and only top-level threads count toward a project's **Show more**.
-
-### Orchestrator threads in the thread list
-
-A thread that belongs to an [orchestrator](./automation.md#orchestrators-in-the-app) has a small
-marker beside its title. Hover it on web and desktop to read the orchestrator's name, state,
-host environment, and model; on mobile the state is written next to the marker. On web and
-desktop, a second marker appears when an orchestrator or a parent thread, not you, is responsible
-for a question or approval waiting on that thread.
 
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
@@ -329,6 +306,31 @@ To choose what the thread details card shows, right-click the card or open
 shortcuts, such as Open in editor and project scripts. **Reset to default** brings
 back the standard rows.
 
+## Open a thread beside the one you are in
+
+On web and desktop, a subagent, a side chat, and a
+[thread on a linked machine](remote-access.md#read-a-linked-machines-threads)
+all open the same way. Click one to open it as a tab in the right panel, so the
+thread you are in stays in view. Hold ⌘ (Ctrl on Windows and Linux) while you
+click, or middle-click, to open it in the main view instead. With the keyboard,
+Enter and ⌘/Ctrl + Enter do the same. Right-click for **Open in side panel** and
+**Open in main view**.
+
+To make the main view the place a plain click opens them, set **Settings → Chat →
+Open subagents and side chats in** to **Main view**. The modifier then opens
+the side panel.
+
+From a tab, **Open in main view** at the top of the tab, or in the tab's
+right-click menu, moves it to the main view. The bottom of the view depends on
+the thread: a side chat or a subagent you delegated has a composer, a subagent
+the agent started is read-only, and a thread on a linked machine is read-only
+with **Connect to interact**.
+
+Other thread links open in the main view as before.
+
+On mobile these threads open in the inspector on layouts that have one, where
+Maximize fills the screen, and full screen everywhere else.
+
 ## Side chats
 
 A side chat lets you ask a question about a thread without adding to it. It starts
@@ -337,19 +339,25 @@ with what the thread knows, and the thread keeps working while you ask.
 On web and desktop, start a message with `/side` or `/btw`, then your question.
 You can also choose **Side chat** from the **+** menu in the right panel. The side
 chat opens as a tab there, with its own composer. Side chats do not show in the
-sidebar. Find one again under **Side chats** in thread details.
+sidebar. Find one again under **Side chats** in thread details, where it opens
+[like a subagent does](#open-a-thread-beside-the-one-you-are-in).
 
 A side chat works in the same folder as the thread and starts with the permissions,
 model, and reasoning level shown in the thread's composer, including for its first
 reply. Change them for an individual side chat in its composer. Later changes to the
 parent do not change existing side chats.
 
-To use what you learned, choose **Bring back**. The thread gets the side chat with
-your next message there. Bring back is available while the thread is idle.
+To use what you learned, choose **Add to chat** at the top of the side chat, or type
+`@` and a word from its title in the thread's composer. The thread's message gets a
+link to the side chat, and the agent reads as much of it as it needs. This works
+while the thread is busy, once you have sent a message in the side chat. An agent on
+an external OpenCode server cannot read the link, so put the details in your message
+instead.
 
 Closing a side chat you never sent a message in deletes it. To delete one you used,
 choose **Delete** at the top of the side chat. Deleting a thread also deletes its
-side chats.
+side chats. Archiving a thread also archives its side chats and stops their work, and
+unarchiving the thread brings them back.
 
 On mobile, a thread lists its side chats above the composer. Tap one to open it and
 answer its questions.

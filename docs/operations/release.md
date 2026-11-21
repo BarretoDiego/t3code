@@ -427,38 +427,6 @@ One-time Vercel dashboard setup:
 - Publishes the `t3` npm launcher to the `nightly` npm dist-tag using the same nightly version.
 - Does not commit version bumps back to `main`.
 
-## Fork releases
-
-`.github/workflows/fork-release.yml` lets a fork ship its own desktop builds and standalone Android APKs without any of the
-upstream release credentials. It never runs in `pingdotgg/t3code`.
-
-- Every push to the fork's `main` publishes a nightly version (`vX.Y.Z-nightly.YYYYMMDD.<run_number>`)
-  as a tag and a prerelease in the fork. The desktop build takes its update feed from
-  `GITHUB_REPOSITORY`, so an install of a fork build updates from the fork's releases.
-- It builds macOS arm64, Linux x64, and a standalone Android APK on GitHub-hosted runners.
-  macOS and Android gate the release; Linux assets are attached only when that job passes.
-- Android signing uses `ANDROID_FORK_KEYSTORE` (base64 PKCS#12), `ANDROID_FORK_STORE_PASSWORD`,
-  `ANDROID_FORK_KEY_ALIAS`, and `ANDROID_FORK_KEY_PASSWORD`. Keep a private backup of the key and
-  its credentials outside the repository and GitHub. Replacing this key prevents an APK from
-  updating existing installs. The release run number supplies the increasing Android version code.
-  The APK embeds JavaScript and disables upstream Expo updates; do not replace this build with a
-  development client or attach an upstream EAS project to the fork.
-- macOS builds are signed with a self-signed certificate from the `MAC_SELF_SIGN_P12` (base64
-  PKCS#12) and `MAC_SELF_SIGN_PASSWORD` secrets. Squirrel.Mac installs an update only when it
-  satisfies the running app's designated requirement, and an unsigned or ad hoc signed build can
-  never satisfy the next one. **The certificate must stay the same for the life of the fork.**
-  Replacing it strands every existing install on its current version until it is reinstalled by
-  hand, so keep a copy of the `.p12` and its password outside GitHub.
-- Gatekeeper does not trust the certificate. Install the first build by hand and clear its
-  quarantine flag (`xattr -dr com.apple.quarantine <app>`); later updates arrive in-app.
-- To confirm an install is on the fork's train, check for updates after a push to `main` has
-  finished releasing. The app offers the new nightly within its normal check interval, or at once
-  from the update button; a build that still reports no update feed was not built by this workflow.
-- The upstream `Release` workflow cannot run in a fork (its runners and secrets are missing).
-  Disable it there with `gh workflow disable release.yml` so its schedule stops queueing runs.
-- Fork versions are not published to npm, so the **Update server** action for remote servers has no
-  matching `t3@<version>` to install. See the invariant below.
-
 ## Server self-update release invariant
 
 Connected servers update to the client's exact version, not to an npm dist-tag. Servers that update
@@ -516,8 +484,9 @@ A nightly install finds the newest nightly in up to three places.
 The release workflow's `Check the update feed` job runs on every scheduled tick, unless
 `PAUSE_NIGHTLY` is set, and after every nightly. It waits in the same queue as nightlies and
 previews. It rewrites a missing or outdated pointer. Its last step fails when the first nightly
-in the feed is not the newest one. A feed it could not read is only a warning: that says nothing
-about the tags, and the next tick reads it again.
+in the feed is not the newest one. The feed can lag a release published seconds earlier, so the
+job first reads it up to three more times, 30 seconds apart. A feed it could not read is only a
+warning: that says nothing about the tags, and the next tick reads it again.
 
 When that step fails, installs that read only the feed cannot reach the newest nightly. If the
 feed still names an older nightly first, installs from `4603` up to the first build with the

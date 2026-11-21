@@ -37,8 +37,7 @@ import Migration0045 from "../../persistence/Migrations/045_ProjectionProjectsAu
 import Migration0046 from "../../persistence/Migrations/046_RepairAutomaticSettlementTimestamps.ts";
 import Migration0047 from "../../persistence/Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "../../persistence/Migrations/048_ProjectionThreadBranchPullRequest.ts";
-import Migration0049 from "../../persistence/Migrations/048_ProjectionThreadsMiniSkills.ts";
-import Migration0050 from "../../persistence/Migrations/050_ProjectionThreadsActiveOrderKey.ts";
+import Migration0049 from "../../persistence/Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 import { CodexProviderCapabilitiesV2 } from "../Adapters/CodexAdapterV2.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as EventSink from "../EventSink.ts";
@@ -111,8 +110,7 @@ const seedV1Database = (fixturePath: string, workspace: string) =>
         [46, "RepairAutomaticSettlementTimestamps", Migration0046],
         [47, "ProjectionProjectIcon", Migration0047],
         [48, "ProjectionThreadBranchPullRequest", Migration0048],
-        [49, "ProjectionThreadsMiniSkillsReconciliation", Migration0049],
-        [50, "ProjectionThreadsActiveOrderKey", Migration0050],
+        [49, "ProjectionThreadsActiveOrderKey", Migration0049],
       ] as const;
       for (const [id, name, migration] of tailMigrations) {
         yield* migration;

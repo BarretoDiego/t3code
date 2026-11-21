@@ -44,7 +44,6 @@ export interface ProviderInstance {
   readonly continuationIdentity: ProviderContinuationIdentity;
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
-  readonly icon?: string | undefined;
   readonly enabled: boolean;
   readonly snapshot: ManagedServerProvider;
   readonly snapshotForCwd?: (
@@ -109,7 +108,6 @@ export interface ProviderDriverCreateInput<Config> {
   readonly instanceId: ProviderInstanceId;
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
-  readonly icon?: string | undefined;
   readonly environment: ResolvedProviderInstanceEnvironment;
   readonly enabled: boolean;
   readonly config: Config;

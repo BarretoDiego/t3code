@@ -251,7 +251,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        icon: entry.icon,
         reason: `Driver '${entry.driver}' is not registered in this build.`,
       }),
     };
@@ -274,7 +273,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        icon: entry.icon,
         reason: `Invalid config for instance '${rawInstanceId}': ${detail}`,
       }),
     };
@@ -290,7 +288,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        icon: entry.icon,
         reason: "Reading secrets…",
       }),
     };
@@ -314,7 +311,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        icon: entry.icon,
         reason: `Could not read ${unreadable.join(", ")} from its secret provider. Unlock it, then refresh.`,
       }),
     };
@@ -327,7 +323,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
       instanceId,
       displayName: entry.displayName,
       accentColor: entry.accentColor,
-      icon: entry.icon,
       environment: secrets.environment,
       enabled,
       config:
@@ -350,7 +345,6 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        icon: entry.icon,
         reason: `Driver '${entry.driver}' failed to create instance: ${createResult.failure.detail}`,
       }),
     };

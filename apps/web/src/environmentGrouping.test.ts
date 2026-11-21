@@ -8,7 +8,6 @@ import {
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
-  resolveProjectEnvironmentSummary,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,
 } from "./sidebarProjectGrouping";
@@ -233,12 +232,23 @@ describe("environment grouping", () => {
       workspaceRoot: "/tmp/destination",
       repositoryIdentity: destinationRepositoryIdentity,
     });
+    const destinationRemoteIdentity = {
+      ...destinationRepositoryIdentity,
+      rootPath: "/remote/destination",
+    };
+    const destinationRemoteSubfolder = makeProject({
+      id: ProjectId.make("destination-remote-subfolder"),
+      environmentId: remoteEnvironmentId,
+      title: "destination-app",
+      workspaceRoot: "/remote/destination/app",
+      repositoryIdentity: destinationRemoteIdentity,
+    });
     const destinationRemote = makeProject({
       id: ProjectId.make("destination-remote"),
       environmentId: remoteEnvironmentId,
       title: "destination",
       workspaceRoot: "/remote/destination",
-      repositoryIdentity: destinationRepositoryIdentity,
+      repositoryIdentity: destinationRemoteIdentity,
     });
     const fallbackPrimary = makeProject({
       id: ProjectId.make("fallback-primary"),
@@ -250,6 +260,7 @@ describe("environment grouping", () => {
         currentPrimary,
         currentRemote,
         destinationPrimary,
+        destinationRemoteSubfolder,
         destinationRemote,
         fallbackPrimary,
       ],
@@ -280,6 +291,34 @@ describe("environment grouping", () => {
     });
   });
 
+  it("targets an open copy when the preferred project is archived", () => {
+    const archived = makeProject({
+      repositoryIdentity,
+      archivedAt: "2026-01-02T00:00:00.000Z",
+    });
+    const open = makeProject({
+      id: ProjectId.make("open-copy"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity,
+    });
+    const groups = buildSidebarProjectSnapshots({
+      projects: [archived, open],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+    });
+    const [entry] = buildSidebarProjectPickerEntries({
+      groups: pickableProjectGroups(groups),
+      preferredProjectRef: { environmentId: archived.environmentId, projectId: archived.id },
+    });
+
+    expect(entry?.targetProject).toMatchObject({ environmentId: open.environmentId, id: open.id });
+    expect(entry?.group.memberProjectRefs).toContainEqual({
+      environmentId: archived.environmentId,
+      projectId: archived.id,
+    });
+  });
+
   it("puts the preferred project before pinned projects", () => {
     const project = (title: string, pinnedAt: string | null = null) =>
       makeProject({
@@ -301,114 +340,5 @@ describe("environment grouping", () => {
       preferredProjectRef: { environmentId: current.environmentId, projectId: current.id },
     });
     expect(entries.map((entry) => entry.group.displayName)).toEqual(["current", "pinned", "other"]);
-  });
-});
-
-describe("project environment availability", () => {
-  const homeLab = EnvironmentId.make("env-home-lab");
-  const group = (
-    ...members: Array<{ environmentId: typeof primaryEnvironmentId; label: string | null }>
-  ) => ({
-    memberProjects: members.map((member, index) => ({
-      ...makeProject({
-        environmentId: member.environmentId,
-        id: ProjectId.make(`project-${index}`),
-      }),
-      physicalProjectKey: `project-${index}`,
-      environmentLabel: member.label,
-    })),
-  });
-
-  it("identifies a local-only project with its named environment", () => {
-    const summary = resolveProjectEnvironmentSummary(
-      group({ environmentId: primaryEnvironmentId, label: "MacBook" }),
-      primaryEnvironmentId,
-    );
-    expect(summary).toMatchObject({
-      label: "Local",
-      multiple: false,
-      description: "Local only: MacBook (local)",
-    });
-  });
-
-  it("names a single remote environment", () => {
-    expect(
-      resolveProjectEnvironmentSummary(
-        group({ environmentId: homeLab, label: "Home Lab" }),
-        primaryEnvironmentId,
-      ),
-    ).toMatchObject({
-      label: "Home Lab",
-      multiple: false,
-      description: "Only in this environment: Home Lab",
-    });
-  });
-
-  it("lists local and remote environments once, regardless of project copy count", () => {
-    const summary = resolveProjectEnvironmentSummary(
-      group(
-        { environmentId: homeLab, label: "Home Lab" },
-        { environmentId: primaryEnvironmentId, label: "MacBook" },
-        { environmentId: homeLab, label: "Home Lab" },
-        { environmentId: remoteEnvironmentId, label: "Mac mini" },
-      ),
-      primaryEnvironmentId,
-    );
-    expect(summary?.label).toBe("3 envs");
-    expect(summary?.environments.map((environment) => environment.label)).toEqual([
-      "MacBook",
-      "Home Lab",
-      "Mac mini",
-    ]);
-    expect(summary?.description).toBe(
-      "Available in 3 environments: MacBook (local), Home Lab, Mac mini",
-    );
-  });
-
-  it("recognizes multiple remote environments without a local copy", () => {
-    const summary = resolveProjectEnvironmentSummary(
-      group(
-        { environmentId: homeLab, label: "Home Lab" },
-        { environmentId: remoteEnvironmentId, label: "Mac mini" },
-      ),
-      primaryEnvironmentId,
-    );
-    expect(summary?.multiple).toBe(true);
-    expect(summary?.environments.every((environment) => !environment.isLocal)).toBe(true);
-  });
-
-  it("keeps distinct environments with identical labels", () => {
-    const summary = resolveProjectEnvironmentSummary(
-      group(
-        { environmentId: homeLab, label: "Server" },
-        { environmentId: remoteEnvironmentId, label: "Server" },
-      ),
-      primaryEnvironmentId,
-    );
-    expect(summary?.environments).toHaveLength(2);
-  });
-
-  it("does not call a hosted client's sole remote environment local", () => {
-    expect(
-      resolveProjectEnvironmentSummary(group({ environmentId: homeLab, label: "Home Lab" }), null),
-    ).toMatchObject({ label: "Home Lab", environments: [{ isLocal: false }] });
-  });
-
-  it("provides fallbacks when environment labels are missing", () => {
-    const summary = resolveProjectEnvironmentSummary(
-      group(
-        { environmentId: primaryEnvironmentId, label: null },
-        { environmentId: homeLab, label: " " },
-      ),
-      primaryEnvironmentId,
-    );
-    expect(summary?.environments.map((environment) => environment.label)).toEqual([
-      "Local",
-      "Remote",
-    ]);
-  });
-
-  it("omits empty groups", () => {
-    expect(resolveProjectEnvironmentSummary(group(), primaryEnvironmentId)).toBeNull();
   });
 });

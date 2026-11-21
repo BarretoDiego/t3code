@@ -471,24 +471,6 @@ layer("BitbucketPullRequestApi.layer", (it) => {
         assert.isTrue(yield* api.getRepositoryPermission({ repository: "acme/web" }));
       }),
   );
-  it.effect("accepts the 404 response for the retired permissions endpoint", () =>
-    Effect.gen(function* () {
-      // Bitbucket retired /user/permissions/repositories under CHANGE-2770: every account now
-      // gets HTTP 410 here, whatever it may do.
-      mockedRequest.mockReturnValue(
-        Effect.fail(
-          new BitbucketApi.BitbucketResponseError({
-            operation: "request",
-            status: 404,
-            responseBodyLength: 0,
-          }),
-        ),
-      );
-      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
-
-      assert.isTrue(yield* api.getRepositoryPermission({ repository: "acme/web" }));
-    }),
-  );
 
   it.effect.each([401, 500])("still fails the permission read on HTTP %s", (status) =>
     Effect.gen(function* () {

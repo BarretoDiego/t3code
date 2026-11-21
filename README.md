@@ -87,12 +87,10 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 - [Install and first run](./docs/user/install.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- [Track plan limits](./docs/user/plan-limits.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run T3 Code as a background service](./docs/user/background-service.md)
+- [Permission modes](./docs/user/permission-modes.md)
+- [Source control](./docs/user/source-control.md)
+- [Connect outside agents over MCP](./docs/user/outside-agents.md)
+- [FAQ](./docs/user/faq.md)
 
 [All docs](./docs/README.md) has the full list.
 

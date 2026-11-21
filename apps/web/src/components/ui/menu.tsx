@@ -1,5 +1,4 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import type * as React from "react";
 
@@ -11,33 +10,9 @@ import { Spinner } from "./spinner";
 
 const Menu = MenuPrimitive.Root;
 
-const menuTriggerVariants = cva("inline-flex cursor-pointer items-center outline-none", {
-  defaultVariants: { variant: "default" },
-  variants: {
-    variant: {
-      default: "",
-      "sidebar-layout":
-        "size-8 justify-center rounded-md text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-border",
-      toolbar:
-        "h-6 min-w-0 gap-1 rounded-md px-1.5 text-2xs font-medium text-icon-muted transition-colors hover:bg-accent hover:text-foreground data-[active=true]:text-foreground [&_svg]:size-3.5 [&_svg]:shrink-0",
-    },
-  },
-});
-
-function MenuTrigger({
-  className,
-  children,
-  active,
-  variant,
-  ...props
-}: MenuPrimitive.Trigger.Props & VariantProps<typeof menuTriggerVariants> & { active?: boolean }) {
+function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Props) {
   return (
-    <MenuPrimitive.Trigger
-      className={cn(menuTriggerVariants({ variant }), className)}
-      data-active={active || undefined}
-      data-slot="menu-trigger"
-      {...props}
-    >
+    <MenuPrimitive.Trigger className={className} data-slot="menu-trigger" {...props}>
       {children}
     </MenuPrimitive.Trigger>
   );
@@ -105,7 +80,7 @@ function MenuSearchInput({
   ...props
 }: Omit<InputProps, "className" | "size" | "unstyled" | "nativeInput"> & { busy?: boolean }) {
   return (
-    <div className="min-w-0 shrink-0 px-2 pt-1.5 pb-1">
+    <label className="block min-w-0 shrink-0 cursor-text px-2 pt-1.5 pb-1">
       <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
         {busy ? (
           <Spinner
@@ -132,7 +107,7 @@ function MenuSearchInput({
           }}
         />
       </div>
-    </div>
+    </label>
   );
 }
 
@@ -148,7 +123,7 @@ function MenuItem({
   ...props
 }: MenuPrimitive.Item.Props & {
   inset?: boolean;
-  density?: "default" | "compact" | "touch";
+  density?: "default" | "touch";
   variant?: "default" | "destructive" | "ghost";
 }) {
   return (
@@ -162,7 +137,6 @@ function MenuItem({
             className: "h-auto min-h-7 w-full sm:text-xs",
           }),
         density === "touch" && "min-h-10 sm:min-h-10",
-        density === "compact" && "py-1 sm:text-xs",
         className,
       )}
       data-density={density}
@@ -254,22 +228,18 @@ function MenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
 function MenuRadioItem({
   className,
   children,
-  density = "default",
   hideIndicator: _hideIndicator = false,
   ...props
 }: MenuPrimitive.RadioItem.Props & {
-  density?: "default" | "compact";
   hideIndicator?: boolean;
 }) {
   return (
     <MenuPrimitive.RadioItem
       className={cn(
         "[&_svg]:-mx-0.5 flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base text-foreground outline-none data-checked:bg-foreground/[0.08] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
-        density === "compact" && "py-1 sm:text-xs",
         className,
       )}
       data-slot="menu-radio-item"
-      data-density={density}
       {...props}
     >
       <span className="min-w-0 flex-1">{children}</span>

@@ -21,11 +21,10 @@ import {
   isTailnetHost,
   isWildcardHost,
 } from "@t3tools/shared/hostClassification";
-import { isTailscaleNetworkInterface } from "@t3tools/shared/networkInterfaces";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
-import { isHostOnlyInterface, isLoopbackHost, isPrivateNetworkAddress } from "../startupAccess.ts";
+import { isLoopbackHost, isPrivateNetworkAddress, isVirtualInterface } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
@@ -45,14 +44,17 @@ export class DirectEndpoints extends Context.Service<
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
+// macOS utun names need Tailscale's IPv6 range to identify them; WARP shares its IPv4 range.
+const isTailscaleInterface = (
+  name: string,
+  entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
+): boolean =>
+  /^tailscale/i.test(name) ||
+  entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
+
 // Windows adapter names are mutable; Linux bridges can inherit these MACs.
 const WINDOWS_HOST_ADAPTER_MAC = /^(0a:00:27|00:50:56:c0:00):/i;
 
-/**
- * Plain HTTP endpoints for the private addresses a server bound to `host`
- * accepts. IPv4 only: link-local and temporary IPv6 addresses change too
- * often to be worth saving.
- */
 export function resolveBoundEndpoints(input: {
   readonly platform: NodeJS.Platform;
   readonly host: string | undefined;
@@ -64,13 +66,13 @@ export function resolveBoundEndpoints(input: {
   if (isLoopbackHost(input.host)) return [];
   const tailscaleAddresses = new Set(
     Object.entries(input.interfaces).flatMap(([name, entries = []]) =>
-      isTailscaleNetworkInterface(name, entries) ? entries.map((entry) => entry.address) : [],
+      isTailscaleInterface(name, entries) ? entries.map((entry) => entry.address) : [],
     ),
   );
   const addresses = isWildcardHost(input.host)
     ? Object.entries(input.interfaces)
-        .flatMap(([name, entries = []]) =>
-          isHostOnlyInterface(name, entries, input.platform) ? [] : entries,
+        .flatMap(([name, entries]) =>
+          isVirtualInterface(name, input.platform) ? [] : (entries ?? []),
         )
         .filter(
           (entry) =>

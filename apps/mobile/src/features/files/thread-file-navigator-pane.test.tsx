@@ -18,7 +18,6 @@ vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
 }));
 vi.mock("./preload-workspace-file", () => ({ preloadWorkspaceFileContents: () => {} }));
 vi.mock("./FileTreeBrowser", () => ({ FileTreeBrowser: () => null }));
-vi.mock("./ProjectRepositories", () => ({ ProjectRepositories: () => null }));
 vi.mock("./useFileTreeEntries", () => ({
   useFileTreeEntries: (input: { cwd: string | null; searchQuery: string }) => {
     queries.push({ cwd: input.cwd, searchQuery: input.searchQuery });
@@ -52,7 +51,6 @@ it("starts unfiltered when the mounted pane switches to another workspace", () =
         <ThreadFileNavigatorPane
           cwd={cwd}
           environmentId={EnvironmentId.make("env")}
-          threadId={null}
           projectName="Files"
           selectedPath={null}
           onSelectFile={() => {}}

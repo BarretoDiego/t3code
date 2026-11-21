@@ -2,6 +2,7 @@ import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useMemo, useSyncExternalStore } from "react";
 
+import { keepMarked } from "../../i18n/messages";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../../state/olderSettledShelf";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -13,6 +14,7 @@ import {
   threadListV2LayoutTime,
 } from "./threadListV2";
 import { computeThreadMoveAvailability } from "./threadOrder";
+import { useThreadListNesting } from "./use-thread-list-nesting";
 
 /**
  * Screens' select handlers read the content-only key set; a fresh one per list rebuild gave
@@ -65,11 +67,8 @@ export function useThreadListV2(input: {
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
-  /** Every shell, subagents and archived included, so subagents nest under their parents.
-      `threads` is the navigation set, which leaves both out. */
-  readonly nestableThreads: LayoutInput["threads"];
-  readonly nestedExpandedByKey: LayoutInput["nestedExpandedByKey"];
-  readonly nestedShowAllKeys: LayoutInput["nestedShowAllKeys"];
+  /** The open thread itself, which may be a subagent nested under the selected row. */
+  readonly openThreadKey?: string | null;
 }) {
   const { threads, workingShelfEnabled } = input;
   const layoutTime = useMemo(
@@ -140,7 +139,7 @@ export function useThreadListV2(input: {
     () =>
       buildThreadListV2Items({
         pendingOrder: input.pendingOrder,
-        threads: input.nestableThreads,
+        threads: threads.filter((thread) => thread.archivedAt === null),
         environmentId: input.environmentId,
         projectRefs: input.projectRefs,
         searchQuery: input.searchQuery,
@@ -157,8 +156,6 @@ export function useThreadListV2(input: {
         snoozedShelfExpanded: input.snoozedShelfExpanded,
         settledShelfExpanded: input.settledShelfExpanded,
         selectedThreadKey: input.selectedThreadKey,
-        nestedExpandedByKey: input.nestedExpandedByKey,
-        nestedShowAllKeys: input.nestedShowAllKeys,
         isListedSettled: isListed,
         unloadedSettledCount: unloadedCount(
           threads.filter(
@@ -174,7 +171,6 @@ export function useThreadListV2(input: {
       }),
     [
       input.pendingOrder,
-      input.nestableThreads,
       threads,
       input.environmentId,
       input.projectRefs,
@@ -192,8 +188,6 @@ export function useThreadListV2(input: {
       input.snoozedShelfExpanded,
       input.settledShelfExpanded,
       input.selectedThreadKey,
-      input.nestedExpandedByKey,
-      input.nestedShowAllKeys,
       isListed,
       unloadedCount,
       scopes,
@@ -238,7 +232,7 @@ export function useThreadListV2(input: {
         queuedThreadKeys: input.queuedThreadKeys,
         moveAvailability,
         shelfPreferencesLoading: !input.shelfPreferencesLoaded,
-        nestedByKey: layout.nestedByKey,
+        resolve: keepMarked,
       }),
     [
       layout,
@@ -253,7 +247,18 @@ export function useThreadListV2(input: {
       input.shelfPreferencesLoaded,
     ],
   );
-  return { layout, items, contentOnlyThreadKeys, olderSettledShelf };
+  const nesting = useThreadListNesting({
+    items,
+    selectedThreadKey: input.openThreadKey ?? input.selectedThreadKey,
+    searchQuery: input.searchQuery,
+  });
+  return {
+    layout,
+    items: nesting.items,
+    showAllNested: nesting.showAllNested,
+    contentOnlyThreadKeys,
+    olderSettledShelf,
+  };
 }
 
 /** The list's scope per environment: its projects there, or every project. */

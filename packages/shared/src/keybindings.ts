@@ -55,7 +55,6 @@ type WhenToken =
   | { type: "rparen" };
 
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+escape", command: "thread.stop", when: "!terminalFocus && !previewFocus" },
   { key: "mod+b", command: "sidebar.toggle" },
   { key: "f6", command: "workspace.focusNext" },
   { key: "shift+f6", command: "workspace.focusPrevious" },

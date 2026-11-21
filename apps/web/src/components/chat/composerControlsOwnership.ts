@@ -9,12 +9,6 @@ export function resolveComposerControlsOwnership(input: {
   readonly collapsed: boolean;
   /** How many trailing blocks the width measurement moved into the overflow menu. */
   readonly measuredHiddenBlockCount: number;
-  /** Fork-only: Profile Mode owns the model, so the picker cannot open to offer Permissions. */
-  readonly modelPickerLocked?: boolean;
-  /** Fork-only blocks that render first and overflow last. */
-  readonly leadingBlockIds?: ReadonlyArray<string>;
-  /** Fork-only blocks that render just before mode. */
-  readonly beforeModeBlockIds?: ReadonlyArray<string>;
 }) {
   const accessDisplay = input.matchesDefault
     ? ("hidden" as const)
@@ -22,15 +16,8 @@ export function resolveComposerControlsOwnership(input: {
       ? ("icon" as const)
       : ("label" as const);
   const showModeBlock = accessDisplay !== "hidden";
-  const blockIds = [
-    ...(input.leadingBlockIds ?? []),
-    ...(input.beforeModeBlockIds ?? []),
-    ...(showModeBlock ? ["mode" as const] : []),
-  ];
-  const hiddenBlockIds = blockIds.slice(
-    blockIds.length - Math.min(input.measuredHiddenBlockCount, blockIds.length),
-  );
-  const modeHidden = hiddenBlockIds.includes("mode");
+  const modeHidden = showModeBlock && input.measuredHiddenBlockCount > 0;
+  const hiddenBlockIds = modeHidden ? (["mode"] as const) : ([] as const);
   const overflowShowsPermissions = modeHidden;
   return {
     accessDisplay,
@@ -39,9 +26,6 @@ export function resolveComposerControlsOwnership(input: {
     hiddenBlockIds,
     overflowShowsPermissions,
     /** Without a visible chip or an overflow menu holding it, the model picker answers composer.mode. */
-    pickerOwnsModeShortcut:
-      input.modelPickerLocked !== true &&
-      !overflowShowsPermissions &&
-      (accessDisplay === "hidden" || modeHidden),
+    pickerOwnsModeShortcut: !overflowShowsPermissions && (accessDisplay === "hidden" || modeHidden),
   };
 }

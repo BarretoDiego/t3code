@@ -276,7 +276,6 @@ export function isSubjectOfPullRequest(result: PullRequestSubject.Result): boole
 }
 
 const ReviewSubmissionSchema = Schema.Struct({
-  commit_id: Schema.optional(Schema.String),
   event: Schema.Literals(["COMMENT", "APPROVE", "REQUEST_CHANGES"]),
   body: Schema.String,
   comments: Schema.Array(
@@ -314,13 +313,11 @@ function gitHubReviewPosition(position: PullRequestReviewPosition): {
 }
 
 export function buildReviewSubmission(input: {
-  readonly expectedHeadSha?: string;
   readonly verdict: PullRequestReviewVerdict;
   readonly body: string;
   readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
 }): typeof ReviewSubmissionSchema.Type {
   return {
-    ...(input.expectedHeadSha === undefined ? {} : { commit_id: input.expectedHeadSha }),
     event: REVIEW_EVENTS[input.verdict],
     body: input.body,
     comments: input.comments.map((comment) => {
@@ -1034,6 +1031,8 @@ export interface GitHubPullRequestCore extends GitHubPullRequestDetail {
   readonly mergeQueueRemoval?: PullRequestMergeQueueRemoval;
   readonly maintainerCanModify: boolean;
   readonly canEditMaintainerEdits: boolean;
+  readonly mergeCommitSha?: string | null;
+  readonly mergedBy?: PullRequestActor | null;
   readonly reviewRequestTeams: ReadonlyArray<PullRequestActor>;
   readonly viewerAccess: GitHubViewerAccess & GitHubRepositoryAccess;
   readonly comparison: GitHubBaseComparison | null;
@@ -1097,6 +1096,8 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
       pr.headRepositoryOwner?.__typename === "User" &&
       pr.headRepository !== null &&
       pr.headRef !== null,
+    mergeCommitSha: trimmed(pr.mergeCommit?.oid),
+    mergedBy: toActor(pr.mergedBy),
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
       canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef !== null,

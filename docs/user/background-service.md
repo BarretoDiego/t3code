@@ -11,7 +11,7 @@ run these commands on the machine that will host T3 Code:
 | Task                                  | Command                |
 | ------------------------------------- | ---------------------- |
 | Set up access from your other devices | `t3 up`                |
-| See how your other devices reach it   | `t3 status setup`      |
+| See how your other devices reach it   | `t3 status`            |
 | Install and start                     | `t3 service install`   |
 | Inspect status and log location       | `t3 service status`    |
 | Move to a newer release               | `t3 update`            |
@@ -54,7 +54,7 @@ so a pairing code is all that keeps them out. The hosted web app at app.t3.codes
 stays on T3 Connect, because browsers block plain HTTP from an HTTPS page.
 
 A service installed before `T3CODE_LAN` existed keeps listening on the local
-network. `t3 status setup` says so, and `t3 up --no-lan` turns it off. Any
+network. `t3 status` says so, and `t3 up --no-lan` turns it off. Any
 `T3CODE_HOST` value replaces this setting.
 
 ## Configure the service environment
@@ -175,7 +175,7 @@ space, then stops, repairs the database, and starts again. It is offline while
 the repair runs, and running agents stop. If the repair fails, Settings shows
 why.
 
-In other cases, such as a server you started by hand, run `t3 doctor database` on the
+In other cases, such as a server you started by hand, run `t3 doctor` on the
 machine that hosts the environment. It reports the database size and the
 space it can reclaim, then asks which repairs to run;
 pass `--fix` to run the recommended ones without a prompt (for scripts), or
@@ -197,6 +197,9 @@ directory (on Linux and macOS, `TMPDIR`, or `/var/tmp` when it is not set) and
 once next to the database for its write-ahead log.
 
 If you upgraded from a version before 0.1.0, its database (`state.sqlite`) is
-still kept next to the current one so you can roll back. `t3 doctor database` offers to
+still kept next to the current one so you can roll back. `t3 doctor` offers to
 delete it, but never selects that repair for you and `--fix` skips it: once it
-is gone, a version before 0.1.0 starts with no threads or settings.
+is gone, a version before 0.1.0 starts with no threads or settings. It does
+not offer to delete it while any project or thread you have not deleted is
+missing from the current database, so the old file stays available for
+recovery.

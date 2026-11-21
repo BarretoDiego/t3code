@@ -17,6 +17,10 @@ vi.mock("react", async (importOriginal) => ({
   useMemo: <A>(factory: () => A) => factory(),
   useState: <A>(value: A) => [value, vi.fn()],
 }));
+vi.mock("gt-react-native", async (importOriginal) => {
+  const gt = await importOriginal<typeof import("gt-react-native")>();
+  return { ...gt, useGT: () => gt.mFallback, useMessages: () => gt.mFallback };
+});
 vi.mock("./session", () => ({
   environmentSession: { sessionStateAtom: () => state.sessionAtom },
 }));
@@ -87,6 +91,6 @@ it("searches workspace entries for a bare @", () => {
   useComposerPathSearch({ ...target, query: "" });
   expect(state.searchRequests).toHaveBeenCalledExactlyOnceWith({
     environmentId: target.environmentId,
-    input: { cwd: target.cwd, query: "", limit: 20, includeRepositories: true },
+    input: { cwd: target.cwd, query: "", limit: 20 },
   });
 });

@@ -4,7 +4,6 @@ import {
   isProviderWorkspaceSnapshotPending,
   ProviderDriverKind,
   type ProviderInstanceId,
-  type ProviderRateLimits,
   type SecretReference,
   type ServerProvider,
   type ServerProviderUpdateState,
@@ -125,19 +124,9 @@ export class ProviderRegistry extends Context.Service<
       readonly targetVersion?: string | undefined;
     }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
-    /**
-     * Stream of provider snapshot updates — one emission per aggregated
-     * change. The array contains the full current state.
-     */
-    readonly setProviderRateLimits: (input: {
-      readonly instanceId: ProviderInstanceId;
-      readonly rateLimits: ProviderRateLimits;
-      readonly mode?: "merge" | "replace";
-    }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
     readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
   }
 >()("t3/provider/ProviderRegistry") {}
-import { mergeProviderRateLimits } from "./providerRateLimits.ts";
 
 const loadProviders = (
   providerSources: ReadonlyArray<ProviderSnapshotSource>,
@@ -275,8 +264,16 @@ const mergeProviderModels = (
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
   const updateRequiredSlugs = new Set(provider.updateRequiredModels?.map((model) => model.slug));
+  const unavailableSubProviders = new Set(
+    provider.subProviders?.flatMap((subProvider) =>
+      subProvider.unavailableReason === undefined ? [] : [subProvider.name],
+    ),
+  );
   const retainablePreviousModels = previousModels.filter(
-    (model) => !model.isCustom && !updateRequiredSlugs.has(model.slug),
+    (model) =>
+      !model.isCustom &&
+      !updateRequiredSlugs.has(model.slug) &&
+      !unavailableSubProviders.has(model.subProvider ?? ""),
   );
 
   if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {
@@ -323,6 +320,23 @@ const carrySavedAntigravityAccount = (
   return { auth: previousProvider.auth, status };
 };
 
+/** One failed check after a ready one is often transient, so its retained catalog stays offered. */
+const retainsReadyCatalog = (
+  previousProvider: ServerProvider,
+  nextProvider: ServerProvider,
+  status: ServerProvider["status"],
+  models: ServerProvider["models"],
+): boolean =>
+  nextProvider.enabled &&
+  nextProvider.installed &&
+  (status === "error" || status === "warning") &&
+  nextProvider.auth.status !== "unauthenticated" &&
+  models.length > 0 &&
+  (previousProvider.status === "ready" ||
+    // Usage and metadata updates republish the same check.
+    (previousProvider.modelsRetained === true &&
+      previousProvider.checkedAt === nextProvider.checkedAt));
+
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
@@ -340,15 +354,33 @@ export const mergeProviderSnapshot = (
         ...snapshot,
         modelsPending: true,
       }));
+  const nextWorkspaceSnapshots = nextProvider.workspaceSnapshots;
+  // A provider reports only folders its own sessions saw, so registry scans of other folders stay.
+  const workspaceSnapshots =
+    nextWorkspaceSnapshots === undefined ||
+    !nextProvider.enabled ||
+    nextProvider.auth.status === "unauthenticated" ||
+    (!nextProvider.installed && nextProvider.status === "error")
+      ? (nextWorkspaceSnapshots ?? previousWorkspaceSnapshots)
+      : [
+          ...(previousWorkspaceSnapshots ?? []).filter(
+            ({ cwd }) => !nextWorkspaceSnapshots.some((snapshot) => snapshot.cwd === cwd),
+          ),
+          ...nextWorkspaceSnapshots,
+        ].slice(-MAX_WORKSPACE_SNAPSHOTS_PER_PROVIDER);
   return {
     ...(savedAccount?.status === "ready" ? nextWithoutMessage : nextProvider),
     ...savedAccount,
     models,
-    ...(nextProvider.workspaceSnapshots !== undefined
-      ? { workspaceSnapshots: nextProvider.workspaceSnapshots }
-      : previousWorkspaceSnapshots !== undefined
-        ? { workspaceSnapshots: previousWorkspaceSnapshots }
-        : {}),
+    ...(retainsReadyCatalog(
+      previousProvider,
+      nextProvider,
+      savedAccount?.status ?? nextProvider.status,
+      models,
+    )
+      ? { modelsRetained: true }
+      : {}),
+    ...(workspaceSnapshots === undefined ? {} : { workspaceSnapshots }),
     ...(nextProvider.workspaceRescannedAt === undefined &&
     previousProvider.workspaceRescannedAt !== undefined
       ? { workspaceRescannedAt: previousProvider.workspaceRescannedAt }
@@ -489,16 +521,6 @@ export const layer = Layer.effect(
         ),
       ),
     );
-    // Plan rate limits ride along on the persisted snapshot, so the cache is
-    // also how the last observation survives a restart: seed the live map from
-    // it or the first refresh would drop what we already knew.
-    const rateLimitsRef = yield* Ref.make<ReadonlyMap<ProviderInstanceId, ProviderRateLimits>>(
-      new Map(
-        bootProviders.flatMap((provider) =>
-          provider.rateLimits ? [[provider.instanceId, provider.rateLimits] as const] : [],
-        ),
-      ),
-    );
     const initialManifest = yield* manifestService.current;
     const classifyCompatibility = (
       provider: ServerProvider,
@@ -567,23 +589,6 @@ export const layer = Layer.effect(
       };
     });
 
-    const applyProviderRateLimits = Effect.fn("applyProviderRateLimits")(function* (
-      provider: ServerProvider,
-    ) {
-      const rateLimits = (yield* Ref.get(rateLimitsRef)).get(provider.instanceId);
-      if (!rateLimits) {
-        const { rateLimits: _rateLimits, ...providerWithoutRateLimits } = provider;
-        return providerWithoutRateLimits;
-      }
-      return {
-        ...provider,
-        rateLimits,
-      };
-    });
-
-    const applyVolatileProviderState = (provider: ServerProvider) =>
-      applyProviderUpdateState(provider).pipe(Effect.flatMap(applyProviderRateLimits));
-
     const upsertProviders = Effect.fn("upsertProviders")(function* (
       nextProviders: ReadonlyArray<ServerProvider>,
       options?: {
@@ -593,9 +598,9 @@ export const layer = Layer.effect(
       },
     ) {
       const manifest = yield* manifestService.current;
-      const nextProvidersWithVolatileState = yield* Effect.forEach(
+      const nextProvidersWithUpdateState = yield* Effect.forEach(
         nextProviders,
-        applyVolatileProviderState,
+        applyProviderUpdateState,
         {
           concurrency: "unbounded",
         },
@@ -608,7 +613,7 @@ export const layer = Layer.effect(
           );
           const updatedKeys = new Set<ProviderInstanceId>();
 
-          for (const provider of nextProvidersWithVolatileState) {
+          for (const provider of nextProvidersWithUpdateState) {
             const key = snapshotInstanceKey(provider);
             updatedKeys.add(key);
             mergedProviders.set(
@@ -715,32 +720,6 @@ export const layer = Layer.effect(
         });
       },
     );
-
-    const setProviderRateLimits = Effect.fn("setProviderRateLimits")(function* (input: {
-      readonly instanceId: ProviderInstanceId;
-      readonly rateLimits: ProviderRateLimits;
-      readonly mode?: "merge" | "replace";
-    }) {
-      const merged = yield* Ref.modify(rateLimitsRef, (previous) => {
-        const nextRateLimits =
-          input.mode === "replace"
-            ? input.rateLimits
-            : mergeProviderRateLimits(previous.get(input.instanceId), input.rateLimits);
-        const next = new Map(previous);
-        next.set(input.instanceId, nextRateLimits);
-        return [nextRateLimits, next] as const;
-      });
-
-      const existingProviders = yield* Ref.get(providersRef);
-      const matchingProvider = existingProviders.find(
-        (candidate) => candidate.instanceId === input.instanceId,
-      );
-      if (!matchingProvider) {
-        return existingProviders;
-      }
-
-      return yield* upsertProviders([{ ...matchingProvider, rateLimits: merged }]);
-    });
 
     const isCurrentInstance = (instance: ProviderInstance) =>
       instanceRegistry
@@ -985,22 +964,6 @@ export const layer = Layer.effect(
         }
         const previousSubs = yield* Ref.get(liveSubsRef);
 
-        // A rebuilt instance may point at a different provider home/account while keeping the same routing id, so its previous plan observation is not attributable to it.
-        // Clear it before reading the new snapshot so memory and the persisted provider cache are rewritten without the old account's limits.
-        yield* Ref.update(rateLimitsRef, (previous) => {
-          const next = new Map(previous);
-          for (const [instanceId, previousInstance] of previousSubs) {
-            if (nextByInstance.get(instanceId) !== previousInstance) {
-              next.delete(instanceId);
-            }
-          }
-          return next;
-        });
-
-        // Carry over subscriptions for instances whose identity is
-        // unchanged (reconcile treated them as no-op). Instances that
-        // disappeared, or were rebuilt with a different reference,
-        // fall through to the "newly-added" branch below.
         const carriedOver = new Map<ProviderInstanceId, ProviderInstance>();
         for (const [instanceId, previousInstance] of previousSubs) {
           const nextInstance = nextByInstance.get(instanceId);
@@ -1380,7 +1343,6 @@ export const layer = Layer.effect(
       ),
       getProviderMaintenanceCapabilitiesForInstance,
       setProviderMaintenanceActionState,
-      setProviderRateLimits,
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },

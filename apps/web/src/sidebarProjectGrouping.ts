@@ -6,15 +6,20 @@ import type {
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
+  isPickableProjectMember,
   resolveScratchProjectScopeKey,
+  selectGroupDefaultProject,
   type ProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
+import { msg } from "gt-react";
+
+import { m, type MessageResolver } from "./i18n/messages";
 import type { Project } from "./types";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
-  repository: "Group by repository",
-  repository_path: "Group by repository path",
-  separate: "Keep separate",
+  repository: msg("Group by repository", { $context: "sidebar project grouping mode" }),
+  repository_path: msg("Group by repository path", { $context: "sidebar project grouping mode" }),
+  separate: msg("Keep separate", { $context: "sidebar project grouping mode" }),
 };
 
 export function withProjectGroupingOverride(
@@ -68,47 +73,6 @@ export interface SidebarProjectPickerEntry {
   isPreferred: boolean;
 }
 
-/** Counts environments, not project copies, and keeps the local member first. */
-export function resolveProjectEnvironmentSummary(
-  group: Pick<SidebarProjectSnapshot, "memberProjects">,
-  primaryEnvironmentId: EnvironmentId | null,
-) {
-  const environments = [
-    ...new Map(
-      group.memberProjects.map((member) => [
-        member.environmentId,
-        {
-          environmentId: member.environmentId,
-          label:
-            member.environmentLabel?.trim() ||
-            (member.environmentId === primaryEnvironmentId ? "Local" : "Remote"),
-          isLocal: member.environmentId === primaryEnvironmentId,
-        },
-      ]),
-    ).values(),
-  ].sort(
-    (a, b) =>
-      Number(b.isLocal) - Number(a.isLocal) ||
-      a.label.localeCompare(b.label) ||
-      a.environmentId.localeCompare(b.environmentId),
-  );
-  const first = environments[0];
-  if (!first) return null;
-  const multiple = environments.length > 1;
-  return {
-    environments,
-    multiple,
-    label: multiple ? `${environments.length} envs` : first.isLocal ? "Local" : first.label,
-    description: `${multiple ? `Available in ${environments.length} environments` : first.isLocal ? "Local only" : "Only in this environment"}: ${environments
-      .map(
-        (environment) =>
-          `${environment.label}${environment.isLocal && environment.label !== "Local" ? " (local)" : ""}`,
-      )
-      .join(", ")}`,
-  };
-}
-
-/** A merged filter still opens settings for the chosen physical project. */
 export function getSidebarProjectSettingsKey(
   group: SidebarProjectSnapshot,
   settings: ProjectGroupingSettings,
@@ -148,6 +112,17 @@ export function resolveSidebarProjectScopeKey(input: {
   return group?.projectKey ?? (input.canClearMissingScope ? null : input.key);
 }
 
+export function resolveSidebarProjectScopeKeys(input: {
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly keys: ReadonlyArray<string>;
+  readonly settings?: ProjectGroupingSettings;
+  readonly canClearMissingScope?: boolean;
+}): string[] {
+  return [
+    ...new Set(input.keys.flatMap((key) => resolveSidebarProjectScopeKey({ ...input, key }) ?? [])),
+  ];
+}
+
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
@@ -167,21 +142,27 @@ export function buildPhysicalToLogicalProjectKeyMap(input: {
   return mapping;
 }
 
-export function buildSidebarProjectSnapshots(input: {
-  projects: ReadonlyArray<Project>;
-  settings: ProjectGroupingSettings;
-  groupScratchProjects?: boolean;
-  primaryEnvironmentId: EnvironmentId | null;
-  resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
-  isDesktopLocalEnvironment?: (environmentId: EnvironmentId) => boolean;
-  isWslEnvironment?: (environmentId: EnvironmentId) => boolean;
-}): SidebarProjectSnapshot[] {
-  return buildProjectGroups({
-    projects: input.projects,
-    groupScratchProjects: input.groupScratchProjects ?? false,
-    settings: input.settings,
-    preferredEnvironmentId: input.primaryEnvironmentId,
-  }).map((group): SidebarProjectSnapshot => {
+export function buildSidebarProjectSnapshots(
+  input: {
+    projects: ReadonlyArray<Project>;
+    settings: ProjectGroupingSettings;
+    groupScratchProjects?: boolean;
+    primaryEnvironmentId: EnvironmentId | null;
+    resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
+    isDesktopLocalEnvironment?: (environmentId: EnvironmentId) => boolean;
+    isWslEnvironment?: (environmentId: EnvironmentId) => boolean;
+  },
+  resolve: MessageResolver = m,
+): SidebarProjectSnapshot[] {
+  return buildProjectGroups(
+    {
+      projects: input.projects,
+      groupScratchProjects: input.groupScratchProjects ?? false,
+      settings: input.settings,
+      preferredEnvironmentId: input.primaryEnvironmentId,
+    },
+    resolve,
+  ).map((group): SidebarProjectSnapshot => {
     const members = group.members.map(
       ({ physicalProjectKey, project }): SidebarProjectGroupMember => ({
         ...project,
@@ -242,6 +223,7 @@ export function buildSidebarProjectPickerEntries(input: {
 }) {
   const preferredProjectRef = input.preferredProjectRef;
   const entries = input.groups.flatMap((group): SidebarProjectPickerEntry[] => {
+    const members = group.memberProjects.filter(isPickableProjectMember);
     const isPreferred = preferredProjectRef
       ? group.memberProjectRefs.some(
           (projectRef) =>
@@ -250,21 +232,21 @@ export function buildSidebarProjectPickerEntries(input: {
         )
       : false;
     const preferredProject = preferredProjectRef
-      ? (group.memberProjects.find(
+      ? (members.find(
           (project) =>
             project.environmentId === preferredProjectRef.environmentId &&
             project.id === preferredProjectRef.projectId,
         ) ??
-        group.memberProjects.find(
-          (project) => project.environmentId === preferredProjectRef.environmentId,
+        selectGroupDefaultProject(
+          members.filter((project) => project.environmentId === preferredProjectRef.environmentId),
         ))
       : null;
     const targetProject =
       preferredProject ??
-      group.memberProjects.find(
+      members.find(
         (project) => project.environmentId === group.environmentId && project.id === group.id,
       ) ??
-      group.memberProjects[0];
+      members[0];
     if (!targetProject) return [];
 
     return [{ group, targetProject, isPreferred }];

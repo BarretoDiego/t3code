@@ -5,20 +5,17 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 
 ## Workspace and conversation
 
-| Term           | Meaning                                                                                                                                 |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Environment    | One running server and the machine, credentials, workspace access, and state it owns.                                                   |
-| Client         | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server.                                       |
-| Project        | An environment-local workspace record rooted at a directory.                                                                            |
-| Workspace root | The project's base filesystem directory on the environment.                                                                             |
-| Worktree       | A separate Git checkout a thread can use instead of the project's main checkout.                                                        |
-| Thread         | The durable conversation and work history for a project. It survives provider process exits.                                            |
-| Turn           | One user-to-agent cycle, a V2 run. Provider work can end before checkpoint and diff work settles.                                       |
-| Activity       | A non-message timeline item, such as a tool action, approval, or failure.                                                               |
-| T3 home        | The base data directory. Runtime state normally lives under its `userdata` directory.                                                   |
-| Project sync   | A client-mediated copy of a project between environments; it has no server-to-server connection. See [project sync](./project-sync.md). |
-| Send mode      | Project sync mode that creates a destination project without deleting destination entries.                                              |
-| Sync mode      | Project sync mode that mirrors an existing destination and explicitly confirms deletions.                                               |
+| Term           | Meaning                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| Environment    | One running server and the machine, credentials, workspace access, and state it owns.             |
+| Client         | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server. |
+| Project        | An environment-local workspace record rooted at a directory.                                      |
+| Workspace root | The project's base filesystem directory on the environment.                                       |
+| Worktree       | A separate Git checkout a thread can use instead of the project's main checkout.                  |
+| Thread         | The durable conversation and work history for a project. It survives provider process exits.      |
+| Turn           | One user-to-agent cycle, a V2 run. Provider work can end before checkpoint and diff work settles. |
+| Activity       | A non-message timeline item, such as a tool action, approval, or failure.                         |
+| T3 home        | The base data directory. Runtime state normally lives under its `userdata` directory.             |
 
 ## Orchestration
 
@@ -34,30 +31,20 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 
 ## Providers and checkpoints
 
-| Term                 | Meaning                                                                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider             | The agent runtime T3 Code controls, such as Codex or Claude Code.                                                                            |
-| Driver               | The integration for a provider kind.                                                                                                         |
-| Provider instance    | One configured provider, with its own settings and lifecycle. Multiple instances can use the same driver.                                    |
-| Text generation      | App-owned one-shot writing, such as thread titles, commit messages, and transcript cleanup.                                                  |
-| Text generator       | A model API used only for text generation; agent surfaces never list it.                                                                     |
-| Adapter              | The boundary translating a provider's native protocol into T3 Code operations and events.                                                    |
-| Session              | The provider runtime attached to a thread. A session can be stopped and resumed without deleting the thread.                                 |
-| Runtime mode         | The thread's permission policy. See [permission modes](../user/permission-modes.md).                                                         |
-| Interaction mode     | How the agent approaches the task, such as planning. Separate from permission policy.                                                        |
-| Usage limits         | Rolling subscription quota windows from a provider account. Drivers normalize them at the adapter boundary and expose them as `usageLimits`. |
-| Provider rate limits | Provider-specific snapshots that can preserve named or sparse quota buckets independently of the normalized usage-limit view.                |
-| Checkpoint           | A saved workspace state used for diffs and restore, stored as a hidden Git ref.                                                              |
-| Checkpoint baseline  | The workspace state captured before the work being compared.                                                                                 |
-| Turn diff            | The workspace changes attributed to one turn.                                                                                                |
-
-## Marketplace
-
-| Term                | Meaning                                                                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Marketplace         | An environment-owned list of package repositories and installed package records.                                                                                                                             |
-| Marketplace package | A versioned package manifest with generic metadata and an opaque payload selected by its type.                                                                                                               |
-| Provider template   | A marketplace package that declaratively creates a provider instance, environment variables, validated driver configuration, and optional files in an isolated provider home. It cannot run package scripts. |
+| Term                | Meaning                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Provider            | The agent runtime T3 Code controls, such as Codex or Claude Code.                                            |
+| Driver              | The integration for a provider kind.                                                                         |
+| Provider instance   | One configured provider, with its own settings and lifecycle. Multiple instances can use the same driver.    |
+| Text generation     | App-owned one-shot writing, such as thread titles, commit messages, and transcript cleanup.                  |
+| Text generator      | A model API used only for text generation. Its id fills a model selection; agent surfaces never list it.     |
+| Adapter             | The boundary translating a provider's native protocol into T3 Code operations and events.                    |
+| Session             | The provider runtime attached to a thread. A session can be stopped and resumed without deleting the thread. |
+| Runtime mode        | The thread's permission policy. See [permission modes](../user/permission-modes.md).                         |
+| Interaction mode    | How the agent approaches the task, such as planning. Separate from permission policy.                        |
+| Checkpoint          | A saved workspace state used for diffs and restore, stored as a hidden Git ref.                              |
+| Checkpoint baseline | The workspace state captured before the work being compared.                                                 |
+| Turn diff           | The workspace changes attributed to one turn.                                                                |
 
 ## Pull requests
 

@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
+import { msg } from "gt-react";
 import {
   pickSnoozePreset as pickSharedSnoozePreset,
   resolveSnoozePresets as resolveSharedSnoozePresets,
@@ -7,9 +8,10 @@ import {
   type SnoozePreset,
 } from "@t3tools/client-runtime/state/thread-settled";
 
+import { m, type MessageResolver } from "../i18n/messages";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
-import { formatShortTimestamp, parseTimestampDate } from "../timestampFormat";
+import { formatShortTimestamp } from "../timestampFormat";
 import { toastManager } from "./ui/toast";
 
 export { snoozeWakeLabel, type SnoozePreset };
@@ -19,8 +21,9 @@ export function resolveSnoozePresets(
   now: Date,
   timestampFormat: TimestampFormat,
   environmentId: EnvironmentId,
+  resolve: MessageResolver = m,
 ): ReadonlyArray<SnoozePreset> {
-  return resolveSharedSnoozePresets(now, snoozeOptions(timestampFormat, environmentId));
+  return resolveSharedSnoozePresets(now, snoozeOptions(timestampFormat, environmentId), resolve);
 }
 
 /** A shown menu choice as picked; see the shared `pickSnoozePreset`. */
@@ -29,18 +32,20 @@ export function pickSnoozePreset(
   id: string,
   timestampFormat: TimestampFormat,
   environmentId: EnvironmentId,
+  resolve: MessageResolver = m,
 ): SnoozePreset | undefined {
   const picked = pickSharedSnoozePreset({
     shown,
     id,
     now: new Date(),
     ...snoozeOptions(timestampFormat, environmentId),
+    resolve,
   });
   if (!picked) {
     toastManager.add({
       type: "warning",
-      title: "Could not snooze thread",
-      description: "That snooze time has passed. Choose another time.",
+      title: resolve(msg("Could not snooze thread")),
+      description: resolve(msg("That snooze time has passed. Choose another time.")),
     });
   }
   return picked;
@@ -54,29 +59,4 @@ function snoozeOptions(timestampFormat: TimestampFormat, environmentId: Environm
     ...(presets ? { presets } : {}),
     formatTime: (date: Date) => formatShortTimestamp(date.toISOString(), timestampFormat),
   };
-}
-
-function timeOfDayLabel(date: Date, timestampFormat: TimestampFormat): string {
-  return formatShortTimestamp(date.toISOString(), timestampFormat);
-}
-
-const DAY_MS = 24 * 60 * 60 * 1_000;
-
-export function snoozeWakeDescription(
-  snoozedUntil: string,
-  now: Date,
-  timestampFormat: TimestampFormat,
-): string {
-  const wake = parseTimestampDate(snoozedUntil);
-  if (wake === null) return "";
-  const time = timeOfDayLabel(wake, timestampFormat);
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const dayDelta = Math.floor((wake.getTime() - startOfToday.getTime()) / DAY_MS);
-  if (dayDelta === 0) return time;
-  if (dayDelta === 1) return `tomorrow ${time}`;
-  const weekday = wake.toLocaleDateString(undefined, { weekday: "short" });
-  if (dayDelta < 7) return `${weekday} ${time}`;
-  const date = wake.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return `${date}, ${time}`;
 }

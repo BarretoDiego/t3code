@@ -47,10 +47,7 @@ export const AuthAccessReadScope = "access:read" as const;
 export const AuthAccessWriteScope = "access:write" as const;
 export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
-/** Held by a peer environment's service session. Never part of a client's standard scopes. */
-export const AuthFederationPeerScope = "federation:peer" as const;
-/** Arbitrary shell on an execution node. Granted explicitly, never by ordinary pairing. */
-export const AuthAutomationExecuteScope = "automation:execute" as const;
+export const AuthRelayConfigureScope = "relay:configure" as const;
 export const AuthEnvironmentScope = Schema.Literals([
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -69,8 +66,7 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
-  AuthFederationPeerScope,
-  AuthAutomationExecuteScope,
+  AuthRelayConfigureScope,
 ]);
 export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
 export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope);
@@ -116,20 +112,13 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
   [AuthTerminalReadScope]: AuthTerminalOperateScope,
 };
 
-// Denial-only labels for fork scopes old clients cannot decode. Kept out of
-// legacyParents so a legacy terminal/operate grant never implies them.
-const legacyDenialScopes: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>> = {
-  [AuthFederationPeerScope]: AuthOrchestrationOperateScope,
-  [AuthAutomationExecuteScope]: AuthTerminalOperateScope,
-};
-
 /** Keep permission denials decodable by clients with the original scope enum. */
 export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
   return {
     requiredScope:
-      legacyParents[requiredPermission] ??
-      legacyDenialScopes[requiredPermission] ??
-      requiredPermission,
+      requiredPermission === AuthRelayConfigureScope
+        ? AuthRelayWriteScope
+        : (legacyParents[requiredPermission] ?? requiredPermission),
     requiredPermission,
   };
 }
@@ -181,6 +170,11 @@ export const AuthStandardClientScopes = [
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthRelayWriteScope,
+] as const;
+
+export const AuthAdministrativeClientScopes = [
+  ...AuthStandardClientScopes,
+  AuthRelayConfigureScope,
 ] as const;
 
 export const AuthTokenExchangeGrantType =
@@ -237,7 +231,8 @@ export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetada
 export const AuthTokenExchangeRequest = Schema.Struct({
   grant_type: Schema.Literal(AuthTokenExchangeGrantType),
   subject_token: TrimmedNonEmptyString,
-  subject_token_type: Schema.Literal(AuthEnvironmentBootstrapTokenType),
+  /** An access token renews its own session, with a DPoP proof from the key it is bound to. */
+  subject_token_type: Schema.Literals([AuthEnvironmentBootstrapTokenType, AuthAccessTokenType]),
   requested_token_type: Schema.Literal(AuthAccessTokenType),
   scope: Schema.optionalKey(TrimmedNonEmptyString),
   client_label: Schema.optionalKey(TrimmedNonEmptyString),

@@ -1,6 +1,13 @@
+import { describe, expect, it } from "vite-plus/test";
+import * as Schema from "effect/Schema";
+
+import { type CommandId, ProjectId } from "./baseSchemas.ts";
 import {
-  DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
-  DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
+  ProviderDriverKind,
+  ProviderInstanceEnvironment,
+  ProviderInstanceId,
+} from "./providerInstance.ts";
+import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClientServerSettingsPatch,
@@ -17,15 +24,6 @@ import {
   ServerSettingsPatch,
   withIdleCompaction,
 } from "./settings.ts";
-import { describe, expect, it } from "vite-plus/test";
-import * as Schema from "effect/Schema";
-
-import { type CommandId, ProjectId } from "./baseSchemas.ts";
-import {
-  ProviderDriverKind,
-  ProviderInstanceEnvironment,
-  ProviderInstanceId,
-} from "./providerInstance.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -209,12 +207,10 @@ describe("ServerSettings secret providers", () => {
     ).toThrow();
   });
 
-  it("keeps runtime bindings beside secret references in a layout older builds still decode", () => {
-    const runtimeBinding = { environmentId: "remote", runtimeId: "local-model", model: "model" };
+  it("stores a provider environment secret reference in a layout older builds still decode", () => {
     const providerInstances = (secret: unknown) => ({
       codex: {
         driver: "codex",
-        runtimeBinding,
         environment: [
           { name: "OPENAI_API_KEY", sensitive: true, value: "", secret },
           { name: "BASE_URL", value: "https://example.test" },
@@ -222,11 +218,8 @@ describe("ServerSettings secret providers", () => {
       },
     });
     const secret = { provider: "personal", reference: "op://Private/OpenAI/credential" };
-    const settings = decodeServerSettings({ providerInstances: providerInstances(secret) });
-    const environment = settings.providerInstances[ProviderInstanceId.make("codex")]?.environment;
-    expect(encodeServerSettings(settings).providerInstances?.codex?.runtimeBinding).toEqual(
-      runtimeBinding,
-    );
+    const environment = decodeServerSettings({ providerInstances: providerInstances(secret) })
+      .providerInstances[ProviderInstanceId.make("codex")]?.environment;
     expect(environment).toEqual([
       { name: "OPENAI_API_KEY", value: secret, sensitive: true },
       { name: "BASE_URL", value: "https://example.test", sensitive: false },
@@ -349,328 +342,6 @@ describe("ClientSettings quit confirmation", () => {
     expect(settings.confirmQuit).toBe(mode);
     expect(encodeClientSettings(settings).confirmQuit).toBe(mode);
   });
-
-  it("rejects legacy booleans at the patch boundary", () => {
-    expect(() => decodeClientSettingsPatch({ confirmQuit: true })).toThrow();
-  });
-});
-
-describe("ClientSettings browser recording frame rate", () => {
-  it("defaults to 30 fps", () => {
-    expect(decodeClientSettings({}).browserRecordingFrameRate).toBe(30);
-  });
-
-  it.each([30, 60])("accepts a supported frame rate: %s", (frameRate) => {
-    expect(
-      decodeClientSettings({ browserRecordingFrameRate: frameRate }).browserRecordingFrameRate,
-    ).toBe(frameRate);
-    expect(
-      decodeClientSettingsPatch({ browserRecordingFrameRate: frameRate }).browserRecordingFrameRate,
-    ).toBe(frameRate);
-  });
-
-  it.each([24, 59, 120])("rejects an unsupported frame rate: %s", (frameRate) => {
-    expect(() => decodeClientSettings({ browserRecordingFrameRate: frameRate })).toThrow();
-    expect(() => decodeClientSettingsPatch({ browserRecordingFrameRate: frameRate })).toThrow();
-  });
-});
-
-describe("ClientSettings recording input overlays", () => {
-  it("defaults both overlays off and accepts independent opt-ins", () => {
-    const settings = decodeClientSettings({});
-    expect(settings.browserRecordingShowKeyPresses).toBe(false);
-    expect(settings.browserRecordingShowMousePresses).toBe(false);
-    expect(
-      decodeClientSettingsPatch({
-        browserRecordingShowKeyPresses: true,
-        browserRecordingShowMousePresses: false,
-      }),
-    ).toMatchObject({
-      browserRecordingShowKeyPresses: true,
-      browserRecordingShowMousePresses: false,
-    });
-  });
-});
-
-describe("ClientSettings glass opacity", () => {
-  it("defaults to a readable translucent surface", () => {
-    expect(decodeClientSettings({}).glassOpacity).toBe(80);
-  });
-
-  it.each([39, 101, 72.5])("rejects an invalid glass opacity: %s", (value) => {
-    expect(() => decodeClientSettings({ glassOpacity: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ glassOpacity: value })).toThrow();
-  });
-
-  it.each([40, 75, 100])("accepts a glass opacity within the supported range: %s", (value) => {
-    expect(decodeClientSettings({ glassOpacity: value }).glassOpacity).toBe(value);
-    expect(decodeClientSettingsPatch({ glassOpacity: value }).glassOpacity).toBe(value);
-  });
-});
-
-describe("ClientSettings appearance contrast", () => {
-  it("defaults to the theme's original contrast", () => {
-    expect(decodeClientSettings({}).appearanceContrast).toBe(100);
-  });
-
-  it.each([49, 201, 92.5])("rejects an invalid appearance contrast: %s", (value) => {
-    expect(() => decodeClientSettings({ appearanceContrast: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ appearanceContrast: value })).toThrow();
-  });
-
-  it.each([50, 100, 150, 200])("accepts an appearance contrast in range: %s", (value) => {
-    expect(decodeClientSettings({ appearanceContrast: value }).appearanceContrast).toBe(value);
-    expect(decodeClientSettingsPatch({ appearanceContrast: value }).appearanceContrast).toBe(value);
-  });
-});
-
-describe("ClientSettings panel animations", () => {
-  it("defaults to instant changes", () => {
-    expect(decodeClientSettings({}).panelAnimationDurationMs).toBe(0);
-  });
-
-  it.each([0, 400])("accepts a panel animation duration: %s", (value) => {
-    expect(decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toEqual({
-      panelAnimationDurationMs: value,
-    });
-  });
-
-  it.each([-1, 401, 150.5])("rejects an invalid panel animation duration: %s", (value) => {
-    expect(() => decodeClientSettingsPatch({ panelAnimationDurationMs: value })).toThrow();
-  });
-});
-
-describe("ClientSettings environment identification", () => {
-  it("defaults to artwork and accepts each presentation mode", () => {
-    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
-
-    for (const mode of ["artwork", "pill", "none"] as const) {
-      expect(
-        decodeClientSettingsPatch({ environmentIdentificationMode: mode })
-          .environmentIdentificationMode,
-      ).toBe(mode);
-    }
-  });
-
-  it("rejects unsupported presentation modes", () => {
-    expect(() => decodeClientSettings({ environmentIdentificationMode: "badge" })).toThrow();
-    expect(() => decodeClientSettingsPatch({ environmentIdentificationMode: "badge" })).toThrow();
-  });
-});
-
-describe("ClientSettings sidebar", () => {
-  it("defaults to the current sidebar", () => {
-    const settings = decodeClientSettings({});
-    expect(settings.legacySidebarEnabled).toBe(false);
-    expect(settings.sidebarExperience).toBe("grouped");
-    expect(settings.sidebarPinnedRateLimitProviderKeys).toEqual([]);
-    expect(settings.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual([]);
-  });
-
-  it("preserves the selected sidebar experience", () => {
-    expect(decodeClientSettings({ sidebarExperience: "original" }).sidebarExperience).toBe(
-      "original",
-    );
-    expect(decodeClientSettingsPatch({ sidebarExperience: "legacy" }).sidebarExperience).toBe(
-      "legacy",
-    );
-  });
-
-  it("persists per-account plan-limit pin and weekly collapse preferences", () => {
-    const patch = decodeClientSettingsPatch({
-      sidebarPinnedRateLimitProviderKeys: ["  local:claude_personal  "],
-      sidebarCollapsedRateLimitWeeklyProviderKeys: ["local:claude_work"],
-    });
-
-    expect(patch.sidebarPinnedRateLimitProviderKeys).toEqual(["local:claude_personal"]);
-    expect(patch.sidebarCollapsedRateLimitWeeklyProviderKeys).toEqual(["local:claude_work"]);
-  });
-
-  it.each([
-    ["sidebarPinnedRateLimitProviderKeys", [""]],
-    ["sidebarPinnedRateLimitProviderKeys", ["   "]],
-    ["sidebarCollapsedRateLimitWeeklyProviderKeys", [""]],
-    ["sidebarCollapsedRateLimitWeeklyProviderKeys", ["   "]],
-  ] as const)("rejects empty provider keys in %s", (key, value) => {
-    expect(() => decodeClientSettings({ [key]: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ [key]: value })).toThrow();
-  });
-
-  it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
-    const decoded = decodeClientSettings({
-      sidebarV2Enabled: false,
-      sidebarV2ConfiguredByUser: true,
-    });
-    expect(decoded.legacySidebarEnabled).toBe(false);
-    expect(decoded).not.toHaveProperty("sidebarV2Enabled");
-    expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
-  });
-
-  it("drops the retired compact sidebar keys for users who opted in", () => {
-    const stored = { compactSidebarEnabled: true, sidebarCompactThreadRows: true };
-    const decoded = decodeClientSettings(stored);
-    expect(decoded).not.toHaveProperty("compactSidebarEnabled");
-    expect(decoded).not.toHaveProperty("sidebarCompactThreadRows");
-    expect(decodeClientSettingsPatch(stored)).toEqual({});
-  });
-
-  it("preserves an explicit legacy sidebar opt-in", () => {
-    expect(decodeClientSettings({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(true);
-    expect(decodeClientSettingsPatch({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(
-      true,
-    );
-  });
-
-  it("keeps unpin confirmation opt-in and patchable", () => {
-    expect(decodeClientSettings({}).confirmThreadUnpin).toBe(false);
-    expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
-    expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
-  });
-});
-
-describe("ClientSettings context window meter", () => {
-  it("defaults off and preserves an explicit legacy opt-in", () => {
-    expect(decodeClientSettings({}).contextWindowMeterEnabled).toBe(false);
-    expect(
-      decodeClientSettings({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
-    ).toBe(true);
-    expect(
-      decodeClientSettingsPatch({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
-    ).toBe(true);
-  });
-});
-
-describe("ClientSettings send shortcut", () => {
-  it("defaults to Enter and validates the supported choices", () => {
-    expect(decodeClientSettings({}).sendShortcut).toBe("enter");
-    for (const sendShortcut of ["enter", "mod-enter-multiline", "mod-enter"]) {
-      expect(decodeClientSettings({ sendShortcut }).sendShortcut).toBe(sendShortcut);
-      expect(decodeClientSettingsPatch({ sendShortcut }).sendShortcut).toBe(sendShortcut);
-    }
-    expect(() => decodeClientSettingsPatch({ sendShortcut: "invalid" })).toThrow();
-  });
-});
-
-describe("ClientSettings follow-up behavior", () => {
-  it("defaults to steer and accepts either behavior", () => {
-    expect(decodeClientSettings({}).followUpBehavior).toBe("steer");
-    for (const followUpBehavior of ["queue", "steer"]) {
-      expect(decodeClientSettings({ followUpBehavior }).followUpBehavior).toBe(followUpBehavior);
-      expect(decodeClientSettingsPatch({ followUpBehavior }).followUpBehavior).toBe(
-        followUpBehavior,
-      );
-    }
-    expect(() => decodeClientSettingsPatch({ followUpBehavior: "invalid" })).toThrow();
-  });
-});
-
-describe("ClientSettings composer collapse", () => {
-  it("drops the retired scroll and blur trigger keys", () => {
-    const retired = { composerCollapseOnScroll: false, composerCollapseOnBlur: false };
-    const decoded = decodeClientSettings(retired);
-    for (const key of Object.keys(retired)) {
-      expect(decoded).not.toHaveProperty(key);
-      expect(encodeClientSettings(decoded)).not.toHaveProperty(key);
-    }
-    expect(decodeClientSettingsPatch(retired)).toEqual({});
-  });
-});
-
-describe("ServerSettings thread settlement", () => {
-  it("defaults merge settlement on and inactivity settlement to seven days", () => {
-    const settings = decodeServerSettings({});
-    expect(settings.sidebarAutoSettleAfterDays).toBe(7);
-    expect(settings.sidebarAutoSettleOnMerge).toBe(true);
-  });
-
-  it("allows both automatic rules to be disabled", () => {
-    expect(
-      decodeServerSettings({
-        sidebarAutoSettleAfterDays: null,
-        sidebarAutoSettleOnMerge: false,
-      }),
-    ).toMatchObject({ sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false });
-    expect(
-      decodeServerSettingsPatch({
-        sidebarAutoSettleAfterDays: null,
-        sidebarAutoSettleOnMerge: false,
-      }),
-    ).toMatchObject({ sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: false });
-  });
-
-  it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
-    expect(() => decodeServerSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
-    expect(() => decodeServerSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
-  });
-});
-
-describe("ClientSettings pull request merge methods", () => {
-  it("defaults to no project overrides and accepts supported methods", () => {
-    expect(decodeClientSettings({}).pullRequestMergeMethodOverrides).toEqual({});
-    expect(
-      decodeClientSettingsPatch({
-        pullRequestMergeMethodOverrides: { project: "squash" },
-      }).pullRequestMergeMethodOverrides,
-    ).toEqual({ project: "squash" });
-  });
-
-  it("rejects unsupported project merge methods", () => {
-    expect(() =>
-      decodeClientSettingsPatch({
-        pullRequestMergeMethodOverrides: { project: "octopus" },
-      }),
-    ).toThrow();
-  });
-});
-
-describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
-  it("defaults to an empty record so legacy configs without the key still decode", () => {
-    expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
-  });
-
-  it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
-    const decoded = decodeServerSettings({});
-    expect(decoded.providerInstances).toEqual({});
-  });
-
-  it("decodes a multi-instance map mixing first-party and fork drivers", () => {
-    const decoded = decodeServerSettings({
-      providerInstances: {
-        codex_personal: {
-          driver: "codex",
-          displayName: "Codex (personal)",
-          config: { homePath: "~/.codex_personal" },
-        },
-        codex_work: {
-          driver: "codex",
-          config: { homePath: "~/.codex_work" },
-        },
-        ollama_local: {
-          driver: "ollama",
-          displayName: "Ollama (local)",
-          config: { endpoint: "http://localhost:11434" },
-        },
-      },
-    });
-    const personalId = ProviderInstanceId.make("codex_personal");
-    const workId = ProviderInstanceId.make("codex_work");
-    const ollamaId = ProviderInstanceId.make("ollama_local");
-
-    expect(decoded.providerInstances[personalId]?.driver).toBe("codex");
-    expect(decoded.providerInstances[workId]?.config).toEqual({ homePath: "~/.codex_work" });
-    expect(decoded.providerInstances[ollamaId]?.driver).toBe("ollama");
-    expect(decoded.providerInstances[ollamaId]?.config).toEqual({
-      endpoint: "http://localhost:11434",
-    });
-  });
-
-  it("rejects instance keys that violate the slug pattern", () => {
-    expect(() =>
-      decodeServerSettings({
-        providerInstances: { "1bad": { driver: "codex" } },
-      }),
-    ).toThrow();
-  });
 });
 
 describe("provider enabled defaults", () => {
@@ -751,52 +422,6 @@ describe("ServerSettings environment icon", () => {
   });
 });
 
-describe("Source Control AI review defaults", () => {
-  it("keeps existing settings valid and requires draft-first publication", () => {
-    const settings = decodeServerSettings({});
-    expect(settings.sourceControlReview).toEqual({
-      prompt: DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
-      tier: "standard",
-      profileId: null,
-      severityThreshold: "minor",
-      language: DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE,
-      reasoningEffort: "",
-      includeExistingComments: true,
-      includeGenerated: false,
-      publication: "draft",
-    });
-    expect(() =>
-      decodeServerSettingsPatch({
-        sourceControlReview: { ...settings.sourceControlReview, publication: "automatic" },
-      }),
-    ).toThrow();
-  });
-});
-
-it("preserves custom review prompts and supplies a default for older review settings", () => {
-  const review = decodeServerSettings({}).sourceControlReview;
-  const legacy = {
-    tier: review.tier,
-    profileId: review.profileId,
-    severityThreshold: review.severityThreshold,
-    includeExistingComments: review.includeExistingComments,
-    includeGenerated: review.includeGenerated,
-    publication: review.publication,
-  };
-  expect(decodeServerSettings({ sourceControlReview: legacy }).sourceControlReview.prompt).toBe(
-    DEFAULT_SOURCE_CONTROL_REVIEW_PROMPT,
-  );
-  const legacyDecoded = decodeServerSettings({ sourceControlReview: legacy }).sourceControlReview;
-  expect(legacyDecoded.language).toBe(DEFAULT_SOURCE_CONTROL_REVIEW_LANGUAGE);
-  expect(legacyDecoded.reasoningEffort).toBe("");
-  const custom = decodeServerSettings({
-    sourceControlReview: { ...review, prompt: "Inspect database migrations." },
-  });
-  expect(encodeServerSettings(custom).sourceControlReview?.prompt).toBe(
-    "Inspect database migrations.",
-  );
-});
-
 const decodeDeviceHostSettings = Schema.decodeSync(ServerSettings);
 
 // `deviceHosts` as it was decoded before Expo hosts existed: an SSH host needs a target.
@@ -830,56 +455,6 @@ it("validates remote device hosts and rejects ambiguous host ids", () => {
     decodeDeviceHostSettings({ deviceHosts: [{ ...host, target: "-oProxyCommand=bad" }] }),
   ).toThrow();
   expect(() => decodeDeviceHostSettings({ deviceHosts: [{ ...host, port: 0 }] })).toThrow();
-});
-
-describe("branch naming settings", () => {
-  it("defaults existing settings to the t3 static prefix", () => {
-    expect(decodeServerSettings({})).toMatchObject({
-      branchNamingMode: "static",
-      branchNamePrefix: "t3",
-      branchNameInstructions: "",
-    });
-  });
-  it.each(["static", "semantic", "custom"])(
-    "round-trips %s and project overrides",
-    (branchNamingMode) => {
-      const naming = {
-        branchNamingMode,
-        branchNamePrefix: "team/",
-        branchNameInstructions: "Include the issue ID.",
-      };
-      const input = { ...naming, projectSettingsOverrides: { project: naming } };
-      expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
-      expect(decodeServerSettingsPatch(input)).toEqual(input);
-    },
-  );
-});
-
-describe("ServerSettings.removeAgentCreditsOnMerge", () => {
-  it("keeps agent credits by default and accepts opt-in patches", () => {
-    expect(decodeServerSettings({}).removeAgentCreditsOnMerge).toBe(false);
-    expect(
-      decodeServerSettingsPatch({ removeAgentCreditsOnMerge: true }).removeAgentCreditsOnMerge,
-    ).toBe(true);
-    expect(
-      decodeServerSettings({
-        projectSettingsOverrides: { project: { removeAgentCreditsOnMerge: true } },
-      }).projectSettingsOverrides["project" as ProjectId]?.removeAgentCreditsOnMerge,
-    ).toBe(true);
-  });
-});
-
-it("defaults compact subthreads and persists the all-states option in either direction", () => {
-  expect(decodeClientSettings({}).sidebarShowAllSubthreads).toBe(false);
-  for (const sidebarShowAllSubthreads of [true, false]) {
-    expect(encodeClientSettings(decodeClientSettings({ sidebarShowAllSubthreads }))).toMatchObject({
-      sidebarShowAllSubthreads,
-    });
-    expect(decodeClientSettingsPatch({ sidebarShowAllSubthreads })).toEqual({
-      sidebarShowAllSubthreads,
-    });
-  }
-  expect(() => decodeClientSettingsPatch({ sidebarShowAllSubthreads: null })).toThrow();
 });
 
 describe("ServerSettings project overrides across versions", () => {
@@ -978,20 +553,5 @@ describe("server model preferences", () => {
     const input = { favorites: [], providerModelPreferences: {} };
     expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
     expect(decodeServerSettingsPatch(input)).toEqual(input);
-  });
-});
-
-describe("ClientSettings interruption confirmation", () => {
-  it("protects existing installs by default and preserves explicit opt-out", () => {
-    expect(decodeClientSettings({}).confirmBeforeInterrupt).toBe(true);
-    for (const confirmBeforeInterrupt of [true, false]) {
-      expect(decodeClientSettings({ confirmBeforeInterrupt }).confirmBeforeInterrupt).toBe(
-        confirmBeforeInterrupt,
-      );
-      expect(decodeClientSettingsPatch({ confirmBeforeInterrupt })).toEqual({
-        confirmBeforeInterrupt,
-      });
-    }
-    expect(() => decodeClientSettingsPatch({ confirmBeforeInterrupt: "false" })).toThrow();
   });
 });

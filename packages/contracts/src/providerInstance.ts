@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
-import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SecretReference } from "./secretReference.ts";
 
 const PROVIDER_SLUG_MAX_CHARS = 64;
@@ -66,13 +66,6 @@ export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnviron
 export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
-export const AiRuntimeBinding = Schema.Struct({
-  environmentId: EnvironmentId,
-  runtimeId: TrimmedNonEmptyString,
-  model: TrimmedNonEmptyString,
-});
-export type AiRuntimeBinding = typeof AiRuntimeBinding.Type;
-
 /** What drivers receive: every secret reference has been read into a plain value. */
 export type ResolvedProviderInstanceEnvironment = ReadonlyArray<
   Omit<ProviderInstanceEnvironmentVariable, "value"> & { readonly value: string }
@@ -80,15 +73,9 @@ export type ResolvedProviderInstanceEnvironment = ReadonlyArray<
 
 /** Drivers decode their own config; unknown-driver envelopes round-trip verbatim across versions. */
 export const ProviderInstanceConfig = Schema.Struct({
-  runtimeBinding: Schema.optionalKey(AiRuntimeBinding),
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
-  /**
-   * Optional key into the client's AI provider icon registry (for example
-   * `kimi`). Absent or unknown keys fall back to the driver icon.
-   */
-  icon: Schema.optional(TrimmedNonEmptyString),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),

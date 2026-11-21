@@ -1,4 +1,3 @@
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -250,10 +249,6 @@ export const ScheduledTask = Schema.Struct({
   threadMode: Schema.optional(ScheduledTaskThreadMode),
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   modelSelection: ModelSelection,
-  /** Tried in order when the provider behind `modelSelection` has no quota left at run time. */
-  fallbackModelSelections: Schema.Array(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed([])),
-  ),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   createdBy: OrchestrationV2Actor,
@@ -292,14 +287,14 @@ export const ScheduledTaskUpsertInput = Schema.Struct({
   enabled: Schema.Boolean,
   schedule: ScheduledTaskUpsertSchedule,
   projectId: ProjectId,
+  /** Omitted or null: keep the stored thread, which a first run may have bound since the form opened. */
   threadId: Schema.optional(Schema.NullOr(ThreadId)),
+  /** True with no `threadId`: the user cleared the thread, so the next run starts one. */
+  unbindThread: Schema.optional(Schema.Boolean),
   /** Omitted: keep the stored mode, or derive it from `threadId` for a new or rebound task. */
   threadMode: Schema.optional(ScheduledTaskThreadMode),
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   modelSelection: ModelSelection,
-  fallbackModelSelections: Schema.optional(Schema.Array(ModelSelection)).annotate({
-    description: "Omit to keep the stored list on edit; an empty array clears it.",
-  }),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   createdBy: Schema.optional(OrchestrationV2Actor),

@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { type MarkedText, markedTextEnglish } from "../errors/translatable.ts";
 import {
   type EnvironmentId,
   ProjectId,
@@ -74,7 +76,13 @@ export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProj
   { projectId: ProjectId },
 ) {
   override get message(): string {
-    return "The folder for threads without a project has not reached this device yet. Try again.";
+    return markedTextEnglish(this.i18nMessage);
+  }
+
+  get i18nMessage(): MarkedText {
+    return [
+      msg("The folder for threads without a project has not reached this device yet. Try again."),
+    ];
   }
 }
 
@@ -121,12 +129,6 @@ export function createProjectEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.projectId]),
   };
   return {
-    discoverScripts: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:projects:discover-scripts",
-      tag: WS_METHODS.projectsDiscoverScripts,
-      staleTimeMs: 30_000,
-      idleTtlMs: 60_000,
-    }),
     fileMetadata: fileMetadata.metadata,
     fileMetadataThread: fileMetadata.retainThread,
     invalidateFileMetadata: createEnvironmentCommand(runtime, {

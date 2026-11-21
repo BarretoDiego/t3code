@@ -64,9 +64,8 @@ describe("detectComposerTrigger", () => {
     (text) => expect(detectComposerTrigger(text, text.length)).toBeNull(),
   );
 
-  // A bare "#" at message start opens the fork's profile menu instead.
   it.each([
-    ["Compare ", "", ""],
+    ["", "", ""],
     ["Compare ", "8737", ""],
     ["Compare (", "", ")"],
     ["Compare(", "fix-name", ")"],
@@ -163,42 +162,6 @@ describe("serializeComposerFileLink", () => {
     expect(serializeComposerFileLink("@scope/package.json")).toBe(
       "[package.json](@scope/package.json)",
     );
-  });
-});
-
-describe("detectComposerTrigger profile shortcuts", () => {
-  it("detects a #profile token at the start of the message", () => {
-    const text = "#reviewer look at this";
-    expect(detectComposerTrigger(text, "#reviewer".length)).toEqual({
-      kind: "profile",
-      query: "reviewer",
-      rangeStart: 0,
-      rangeEnd: 9,
-    });
-  });
-
-  it("opens on a bare # at message start", () => {
-    expect(detectComposerTrigger("#", 1)).toEqual({
-      kind: "profile",
-      query: "",
-      rangeStart: 0,
-      rangeEnd: 1,
-    });
-  });
-
-  it("keeps issue references and mid-text hashtags out of the profile shortcut", () => {
-    const issue = "Fix #123";
-    expect(detectComposerTrigger(issue, issue.length)).toMatchObject({ kind: "pull-request" });
-    expect(detectComposerTrigger("#123", 4)).toMatchObject({ kind: "pull-request" });
-    const midText = "The issue #reviewer is unrelated";
-    expect(detectComposerTrigger(midText, "The issue #reviewer".length)).toMatchObject({
-      kind: "pull-request",
-    });
-  });
-
-  it("stops triggering once the token ends", () => {
-    const text = "#reviewer done";
-    expect(detectComposerTrigger(text, text.length)).toBeNull();
   });
 });
 
