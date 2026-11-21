@@ -41,6 +41,8 @@ import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useThreadListV2 } from "./useThreadListV2";
+import { ThreadListNestedListRow } from "./thread-list-nested-rows";
+import { isThreadListNestedListItem } from "./threadListNesting";
 import { useSidebarRowThreadKey } from "./useSidebarRowThreadKey";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { requestThreadMessageJump } from "./threadMessageJump";
@@ -276,6 +278,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     items: threadListV2Items,
     contentOnlyThreadKeys,
     olderSettledShelf,
+    showAllNested,
   } = useThreadListV2({
     threads: launchingThreads,
     pendingTasks,
@@ -297,6 +300,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey,
+    openThreadKey: props.selectedThreadKey,
   });
   const listItems: readonly SidebarListItem[] =
     settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
@@ -378,6 +382,17 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     return false;
   };
   const renderListItem = ({ item }: { readonly item: SidebarListItem }) => {
+    if (isThreadListNestedListItem(item)) {
+      return (
+        <ThreadListNestedListRow
+          item={item}
+          pane="sidebar"
+          selectedThreadKey={props.selectedThreadKey}
+          onSelectThread={handleSelectThread}
+          onShowAll={showAllNested}
+        />
+      );
+    }
     switch (item.type) {
       case "v2-pending": {
         const pendingScopeKey = scopedProjectKey(
@@ -477,6 +492,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}
+            nested={item.nested}
             onSnoozeThread={snoozeThread}
             onUnsnoozeThread={unsnoozeThread}
             onUnsettleThread={unsettleThread}

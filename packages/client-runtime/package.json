@@ -423,6 +423,10 @@
       "types": "./src/state/threadRelationships.ts",
       "default": "./src/state/threadRelationships.ts"
     },
+    "./state/thread-nesting": {
+      "types": "./src/state/threadNesting.ts",
+      "default": "./src/state/threadNesting.ts"
+    },
     "./state/thread-checkpoints": {
       "types": "./src/state/threadCheckpoints.ts",
       "default": "./src/state/threadCheckpoints.ts"

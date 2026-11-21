@@ -2795,7 +2795,12 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
+export function resolveDesktopProductName(
+  version: string,
+  forkBuild = process.env.T3CODE_FORK_BRAND === "1",
+): string {
+  // Fork installs already carry this name; updates must keep it to replace the same app.
+  if (forkBuild) return "T3 Code Fork";
   return resolveDesktopUpdateChannel(version) === "nightly"
     ? "T3 Code (Nightly)"
     : (desktopPackageJson.productName ?? "T3 Code");
@@ -2867,6 +2872,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac") {
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    // A stable self-signed identity is what lets Squirrel.Mac install updates of builds without a Developer ID.
+    const selfSignP12 = yield* Config.String("T3CODE_DESKTOP_MAC_SELF_SIGN_P12").pipe(
+      Config.option,
+    );
+    if (!signed && Option.getOrUndefined(selfSignP12)?.trim()) {
+      buildConfig.afterPack = path.join(repoRoot, "scripts/self-sign-macos.ts");
+    }
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",

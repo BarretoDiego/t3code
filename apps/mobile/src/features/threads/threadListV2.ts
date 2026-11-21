@@ -39,6 +39,13 @@ import type { MenuAction } from "@react-native-menu/menu";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
 import type { ThreadMoveAvailability } from "./threadOrder";
+import {
+  isThreadListNestedListItem,
+  threadListNestedListItemsAreEqual,
+  threadListNestedSummariesAreEqual,
+  type ThreadListNestedListItem,
+  type ThreadListNestedSummary,
+} from "./threadListNesting";
 
 import { relativeTime } from "../../lib/time";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -446,6 +453,8 @@ export interface ThreadListV2ThreadListItem {
   readonly hasQueuedMessages: boolean;
   readonly canMoveUp: boolean;
   readonly canMoveDown: boolean;
+  /** Set on a row with subagents nested under it; see `withThreadListNesting`. */
+  readonly nested?: ThreadListNestedSummary | null;
 }
 
 export interface ThreadListV2PendingListItem {
@@ -486,7 +495,8 @@ export type ThreadListV2ListItem =
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2SnoozedShelfListItem
-  | ThreadListV2SettledShelfListItem;
+  | ThreadListV2SettledShelfListItem
+  | ThreadListNestedListItem;
 
 export function isThreadListV2ListItem(value: {
   readonly type: string;
@@ -496,7 +506,8 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
     value.type === "v2-snoozed-shelf" ||
-    value.type === "v2-settled-shelf"
+    value.type === "v2-settled-shelf" ||
+    isThreadListNestedListItem(value)
   );
 }
 
@@ -521,7 +532,8 @@ export function threadListV2ListItemsAreEqual(
         previous.showTrailingDivider === item.showTrailingDivider &&
         previous.hasQueuedMessages === item.hasQueuedMessages &&
         previous.canMoveUp === item.canMoveUp &&
-        previous.canMoveDown === item.canMoveDown
+        previous.canMoveDown === item.canMoveDown &&
+        threadListNestedSummariesAreEqual(previous.nested, item.nested)
       );
     case "v2-pending":
       return (
@@ -552,6 +564,10 @@ export function threadListV2ListItemsAreEqual(
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
       );
+    case "v2-nested-thread":
+    case "v2-nested-more":
+    case "v2-nested-settled":
+      return threadListNestedListItemsAreEqual(previous, item);
   }
 }
 

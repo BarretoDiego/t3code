@@ -278,6 +278,10 @@ beside the thread you are in. See
 On mobile, open a subagent from its conversation card or **Agents**. On iOS
 layouts with an inspector, its thread opens beside the parent. Maximize it to
 fill the screen; close the full-screen view to return to the parent and inspector.
+A thread with subagents shows their count next to its title in the sidebar and the
+mobile thread list, with a dot when one of them needs you. Its subagents are listed
+under it while any of them is working or waiting on you; click or tap the count to
+show or hide them. A subagent there opens the same way as from **Agents**.
 Stop on a thread also stops the subagents it delegated to.
 Before archiving the parent, wait for its delegated tasks to finish or cancel them.
 

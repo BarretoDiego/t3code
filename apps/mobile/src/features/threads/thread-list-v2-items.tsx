@@ -91,6 +91,8 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import { ThreadListNestedToggle } from "./thread-list-nested-rows";
+import type { ThreadListNestedSummary } from "./threadListNesting";
 import { shouldRecedeThreadRow } from "./thread-row-emphasis";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
@@ -797,6 +799,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly searchMatch?: EnvironmentThreadSearchMatch;
   readonly searchQuery?: string;
   readonly simultaneousSwipeGesture?: ComponentProps<typeof ThreadSwipeable>["simultaneousWith"];
+  readonly nested?: ThreadListNestedSummary | null;
 }) {
   const { width: windowWidth, fontScale } = useWindowDimensions();
   const titleTypography = useScaledTextRole("body");
@@ -866,6 +869,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
   const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
+  const nestedToggle = props.nested ? (
+    <ThreadListNestedToggle
+      threadKey={`${thread.environmentId}:${thread.id}`}
+      nested={props.nested}
+      quietClassName={
+        selected
+          ? selectedThreadRowColors.mutedForegroundClassName
+          : rowAppearance.tertiaryForegroundClassName
+      }
+      tintColorClassName={
+        selected
+          ? selectedThreadRowColors.mutedIconTintClassName
+          : rowAppearance.mutedIconTintClassName
+      }
+    />
+  ) : null;
 
   const rawStatus = resolveThreadListV2Status(thread);
   const status = resolveThreadListV2RowStatus(thread);
@@ -1488,6 +1507,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               {timeLabel}
             </Text>
           )}
+          {nestedToggle}
         </View>
       </View>
       {props.searchMatch ? (
@@ -1736,6 +1756,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             ) : null}
           </View>
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
+          {nestedToggle}
           <Text
             className={cn(
               "text-sm tabular-nums",

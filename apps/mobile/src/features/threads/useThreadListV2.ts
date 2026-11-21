@@ -14,6 +14,7 @@ import {
   threadListV2LayoutTime,
 } from "./threadListV2";
 import { computeThreadMoveAvailability } from "./threadOrder";
+import { useThreadListNesting } from "./use-thread-list-nesting";
 
 /**
  * Screens' select handlers read the content-only key set; a fresh one per list rebuild gave
@@ -66,6 +67,8 @@ export function useThreadListV2(input: {
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
+  /** The open thread itself, which may be a subagent nested under the selected row. */
+  readonly openThreadKey?: string | null;
 }) {
   const { threads, workingShelfEnabled } = input;
   const layoutTime = useMemo(
@@ -244,7 +247,18 @@ export function useThreadListV2(input: {
       input.shelfPreferencesLoaded,
     ],
   );
-  return { layout, items, contentOnlyThreadKeys, olderSettledShelf };
+  const nesting = useThreadListNesting({
+    items,
+    selectedThreadKey: input.openThreadKey ?? input.selectedThreadKey,
+    searchQuery: input.searchQuery,
+  });
+  return {
+    layout,
+    items: nesting.items,
+    showAllNested: nesting.showAllNested,
+    contentOnlyThreadKeys,
+    olderSettledShelf,
+  };
 }
 
 /** The list's scope per environment: its projects there, or every project. */
