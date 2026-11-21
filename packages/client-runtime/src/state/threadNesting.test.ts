@@ -4,6 +4,8 @@ import { ThreadId } from "@t3tools/contracts";
 import {
   buildThreadNesting,
   flattenThreadNesting,
+  markRunningSubagents,
+  resolveSubthreadStatusLabel,
   resolveThreadNestingExpanded,
   reuseEqualThreadNestingDisplay,
   threadNestingAncestorKeys,
@@ -638,5 +640,43 @@ describe("settled subagent groups", () => {
       overrides: { ...overrides, "env:parent:settled": true },
     });
     expect(reuseEqualThreadNestingDisplay(before, opened)).toBe(opened);
+  });
+});
+
+describe("native subagents running inside the parent's session", () => {
+  it("count as working while the parent lists them as pending background work", () => {
+    const parent = {
+      ...thread("parent"),
+      pendingBackgroundTasks: [{ kind: "subagent", childThreadId: "child" }],
+    };
+    const child = { ...thread("child", { parent: "parent" }), runtime: null };
+    const done = { ...thread("done", { parent: "parent" }), runtime: null };
+    const marked = markRunningSubagents([parent, child, done]);
+    const summary = build(marked).nodeByKey.get("env:parent")?.summary ?? null;
+
+    expect(summary?.counts.working).toBe(1);
+    expect(resolveThreadNestingExpanded(summary, undefined)).toBe(true);
+    // The copy is cached, so a rebuild keeps the row's identity.
+    expect(markRunningSubagents([parent, child, done])[1]).toBe(marked[1]);
+    expect(marked[2]).toBe(done);
+  });
+
+  it("label a running native subagent as working", () => {
+    const label = resolveSubthreadStatusLabel(
+      {
+        runtime: null,
+        latestRun: null,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        pendingBackgroundTasks: [],
+        archivedAt: null,
+        settledOverride: null,
+        snoozedAt: null,
+        snoozedUntil: null,
+        subagentRunning: true,
+      },
+      "2026-01-01T00:00:00.000Z",
+    );
+    expect(label).toBe("Working");
   });
 });

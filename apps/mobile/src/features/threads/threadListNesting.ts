@@ -2,6 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import {
   buildThreadNesting,
   flattenThreadNesting,
+  markRunningSubagents,
   THREAD_NESTING_CHILD_LIMIT,
   threadNestingAncestorKeys,
   type ThreadNestingSignal,
@@ -138,7 +139,7 @@ export function withThreadListNesting(input: {
   readonly selectedThreadKey: string | null;
 }): ReadonlyArray<ThreadListV2ListItem> {
   const nesting = buildThreadNesting({
-    threads: input.threads,
+    threads: markRunningSubagents(input.threads),
     isListed: (thread) => thread.archivedAt === null && thread.lineage.sideChat !== true,
   });
   if (nesting.roots.every((root) => root.summary === null)) return input.items;

@@ -57,6 +57,41 @@ export interface ThreadNestingThread {
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly runtime: Pick<ThreadRuntimeSummary, "status"> | null;
+  readonly pendingBackgroundTasks?:
+    | ReadonlyArray<{ readonly kind: string; readonly childThreadId?: string | undefined }>
+    | undefined;
+  /** Set by `markRunningSubagents`: the parent still lists this subagent as running. */
+  readonly subagentRunning?: boolean | undefined;
+}
+
+const runningSubagentCopies = new WeakMap<object, object>();
+
+/**
+ * A native subagent (Claude's Task tool, for one) runs inside its parent's
+ * provider session, so its own thread has no active run; the parent's pending
+ * background work is what says it is still going. Copies are cached per shell so
+ * a row keeps its identity while the subagent runs.
+ */
+export function markRunningSubagents<T extends ThreadNestingThread>(
+  threads: ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  const running = new Set<string>();
+  for (const thread of threads) {
+    for (const task of thread.pendingBackgroundTasks ?? []) {
+      if (task.kind === "subagent" && task.childThreadId !== undefined) {
+        running.add(`${thread.environmentId}:${task.childThreadId}`);
+      }
+    }
+  }
+  if (running.size === 0) return threads;
+  return threads.map((thread) => {
+    if (!running.has(threadNestingKey(thread)) || runtimeIsActive(thread.runtime)) return thread;
+    const cached = runningSubagentCopies.get(thread) as T | undefined;
+    if (cached !== undefined) return cached;
+    const copy = { ...thread, subagentRunning: true };
+    runningSubagentCopies.set(thread, copy);
+    return copy;
+  });
 }
 
 /** Counts every nested descendant of a row, however deep and whether or not it is on screen. */
@@ -105,11 +140,14 @@ function threadNestingKey(thread: Pick<ThreadNestingThread, "environmentId" | "i
 }
 
 export function resolveThreadNestingSignal(
-  thread: Pick<ThreadNestingThread, "hasPendingApprovals" | "hasPendingUserInput" | "runtime">,
+  thread: Pick<
+    ThreadNestingThread,
+    "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "subagentRunning"
+  >,
 ): ThreadNestingSignal | null {
   if (thread.hasPendingApprovals) return "approval";
   if (thread.hasPendingUserInput) return "input";
-  if (runtimeIsActive(thread.runtime)) return "working";
+  if (runtimeIsActive(thread.runtime) || thread.subagentRunning === true) return "working";
   return thread.runtime?.status === "failed" ? "failed" : null;
 }
 
@@ -523,17 +561,20 @@ export function resolveSubthreadStatusLabel(
     | "settledOverride"
     | "snoozedAt"
     | "snoozedUntil"
-  >,
+  > &
+    Pick<ThreadNestingThread, "subagentRunning">,
   now: string,
   resolve: MFunctionType = mFallback,
 ): string {
   const runtimeStatus = thread.runtime?.status;
   const runStatus =
-    runtimeStatus === "idle"
-      ? thread.latestRun !== null && !ACTIVE_RUN_STATUSES.has(thread.latestRun.status)
-        ? thread.latestRun.status
-        : "idle"
-      : (runtimeStatus ?? thread.latestRun?.status ?? "idle");
+    thread.subagentRunning === true && !runtimeIsActive(thread.runtime)
+      ? "running"
+      : runtimeStatus === "idle"
+        ? thread.latestRun !== null && !ACTIVE_RUN_STATUSES.has(thread.latestRun.status)
+          ? thread.latestRun.status
+          : "idle"
+        : (runtimeStatus ?? thread.latestRun?.status ?? "idle");
   const execution = thread.hasPendingApprovals
     ? resolve(msg("Pending approval"))
     : thread.hasPendingUserInput

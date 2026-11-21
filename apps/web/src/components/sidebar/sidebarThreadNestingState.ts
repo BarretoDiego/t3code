@@ -1,6 +1,7 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   buildThreadNesting,
+  markRunningSubagents,
   type ThreadNestingNode,
   type ThreadNestingSummary,
 } from "@t3tools/client-runtime/state/thread-nesting";
@@ -46,7 +47,7 @@ export function sameNestedChildren<T>(
 // parent's panel and archived threads leave the list, so neither nests.
 const sidebarThreadNestingAtom = Atom.make((get) =>
   buildThreadNesting({
-    threads: get(environmentThreadShells.quietThreadShellsAtom),
+    threads: markRunningSubagents(get(environmentThreadShells.quietThreadShellsAtom)),
     isListed: (thread) => thread.archivedAt === null && thread.lineage.sideChat !== true,
   }),
 ).pipe(Atom.withLabel("sidebar-thread-nesting"));
