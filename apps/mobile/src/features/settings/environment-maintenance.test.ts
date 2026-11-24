@@ -111,6 +111,24 @@ describe("environment release checks", () => {
     );
   });
 
+  it("checks the environment's fork on both the public feed and API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "https://github.com/BarretoDiego/t3code/releases.atom") return feed();
+        if (
+          url === "https://api.github.com/repos/BarretoDiego/t3code/releases?per_page=100&page=1"
+        ) {
+          return Response.json([{ tag_name: "v0.1.12-nightly.20261121.34" }]);
+        }
+        throw new Error(`Unexpected release request: ${url}`);
+      }),
+    );
+    expect(
+      await findEnvironmentUpdate("0.1.12-nightly.20261121.33", signal, "BarretoDiego/t3code"),
+    ).toBe("0.1.12-nightly.20261121.34");
+  });
+
   it("reports failed checks instead of claiming the server is current", async () => {
     for (const status of [403, 429]) {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));

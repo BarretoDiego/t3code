@@ -1,5 +1,5 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -34,29 +34,36 @@ const asError = (cause: unknown) =>
 /**
  * Looks up the newest T3 Code release for one environment. The atom is not
  * kept alive, so leaving the screen interrupts the lookup and aborts its fetch.
- * The argument reads the server version, which an outdated server only
- * reports through a separate description request.
+ * An outdated server reports its release information through a description request.
  */
 export const environmentReleaseCheckAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.fn((readServerVersion: () => Promise<string>) =>
-    Effect.gen(function* () {
-      const fromVersion = yield* Effect.tryPromise({ try: readServerVersion, catch: asError });
-      const targetVersion = yield* Effect.tryPromise({
-        try: (signal) => findEnvironmentUpdate(fromVersion, signal),
-        catch: asError,
-      }).pipe(
-        Effect.timeoutOrElse({
-          duration: "20 seconds",
-          orElse: () =>
-            Effect.fail(
-              new EnvironmentUpdateCheckError({
-                message: m(msg("Checking for updates timed out. Try again.")),
-              }),
-            ),
-        }),
-      );
-      return { fromVersion, targetVersion } satisfies EnvironmentReleaseCheck;
-    }),
+  Atom.fn(
+    (
+      readServer: () => Promise<
+        Pick<ExecutionEnvironmentDescriptor, "serverVersion" | "cliReleaseRepository">
+      >,
+    ) =>
+      Effect.gen(function* () {
+        const { serverVersion: fromVersion, cliReleaseRepository } = yield* Effect.tryPromise({
+          try: readServer,
+          catch: asError,
+        });
+        const targetVersion = yield* Effect.tryPromise({
+          try: (signal) => findEnvironmentUpdate(fromVersion, signal, cliReleaseRepository),
+          catch: asError,
+        }).pipe(
+          Effect.timeoutOrElse({
+            duration: "20 seconds",
+            orElse: () =>
+              Effect.fail(
+                new EnvironmentUpdateCheckError({
+                  message: m(msg("Checking for updates timed out. Try again.")),
+                }),
+              ),
+          }),
+        );
+        return { fromVersion, targetVersion } satisfies EnvironmentReleaseCheck;
+      }),
   ).pipe(Atom.withLabel(`mobile:environment-release-check:${environmentId}`)),
 );
 
