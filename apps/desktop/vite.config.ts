@@ -21,6 +21,9 @@ const devElectronCommand =
     ? "node scripts/dev-electron.mjs"
     : "exec node scripts/dev-electron.mjs";
 const publicConfigDefine = {
+  __T3CODE_BUILD_CLI_RELEASE_REPOSITORY__: JSON.stringify(
+    repoEnv.T3CODE_BUILD_CLI_RELEASE_REPOSITORY?.trim() ?? "",
+  ),
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
