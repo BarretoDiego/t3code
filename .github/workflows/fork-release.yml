@@ -31,9 +31,56 @@ permissions:
   contents: read
 
 jobs:
+  # A Esteira (CI/CD do homelab) builda e publica a release antes de espelhar o
+  # push para cá, e marca o commit com os status esteira/<job>. Quando os três
+  # estão verdes, nada aqui roda de novo. Sem status da Esteira em 60 s (push
+  # feito direto no GitHub) ou em workflow_dispatch, o build segue normal.
+  esteira:
+    name: Esteira (build no homelab)
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      statuses: read
+    outputs:
+      built: ${{ steps.check.outputs.built }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "push" ]]; then
+            echo "built=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          for attempt in $(seq 1 60); do
+            states="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '[.statuses[] | select(.context | startswith("esteira/")) | "\(.context)=\(.state)"] | join(" ")')"
+            echo "tentativa $attempt: ${states:-sem status da Esteira}"
+            if [[ -z "$states" && "$attempt" -ge 6 ]]; then
+              echo "built=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            ok=true
+            for job in linux android mac; do
+              [[ " $states " == *" esteira/$job=success "* ]] || ok=false
+            done
+            if $ok; then
+              echo "Esteira já buildou este commit; pulando o build." >> "$GITHUB_STEP_SUMMARY"
+              echo "built=true" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            if [[ "$states" == *"=failure"* || "$states" == *"=error"* ]]; then
+              echo "A Esteira falhou neste commit; buildando aqui."
+              echo "built=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            sleep 10
+          done
+          echo "built=false" >> "$GITHUB_OUTPUT"
+
   bundle:
     name: Build JS bundle
-    if: github.repository != 'pingdotgg/t3code'
+    needs: [esteira]
+    if: github.repository != 'pingdotgg/t3code' && needs.esteira.outputs.built != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:

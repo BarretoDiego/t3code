@@ -1,0 +1,91 @@
+# Esteira (CI/CD do homelab) — mesmo resultado do .github/workflows/fork-release.yml:
+# AppImage Linux e APK Android no homelab (Docker rootless), DMG macOS no Mac do
+# dono (`esteira run`). Ver scripts/esteira/.
+version: 1
+jobs:
+  linux:
+    platform: linux/amd64
+    image: t3code-builder:1
+    cpus: 6
+    memory: 5g
+    timeout: 60m
+    steps:
+      - name: Dependências
+        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Versão
+        run: sh scripts/esteira/version.sh linux
+      - name: Bundle JS
+        run: |
+          . ./.esteira-release.env && . scripts/esteira/lib.sh
+          group "Alinhar versões ($T3_VERSION)"; node scripts/update-release-package-versions.ts "$T3_VERSION"; endgroup
+          group "build:desktop (web, server, desktop)"; node_modules/.bin/vp run build:desktop; endgroup
+      - name: AppImage
+        run: . ./.esteira-release.env && node_modules/.bin/vp run dist:desktop:artifact --platform linux --target AppImage --arch x64 --build-version "$T3_VERSION" --skip-build --verbose
+      - name: Coletar
+        run: sh scripts/esteira/collect-desktop.sh
+    caches:
+      - /root/.local/share
+      - /root/.cache
+      - /usr/local/cargo/registry
+      - /workspace/native/resource-monitor/target
+      - /workspace/native/kde-snap-shot/target
+      - /workspace/native/hyprland-snap-shot/target
+    artifacts: [dist-esteira]
+
+  android:
+    platform: linux/amd64
+    image: t3code-builder:1
+    cpus: 8
+    memory: 13g
+    timeout: 90m
+    steps:
+      - name: Dependências
+        run: vp install --frozen-lockfile --filter=@t3tools/mobile... --filter=@t3tools/scripts...
+      - name: Versão
+        run: sh scripts/esteira/version.sh android
+      - name: Projeto nativo
+        run: . ./.esteira-release.env && export APP_VARIANT=production T3CODE_MOBILE_UPDATES_ENABLED=0 T3CODE_MOBILE_VERSION="$T3_VERSION" T3CODE_MOBILE_VERSION_CODE="$T3_RUN_NUMBER" && cd apps/mobile && node_modules/.bin/expo prebuild --platform android --no-install
+      - name: APK release
+        run: sh scripts/esteira/build-apk.sh
+    caches:
+      - /root/.local/share
+      - /root/.cache
+      - /root/.gradle
+      - /opt/android-sdk
+    artifacts: [dist-esteira]
+
+  mac:
+    platform: darwin/arm64
+    timeout: 60m
+    steps:
+      - name: Dependências
+        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Versão
+        run: sh scripts/esteira/version.sh mac
+      - name: Bundle JS
+        run: |
+          . ./.esteira-release.env && . scripts/esteira/lib.sh
+          group "Alinhar versões ($T3_VERSION)"; node scripts/update-release-package-versions.ts "$T3_VERSION"; endgroup
+          group "build:desktop (web, server, desktop)"; node_modules/.bin/vp run build:desktop; endgroup
+      - name: DMG assinado
+        run: sh scripts/esteira/build-mac.sh
+      - name: Coletar
+        run: sh scripts/esteira/collect-desktop.sh
+    artifacts: [dist-esteira]
+
+deploy:
+  # Mesma release que o job "Publish GitHub Release" do fork-release.yml, a
+  # partir dos artefatos dos três jobs. Único passo com segredos.
+  release:
+    needs: [mac, linux, android]
+    image: t3code-builder:1
+    secrets: [github_token, android_keystore, android_credentials]
+    on: {branches: [main]}
+    timeout: 30m
+    steps:
+      - name: Conferir versões
+        run: sh scripts/esteira/check-versions.sh
+      - name: Assinar APK
+        run: sh scripts/esteira/sign-apk.sh
+      - name: Publicar release
+        run: sh scripts/esteira/publish-release.sh
